@@ -1,9 +1,10 @@
 module bomify
 
-go 1.25
+go 1.27.0
 
 require (
 	github.com/CycloneDX/cyclonedx-go v0.12.0
+	github.com/package-url/packageurl-go v0.1.7
 	github.com/spf13/cobra v1.10.2
 )
 

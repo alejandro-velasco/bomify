@@ -3,27 +3,30 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
+	"bomify/internal/logging"
 )
 
-// version is set at build time via -ldflags "-X bomify/cmd.version=x.y.z".
-var version = "dev"
+// NewRootCmd builds the bomify root command and wires up its subcommands.
+func NewRootCmd() *cobra.Command {
+	var verbose bool
 
-var verbose bool
+	rootCmd := &cobra.Command{
+		Use:           "bomify",
+		Short:         "bomify builds packages from CycloneDX SBOMs",
+		Long:          "bomify is a CLI that consumes a CycloneDX Software Bill of Materials (SBOM)\nand builds packages from the components it describes.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			logger := logging.New(verbose)
+			cmd.SetContext(logging.WithContext(cmd.Context(), logger))
+		},
+	}
 
-var rootCmd = &cobra.Command{
-	Use:           "bomify",
-	Short:         "bomify builds packages from CycloneDX SBOMs",
-	Long:          "bomify is a CLI that consumes a CycloneDX Software Bill of Materials (SBOM)\nand builds packages from the components it describes.",
-	Version:       version,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-}
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose (debug) logging")
 
-// Execute runs the root command and returns any error encountered.
-func Execute() error {
-	return rootCmd.Execute()
-}
+	rootCmd.AddCommand(packageCmd())
+	rootCmd.AddCommand(versionCmd())
 
-func init() {
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
+	return rootCmd
 }

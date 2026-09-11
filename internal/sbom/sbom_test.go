@@ -11,10 +11,6 @@ func TestLoadJSON(t *testing.T) {
 	if got, want := bom.Metadata.Component.Name, "example-app"; got != want {
 		t.Errorf("root component name = %q, want %q", got, want)
 	}
-
-	if got, want := ComponentCount(bom), 2; got != want {
-		t.Errorf("ComponentCount() = %d, want %d", got, want)
-	}
 }
 
 func TestLoadMissingFile(t *testing.T) {

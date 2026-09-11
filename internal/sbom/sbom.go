@@ -18,9 +18,9 @@ func Load(path string) (*cdx.BOM, error) {
 	}
 	defer f.Close()
 
-	format := cdx.BOMFileFormatJSON
-	if strings.EqualFold(strings.TrimPrefix(fileExt(path), "."), "xml") {
-		format = cdx.BOMFileFormatXML
+	format, err := fileFormat(path)
+	if err != nil {
+		return nil, fmt.Errorf("detect sbom format: %w", err)
 	}
 
 	bom := new(cdx.BOM)
@@ -32,18 +32,20 @@ func Load(path string) (*cdx.BOM, error) {
 	return bom, nil
 }
 
-// ComponentCount returns the number of components declared in the BOM.
-func ComponentCount(bom *cdx.BOM) int {
-	if bom.Components == nil {
-		return 0
-	}
-	return len(*bom.Components)
-}
-
-func fileExt(path string) string {
+// fileFormat returns the CycloneDX BOMFileFormat corresponding to the file extension of path.
+func fileFormat(path string) (cdx.BOMFileFormat, error) {
 	idx := strings.LastIndex(path, ".")
 	if idx == -1 {
-		return ""
+		return 0, fmt.Errorf("cannot determine file format from path %q", path)
 	}
-	return path[idx:]
+	fileExt := strings.TrimPrefix(path[idx:], ".")
+
+	switch strings.ToLower(fileExt) {
+	case "xml":
+		return cdx.BOMFileFormatXML, nil
+	case "json":
+		return cdx.BOMFileFormatJSON, nil
+	default:
+		return 0, fmt.Errorf("unsupported file format %q", fileExt)
+	}
 }
