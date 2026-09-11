@@ -1,0 +1,57 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "microservices-stack",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "container",
+      "name": "nginx",
+      "version": "1.27.0",
+      "purl": "pkg:oci/nginx@sha256:2c5c580a0c1bb1efaf0d7c395c8b0aab8b0e6cb2b1b7a3e2b3ee8c5f0d4a3fbe?repository_url=docker.io/library/nginx&tag=1.27.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a3ab061d6909191271bcf24b9ab6eee9e8fc5f2fbf1525c5bd84d21f27a9d708"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "redis",
+      "version": "7.2.14",
+      "purl": "pkg:oci/redis@sha256:7a89e18b7fb427b5a3c9c8f2d4a1e6b3c0d9f8a7b6c5d4e3f2a1b0c9d8e7f6a5?repository_url=docker.io/library/redis&tag=7.2.14",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "86778a4a011a500d9a502858e27647380b62e5e8fbadef3f59e506f0899792fd"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "redis",
+      "version": "7.2.14",
+      "purl": "pkg:oci/redis@sha256:7a89e18b7fb427b5a3c9c8f2d4a1e6b3c0d9f8a7b6c5d4e3f2a1b0c9d8e7f6a5?repository_url=docker.io/library/redis&tag=7.2.14",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "86778a4a011a500d9a502858e27647380b62e5e8fbadef3f59e506f0899792fd"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "postgres",
+      "version": "16",
+      "purl": "pkg:docker/postgres@16"
+    }
+  ]
+}

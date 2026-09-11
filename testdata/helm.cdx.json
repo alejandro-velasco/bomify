@@ -1,0 +1,39 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:6f2b8e2a-6f1e-4d8a-9a1c-2f3b7c9d5e6a",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "example-platform",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "name": "ingress-nginx",
+      "version": "4.15.1",
+      "purl": "pkg:helm/ingress-nginx@4.15.1?repository_url=https://kubernetes.github.io/ingress-nginx",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3eff0bd18151d6e6b1c441463410571443dda1ac78292cb189346628de784f0c"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "common",
+      "version": "1.11.3",
+      "purl": "pkg:helm/common@1.11.3?repository_url=oci://registry-1.docker.io/bitnamicharts",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "decab771e8d4151049e8ea62078f6396b7f21cb11cd28cd43582b8ec36cee78f"
+        }
+      ]
+    }
+  ]
+}

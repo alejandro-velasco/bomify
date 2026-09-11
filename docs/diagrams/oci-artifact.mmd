@@ -1,0 +1,30 @@
+flowchart LR
+    classDef local fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+    classDef oci fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef ociFinal fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
+
+    subgraph Local["bomify data directory"]
+        SBOM[("SBOM manifest file")]
+        C1[("Component A files")]
+        C2[("Component B files")]
+    end
+
+    subgraph OCI["OCI artifact"]
+        Config("config blob")
+        Layer1("layer blob A")
+        Layer2("layer blob B")
+        Manifest{{"OCI manifest"}}
+    end
+
+    SBOM -- "pushed verbatim" --> Config
+    C1 -- "tarred, annotated with purl, pushed" --> Layer1
+    C2 -- "tarred, annotated with purl, pushed" --> Layer2
+    Config --> Manifest
+    Layer1 --> Manifest
+    Layer2 --> Manifest
+
+    class SBOM,C1,C2 local
+    class Config,Layer1,Layer2 oci
+    class Manifest ociFinal
+    style Local fill:#F8FAFF,stroke:#C7D2FE,stroke-width:1px,color:#334155
+    style OCI fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155

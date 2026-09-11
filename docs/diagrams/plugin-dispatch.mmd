@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant CLI as bomify build or mirror
+    participant Plugin as bomify-plugin binary
+    participant Disk as Data directory
+
+    CLI->>CLI: detect a kind from the component's purl type
+    CLI->>CLI: find the matching binary on PATH
+    rect rgb(236, 253, 245)
+        CLI->>Plugin: pull or push, over a subprocess call
+        Plugin->>Disk: read or write the component's artifact
+        Plugin->>Disk: write its own log output, never to stdout
+        Plugin-->>CLI: a single JSON result on stdout
+    end
+    CLI->>Disk: record the component's manifest

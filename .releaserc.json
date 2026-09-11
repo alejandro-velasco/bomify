@@ -1,0 +1,28 @@
+{
+  "branches": [{ "name": "main", "prerelease": "rc" }],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "echo \"version=${nextRelease.version}\" >> $GITHUB_OUTPUT",
+        "prepareCmd": "make dist VERSION=${nextRelease.version} && make build-container CONTAINER_TAG=${nextRelease.version}",
+        "publishCmd": "make push-container CONTAINER_TAG=${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "assets": [
+          { "path": "dist/*.tar.gz", "label": "Binaries (tar.gz)" },
+          { "path": "dist/*.zip", "label": "Binaries (zip)" },
+          { "path": "dist/checksums.txt", "label": "Checksums" }
+        ]
+      }
+    ]
+  ]
+}
