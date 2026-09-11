@@ -13,6 +13,7 @@ import (
 
 type mirrorOptions struct {
 	file   string
+	output string
 	remote string
 }
 
@@ -33,6 +34,7 @@ func mirrorCmd() *cobra.Command {
 	}
 
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.file, "file", "f", "", "path to the CycloneDX SBOM file (JSON or XML)")
+	mirrorCmd.Flags().StringVarP(&mirrorOpts.output, "output", "o", "dist", "directory bomify build wrote components to")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.remote, "remote", "r", "", "remote endpoint to mirror components to")
 	_ = mirrorCmd.MarkFlagRequired("file")
 	_ = mirrorCmd.MarkFlagRequired("remote")
@@ -49,7 +51,7 @@ func runMirror(opts *mirrorOptions, logger *slog.Logger) error {
 
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
-		result, err := plugin.Push(path, component, opts.remote)
+		result, err := plugin.Push(path, component, opts.output, opts.remote)
 		if err != nil {
 			return err
 		}

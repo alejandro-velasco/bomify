@@ -10,10 +10,19 @@ LDFLAGS := -X bomify/internal/buildinfo.version=$(VERSION) \
 		   -X bomify/internal/buildinfo.date=$(DATE)       \
 		   -X bomify/internal/buildinfo.goVersion=$(GO_VERSION)
 
-.PHONY: build test run tidy clean
+.PHONY: build plugins test run tidy clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+plugins:
+	go build -o bin/ ./plugins/...
+
+install: build plugins
+	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
+	install -Dm755 bin/bomify-plugin-* /usr/local/bin/
+	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
+	ln -sf /usr/local/bin/bomify-plugin-oci /usr/local/bin/bomify-plugin-docker
 
 test:
 	go test ./...

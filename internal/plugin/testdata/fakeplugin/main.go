@@ -26,8 +26,9 @@ func main() {
 	verb := os.Args[1]
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
 	componentJSON := fs.String("component", "", "JSON-encoded CycloneDX component")
-	output := fs.String("output", "", "output directory")
-	remote := fs.String("remote", "", "remote endpoint")
+	output := fs.String("output", "", "output directory (pull)")
+	input := fs.String("input", "", "input directory (push)")
+	remote := fs.String("remote", "", "remote endpoint (push)")
 	fs.Parse(os.Args[2:])
 
 	var component cdx.Component
@@ -44,11 +45,21 @@ func main() {
 	var res result
 	switch verb {
 	case "pull":
+		if info, err := os.Stat(*output); err != nil || !info.IsDir() {
+			fmt.Fprintf(os.Stderr, "expected --output %q to already exist as a directory: %v\n", *output, err)
+			os.Exit(1)
+		}
+
 		res = result{
 			OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, component.Name, component.Version),
 			Message:    "fake pull ok",
 		}
 	case "push":
+		if info, err := os.Stat(*input); err != nil || !info.IsDir() {
+			fmt.Fprintf(os.Stderr, "expected --input %q to already exist as a directory: %v\n", *input, err)
+			os.Exit(1)
+		}
+
 		res = result{
 			OutputPath: fmt.Sprintf("%s/%s:%s", *remote, component.Name, component.Version),
 			Message:    "fake push ok",

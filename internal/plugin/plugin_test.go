@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -46,37 +48,48 @@ func TestFindMissing(t *testing.T) {
 
 func TestPull(t *testing.T) {
 	bin := buildFakePlugin(t)
-	outputDir := filepath.ToSlash(t.TempDir())
+	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := Pull(bin, component, outputDir)
+	result, err := Pull(bin, component, baseDir)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
-	want := outputDir + "/nginx-1.27.tar"
+	want := filepath.ToSlash(filepath.Join(componentDir(baseDir, component), "nginx-1.27.tar"))
 	if got := filepath.ToSlash(result.OutputPath); got != want {
 		t.Errorf("OutputPath = %q, want %q", got, want)
 	}
 }
 
-func TestPullFailure(t *testing.T) {
+func TestPullFailureRemovesComponentDir(t *testing.T) {
 	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
 
-	if _, err := Pull(bin, component, t.TempDir()); err == nil {
+	if _, err := Pull(bin, component, baseDir); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
+	}
+
+	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("componentDir still exists after failed Pull: %v", err)
 	}
 }
 
 func TestPush(t *testing.T) {
 	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := Push(bin, component, "registry.example.com/mirror")
+	// Simulate a prior successful Pull, which Push requires.
+	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	result, err := Push(bin, component, baseDir, "registry.example.com/mirror")
 	if err != nil {
 		t.Fatalf("Push returned error: %v", err)
 	}
@@ -86,13 +99,47 @@ func TestPush(t *testing.T) {
 	}
 }
 
+func TestPushWithoutPriorPull(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Push(bin, component, t.TempDir(), "registry.example.com/mirror"); err == nil {
+		t.Fatal("Push() with no prior Pull: expected error, got nil")
+	}
+}
+
 func TestPushFailure(t *testing.T) {
 	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
 
-	if _, err := Push(bin, component, "registry.example.com/mirror"); err == nil {
+	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	if _, err := Push(bin, component, baseDir, "registry.example.com/mirror"); err == nil {
 		t.Fatal("Push() with failing plugin: expected error, got nil")
+	}
+}
+
+func TestComponentDir(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "base")
+
+	a := cdx.Component{PackageURL: "pkg:oci/nginx@1.27"}
+	b := cdx.Component{PackageURL: "pkg:oci/redis@7.2"}
+
+	if got, want := componentDir(baseDir, a), componentDir(baseDir, a); got != want {
+		t.Errorf("componentDir() is not deterministic: %q != %q", got, want)
+	}
+
+	if componentDir(baseDir, a) == componentDir(baseDir, b) {
+		t.Error("componentDir() collided for two different purls")
+	}
+
+	if got := componentDir(baseDir, a); !strings.HasPrefix(got, baseDir) {
+		t.Errorf("componentDir() = %q, want it under baseDir %q", got, baseDir)
 	}
 }
 

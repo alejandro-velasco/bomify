@@ -6,11 +6,18 @@
 // on PATH, and implement two subcommands:
 //
 //	bomify-plugin-<kind> pull --component '<JSON-encoded CycloneDX component>' --output <dir>
-//	bomify-plugin-<kind> push --component '<JSON-encoded CycloneDX component>' --remote <endpoint>
+//	bomify-plugin-<kind> push --component '<JSON-encoded CycloneDX component>' --input <dir> --remote <endpoint>
 //
-// pull fetches or builds the component and writes it into the local
-// directory dir. push publishes an already-pulled component to the remote
-// endpoint.
+// Both dir arguments are the same directory: a subdirectory of the base
+// directory bomify was given, named after a hash of the component's purl,
+// so pull and push (even in separate bomify invocations) independently
+// agree on where the component lives without bomify tracking any state.
+//
+// pull fetches or builds the component and writes it into dir, which Pull
+// creates before invoking the plugin — the plugin may assume dir already
+// exists. If the plugin fails, Pull removes dir. push publishes the
+// component pull already wrote into dir to the remote endpoint; Push fails
+// before invoking the plugin if dir doesn't exist (nothing was pulled).
 //
 // On success the plugin must print a single JSON object describing the
 // result to stdout (see Result) and exit 0. On failure it should exit
@@ -19,10 +26,14 @@ package plugin
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -90,27 +101,58 @@ func Find(kind string) (string, error) {
 }
 
 // Pull invokes the plugin binary's "pull" subcommand, which fetches or
-// builds component and writes it into outputDir.
-func Pull(path string, component cdx.Component, outputDir string) (*Result, error) {
-	return run(path, "pull", component, "--output", outputDir)
+// builds component and writes it into a subdirectory of baseDir named
+// after a hash of component's purl. Pull creates that subdirectory before
+// invoking the plugin and removes it again if the plugin fails.
+func Pull(path string, component cdx.Component, baseDir string) (*Result, error) {
+	dir := componentDir(baseDir, component)
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create component directory %s: %w", dir, err)
+	}
+
+	result, err := run(path, "pull", component, "--output", dir)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+
+	return result, nil
 }
 
-// Push invokes the plugin binary's "push" subcommand, which publishes an
-// already-pulled component to remote.
-func Push(path string, component cdx.Component, remote string) (*Result, error) {
-	return run(path, "push", component, "--remote", remote)
+// Push invokes the plugin binary's "push" subcommand, which publishes to
+// remote the component a prior call to Pull wrote into baseDir. Push looks
+// up that same hash-named subdirectory of baseDir and fails before
+// invoking the plugin if it doesn't exist.
+func Push(path string, component cdx.Component, baseDir, remote string) (*Result, error) {
+	dir := componentDir(baseDir, component)
+
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("component not found in %s (run bomify build first): %w", dir, err)
+	}
+
+	return run(path, "push", component, "--input", dir, "--remote", remote)
+}
+
+// componentDir returns the deterministic subdirectory of baseDir where a
+// component's pulled artifact lives, derived from a hash of its purl so
+// Pull and Push independently agree on the same location.
+func componentDir(baseDir string, component cdx.Component) string {
+	sum := sha256.Sum256([]byte(component.PackageURL))
+	return filepath.Join(baseDir, hex.EncodeToString(sum[:]))
 }
 
 // run invokes the plugin binary at path with subcommand verb, passing
-// component and the given extra flag/value pair as arguments, and returns
-// the plugin's parsed result.
-func run(path, verb string, component cdx.Component, extraFlag, extraValue string) (*Result, error) {
+// component and the given extra arguments, and returns the plugin's parsed
+// result.
+func run(path, verb string, component cdx.Component, extraArgs ...string) (*Result, error) {
 	componentJSON, err := json.Marshal(component)
 	if err != nil {
 		return nil, fmt.Errorf("marshal component: %w", err)
 	}
 
-	cmd := exec.Command(path, verb, "--component", string(componentJSON), extraFlag, extraValue)
+	args := append([]string{verb, "--component", string(componentJSON)}, extraArgs...)
+	cmd := exec.Command(path, args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

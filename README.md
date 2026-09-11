@@ -2,7 +2,7 @@
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build`/`bomify push` walk its components and delegate each one to an external plugin binary that knows how to build or publish it.
+Give it an SBOM and `bomify build`/`bomify mirror` walk its components and delegate each one to an external plugin binary that knows how to pull or push it.
 
 ## Status
 
@@ -17,15 +17,22 @@ make build
 ## Usage
 
 ```sh
-bomify build --sbom path/to/bom.cdx.json --output dist/
-bomify push  --sbom path/to/bom.cdx.json --remote registry.example.com/mirror
+bomify build  --file path/to/bom.cdx.json --output dist/
+bomify mirror --file path/to/bom.cdx.json --remote registry.example.com/mirror
 ```
 
 ## Plugins
 
-Neither `bomify build` nor `bomify push` build or publish anything
+Neither `bomify build` nor `bomify mirror` build or publish anything
 themselves — they detect a "kind" for each SBOM component and delegate to an
 external `bomify-plugin-<kind>` binary on `PATH`.
+
+[`plugins/`](plugins) holds the plugins bomify creates and supports itself
+(see [`plugins/README.md`](plugins/README.md) for the list), starting with
+[`bomify-plugin-oci`](plugins/bomify-plugin-oci), which pulls and pushes
+container images using [crane](https://github.com/google/go-containerregistry).
+Anyone can also write and install their own third-party
+`bomify-plugin-<kind>` binary for a kind bomify doesn't ship.
 
 The kind is taken directly from the component's purl type (parsed with
 [package-url/packageurl-go](https://github.com/package-url/packageurl-go)):
@@ -43,8 +50,8 @@ bomify-plugin-<kind> push --component '<JSON-encoded CycloneDX component>' --rem
 
 `bomify build` invokes `pull`, which should fetch or build the component and
 write it into the local directory `dir` (bomify's `--output`, default
-`dist`). `bomify push` invokes `push`, which should publish an
-already-pulled component to `remote` (bomify's `--remote`).
+`dist`). `bomify mirror` invokes `push`, which should publish the component
+directly to `remote` (bomify's `--remote`).
 
 For either subcommand, the plugin must print a single JSON object to stdout
 on success and exit 0:
