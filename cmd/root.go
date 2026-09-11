@@ -44,7 +44,8 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&rootOpts.verbose, "verbose", false, "enable verbose (debug) logging")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.docsDir, "docs-dir", "", "directory to write documentation to (if empty, no docs are generated)")
 
-	rootCmd.AddCommand(packageCmd())
+	rootCmd.AddCommand(buildCmd())
+	rootCmd.AddCommand(mirrorCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd

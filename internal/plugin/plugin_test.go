@@ -33,7 +33,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestBinaryName(t *testing.T) {
-	if got, want := BinaryName("docker"), "bomify-build-docker"; got != want {
+	if got, want := BinaryName("docker"), "bomify-plugin-docker"; got != want {
 		t.Errorf("BinaryName() = %q, want %q", got, want)
 	}
 }
@@ -44,15 +44,15 @@ func TestFindMissing(t *testing.T) {
 	}
 }
 
-func TestRun(t *testing.T) {
+func TestPull(t *testing.T) {
 	bin := buildFakePlugin(t)
 	outputDir := filepath.ToSlash(t.TempDir())
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := Run(bin, component, outputDir)
+	result, err := Pull(bin, component, outputDir)
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("Pull returned error: %v", err)
 	}
 
 	want := outputDir + "/nginx-1.27.tar"
@@ -61,19 +61,44 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestRunFailure(t *testing.T) {
+func TestPullFailure(t *testing.T) {
 	bin := buildFakePlugin(t)
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
 
-	if _, err := Run(bin, component, t.TempDir()); err == nil {
-		t.Fatal("Run() with failing plugin: expected error, got nil")
+	if _, err := Pull(bin, component, t.TempDir()); err == nil {
+		t.Fatal("Pull() with failing plugin: expected error, got nil")
+	}
+}
+
+func TestPush(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	result, err := Push(bin, component, "registry.example.com/mirror")
+	if err != nil {
+		t.Fatalf("Push returned error: %v", err)
+	}
+
+	if want := "registry.example.com/mirror/nginx:1.27"; result.OutputPath != want {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
+	}
+}
+
+func TestPushFailure(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
+
+	if _, err := Push(bin, component, "registry.example.com/mirror"); err == nil {
+		t.Fatal("Push() with failing plugin: expected error, got nil")
 	}
 }
 
 // buildFakePlugin compiles testdata/fakeplugin into a temp directory and
 // returns the resulting binary's path, standing in for a real
-// bomify-build-* executable.
+// bomify-plugin-* executable.
 func buildFakePlugin(t *testing.T) string {
 	t.Helper()
 
