@@ -8,13 +8,20 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 )
 
+type hash struct {
+	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
+	Value     string            `json:"value,omitempty"`
+}
+
 type result struct {
 	OutputPath string `json:"outputPath"`
 	Message    string `json:"message,omitempty"`
+	Hash       hash   `json:"hash,omitempty"`
 }
 
 func main() {
@@ -29,6 +36,7 @@ func main() {
 	output := fs.String("output", "", "output directory (pull)")
 	input := fs.String("input", "", "input directory (push)")
 	remote := fs.String("remote", "", "remote endpoint (push)")
+	hashAlgorithm := fs.String("hash", "", "hash algorithm to report (pull)")
 	fs.Parse(os.Args[2:])
 
 	var component cdx.Component
@@ -53,6 +61,15 @@ func main() {
 		res = result{
 			OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, component.Name, component.Version),
 			Message:    "fake pull ok",
+		}
+
+		// "nohash-*" components simulate a plugin that can't compute the
+		// requested hash algorithm and leaves Hash unset.
+		if *hashAlgorithm != "" && !strings.HasPrefix(component.Name, "nohash-") {
+			res.Hash = hash{
+				Algorithm: cdx.HashAlgorithm(*hashAlgorithm),
+				Value:     fmt.Sprintf("fakehash-%s-%s", component.Name, component.Version),
+			}
 		}
 	case "push":
 		if info, err := os.Stat(*input); err != nil || !info.IsDir() {

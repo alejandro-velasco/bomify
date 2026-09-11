@@ -49,6 +49,54 @@ type Result struct {
 	OutputPath string `json:"outputPath"`
 	// Message is an optional human-readable summary of what happened.
 	Message string `json:"message,omitempty"`
+	// Hash is the content hash of the pulled artifact, for the algorithm
+	// requested via --hash. A pull plugin should leave this zero if it
+	// cannot compute a hash for the requested algorithm.
+	Hash Hash `json:"hash,omitempty"`
+}
+
+// Hash is a content hash reported by a plugin, mirroring cdx.Hash.
+type Hash struct {
+	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
+	Value     string            `json:"value,omitempty"`
+}
+
+// hashAlgorithms lists the CycloneDX hash algorithms recognized by
+// NormalizeHashAlgorithm.
+var hashAlgorithms = []cdx.HashAlgorithm{
+	cdx.HashAlgoMD5,
+	cdx.HashAlgoSHA1,
+	cdx.HashAlgoSHA256,
+	cdx.HashAlgoSHA384,
+	cdx.HashAlgoSHA512,
+	cdx.HashAlgoSHA3_256,
+	cdx.HashAlgoSHA3_384,
+	cdx.HashAlgoSHA3_512,
+	cdx.HashAlgoBlake2b_256,
+	cdx.HashAlgoBlake2b_384,
+	cdx.HashAlgoBlake2b_512,
+	cdx.HashAlgoBlake3,
+	cdx.HashAlgoStreebog256,
+	cdx.HashAlgoStreebog512,
+}
+
+// NormalizeHashAlgorithm resolves a case- and hyphen-insensitive hash
+// algorithm name, such as one passed via a --hash flag (e.g. "sha-256" or
+// "sha256"), to its canonical CycloneDX form (e.g. "SHA-256"). It returns
+// an error if name isn't a recognized CycloneDX hash algorithm.
+func NormalizeHashAlgorithm(name string) (cdx.HashAlgorithm, error) {
+	fold := func(s string) string {
+		return strings.ToUpper(strings.ReplaceAll(s, "-", ""))
+	}
+
+	target := fold(name)
+	for _, alg := range hashAlgorithms {
+		if fold(string(alg)) == target {
+			return alg, nil
+		}
+	}
+
+	return "", fmt.Errorf("unrecognized hash algorithm %q", name)
 }
 
 // Print writes r to w as the single JSON object bomify expects a plugin to
@@ -104,20 +152,54 @@ func Find(kind string) (string, error) {
 // builds component and writes it into a subdirectory of baseDir named
 // after a hash of component's purl. Pull creates that subdirectory before
 // invoking the plugin and removes it again if the plugin fails.
-func Pull(path string, component cdx.Component, baseDir string) (*Result, error) {
+//
+// hashAlgorithm is passed to the plugin via --hash, asking it to report
+// the pulled artifact's content hash for that algorithm in the result. If
+// component declares its own hash for hashAlgorithm (in its SBOM
+// metadata), Pull verifies the plugin's reported hash matches it, removing
+// dir and failing on a mismatch. If either side has no hash to compare
+// (the plugin couldn't compute one, or the SBOM doesn't declare one for
+// this algorithm), verification is skipped.
+func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm) (*Result, error) {
 	dir := componentDir(baseDir, component)
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 	}
 
-	result, err := run(path, "pull", component, "--output", dir)
+	result, err := run(path, "pull", component, "--output", dir, "--hash", string(hashAlgorithm))
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, err
 	}
 
+	if err := verifyHash(component, result); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+
 	return result, nil
+}
+
+// verifyHash checks, when component declares an SBOM hash for the same
+// algorithm result.Hash reports, that the two values match.
+func verifyHash(component cdx.Component, result *Result) error {
+	if result.Hash.Algorithm == "" || component.Hashes == nil {
+		return nil
+	}
+
+	for _, declared := range *component.Hashes {
+		if declared.Algorithm != result.Hash.Algorithm {
+			continue
+		}
+		if !strings.EqualFold(declared.Value, result.Hash.Value) {
+			return fmt.Errorf("%s hash mismatch for %s@%s: SBOM declares %s, pulled artifact has %s",
+				result.Hash.Algorithm, component.Name, component.Version, declared.Value, result.Hash.Value)
+		}
+		return nil
+	}
+
+	return nil
 }
 
 // Push invokes the plugin binary's "push" subcommand, which publishes to

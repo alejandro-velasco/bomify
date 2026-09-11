@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
 	"bomify/internal/plugin"
@@ -12,6 +13,7 @@ func newPullCmd() *cobra.Command {
 	var (
 		componentJSON string
 		output        string
+		hash          string
 	)
 
 	cmd := &cobra.Command{
@@ -28,7 +30,7 @@ func newPullCmd() *cobra.Command {
 				return err
 			}
 
-			res, err := image.Pull(ref, component, output)
+			res, err := image.Pull(ref, component, output, cdx.HashAlgorithm(hash))
 			if err != nil {
 				return err
 			}
@@ -39,6 +41,7 @@ func newPullCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&componentJSON, "component", "", "JSON-encoded CycloneDX component (required)")
 	cmd.Flags().StringVar(&output, "output", "", "directory to save the pulled image into (required)")
+	cmd.Flags().StringVar(&hash, "hash", "", "hash algorithm to report the pulled image's digest as")
 	_ = cmd.MarkFlagRequired("component")
 	_ = cmd.MarkFlagRequired("output")
 

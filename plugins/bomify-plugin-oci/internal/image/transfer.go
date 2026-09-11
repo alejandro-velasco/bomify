@@ -6,6 +6,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/google/go-containerregistry/pkg/crane"
+	gcrv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 
 	"bomify/internal/plugin"
@@ -15,7 +16,11 @@ import (
 // so the pulled artifact is in OCI format rather than a docker-style
 // tarball. outputDir is a directory bomify has already created dedicated
 // to this component, so Pull writes directly into it.
-func Pull(ref string, component cdx.Component, outputDir string) (*plugin.Result, error) {
+//
+// hashAlgorithm is the hash bomify wants reported in the result. OCI/docker
+// images are always content-addressed with SHA-256, so any other
+// algorithm is unsupported and returns an error.
+func Pull(ref string, component cdx.Component, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
 	img, err := crane.Pull(ref)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
@@ -25,7 +30,27 @@ func Pull(ref string, component cdx.Component, outputDir string) (*plugin.Result
 		return nil, fmt.Errorf("save %s to %s: %w", ref, outputDir, err)
 	}
 
-	return &plugin.Result{OutputPath: outputDir, Message: fmt.Sprintf("pulled %s", ref)}, nil
+	hash, err := digestHash(img, hashAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
+	return &plugin.Result{OutputPath: outputDir, Message: fmt.Sprintf("pulled %s", ref), Hash: hash}, nil
+}
+
+// digestHash returns img's content digest as a plugin.Hash for
+// hashAlgorithm.
+func digestHash(img gcrv1.Image, hashAlgorithm cdx.HashAlgorithm) (plugin.Hash, error) {
+	if hashAlgorithm != cdx.HashAlgoSHA256 {
+		return plugin.Hash{}, fmt.Errorf("bomify-plugin-oci: unsupported hash algorithm %q, only %s is supported", hashAlgorithm, cdx.HashAlgoSHA256)
+	}
+
+	digest, err := img.Digest()
+	if err != nil {
+		return plugin.Hash{}, fmt.Errorf("compute image digest: %w", err)
+	}
+
+	return plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: digest.Hex}, nil
 }
 
 // Push reads the OCI Image Layout a prior Pull wrote into inputDir and
