@@ -16,6 +16,7 @@ type buildOptions struct {
 	file   string
 	output string
 	clean  bool
+	hash   string
 }
 
 // buildCmd builds the `bomify build` command.
@@ -38,12 +39,18 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().StringVarP(&buildOpts.file, "file", "f", "", "path to the CycloneDX SBOM file (JSON or XML)")
 	buildCmd.Flags().StringVarP(&buildOpts.output, "output", "o", "dist", "directory to write components to")
 	buildCmd.Flags().BoolVar(&buildOpts.clean, "clean", false, "remove the output directory before building")
+	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	_ = buildCmd.MarkFlagRequired("file")
 
 	return buildCmd
 }
 
 func runBuild(opts *buildOptions, logger *slog.Logger) error {
+	hashAlgorithm, err := plugin.NormalizeHashAlgorithm(opts.hash)
+	if err != nil {
+		return err
+	}
+
 	if opts.clean {
 		logger.Info("cleaning output directory", "path", opts.output)
 		if err := os.RemoveAll(opts.output); err != nil {
@@ -59,12 +66,12 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
-		result, err := plugin.Pull(path, component, opts.output)
+		result, err := plugin.Pull(path, component, opts.output, hashAlgorithm)
 		if err != nil {
 			return err
 		}
 
-		log.Info("pull complete", "output", result.OutputPath, "message", result.Message)
+		log.Info("pull complete", "output", result.OutputPath, "message", result.Message, "hash", result.Hash.Value)
 
 		return nil
 	})
