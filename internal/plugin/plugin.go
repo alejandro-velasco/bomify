@@ -385,10 +385,12 @@ func Push(path string, component cdx.Component, baseDir, remote string) (*Result
 	return run(path, "push", component.PackageURL, "--input", dir, "--remote", remote)
 }
 
-// purlHash returns a hex-encoded hash of component's purl, used to derive
+// PurlHash returns a hex-encoded hash of component's purl, used to derive
 // both componentDir and manifestPath so pull and push independently agree
-// on the same locations.
-func purlHash(component cdx.Component) string {
+// on the same locations. It's exported so callers building on top of a
+// component's own manifest (e.g. an aggregate build-level manifest) can
+// derive the exact same filename without duplicating the hash logic.
+func PurlHash(component cdx.Component) string {
 	sum := sha256.Sum256([]byte(component.PackageURL))
 	return hex.EncodeToString(sum[:])
 }
@@ -396,13 +398,13 @@ func purlHash(component cdx.Component) string {
 // componentDir returns the deterministic subdirectory of baseDir/layers
 // where a component's pulled artifact lives.
 func componentDir(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "layers", purlHash(component))
+	return filepath.Join(baseDir, "layers", PurlHash(component))
 }
 
 // manifestPath returns the deterministic path of a component's manifest
 // file (see Manifest), under baseDir/manifests.
 func manifestPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "manifests", purlHash(component)+".json")
+	return filepath.Join(baseDir, "manifests", PurlHash(component)+".json")
 }
 
 // pidPath returns the deterministic path of a component's pid file, a
@@ -411,7 +413,7 @@ func manifestPath(baseDir string, component cdx.Component) string {
 // (whether it succeeded or failed), so its existence signals a pull
 // currently in flight for that component.
 func pidPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "manifests", purlHash(component)+".pid")
+	return filepath.Join(baseDir, "manifests", PurlHash(component)+".pid")
 }
 
 // claimPIDFile atomically creates path containing the current process's
