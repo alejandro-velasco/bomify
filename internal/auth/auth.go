@@ -14,6 +14,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"oras.land/oras-go/v2/registry/remote"
@@ -51,6 +52,16 @@ func Store() (credentials.Store, error) {
 var newStore = func() (credentials.Store, error) {
 	return credentials.NewStoreFromDocker(credentials.StoreOptions{
 		DetectDefaultNativeStore: true,
+	})
+}
+
+// newPlaintextStore is Login's fallback when no native credential helper
+// is available: the same config file, but willing to write a credential
+// into it as plaintext rather than refusing. Factored out for the same
+// test-isolation reason as newStore.
+var newPlaintextStore = func() (credentials.Store, error) {
+	return credentials.NewStoreFromDocker(credentials.StoreOptions{
+		AllowPlaintextPut: true,
 	})
 }
 
@@ -122,14 +133,25 @@ func Client() (*orasauth.Client, error) {
 	}, nil
 }
 
+// LoginResult reports how Login stored a successfully verified
+// credential.
+type LoginResult struct {
+	// PlaintextFallback is true when no native credential helper was
+	// available, so the credential was stored as plaintext in the config
+	// file itself instead — the same fallback (with the same "this isn't
+	// encrypted" caveat) `docker login` falls back to when no credsStore
+	// is configured.
+	PlaintextFallback bool
+}
+
 // Login verifies username/password against host and, only if they work,
 // stores them — the same real-login-then-save behavior `docker login`
 // performs, so a mistyped password is caught immediately rather than
 // saved and only discovered on the next push/pull.
-func Login(ctx context.Context, host, username, password string) error {
+func Login(ctx context.Context, host, username, password string) (LoginResult, error) {
 	reg, err := remote.NewRegistry(host)
 	if err != nil {
-		return fmt.Errorf("invalid registry %q: %w", host, err)
+		return LoginResult{}, fmt.Errorf("invalid registry %q: %w", host, err)
 	}
 	return loginToRegistry(ctx, reg, username, password)
 }
@@ -138,18 +160,41 @@ func Login(ctx context.Context, host, username, password string) error {
 // against an already-constructed *remote.Registry — factored out of
 // Login so tests can point it at a local, plain-HTTP fake registry
 // without Login itself growing a test-only way to disable TLS.
-func loginToRegistry(ctx context.Context, reg *remote.Registry, username, password string) error {
+func loginToRegistry(ctx context.Context, reg *remote.Registry, username, password string) (LoginResult, error) {
 	store, err := Store()
 	if err != nil {
-		return err
+		return LoginResult{}, err
 	}
 
 	cred := orasauth.Credential{Username: username, Password: password}
-	if err := credentials.Login(ctx, store, reg, cred); err != nil {
-		return fmt.Errorf("login to %s: %w", reg.Reference.Registry, err)
+
+	err = credentials.Login(ctx, store, reg, cred)
+	if errors.Is(err, credentials.ErrPlaintextPutDisabled) {
+		// credentials.Login already verified username/password against
+		// the registry successfully — only the store step failed, because
+		// no native credential helper is available here. Save as
+		// plaintext instead of blocking the login outright, exactly as
+		// `docker login` itself falls back.
+		// Store under the same normalized hostname credentials.Login
+		// itself would have used (e.g. "docker.io" maps to
+		// "https://index.docker.io/v1/"), so this fallback is found by
+		// the exact same lookups a successful Login's write would be.
+		hostname := credentials.ServerAddressFromRegistry(reg.Reference.Registry)
+
+		plainStore, perr := newPlaintextStore()
+		if perr != nil {
+			return LoginResult{}, perr
+		}
+		if perr := plainStore.Put(ctx, hostname, cred); perr != nil {
+			return LoginResult{}, fmt.Errorf("login to %s: store plaintext credentials: %w", hostname, perr)
+		}
+		return LoginResult{PlaintextFallback: true}, nil
+	}
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("login to %s: %w", reg.Reference.Registry, err)
 	}
 
-	return nil
+	return LoginResult{}, nil
 }
 
 // Logout removes any stored credentials for host.

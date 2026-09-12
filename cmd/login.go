@@ -79,8 +79,15 @@ func runLogin(cmd *cobra.Command, host string, opts *loginOptions) error {
 		return fmt.Errorf("username and password are required")
 	}
 
-	if err := auth.Login(cmd.Context(), host, username, password); err != nil {
+	result, err := auth.Login(cmd.Context(), host, username, password)
+	if err != nil {
 		return err
+	}
+
+	if result.PlaintextFallback {
+		fmt.Fprintln(cmd.ErrOrStderr(), "WARNING! Your credentials are stored unencrypted in your config file.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Configure a credential helper to remove this warning. See")
+		fmt.Fprintln(cmd.ErrOrStderr(), "https://docs.docker.com/engine/reference/commandline/login/#credentials-store")
 	}
 
 	fmt.Fprintln(cmd.OutOrStdout(), "Login Succeeded")

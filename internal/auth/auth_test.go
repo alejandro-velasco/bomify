@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -157,8 +158,12 @@ func TestLoginVerifiesThenStoresCredential(t *testing.T) {
 	host := strings.TrimPrefix(srv.URL, "http://")
 
 	ctx := context.Background()
-	if err := loginToRegistry(ctx, plainHTTPRegistry(host), "alice", "s3cret"); err != nil {
+	result, err := loginToRegistry(ctx, plainHTTPRegistry(host), "alice", "s3cret")
+	if err != nil {
 		t.Fatalf("loginToRegistry() error = %v", err)
+	}
+	if result.PlaintextFallback {
+		t.Error("PlaintextFallback = true, want false (MemoryStore never rejects Put)")
 	}
 
 	got, err := store.Get(ctx, host)
@@ -178,7 +183,7 @@ func TestLoginRejectsWrongCredentialWithoutStoring(t *testing.T) {
 	host := strings.TrimPrefix(srv.URL, "http://")
 
 	ctx := context.Background()
-	err := loginToRegistry(ctx, plainHTTPRegistry(host), "alice", "wrong-password")
+	_, err := loginToRegistry(ctx, plainHTTPRegistry(host), "alice", "wrong-password")
 	if err == nil {
 		t.Fatal("loginToRegistry() error = nil, want error for wrong password")
 	}
@@ -232,5 +237,67 @@ func TestClientUsesSharedStore(t *testing.T) {
 	}
 	if cred.Username != "alice" || cred.Password != "s3cret" {
 		t.Errorf("client.Credential() = %+v, want Username=alice Password=s3cret", cred)
+	}
+}
+
+// TestLoginFallsBackToPlaintextWhenNoNativeHelperAvailable reproduces the
+// real bug this test guards against: on a machine with no native
+// credential helper configured, credentials.Login's store step used to
+// fail outright with ErrPlaintextPutDisabled, blocking `bomify login`
+// entirely even though the credentials were verified as correct. Login
+// should instead fall back to storing them as plaintext, the same
+// fallback `docker login` itself takes.
+func TestLoginFallsBackToPlaintextWhenNoNativeHelperAvailable(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+
+	// A real DynamicStore over a fresh config file with no credsStore
+	// configured and no auto-detection — deterministically reproducing
+	// "no native helper available" regardless of what's actually on the
+	// machine running this test.
+	blockingStore, err := credentials.NewStore(configPath, credentials.StoreOptions{})
+	if err != nil {
+		t.Fatalf("NewStore (blocking): %v", err)
+	}
+	plaintextStore, err := credentials.NewStore(configPath, credentials.StoreOptions{AllowPlaintextPut: true})
+	if err != nil {
+		t.Fatalf("NewStore (plaintext): %v", err)
+	}
+
+	originalStore, originalPlaintext := newStore, newPlaintextStore
+	newStore = func() (credentials.Store, error) { return blockingStore, nil }
+	newPlaintextStore = func() (credentials.Store, error) { return plaintextStore, nil }
+	t.Cleanup(func() {
+		newStore = originalStore
+		newPlaintextStore = originalPlaintext
+	})
+
+	srv := fakeRegistry(t, "alice", "s3cret")
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	ctx := context.Background()
+
+	// Sanity check: without the fallback, this really does fail exactly
+	// as the user reported.
+	if err := blockingStore.Put(ctx, host, orasauth.Credential{Username: "x", Password: "y"}); err == nil {
+		t.Fatal("blockingStore.Put() error = nil, want ErrPlaintextPutDisabled (test setup is wrong)")
+	} else if err := blockingStore.Delete(ctx, host); err != nil {
+		t.Fatalf("clean up sanity-check credential: %v", err)
+	}
+
+	result, err := loginToRegistry(ctx, plainHTTPRegistry(host), "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("loginToRegistry() error = %v", err)
+	}
+	if !result.PlaintextFallback {
+		t.Error("PlaintextFallback = false, want true")
+	}
+
+	got, err := plaintextStore.Get(ctx, host)
+	if err != nil {
+		t.Fatalf("plaintextStore.Get: %v", err)
+	}
+	if got.Username != "alice" || got.Password != "s3cret" {
+		t.Errorf("stored credential = %+v, want Username=alice Password=s3cret", got)
 	}
 }
