@@ -13,13 +13,43 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"bomify/internal/auth"
 	"bomify/internal/plugin"
 )
+
+// setAuth adds HTTP Basic auth to req from bomify's shared credential
+// store (see internal/auth — the same store `bomify login`/`docker
+// login` write), if any credentials are stored for req's host. A host
+// with nothing stored is left as an anonymous request.
+func setAuth(req *http.Request) error {
+	host := req.URL.Host
+	if host == "" {
+		return nil
+	}
+
+	username, password, err := auth.Get(host)
+	if err != nil {
+		return fmt.Errorf("look up credentials for %s: %w", host, err)
+	}
+	if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	return nil
+}
 
 // Pull downloads ref.DownloadURL with a plain HTTP GET and saves it into
 // outputDir as ref.Filename().
 func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
-	resp, err := http.Get(ref.DownloadURL)
+	req, err := http.NewRequest(http.MethodGet, ref.DownloadURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build GET request for %s: %w", ref.DownloadURL, err)
+	}
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", ref.DownloadURL, err)
 	}
@@ -78,6 +108,9 @@ func Push(inputDir string, ref Ref, remote string) (*plugin.Result, error) {
 		return nil, fmt.Errorf("build PUT request for %s: %w", remote, err)
 	}
 	req.ContentLength = info.Size()
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

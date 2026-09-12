@@ -5,13 +5,24 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	gcrv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/package-url/packageurl-go"
 
+	"bomify/internal/auth"
 	"bomify/internal/plugin"
 )
+
+// craneAuth resolves crane's registry credentials from bomify's shared
+// credential store (see internal/auth) rather than crane's own default
+// keychain, so `bomify login` covers this plugin the same way it covers
+// `bomify push`/`bomify pull`. In practice the two end up equivalent —
+// both ultimately read $HOME/.docker/config.json — but this makes that
+// dependency explicit rather than relying on crane's default happening to
+// agree with bomify's own store.
+var craneAuth = crane.WithAuthFromKeychain(authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)))
 
 // Pull downloads ref and saves it into outputDir as an OCI Image Layout,
 // so the pulled artifact is in OCI format rather than a docker-style
@@ -22,7 +33,7 @@ import (
 // images are always content-addressed with SHA-256, so any other
 // algorithm is unsupported and returns an error.
 func Pull(ref string, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
-	img, err := crane.Pull(ref)
+	img, err := crane.Pull(ref, craneAuth)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}
@@ -80,7 +91,7 @@ func Push(inputDir string, purlString string, remote string) (*plugin.Result, er
 		return nil, err
 	}
 
-	if err := crane.Push(img, dst); err != nil {
+	if err := crane.Push(img, dst, craneAuth); err != nil {
 		return nil, fmt.Errorf("push %s to %s: %w", inputDir, dst, err)
 	}
 

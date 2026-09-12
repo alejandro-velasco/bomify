@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,9 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
-	"oras.land/oras-go/v2/registry/remote/auth"
-	"oras.land/oras-go/v2/registry/remote/credentials"
 
+	"bomify/internal/auth"
 	"bomify/internal/build"
 	"bomify/internal/logging"
 	"bomify/internal/ocipull"
@@ -105,26 +103,20 @@ func logPulledLayers(logger *slog.Logger, result ocipull.Result) {
 }
 
 // newRepository builds a remote.Repository for ref, authenticating with
-// whatever credentials the local Docker credential store (as configured by
-// `docker login`, if any) has for its registry. Registries with no stored
-// credentials, or none configured at all, are accessed anonymously.
+// whatever credentials `bomify login` (or `docker login` — they share a
+// store) has for its registry. A registry with no stored credentials is
+// accessed anonymously.
 func newRepository(ref string) (*remote.Repository, error) {
 	repo, err := remote.NewRepository(ref)
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %s: %w", ref, err)
 	}
 
-	credFunc := auth.CredentialFunc(func(ctx context.Context, hostport string) (auth.Credential, error) {
-		return auth.EmptyCredential, nil
-	})
-	if store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{}); err == nil {
-		credFunc = credentials.Credential(store)
+	client, err := auth.Client()
+	if err != nil {
+		return nil, err
 	}
-
-	repo.Client = &auth.Client{
-		Cache:      auth.NewCache(),
-		Credential: credFunc,
-	}
+	repo.Client = client
 
 	return repo, nil
 }

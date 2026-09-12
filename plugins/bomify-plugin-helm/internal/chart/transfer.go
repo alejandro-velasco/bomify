@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,17 +14,57 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
 
+	"bomify/internal/auth"
 	"bomify/internal/plugin"
 )
+
+// newRegistryClient builds a Helm OCI registry client authenticated,
+// for host, with whatever bomify's shared credential store (see
+// internal/auth — the same store `bomify login`/`docker login` write)
+// has for it. A host with nothing stored gets an anonymous client,
+// exactly like a bomify pull/push against a public registry.
+func newRegistryClient(host string) (*registry.Client, error) {
+	var opts []registry.ClientOption
+
+	if host != "" {
+		username, password, err := auth.Get(host)
+		if err != nil {
+			return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
+		}
+		if username != "" || password != "" {
+			opts = append(opts, registry.ClientOptBasicAuth(username, password))
+		}
+	}
+
+	client, err := registry.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create OCI registry client: %w", err)
+	}
+	return client, nil
+}
+
+// registryHost extracts the hostname to look up credentials for from a
+// repository URL, which is either a classic "https://host/path" chart
+// repo or an "oci://host/path" registry reference — both are ordinary
+// URLs as far as net/url is concerned.
+func registryHost(repositoryURL string) string {
+	u, err := url.Parse(repositoryURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
 
 // Pull downloads the chart ref describes and saves it into outputDir as
 // ref.Filename(), using the Helm SDK's pull action — the same
 // implementation behind the `helm pull` CLI command. It supports both
 // classic HTTP(S) chart repositories and OCI registries, per ref.OCI.
 func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
-	registryClient, err := registry.NewClient()
+	host := registryHost(ref.RepositoryURL)
+
+	registryClient, err := newRegistryClient(host)
 	if err != nil {
-		return nil, fmt.Errorf("create OCI registry client: %w", err)
+		return nil, err
 	}
 
 	pull := action.NewPullWithOpts(action.WithConfig(&action.Configuration{RegistryClient: registryClient}))
@@ -40,6 +81,18 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.R
 		chartRef = strings.TrimSuffix(ref.RepositoryURL, "/") + "/" + ref.Name
 	} else {
 		pull.RepoURL = ref.RepositoryURL
+
+		// The OCI registry client above only authenticates OCI pulls;
+		// classic HTTP(S) chart repo auth goes through ChartPathOptions
+		// (embedded in Pull) instead.
+		if host != "" {
+			username, password, err := auth.Get(host)
+			if err != nil {
+				return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
+			}
+			pull.Username = username
+			pull.Password = password
+		}
 	}
 
 	if _, err := pull.Run(chartRef); err != nil {
@@ -75,9 +128,9 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.R
 func Push(inputDir string, ref Ref, remote string) (*plugin.Result, error) {
 	path := filepath.Join(inputDir, ref.Filename())
 
-	registryClient, err := registry.NewClient()
+	registryClient, err := newRegistryClient(registryHost(remote))
 	if err != nil {
-		return nil, fmt.Errorf("create OCI registry client: %w", err)
+		return nil, err
 	}
 
 	push := action.NewPushWithOpts(action.WithPushConfig(&action.Configuration{RegistryClient: registryClient}))

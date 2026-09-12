@@ -17,14 +17,17 @@ make build
 ## Usage
 
 ```sh
+bomify login registry.example.com
 bomify build path/to/bom.cdx.json --tag registry.example.com/myapp:1.0
 bomify mirror path/to/bom.cdx.json --remote registry.example.com/mirror
 bomify packages
 bomify tag registry.example.com/myapp:1.0 registry.example.com/myapp:latest
 bomify pull registry.example.com/myapp:1.0
 bomify push registry.example.com/myapp:1.0
+bomify logout registry.example.com
 ```
 
+- `login`/`logout` authenticate against a registry (default `docker.io`) and store or remove credentials, exactly like `docker login`/`docker logout` — literally the same credential store, so logging in with either tool covers both. Every other command below, and every first-party plugin, draws on whatever's stored here; see [`internal/auth`](internal/auth).
 - `build` pulls each component a CycloneDX SBOM describes and records the SBOM itself as a manifest; `--tag` (repeatable) points a name at that manifest, Docker-style.
 - `mirror` pushes each component to a remote endpoint instead of pulling it locally.
 - `packages` lists built packages by tag, similar to `docker images`.

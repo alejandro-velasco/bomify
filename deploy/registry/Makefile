@@ -1,6 +1,6 @@
 CONTAINER_TOOL ?= docker
 
-.PHONY: generate-certs up down clean
+.PHONY: generate-certs up down restart clean status
 
 generate-certs:
 	./generate-certs.sh
@@ -10,6 +10,8 @@ up: generate-certs
 
 down:
 	$(CONTAINER_TOOL) compose down
+
+restart: down up
 
 clean: down
 	rm -rf certs data
