@@ -118,3 +118,7 @@ on success and exit 0:
 artifact, using the algorithm `bomify build` requested via `--hash`, and
 bomify uses it to verify the artifact against the SBOM's declared hash. A
 plugin that can't compute it (or is handling `push`) should leave it out.
+
+## License
+
+Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE) for the full text.
