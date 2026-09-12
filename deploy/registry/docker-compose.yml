@@ -1,6 +1,7 @@
-# Local test registry for bomify. Certs are generated on the host by
-# generate-certs.sh (see the Makefile — `make up` runs it before starting
-# this), not by a container here. See README.md.
+# Local test registry for bomify. Certs and htpasswd credentials are
+# generated on the host by generate-certs.sh/generate-htpasswd.sh (see the
+# Makefile — `make up` runs both before starting this), not by a
+# container here. See README.md.
 
 services:
   registry:
@@ -8,11 +9,18 @@ services:
     container_name: ${NAME:-bomify-test-registry}
     pull_policy: always
     ports:
-      - "${PORT:-5000}:5000"
+      # 443, not 5000: so a bare "localhost" reference (no port) works —
+      # bomify (and crane/oras/helm) never set PlainHTTP, so they always
+      # assume https, whose default port is 443.
+      - "${PORT:-443}:5000"
     environment:
       REGISTRY_HTTP_ADDR: 0.0.0.0:5000
       REGISTRY_HTTP_TLS_CERTIFICATE: /certs/registry.crt
       REGISTRY_HTTP_TLS_KEY: /certs/registry.key
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: bomify-test-registry
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
     volumes:
       - ./certs:/certs:ro
+      - ./auth:/auth:ro
       - ./data:/var/lib/registry

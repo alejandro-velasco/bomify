@@ -1,11 +1,14 @@
 CONTAINER_TOOL ?= docker
 
-.PHONY: generate-certs up down restart clean status
+.PHONY: generate-certs generate-htpasswd up down restart clean status
 
 generate-certs:
 	./generate-certs.sh
 
-up: generate-certs
+generate-htpasswd:
+	./generate-htpasswd.sh
+
+up: generate-certs generate-htpasswd
 	$(CONTAINER_TOOL) compose up -d
 
 down:
@@ -14,7 +17,7 @@ down:
 restart: down up
 
 clean: down
-	rm -rf certs data
+	rm -rf certs data auth
 
 status:
 	$(CONTAINER_TOOL) compose ps
