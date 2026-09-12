@@ -344,7 +344,11 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 		t.Fatalf("WriteFile leftover: %v", err)
 	}
 
-	if err := os.WriteFile(pidPath(baseDir, component), []byte(strconv.Itoa(deadPID(t))), 0o644); err != nil {
+	pid := pidPath(baseDir, component)
+	if err := os.MkdirAll(filepath.Dir(pid), 0o755); err != nil {
+		t.Fatalf("MkdirAll manifests dir: %v", err)
+	}
+	if err := os.WriteFile(pid, []byte(strconv.Itoa(deadPID(t))), 0o644); err != nil {
 		t.Fatalf("WriteFile pid: %v", err)
 	}
 

@@ -8,23 +8,27 @@
 //	bomify-plugin-<kind> pull --purl '<component purl>' --output <dir>
 //	bomify-plugin-<kind> push --purl '<component purl>' --input <dir> --remote <endpoint>
 //
-// Both dir arguments are the same directory: a subdirectory of the base
-// directory bomify was given, named after a hash of the component's purl,
-// so pull and push (even in separate bomify invocations) independently
-// agree on where the component lives without bomify tracking any state.
+// Both dir arguments are the same directory: "<baseDir>/layers/<hash>",
+// where hash is a hash of the component's purl, so pull and push (even in
+// separate bomify invocations) independently agree on where the
+// component's artifact lives without bomify tracking any state. baseDir
+// splits into two subdirectories: "layers" holds the artifacts
+// themselves (dir, above), and "manifests" holds the bookkeeping
+// described below — a component's manifest and pid file, both named
+// after the same purl hash as its layers directory.
 //
 // pull fetches or builds the component and writes it into dir, which Pull
 // creates before invoking the plugin — the plugin may assume dir already
-// exists. For the duration of the pull, Pull also maintains a "<hash>.pid"
-// file next to dir containing its own process ID; that file's existence
-// signals a pull currently in flight for the component, and it's removed
-// once the pull completes, successfully or not. If the plugin fails, Pull
-// removes dir. On success, Pull writes a "<hash>.json" manifest next to
-// dir (see Manifest); that manifest's existence is the authoritative
-// signal that the pull succeeded. push publishes the component pull
-// already wrote into dir to the remote endpoint; Push fails before
-// invoking the plugin if that manifest doesn't exist (nothing was
-// successfully pulled).
+// exists. For the duration of the pull, Pull also maintains a
+// "manifests/<hash>.pid" file containing its own process ID; that file's
+// existence signals a pull currently in flight for the component, and
+// it's removed once the pull completes, successfully or not. If the
+// plugin fails, Pull removes dir. On success, Pull writes a
+// "manifests/<hash>.json" manifest (see Manifest); that manifest's
+// existence is the authoritative signal that the pull succeeded. push
+// publishes the component pull already wrote into dir to the remote
+// endpoint; Push fails before invoking the plugin if that manifest
+// doesn't exist (nothing was successfully pulled).
 //
 // Pull is safe to call concurrently, even from separate bomify processes,
 // for components that hash to the same directory (e.g. duplicate purls
@@ -218,6 +222,10 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 		}
 
+		if err := os.MkdirAll(filepath.Dir(pid), 0o755); err != nil {
+			return nil, fmt.Errorf("create manifests directory: %w", err)
+		}
+
 		if err := claimPIDFile(pid); err != nil {
 			if os.IsExist(err) {
 				// Lost a race with another process claiming this pull;
@@ -252,9 +260,10 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 // while waiting for its pull to finish.
 const pidPollInterval = 100 * time.Millisecond
 
-// Manifest is the record Pull writes to "<baseDir>/<purl-hash>.json" after
-// a successful pull. Its existence at that path is the authoritative
-// signal that the pull for the component it describes succeeded.
+// Manifest is the record Pull writes to
+// "<baseDir>/manifests/<purl-hash>.json" after a successful pull. Its
+// existence at that path is the authoritative signal that the pull for
+// the component it describes succeeded.
 type Manifest struct {
 	// Component is the SBOM component that was pulled, with the hash
 	// computed during that pull (if any) merged into its Hashes.
@@ -311,6 +320,9 @@ func writeManifest(baseDir string, component cdx.Component, computed Hash) error
 	}
 
 	path := manifestPath(baseDir, component)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create manifests directory: %w", err)
+	}
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write manifest %s: %w", path, err)
 	}
@@ -381,25 +393,25 @@ func purlHash(component cdx.Component) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// componentDir returns the deterministic subdirectory of baseDir where a
-// component's pulled artifact lives.
+// componentDir returns the deterministic subdirectory of baseDir/layers
+// where a component's pulled artifact lives.
 func componentDir(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, purlHash(component))
+	return filepath.Join(baseDir, "layers", purlHash(component))
 }
 
 // manifestPath returns the deterministic path of a component's manifest
-// file (see Manifest), a sibling of its componentDir.
+// file (see Manifest), under baseDir/manifests.
 func manifestPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, purlHash(component)+".json")
+	return filepath.Join(baseDir, "manifests", purlHash(component)+".json")
 }
 
 // pidPath returns the deterministic path of a component's pid file, a
-// sibling of its componentDir and manifest. Pull claims this file for the
-// duration of a pull and removes it once the pull completes (whether it
-// succeeded or failed), so its existence signals a pull currently in
-// flight for that component.
+// sibling of its manifest under baseDir/manifests. Pull claims this file
+// for the duration of a pull and removes it once the pull completes
+// (whether it succeeded or failed), so its existence signals a pull
+// currently in flight for that component.
 func pidPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, purlHash(component)+".pid")
+	return filepath.Join(baseDir, "manifests", purlHash(component)+".pid")
 }
 
 // claimPIDFile atomically creates path containing the current process's
