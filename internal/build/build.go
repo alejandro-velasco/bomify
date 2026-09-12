@@ -88,6 +88,28 @@ func ReadRepositories(baseDir string) (Repositories, error) {
 	return repos, nil
 }
 
+// ResolveTag looks up tag's sbom hash in "<baseDir>/package/repositories.json",
+// returning an error if the repository or version isn't recorded there.
+func ResolveTag(baseDir, tag string) (string, error) {
+	repos, err := ReadRepositories(baseDir)
+	if err != nil {
+		return "", err
+	}
+
+	repo, version := splitTag(tag)
+	versions, ok := repos[repo]
+	if !ok {
+		return "", fmt.Errorf("no such package: %s", tag)
+	}
+
+	sbomHash, ok := versions[version]
+	if !ok {
+		return "", fmt.Errorf("no such package: %s", tag)
+	}
+
+	return sbomHash, nil
+}
+
 // UpdateRepositories maps each of tags to sbomHash in
 // "<baseDir>/package/repositories.json", merging into whatever is already
 // there. A tag without a ":<version>" suffix defaults to version

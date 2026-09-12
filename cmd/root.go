@@ -61,6 +61,7 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(mirrorCmd())
 	rootCmd.AddCommand(packagesCmd())
+	rootCmd.AddCommand(tagCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd, nil
