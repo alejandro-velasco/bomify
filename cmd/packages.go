@@ -12,9 +12,7 @@ import (
 	"bomify/internal/build"
 )
 
-type packagesOptions struct {
-	output string
-}
+type packagesOptions struct{}
 
 // packagesCmd builds the `bomify packages` command.
 func packagesCmd() *cobra.Command {
@@ -29,8 +27,6 @@ func packagesCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.output, "output", "o", "dist", "directory bomify build wrote packages to")
-
 	return cmd
 }
 
@@ -43,7 +39,7 @@ type packageRow struct {
 }
 
 func runPackages(cmd *cobra.Command, opts *packagesOptions) error {
-	repos, err := build.ReadRepositories(opts.output)
+	repos, err := build.ReadRepositories(dataDir)
 	if err != nil {
 		return err
 	}
@@ -55,7 +51,7 @@ func runPackages(cmd *cobra.Command, opts *packagesOptions) error {
 				Repository: repo,
 				Tag:        tag,
 				ID:         id,
-				Created:    manifestCreated(opts.output, id),
+				Created:    manifestCreated(dataDir, id),
 			})
 		}
 	}

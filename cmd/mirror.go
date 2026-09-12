@@ -13,7 +13,6 @@ import (
 
 type mirrorOptions struct {
 	file        string
-	output      string
 	remote      string
 	concurrency int
 }
@@ -36,7 +35,6 @@ func mirrorCmd() *cobra.Command {
 		},
 	}
 
-	mirrorCmd.Flags().StringVarP(&mirrorOpts.output, "output", "o", "dist", "directory bomify build wrote components to")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.remote, "remote", "r", "", "remote endpoint to mirror components to")
 	mirrorCmd.Flags().IntVarP(&mirrorOpts.concurrency, "concurrency", "c", 1, "number of components to push concurrently")
 	_ = mirrorCmd.MarkFlagRequired("remote")
@@ -53,7 +51,7 @@ func runMirror(opts *mirrorOptions, logger *slog.Logger) error {
 
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
-		result, err := plugin.Push(path, component, opts.output, opts.remote)
+		result, err := plugin.Push(path, component, dataDir, opts.remote)
 		if err != nil {
 			return err
 		}

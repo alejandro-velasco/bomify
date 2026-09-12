@@ -4,9 +4,17 @@ package cmd
 import (
 	"bomify/internal/logging"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
+)
+
+var (
+	// DataDir is the directory where bomify stores its data (e.g., built packages).
+	// It is set by the main package.
+	dataDir string
 )
 
 type rootOptions struct {
@@ -15,7 +23,7 @@ type rootOptions struct {
 }
 
 // NewRootCmd builds the bomify root command and wires up its subcommands.
-func NewRootCmd() *cobra.Command {
+func NewRootCmd() (*cobra.Command, error) {
 	rootOpts := &rootOptions{}
 
 	rootCmd := &cobra.Command{
@@ -38,16 +46,31 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
+	defaultDataDir, err := defaultDataDir()
+	if err != nil {
+		return nil, fmt.Errorf("determine default data dir: %w", err)
+	}
+
 	// Disable the auto-generated tag in the documentation.
 	rootCmd.DisableAutoGenTag = true
 
 	rootCmd.PersistentFlags().BoolVar(&rootOpts.verbose, "verbose", false, "enable verbose (debug) logging")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.docsDir, "docs-dir", "", "directory to write documentation to (if empty, no docs are generated)")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory to store bomify data (e.g., built packages)")
 
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(mirrorCmd())
 	rootCmd.AddCommand(packagesCmd())
 	rootCmd.AddCommand(versionCmd())
 
-	return rootCmd
+	return rootCmd, nil
+}
+
+// defaultDataDir returns the default data directory for bomify, which is ~/.bomify.
+func defaultDataDir() (string, error) {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get user home dir: %w", err)
+	}
+	return filepath.Join(dir, ".bomify"), nil
 }

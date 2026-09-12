@@ -15,7 +15,6 @@ import (
 
 type buildOptions struct {
 	file        string
-	output      string
 	clean       bool
 	hash        string
 	concurrency int
@@ -41,7 +40,6 @@ func buildCmd() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVarP(&buildOpts.output, "output", "o", "dist", "directory to write components to")
 	buildCmd.Flags().BoolVar(&buildOpts.clean, "clean", false, "remove the output directory before building")
 	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
@@ -57,9 +55,9 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	}
 
 	if opts.clean {
-		logger.Info("cleaning output directory", "path", opts.output)
-		if err := os.RemoveAll(opts.output); err != nil {
-			return fmt.Errorf("clean output directory %s: %w", opts.output, err)
+		logger.Info("cleaning output directory", "path", dataDir)
+		if err := os.RemoveAll(dataDir); err != nil {
+			return fmt.Errorf("clean output directory %s: %w", dataDir, err)
 		}
 	}
 
@@ -71,7 +69,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
-		result, err := plugin.Pull(path, component, opts.output, hashAlgorithm)
+		result, err := plugin.Pull(path, component, dataDir, hashAlgorithm)
 		if err != nil {
 			return err
 		}
@@ -94,7 +92,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 // this invocation's request, not about the manifest, so it's applied even
 // when the manifest itself already existed.
 func finalizeBuild(opts *buildOptions, logger *slog.Logger) error {
-	sbomHash, skipped, err := build.RecordManifest(opts.output, opts.file)
+	sbomHash, skipped, err := build.RecordManifest(dataDir, opts.file)
 	if err != nil {
 		return fmt.Errorf("record sbom manifest: %w", err)
 	}
@@ -104,7 +102,7 @@ func finalizeBuild(opts *buildOptions, logger *slog.Logger) error {
 		logger.Info("sbom build manifest written", "hash", sbomHash)
 	}
 
-	if err := build.UpdateRepositories(opts.output, opts.tags, sbomHash); err != nil {
+	if err := build.UpdateRepositories(dataDir, opts.tags, sbomHash); err != nil {
 		return fmt.Errorf("update repositories: %w", err)
 	}
 	if len(opts.tags) > 0 {
