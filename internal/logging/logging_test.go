@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/lmittmann/tint"
 )
 
 func TestNewRespectsVerbose(t *testing.T) {
@@ -37,37 +39,41 @@ func TestFromContextDefault(t *testing.T) {
 	}
 }
 
-func TestHandlerOutputsMessageAndAttrs(t *testing.T) {
+func newTintLogger(w *strings.Builder, noColor bool) *slog.Logger {
+	return slog.New(tint.NewTextHandler(w, &tint.Options{
+		Level:   slog.LevelInfo,
+		NoColor: noColor,
+	}))
+}
+
+func TestLoggerOutputsMessageAndAttrs(t *testing.T) {
 	var buf strings.Builder
 
-	h := &handler{out: &buf, level: slog.LevelInfo}
-	logger := slog.New(h).With("component", "nginx")
+	logger := newTintLogger(&buf, true).With("component", "nginx")
 	logger.Info("delegating to plugin", "kind", "docker")
 
 	out := buf.String()
-	for _, want := range []string{"INFO", "delegating to plugin", "component=nginx", "kind=docker"} {
+	for _, want := range []string{"INF", "delegating to plugin", "component=nginx", "kind=docker"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output %q does not contain %q", out, want)
 		}
 	}
 }
 
-func TestHandlerQuotesValuesWithSpaces(t *testing.T) {
+func TestLoggerQuotesValuesWithSpaces(t *testing.T) {
 	var buf strings.Builder
 
-	h := &handler{out: &buf, level: slog.LevelInfo}
-	slog.New(h).Info("msg", "path", "has space")
+	newTintLogger(&buf, true).Info("msg", "path", "has space")
 
 	if want := `path="has space"`; !strings.Contains(buf.String(), want) {
 		t.Errorf("output %q does not contain %q", buf.String(), want)
 	}
 }
 
-func TestHandlerNoColorByDefault(t *testing.T) {
+func TestLoggerNoColorWhenDisabled(t *testing.T) {
 	var buf strings.Builder
 
-	h := &handler{out: &buf, level: slog.LevelInfo, color: false}
-	slog.New(h).Info("msg")
+	newTintLogger(&buf, true).Info("msg")
 
 	if strings.Contains(buf.String(), "\x1b[") {
 		t.Errorf("output %q contains ANSI escape codes with color disabled", buf.String())

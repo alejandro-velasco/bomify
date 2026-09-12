@@ -1,3 +1,9 @@
+#################################################################################
+#
+# Go build settings
+#
+#################################################################################
+
 BINARY := bin/bomify
 
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -10,10 +16,31 @@ LDFLAGS := -X bomify/internal/buildinfo.version=$(VERSION) \
 		   -X bomify/internal/buildinfo.date=$(DATE)       \
 		   -X bomify/internal/buildinfo.goVersion=$(GO_VERSION)
 
-.PHONY: build plugins test run tidy clean
+################################################################################
+#
+# Container build settings
+#
+################################################################################
+
+CONTAINER_TOOL ?= docker
+CONTAINER_REGISTRY ?= docker.io
+CONTAINER_REPO ?= avelasco1423/bomify
+CONTAINER_TAG ?= latest
+CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
+
+################################################################################
+#
+# Build recipes
+#
+################################################################################
+
+.PHONY: build build-container plugins test run tidy clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+build-container:
+	$(CONTAINER_TOOL) build -f Containerfile -t $(CONTAINER_REF) .
 
 plugins:
 	go build -o bin/ ./plugins/...

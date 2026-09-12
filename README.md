@@ -17,9 +17,48 @@ make build
 ## Usage
 
 ```sh
-bomify build  --file path/to/bom.cdx.json --output dist/
-bomify mirror --file path/to/bom.cdx.json --remote registry.example.com/mirror
+bomify build path/to/bom.cdx.json --tag registry.example.com/myapp:1.0
+bomify mirror path/to/bom.cdx.json --remote registry.example.com/mirror
+bomify packages
+bomify tag registry.example.com/myapp:1.0 registry.example.com/myapp:latest
+bomify pull registry.example.com/myapp:1.0
+bomify push registry.example.com/myapp:1.0
 ```
+
+- `build` pulls each component a CycloneDX SBOM describes and records the SBOM itself as a manifest; `--tag` (repeatable) points a name at that manifest, Docker-style.
+- `mirror` pushes each component to a remote endpoint instead of pulling it locally.
+- `packages` lists built packages by tag, similar to `docker images`.
+- `tag` points a new tag at whatever an existing tag currently resolves to, similar to `docker tag`.
+- `pull` downloads a previously published bomify package (its manifest and component layers) from an OCI registry.
+- `push` publishes a build's manifest and component layers as an OCI artifact under `<tag>`, exactly like `docker push` — `<tag>` doubles as both the local bookkeeping key and the destination reference.
+
+All of these read and write bomify's data directory — built components, manifests, and tags — which defaults to `~/.bomify` and can be overridden with `--data-dir`.
+
+## Container
+
+[`Containerfile`](Containerfile) builds a minimal image (multi-stage, running as `nobody`) with `bomify` and its first-party plugins already on `PATH`, buildable with either Docker or Podman:
+
+```sh
+make build-container
+```
+
+which by default builds `avelasco1423/bomify:latest` using `docker`; override `CONTAINER_TOOL`, `CONTAINER_REGISTRY`, `CONTAINER_REPO`, or `CONTAINER_TAG` (e.g. `make build-container CONTAINER_TOOL=podman`) to build elsewhere.
+
+Its entrypoint is `bomify`, so `docker run`/`podman run` arguments are just the CLI arguments you'd otherwise pass locally. For example, to build the `helm.cdx.json` fixture from this repo and tag it, mounting the SBOM in and bomify's data directory out:
+
+```sh
+docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tmp/helm.cdx.json --rm --user $(id -u):$(id -g)  -it avelasco1423/bomify:latest build -t registry.com/container-test:1.0.0 /tmp/helm.cdx.json
+```
+
+`--user $(id -u):$(id -g)` overrides the image's default `nobody` user with
+yours, so files written under the mounted volumes end up owned by you.
+Since the container's `$HOME` is `/tmp` (see [`Containerfile`](Containerfile)),
+bomify's default data directory resolves to `/tmp/.bomify` inside the
+container, hence mounting your own `~/.bomify` there.
+
+## Testing locally
+
+[`deploy/registry/`](deploy/registry) spins up a throwaway, TLS-enabled OCI registry (self-signed cert generated and trusted for you) for exercising `build`/`mirror`/`pull` against a real registry without needing an account anywhere — see its [README](deploy/registry/README.md).
 
 ## Plugins
 
@@ -44,18 +83,28 @@ purl, or an unparseable one, makes the whole run fail immediately.
 Each plugin must implement two subcommands:
 
 ```sh
-bomify-plugin-<kind> pull --component '<JSON-encoded CycloneDX component>' --output <dir>
-bomify-plugin-<kind> push --component '<JSON-encoded CycloneDX component>' --remote <endpoint>
+bomify-plugin-<kind> pull --purl <purl> --output <dir> --hash <algorithm>
+bomify-plugin-<kind> push --purl <purl> --input <dir> --remote <endpoint>
 ```
 
-`bomify build` invokes `pull`, which should fetch or build the component and
-write it into the local directory `dir` (bomify's `--output`, default
-`dist`). `bomify mirror` invokes `push`, which should publish the component
-directly to `remote` (bomify's `--remote`).
+`bomify build` invokes `pull`, which should fetch or build the component
+identified by `--purl` and write it into the local directory `dir` (bomify's
+data directory; see `--data-dir` above). `bomify mirror` invokes `push`,
+which should publish the component found in `dir` to `remote` (bomify's
+`--remote`).
 
 For either subcommand, the plugin must print a single JSON object to stdout
 on success and exit 0:
 
 ```json
-{ "outputPath": "path/to/artifact/or/remote/ref", "message": "optional human-readable summary" }
+{
+  "outputPath": "path/to/artifact/or/remote/ref",
+  "message": "optional human-readable summary",
+  "hash": { "algorithm": "SHA-256", "value": "<hex-digest>" }
+}
 ```
+
+`hash` matters only for `pull`: it's the content hash of the pulled
+artifact, using the algorithm `bomify build` requested via `--hash`, and
+bomify uses it to verify the artifact against the SBOM's declared hash. A
+plugin that can't compute it (or is handling `push`) should leave it out.
