@@ -28,10 +28,12 @@ func buildCmd() *cobra.Command {
 	buildOpts := &buildOptions{}
 
 	buildCmd := &cobra.Command{
-		Use:   "build",
+		Use:   "build <sbom-file>",
 		Short: "Build builds the package described by a CycloneDX SBOM",
 		Long:  "Build reads a CycloneDX SBOM and builds a containing each component it describes.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			buildOpts.file = args[0]
 			if err := runBuild(buildOpts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
@@ -39,13 +41,11 @@ func buildCmd() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVarP(&buildOpts.file, "file", "f", "", "path to the CycloneDX SBOM file (JSON or XML)")
 	buildCmd.Flags().StringVarP(&buildOpts.output, "output", "o", "dist", "directory to write components to")
 	buildCmd.Flags().BoolVar(&buildOpts.clean, "clean", false, "remove the output directory before building")
 	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
-	_ = buildCmd.MarkFlagRequired("file")
 
 	return buildCmd
 }

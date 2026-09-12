@@ -67,6 +67,27 @@ func RepositoriesPath(baseDir string) string {
 	return filepath.Join(baseDir, "package", "repositories.json")
 }
 
+// ReadRepositories reads and parses baseDir's repositories.json,
+// returning an empty Repositories if it doesn't exist yet.
+func ReadRepositories(baseDir string) (Repositories, error) {
+	path := RepositoriesPath(baseDir)
+
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return Repositories{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	repos := Repositories{}
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	return repos, nil
+}
+
 // UpdateRepositories maps each of tags to sbomHash in
 // "<baseDir>/package/repositories.json", merging into whatever is already
 // there. A tag without a ":<version>" suffix defaults to version
@@ -79,13 +100,9 @@ func UpdateRepositories(baseDir string, tags []string, sbomHash string) error {
 
 	path := RepositoriesPath(baseDir)
 
-	repos := Repositories{}
-	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &repos); err != nil {
-			return fmt.Errorf("parse %s: %w", path, err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", path, err)
+	repos, err := ReadRepositories(baseDir)
+	if err != nil {
+		return err
 	}
 
 	for _, tag := range tags {

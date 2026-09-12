@@ -23,10 +23,12 @@ func mirrorCmd() *cobra.Command {
 	mirrorOpts := &mirrorOptions{}
 
 	mirrorCmd := &cobra.Command{
-		Use:   "mirror",
+		Use:   "mirror <sbom-file>",
 		Short: "Mirror publishes the packages described by a CycloneDX SBOM to a remote endpoint",
 		Long:  "Mirror reads a CycloneDX SBOM and publishes each component it describes to a remote endpoint.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mirrorOpts.file = args[0]
 			if err := runMirror(mirrorOpts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("mirror: %w", err)
 			}
@@ -34,11 +36,9 @@ func mirrorCmd() *cobra.Command {
 		},
 	}
 
-	mirrorCmd.Flags().StringVarP(&mirrorOpts.file, "file", "f", "", "path to the CycloneDX SBOM file (JSON or XML)")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.output, "output", "o", "dist", "directory bomify build wrote components to")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.remote, "remote", "r", "", "remote endpoint to mirror components to")
 	mirrorCmd.Flags().IntVarP(&mirrorOpts.concurrency, "concurrency", "c", 1, "number of components to push concurrently")
-	_ = mirrorCmd.MarkFlagRequired("file")
 	_ = mirrorCmd.MarkFlagRequired("remote")
 
 	return mirrorCmd

@@ -46,6 +46,7 @@ func NewRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(mirrorCmd())
+	rootCmd.AddCommand(packagesCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd
