@@ -107,16 +107,35 @@ func Get(serverURL string) (string, string, error) {
 	}
 }
 
+// ErrNotFound signals "no credentials for this server" through a
+// single-method Helper interface — the convention docker-credential-helpers
+// (and adapters built on it, like go-containerregistry's
+// authn.NewKeychainFromHelper) actually use to fall back to anonymous
+// access. It's distinct from Get's own convention for the same situation
+// (empty username/password, nil error): a Helper-consuming adapter that
+// only checks for a non-nil error — as authn.NewKeychainFromHelper does —
+// would otherwise treat Get's empty strings as a real (if blank) Basic
+// credential, and have the registry reject the request as a bad login
+// instead of an anonymous one.
+var ErrNotFound = errors.New("credentials not found")
+
 // HelperFunc adapts a function shaped like Get into any single-method
-// "Get(serverURL string) (string, string, error)" interface. For
-// example, authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)) builds
-// a go-containerregistry Keychain backed directly by this package,
-// without go-containerregistry's authn package needing to know bomify
-// exists.
+// "Get(serverURL string) (string, string, error)" interface, translating
+// "not found" into ErrNotFound as it does — see ErrNotFound for why that
+// translation matters. For example,
+// authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)) builds a
+// go-containerregistry Keychain backed directly by this package, without
+// go-containerregistry's authn package needing to know bomify exists.
 type HelperFunc func(serverURL string) (string, string, error)
 
 // Get implements the single-method Helper shape HelperFunc adapts to.
-func (f HelperFunc) Get(serverURL string) (string, string, error) { return f(serverURL) }
+func (f HelperFunc) Get(serverURL string) (string, string, error) {
+	username, password, err := f(serverURL)
+	if err == nil && username == "" && password == "" {
+		return "", "", ErrNotFound
+	}
+	return username, password, err
+}
 
 // Client returns an oras-go auth.Client backed by the shared store, ready
 // to attach to a remote.Repository or remote.Registry (see
