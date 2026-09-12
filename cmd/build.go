@@ -13,10 +13,11 @@ import (
 )
 
 type buildOptions struct {
-	file   string
-	output string
-	clean  bool
-	hash   string
+	file        string
+	output      string
+	clean       bool
+	hash        string
+	concurrency int
 }
 
 // buildCmd builds the `bomify build` command.
@@ -40,6 +41,7 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().StringVarP(&buildOpts.output, "output", "o", "dist", "directory to write components to")
 	buildCmd.Flags().BoolVar(&buildOpts.clean, "clean", false, "remove the output directory before building")
 	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
+	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	_ = buildCmd.MarkFlagRequired("file")
 
 	return buildCmd
@@ -58,7 +60,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 		}
 	}
 
-	return forEachComponent(opts.file, logger, func(component cdx.Component, log *slog.Logger) error {
+	return forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		kind, path, err := resolvePlugin(component, log)
 		if err != nil {
 			return err

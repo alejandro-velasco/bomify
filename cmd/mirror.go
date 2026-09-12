@@ -12,9 +12,10 @@ import (
 )
 
 type mirrorOptions struct {
-	file   string
-	output string
-	remote string
+	file        string
+	output      string
+	remote      string
+	concurrency int
 }
 
 // mirrorCmd builds the `bomify mirror` command.
@@ -36,6 +37,7 @@ func mirrorCmd() *cobra.Command {
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.file, "file", "f", "", "path to the CycloneDX SBOM file (JSON or XML)")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.output, "output", "o", "dist", "directory bomify build wrote components to")
 	mirrorCmd.Flags().StringVarP(&mirrorOpts.remote, "remote", "r", "", "remote endpoint to mirror components to")
+	mirrorCmd.Flags().IntVarP(&mirrorOpts.concurrency, "concurrency", "c", 1, "number of components to push concurrently")
 	_ = mirrorCmd.MarkFlagRequired("file")
 	_ = mirrorCmd.MarkFlagRequired("remote")
 
@@ -43,7 +45,7 @@ func mirrorCmd() *cobra.Command {
 }
 
 func runMirror(opts *mirrorOptions, logger *slog.Logger) error {
-	return forEachComponent(opts.file, logger, func(component cdx.Component, log *slog.Logger) error {
+	return forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		kind, path, err := resolvePlugin(component, log)
 		if err != nil {
 			return err

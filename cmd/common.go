@@ -5,15 +5,19 @@ import (
 	"log/slog"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"golang.org/x/sync/errgroup"
 
 	"bomify/internal/plugin"
 	"bomify/internal/sbom"
 )
 
 // forEachComponent loads the SBOM at sbomPath, logs a summary, and calls fn
-// for every component it describes. fn receives a logger already scoped to
-// that component.
-func forEachComponent(sbomPath string, logger *slog.Logger, fn func(component cdx.Component, log *slog.Logger) error) error {
+// for every component it describes, running up to concurrency components
+// at once (concurrency < 1 is treated as 1, i.e. sequential). fn receives
+// a logger already scoped to that component. The first error any
+// component returns aborts the rest and is returned, wrapped with that
+// component's identity.
+func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn func(component cdx.Component, log *slog.Logger) error) error {
 	logger.Debug("loading sbom", "path", sbomPath)
 
 	bom, err := sbom.Load(sbomPath)
@@ -31,20 +35,30 @@ func forEachComponent(sbomPath string, logger *slog.Logger, fn func(component cd
 		componentCount = len(*bom.Components)
 	}
 
-	logger.Info("loaded sbom", "name", name, "components", componentCount)
+	logger.Info("loaded sbom", "name", name, "components", componentCount, "concurrency", concurrency)
 
 	if bom.Components == nil {
 		return nil
 	}
 
-	for _, component := range *bom.Components {
-		log := logger.With("component", component.Name, "version", component.Version)
-		if err := fn(component, log); err != nil {
-			return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
-		}
+	if concurrency < 1 {
+		concurrency = 1
 	}
 
-	return nil
+	var g errgroup.Group
+	g.SetLimit(concurrency)
+
+	for _, component := range *bom.Components {
+		g.Go(func() error {
+			log := logger.With("component", component.Name, "version", component.Version)
+			if err := fn(component, log); err != nil {
+				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
+			}
+			return nil
+		})
+	}
+
+	return g.Wait()
 }
 
 // resolvePlugin detects the plugin kind for component and locates its
