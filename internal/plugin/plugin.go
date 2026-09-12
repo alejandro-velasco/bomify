@@ -15,12 +15,16 @@
 //
 // pull fetches or builds the component and writes it into dir, which Pull
 // creates before invoking the plugin — the plugin may assume dir already
-// exists. If the plugin fails, Pull removes dir. On success, Pull writes a
-// "<hash>.json" manifest next to dir (see Manifest); that manifest's
-// existence is the authoritative signal that the pull succeeded. push
-// publishes the component pull already wrote into dir to the remote
-// endpoint; Push fails before invoking the plugin if that manifest doesn't
-// exist (nothing was successfully pulled).
+// exists. For the duration of the pull, Pull also maintains a "<hash>.pid"
+// file next to dir containing its own process ID; that file's existence
+// signals a pull currently in flight for the component, and it's removed
+// once the pull completes, successfully or not. If the plugin fails, Pull
+// removes dir. On success, Pull writes a "<hash>.json" manifest next to
+// dir (see Manifest); that manifest's existence is the authoritative
+// signal that the pull succeeded. push publishes the component pull
+// already wrote into dir to the remote endpoint; Push fails before
+// invoking the plugin if that manifest doesn't exist (nothing was
+// successfully pulled).
 //
 // On success the plugin must print a single JSON object describing the
 // result to stdout (see Result) and exit 0. On failure it should exit
@@ -37,6 +41,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -161,6 +166,13 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 	}
+
+	pid := pidPath(baseDir, component)
+	if err := writePIDFile(pid); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+	defer os.Remove(pid)
 
 	result, err := run(path, "pull", component.PackageURL, "--output", dir, "--hash", string(hashAlgorithm))
 	if err != nil {
@@ -289,6 +301,23 @@ func componentDir(baseDir string, component cdx.Component) string {
 // file (see Manifest), a sibling of its componentDir.
 func manifestPath(baseDir string, component cdx.Component) string {
 	return filepath.Join(baseDir, purlHash(component)+".json")
+}
+
+// pidPath returns the deterministic path of a component's pid file, a
+// sibling of its componentDir and manifest. Pull writes this file for the
+// duration of a pull and removes it once the pull completes (whether it
+// succeeded or failed), so its existence signals a pull currently in
+// flight for that component.
+func pidPath(baseDir string, component cdx.Component) string {
+	return filepath.Join(baseDir, purlHash(component)+".pid")
+}
+
+// writePIDFile records the current process's PID at path.
+func writePIDFile(path string) error {
+	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		return fmt.Errorf("write pid file %s: %w", path, err)
+	}
+	return nil
 }
 
 // run invokes the plugin binary at path with subcommand verb, passing purl

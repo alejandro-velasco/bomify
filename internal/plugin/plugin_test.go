@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 )
@@ -221,6 +222,76 @@ func TestPullFailureDoesNotWriteManifest(t *testing.T) {
 
 	if _, err := os.Stat(manifestPath(baseDir, component)); !os.IsNotExist(err) {
 		t.Errorf("manifest exists after failed Pull: %v", err)
+	}
+}
+
+func TestPullPIDFileRemovedAfterSuccess(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if _, err := os.Stat(pidPath(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("pid file still exists after successful Pull: %v", err)
+	}
+}
+
+func TestPullPIDFileRemovedAfterFailure(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
+
+	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err == nil {
+		t.Fatal("Pull() with failing plugin: expected error, got nil")
+	}
+
+	if _, err := os.Stat(pidPath(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("pid file still exists after failed Pull: %v", err)
+	}
+}
+
+func TestPullPIDFileExistsWhilePullInFlight(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{PackageURL: "slow-me"}
+	pid := pidPath(baseDir, component)
+	proceed := filepath.Join(componentDir(baseDir, component), ".proceed")
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256)
+		done <- err
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(pid); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("pid file never appeared while pull was in flight")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Let the plugin finish now that we've confirmed the pid file exists
+	// mid-pull.
+	if err := os.WriteFile(proceed, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile proceed: %v", err)
+	}
+
+	if err := <-done; err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if _, err := os.Stat(pid); !os.IsNotExist(err) {
+		t.Errorf("pid file still exists after Pull completed: %v", err)
 	}
 }
 

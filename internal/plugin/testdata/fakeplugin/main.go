@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
@@ -55,6 +57,24 @@ func main() {
 		if info, err := os.Stat(*output); err != nil || !info.IsDir() {
 			fmt.Fprintf(os.Stderr, "expected --output %q to already exist as a directory: %v\n", *output, err)
 			os.Exit(1)
+		}
+
+		// "slow-me" tells fakeplugin to block until a ".proceed" file
+		// appears in --output, so tests can observe state while a pull is
+		// still in flight.
+		if *purl == "slow-me" {
+			proceed := filepath.Join(*output, ".proceed")
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if _, err := os.Stat(proceed); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					fmt.Fprintln(os.Stderr, "timed out waiting for .proceed")
+					os.Exit(1)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
 		}
 
 		res = result{
