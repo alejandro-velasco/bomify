@@ -30,13 +30,6 @@ import (
 	"bomify/internal/sbom"
 )
 
-// layerMediaType identifies a pushed component layer: a tar archive of
-// whatever `bomify build` wrote into "<baseDir>/layers/<purl-hash>/" for
-// it, since that can be a single file (bomify-plugin-generic) or a whole
-// directory tree (bomify-plugin-oci's OCI layout) and an OCI layer is
-// always exactly one blob.
-const layerMediaType = "application/vnd.bomify.component.layer.v1.tar"
-
 // Layer describes one component layer that was pushed.
 type Layer struct {
 	Purl string
@@ -166,7 +159,7 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	defer os.Remove(tarPath)
 
 	desc := ocispec.Descriptor{
-		MediaType: layerMediaType,
+		MediaType: ocitransfer.LayerMediaType,
 		Digest:    digest.NewDigestFromEncoded(digest.SHA256, hash),
 		Size:      size,
 		Annotations: map[string]string{

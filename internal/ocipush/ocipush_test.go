@@ -1,9 +1,8 @@
 package ocipush
 
 import (
-	"archive/tar"
 	"context"
-	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,7 +100,27 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	for _, layer := range pullResult.Layers {
-		files := untar(t, layer.Path)
+		var component cdx.Component
+		switch layer.Purl {
+		case singleFileComponent.PackageURL:
+			component = singleFileComponent
+		case multiFileComponent.PackageURL:
+			component = multiFileComponent
+		default:
+			t.Errorf("unexpected layer purl %q", layer.Purl)
+			continue
+		}
+
+		// The whole point of unpacking on pull: the layer must land at
+		// exactly the path `bomify build` would have used for this
+		// component, not some digest-keyed directory of Pull's own
+		// invention.
+		wantPath := filepath.Join(pulledDir, "layers", plugin.PurlHash(component))
+		if layer.Path != wantPath {
+			t.Errorf("layer %s path = %s, want %s", layer.Purl, layer.Path, wantPath)
+		}
+
+		files := readDir(t, layer.Path)
 		switch layer.Purl {
 		case singleFileComponent.PackageURL:
 			if files["artifact"] != "single file contents" {
@@ -111,8 +130,6 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 			if files["oci-layout"] != `{"imageLayoutVersion":"1.0.0"}` || files["blobs/sha256/abcd"] != "fake blob content" {
 				t.Errorf("multi-file layer content = %v", files)
 			}
-		default:
-			t.Errorf("unexpected layer purl %q", layer.Purl)
 		}
 	}
 }
@@ -158,33 +175,35 @@ func writeLayer(t *testing.T, baseDir string, component cdx.Component, files map
 	}
 }
 
-func untar(t *testing.T, path string) map[string]string {
+// readDir reads every regular file under dir into a map keyed by its
+// slash-separated path relative to dir.
+func readDir(t *testing.T, dir string) map[string]string {
 	t.Helper()
 
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open %s: %v", path, err)
-	}
-	defer f.Close()
-
 	files := map[string]string{}
-	tr := tar.NewReader(f)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatalf("tar read %s: %v", path, err)
+			return err
 		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
+		if d.IsDir() {
+			return nil
 		}
-		data, err := io.ReadAll(tr)
+
+		rel, err := filepath.Rel(dir, path)
 		if err != nil {
-			t.Fatalf("tar read content %s: %v", hdr.Name, err)
+			return err
 		}
-		files[hdr.Name] = string(data)
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		files[filepath.ToSlash(rel)] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read dir %s: %v", dir, err)
 	}
 	return files
 }

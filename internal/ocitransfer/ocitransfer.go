@@ -18,6 +18,18 @@ const ArtifactType = "application/vnd.bomify.package.v1+json"
 // layer was pulled from, or is being pushed for.
 const AnnotationPurl = "land.bomify.purl"
 
+// LayerMediaType identifies a pushed component layer: a tar archive of
+// whatever `bomify build` wrote into "<baseDir>/layers/<purl-hash>/" for
+// it, since that can be a single file (bomify-plugin-generic) or a whole
+// directory tree (bomify-plugin-oci's OCI layout) and an OCI layer is
+// always exactly one blob. Pull unpacks a layer with this media type back
+// into "<dataDir>/layers/<purl-hash>/", exactly reproducing the directory
+// build would have produced; any other media type (e.g. a real-world
+// artifact this package format didn't originate) is instead written
+// verbatim as a single file, since Pull has no way to know how to unpack
+// an arbitrary foreign format.
+const LayerMediaType = "application/vnd.bomify.component.layer.v1.tar"
+
 // ProgressFunc is called once per blob (the config, then each layer) before
 // it starts transferring, naming it and giving its total size in bytes. The
 // returned writer receives the raw bytes as they're transferred, for

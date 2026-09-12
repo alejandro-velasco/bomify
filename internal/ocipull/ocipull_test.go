@@ -1,6 +1,8 @@
 package ocipull
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,13 +12,16 @@ import (
 	"sync/atomic"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/oci"
 
 	"bomify/internal/build"
+	"bomify/internal/ocipush"
 	"bomify/internal/ocitransfer"
+	"bomify/internal/plugin"
 )
 
 // pushFixture builds a local OCI-layout store containing one artifact
@@ -232,5 +237,152 @@ func TestLayerFilename(t *testing.T) {
 				t.Errorf("layerFilename(title=%q) = %q, want %q", tt.title, got, tt.want)
 			}
 		})
+	}
+}
+
+func buildTar(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for name, content := range entries {
+		hdr := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(content))}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("write header for %q: %v", name, err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatalf("write content for %q: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestUntarRejectsPathTraversal(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+	}{
+		{"parent traversal", "../escaped.txt"},
+		{"nested parent traversal", "sub/../../escaped.txt"},
+		{"absolute path", "/etc/escaped.txt"},
+		{"bare parent", ".."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := buildTar(t, map[string]string{tt.entry: "malicious content"})
+			destDir := t.TempDir()
+
+			err := untar(tar.NewReader(bytes.NewReader(data)), destDir)
+			if err == nil {
+				t.Fatalf("untar() with entry %q: expected error, got nil", tt.entry)
+			}
+
+			// Nothing should have been written outside destDir: confirm
+			// the parent of destDir (where an escape would land) gained
+			// no new file.
+			parent := filepath.Dir(destDir)
+			escapedPath := filepath.Join(parent, "escaped.txt")
+			if _, err := os.Stat(escapedPath); err == nil {
+				t.Errorf("untar() with entry %q escaped to %s", tt.entry, escapedPath)
+			}
+		})
+	}
+}
+
+// TestPullSkipsExistingUntarredLayer pulls the same bomify-pushed artifact
+// twice into the same dataDir, and confirms the second pull skips
+// re-downloading and re-unpacking the tar layer entirely: no progress
+// call for it, and a marker file planted inside its unpacked directory
+// after the first pull survives the second untouched.
+func TestPullSkipsExistingUntarredLayer(t *testing.T) {
+	component := cdx.Component{
+		Type:       cdx.ComponentTypeContainer,
+		Name:       "multi-file",
+		Version:    "1.0",
+		PackageURL: "pkg:oci/multi-file@1.0?repository_url=example.com/multi-file",
+	}
+
+	baseDir := t.TempDir()
+	layerDir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	if err := os.MkdirAll(layerDir, 0o755); err != nil {
+		t.Fatalf("mkdir layer dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(layerDir, "a"), []byte("aaa"), 0o644); err != nil {
+		t.Fatalf("write layer file: %v", err)
+	}
+
+	sbomBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[` +
+		`{"type":"container","name":"multi-file","version":"1.0","purl":"pkg:oci/multi-file@1.0?repository_url=example.com/multi-file"}` +
+		`]}`)
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	if err := os.WriteFile(sbomPath, sbomBytes, 0o644); err != nil {
+		t.Fatalf("write sbom fixture: %v", err)
+	}
+
+	sbomHash, _, err := build.RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+
+	ctx := context.Background()
+	const tag = "test"
+	if _, err := ocipush.Push(ctx, store, tag, baseDir, sbomHash, 1, nil); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	dataDir := t.TempDir()
+
+	var progressCalls int32
+	progress := func(name string, size int64) io.WriteCloser {
+		atomic.AddInt32(&progressCalls, 1)
+		return ocitransfer.Discard(name, size)
+	}
+
+	result1, err := Pull(ctx, store, tag, dataDir, 1, progress)
+	if err != nil {
+		t.Fatalf("first Pull() error = %v", err)
+	}
+	if len(result1.Layers) != 1 {
+		t.Fatalf("first pull got %d layers, want 1", len(result1.Layers))
+	}
+	if got := atomic.LoadInt32(&progressCalls); got != 2 { // config + the one layer
+		t.Fatalf("progress called %d times on first pull, want 2", got)
+	}
+
+	marker := filepath.Join(result1.Layers[0].Path, "marker")
+	if err := os.WriteFile(marker, []byte("still here"), 0o644); err != nil {
+		t.Fatalf("plant marker file: %v", err)
+	}
+
+	atomic.StoreInt32(&progressCalls, 0)
+
+	result2, err := Pull(ctx, store, tag, dataDir, 1, progress)
+	if err != nil {
+		t.Fatalf("second Pull() error = %v", err)
+	}
+	if len(result2.Layers) != 1 {
+		t.Fatalf("second pull got %d layers, want 1", len(result2.Layers))
+	}
+	if result2.Layers[0].Path != result1.Layers[0].Path {
+		t.Errorf("second pull layer path = %s, want %s", result2.Layers[0].Path, result1.Layers[0].Path)
+	}
+
+	// Only the config should have been re-fetched; the already-unpacked
+	// layer should have been skipped, not re-downloaded.
+	if got := atomic.LoadInt32(&progressCalls); got != 1 {
+		t.Errorf("progress called %d times on second pull, want 1 (config only, layer skipped)", got)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker file gone after second pull, want left in place (skip, not re-unpack): %v", err)
 	}
 }

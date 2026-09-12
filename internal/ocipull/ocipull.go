@@ -8,13 +8,16 @@
 package ocipull
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
@@ -23,6 +26,7 @@ import (
 
 	"bomify/internal/build"
 	"bomify/internal/ocitransfer"
+	"bomify/internal/plugin"
 )
 
 // AnnotationPurl is the OCI descriptor annotation identifying the purl a
@@ -37,7 +41,13 @@ const AnnotationPurl = ocitransfer.AnnotationPurl
 // progress in that case.
 type ProgressFunc = ocitransfer.ProgressFunc
 
-// Layer describes one component layer that was pulled.
+// Layer describes one component layer that was pulled. Path is a
+// directory — "<dataDir>/layers/<purl-hash>/", exactly matching what
+// `bomify build` would have produced for this component — when the layer
+// was one bomify itself pushed (see ocitransfer.LayerMediaType), since
+// Pull unpacks that tar automatically. For any other layer format, Path is
+// the single file Pull wrote the blob to verbatim, since Pull has no way
+// to know how a foreign format ought to be laid out on disk.
 type Layer struct {
 	Purl string
 	Hash string
@@ -135,12 +145,38 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 	}
 
 	purl := desc.Annotations[AnnotationPurl]
-	destPath := filepath.Join(dataDir, "layers", hash, layerFilename(desc))
-
 	label := purl
 	if label == "" {
 		label = hash
 	}
+
+	// A layer bomify itself pushed is a tar of the exact directory `bomify
+	// build` would have produced for this component; unpack it back to
+	// that same "layers/<purl-hash>/" path rather than leaving it as an
+	// opaque .tar file, so packages/tag/push all see this pull as
+	// equivalent to a local build. purl is required to compute that path;
+	// without one (shouldn't happen for anything bomify pushed, but this
+	// is still someone else's registry data) fall through to the generic
+	// verbatim-file path below instead of erroring.
+	if desc.MediaType == ocitransfer.LayerMediaType && purl != "" {
+		destDir := filepath.Join(dataDir, "layers", plugin.PurlHash(cdx.Component{PackageURL: purl}))
+
+		// downloadAndUntar only ever swaps destDir into place as a whole,
+		// complete unpack (see its atomic rename), never a partial one,
+		// so existence alone is enough to trust it's already correct —
+		// same reasoning build.RecordManifest relies on for its own
+		// content-addressed skip.
+		if info, err := os.Stat(destDir); err == nil && info.IsDir() {
+			return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
+		}
+
+		if err := downloadAndUntar(ctx, target, desc, destDir, label, progress); err != nil {
+			return Layer{}, err
+		}
+		return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
+	}
+
+	destPath := filepath.Join(dataDir, "layers", hash, layerFilename(desc))
 	if err := downloadBlob(ctx, target, desc, destPath, label, progress); err != nil {
 		return Layer{}, err
 	}
@@ -215,4 +251,112 @@ func downloadBlob(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.
 	}
 
 	return nil
+}
+
+// downloadAndUntar streams desc's content from target, verifying it
+// against desc's size and digest as it flows, and unpacks it as a tar
+// archive into destDir (replacing it if it already exists). Everything is
+// unpacked into a temporary sibling directory first, then swapped into
+// place only once the download is fully verified: a failed or interrupted
+// download/unpack leaves destDir untouched.
+func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, destDir, label string, progress ProgressFunc) error {
+	rc, err := target.Fetch(ctx, desc)
+	if err != nil {
+		return fmt.Errorf("fetch %s: %w", desc.Digest, err)
+	}
+	defer rc.Close()
+
+	parent := filepath.Dir(destDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", parent, err)
+	}
+
+	tmpDir, err := os.MkdirTemp(parent, ".ocipull-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pw := progress(label, desc.Size)
+	defer pw.Close()
+
+	verified := content.NewVerifyReader(rc, desc)
+	if err := untar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
+		return fmt.Errorf("unpack %s: %w", desc.Digest, err)
+	}
+	if err := verified.Verify(); err != nil {
+		return fmt.Errorf("verify %s: %w", desc.Digest, err)
+	}
+
+	if err := os.RemoveAll(destDir); err != nil {
+		return fmt.Errorf("remove existing %s: %w", destDir, err)
+	}
+	if err := os.Rename(tmpDir, destDir); err != nil {
+		return fmt.Errorf("rename to %s: %w", destDir, err)
+	}
+
+	return nil
+}
+
+// untar extracts every entry from tr into destDir. Entry names come from
+// the tar stream — untrusted input, whether the artifact is bomify's own
+// or a foreign one — so each is rejected if, once cleaned, it would
+// resolve outside destDir (a "zip slip" path-traversal attempt via "../"
+// segments or an absolute path) rather than being joined into a
+// filesystem write.
+func untar(tr *tar.Reader, destDir string) error {
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		// hdr.Name is always "/"-separated per the tar format spec,
+		// regardless of host OS, so check its rawest form for a leading
+		// "/" here: filepath.IsAbs on the FromSlash-converted name isn't
+		// portable for this — on Windows it only considers a
+		// drive-lettered path absolute, so a POSIX-style "/etc/..." entry
+		// would silently pass that check while still not being a path
+		// this destDir-relative extraction should ever honor.
+		if strings.HasPrefix(hdr.Name, "/") {
+			return fmt.Errorf("unsafe tar entry name %q: absolute path", hdr.Name)
+		}
+
+		name := filepath.Clean(filepath.FromSlash(hdr.Name))
+		if name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("unsafe tar entry name %q: escapes destination", hdr.Name)
+		}
+		target := filepath.Join(destDir, name)
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(hdr.Mode) & 0o777
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
+		default:
+			// Bomify's own tar layers only ever contain regular files
+			// (see ocipush's tarDir); silently skip anything else
+			// (symlinks, devices, ...) a foreign tar might contain
+			// rather than trying to recreate it.
+		}
+	}
 }
