@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +294,206 @@ func TestPullPIDFileExistsWhilePullInFlight(t *testing.T) {
 	if _, err := os.Stat(pid); !os.IsNotExist(err) {
 		t.Errorf("pid file still exists after Pull completed: %v", err)
 	}
+}
+
+func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	invokeLog := newInvocationLog(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	dir := componentDir(baseDir, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "existing-hash"}); err != nil {
+		t.Fatalf("writeManifest: %v", err)
+	}
+
+	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256)
+	if err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if result.Hash.Value != "existing-hash" {
+		t.Errorf("Hash.Value = %q, want %q", result.Hash.Value, "existing-hash")
+	}
+
+	if got := invokeLog.count(t); got != 0 {
+		t.Errorf("plugin was invoked %d times, want 0 (should have reused the manifest)", got)
+	}
+}
+
+func TestPullTakesOverStalePIDFile(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	invokeLog := newInvocationLog(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	dir := componentDir(baseDir, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// A leftover from the crashed prior attempt, to prove the stale
+	// directory gets discarded rather than reused.
+	if err := os.WriteFile(filepath.Join(dir, "leftover.txt"), []byte("stale"), 0o644); err != nil {
+		t.Fatalf("WriteFile leftover: %v", err)
+	}
+
+	if err := os.WriteFile(pidPath(baseDir, component), []byte(strconv.Itoa(deadPID(t))), 0o644); err != nil {
+		t.Fatalf("WriteFile pid: %v", err)
+	}
+
+	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256)
+	if err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if got := invokeLog.count(t); got != 1 {
+		t.Errorf("plugin was invoked %d times, want 1 (fresh pull after stale pid)", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "leftover.txt")); !os.IsNotExist(err) {
+		t.Errorf("leftover file from the stale directory still exists: %v", err)
+	}
+
+	want := filepath.ToSlash(filepath.Join(dir, "nginx-1.27.tar"))
+	if got := filepath.ToSlash(result.OutputPath); got != want {
+		t.Errorf("OutputPath = %q, want %q", got, want)
+	}
+}
+
+func TestPullConcurrentCallersPullOnce(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	invokeLog := newInvocationLog(t)
+
+	component := cdx.Component{PackageURL: "slow-me"}
+	pid := pidPath(baseDir, component)
+	proceed := filepath.Join(componentDir(baseDir, component), ".proceed")
+
+	const callers = 5
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			_, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256)
+			errs <- err
+		}()
+	}
+
+	// Wait for whichever caller won the race to claim the pull, then let
+	// it (and thus everyone waiting on it) finish.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(pid); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("pid file never appeared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := os.WriteFile(proceed, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile proceed: %v", err)
+	}
+
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("caller %d: Pull returned error: %v", i, err)
+		}
+	}
+
+	if got := invokeLog.count(t); got != 1 {
+		t.Errorf("plugin was invoked %d times across %d concurrent callers, want 1", got, callers)
+	}
+}
+
+func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{
+		Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "expected-hash"}},
+	}
+
+	dir := componentDir(baseDir, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "different-hash"}); err != nil {
+		t.Fatalf("writeManifest: %v", err)
+	}
+
+	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err == nil {
+		t.Fatal("Pull() with mismatched reused hash: expected error, got nil")
+	}
+
+	// Unlike a fresh-pull mismatch, Pull doesn't own this state (it never
+	// pulled it), so it must leave it alone rather than deleting it just
+	// because this one caller's expectation didn't match.
+	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
+		t.Errorf("manifest was removed after a reused-hash mismatch: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("componentDir was removed after a reused-hash mismatch: %v", err)
+	}
+}
+
+// invocationLog is a path fakeplugin appends a line to on every run, via
+// the FAKEPLUGIN_INVOKE_LOG environment variable, so tests can count how
+// many times it actually executed.
+type invocationLog string
+
+// newInvocationLog points FAKEPLUGIN_INVOKE_LOG at a fresh log file for
+// the duration of the calling test.
+func newInvocationLog(t *testing.T) invocationLog {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "invocations.log")
+	t.Setenv("FAKEPLUGIN_INVOKE_LOG", path)
+
+	return invocationLog(path)
+}
+
+// count returns how many lines (invocations) are in the log so far.
+func (l invocationLog) count(t *testing.T) int {
+	t.Helper()
+
+	data, err := os.ReadFile(string(l))
+	if os.IsNotExist(err) {
+		return 0
+	}
+	if err != nil {
+		t.Fatalf("ReadFile invocation log: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return 0
+	}
+	return len(lines)
+}
+
+// deadPID starts and waits out a short-lived throwaway process, returning
+// a pid that is guaranteed to no longer belong to any running process.
+func deadPID(t *testing.T) int {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start throwaway process: %v", err)
+	}
+
+	pid := cmd.Process.Pid
+	_ = cmd.Wait()
+
+	return pid
 }
 
 func TestMergeHash(t *testing.T) {

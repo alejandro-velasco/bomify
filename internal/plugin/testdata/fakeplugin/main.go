@@ -42,6 +42,16 @@ func main() {
 	hashAlgorithm := fs.String("hash", "", "hash algorithm to report (pull)")
 	fs.Parse(os.Args[2:])
 
+	// Tests that need to count how many times fakeplugin actually ran
+	// (e.g. to prove concurrent Pull callers only pull once) point this
+	// at a log file; every invocation appends a line to it.
+	if logPath := os.Getenv("FAKEPLUGIN_INVOKE_LOG"); logPath != "" {
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			f.WriteString(verb + " " + *purl + "\n")
+			f.Close()
+		}
+	}
+
 	// "fail-me" is a magic purl value tests use to simulate a plugin
 	// failure, since it's never a real, parseable purl.
 	if *purl == "fail-me" {

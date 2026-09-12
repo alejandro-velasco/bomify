@@ -26,6 +26,17 @@
 // invoking the plugin if that manifest doesn't exist (nothing was
 // successfully pulled).
 //
+// Pull is safe to call concurrently, even from separate bomify processes,
+// for components that hash to the same directory (e.g. duplicate purls
+// within or across SBOMs): if a pid file already names a live process,
+// Pull waits for it instead of pulling again; if that pid file is stale
+// (its process is gone without cleaning up, e.g. it crashed), Pull
+// discards the leftover directory and pulls fresh; if neither a pid file
+// nor a manifest exists, Pull pulls; if a manifest already exists and
+// nothing is pulling, Pull reuses it. Whichever of those applies, Pull
+// finishes by verifying the resulting hash as described below, so even a
+// reused result fails if it doesn't match this call's component.
+//
 // On success the plugin must print a single JSON object describing the
 // result to stdout (see Result) and exit 0. On failure it should exit
 // non-zero; anything written to stderr is surfaced in bomify's error.
@@ -41,8 +52,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
@@ -156,42 +170,87 @@ func Find(kind string) (string, error) {
 // hashAlgorithm is passed to the plugin via --hash, asking it to report
 // the pulled artifact's content hash for that algorithm in the result. If
 // component declares its own hash for hashAlgorithm (in its SBOM
-// metadata), Pull verifies the plugin's reported hash matches it, removing
-// dir and failing on a mismatch. If either side has no hash to compare
-// (the plugin couldn't compute one, or the SBOM doesn't declare one for
-// this algorithm), verification is skipped.
+// metadata), Pull verifies the reported hash matches it — whether that
+// hash came from a pull this call just performed (removing dir and
+// failing on a mismatch) or from reusing a concurrent or prior pull's
+// result (failing without touching dir, since this call doesn't own it).
+// If either side has no hash to compare (the plugin couldn't compute one,
+// or the SBOM doesn't declare one for this algorithm), verification is
+// skipped.
+//
+// Pull is safe to call concurrently — including from separate bomify
+// processes — for components that hash to the same directory (e.g.
+// duplicate purls within or across SBOMs). See the package doc comment
+// for the exact rules it follows to avoid pulling the same component
+// twice at once.
 func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm) (*Result, error) {
 	dir := componentDir(baseDir, component)
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create component directory %s: %w", dir, err)
-	}
-
 	pid := pidPath(baseDir, component)
-	if err := writePIDFile(pid); err != nil {
-		os.RemoveAll(dir)
-		return nil, err
-	}
-	defer os.Remove(pid)
+	manifest := manifestPath(baseDir, component)
 
-	result, err := run(path, "pull", component.PackageURL, "--output", dir, "--hash", string(hashAlgorithm))
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, err
-	}
+	for {
+		if owner, ok := readPID(pid); ok {
+			if processAlive(owner) {
+				waitForPIDFile(pid, owner)
+				continue
+			}
 
-	if err := verifyHash(component, result); err != nil {
-		os.RemoveAll(dir)
-		return nil, err
-	}
+			// Stale pid file: a previous pull crashed before cleaning up.
+			// Discard its leftovers and pull fresh below.
+			os.Remove(pid)
+			os.RemoveAll(dir)
+		} else if m, err := readManifest(manifest); err == nil {
+			// Nothing is pulling right now, and a prior pull already
+			// succeeded: reuse it instead of pulling again. Still verify
+			// it against this call's component before trusting it.
+			result := &Result{
+				OutputPath: dir,
+				Message:    "reused prior pull",
+				Hash:       manifestHash(m, hashAlgorithm),
+			}
+			if err := verifyHash(component, result); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
 
-	if err := writeManifest(baseDir, component, result.Hash); err != nil {
-		os.RemoveAll(dir)
-		return nil, err
-	}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
+		}
 
-	return result, nil
+		if err := claimPIDFile(pid); err != nil {
+			if os.IsExist(err) {
+				// Lost a race with another process claiming this pull;
+				// re-evaluate from the top instead of pulling twice.
+				continue
+			}
+			return nil, fmt.Errorf("claim pid file %s: %w", pid, err)
+		}
+		defer os.Remove(pid)
+
+		result, err := run(path, "pull", component.PackageURL, "--output", dir, "--hash", string(hashAlgorithm))
+		if err != nil {
+			os.RemoveAll(dir)
+			return nil, err
+		}
+
+		if err := verifyHash(component, result); err != nil {
+			os.RemoveAll(dir)
+			return nil, err
+		}
+
+		if err := writeManifest(baseDir, component, result.Hash); err != nil {
+			os.RemoveAll(dir)
+			return nil, err
+		}
+
+		return result, nil
+	}
 }
+
+// pidPollInterval is how often Pull re-checks another process's pid file
+// while waiting for its pull to finish.
+const pidPollInterval = 100 * time.Millisecond
 
 // Manifest is the record Pull writes to "<baseDir>/<purl-hash>.json" after
 // a successful pull. Its existence at that path is the authoritative
@@ -200,6 +259,37 @@ type Manifest struct {
 	// Component is the SBOM component that was pulled, with the hash
 	// computed during that pull (if any) merged into its Hashes.
 	Component cdx.Component `json:"component"`
+}
+
+// readManifest reads and parses the manifest at path.
+func readManifest(path string) (Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, err
+	}
+
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return Manifest{}, fmt.Errorf("parse manifest %s: %w", path, err)
+	}
+
+	return m, nil
+}
+
+// manifestHash returns the Hash m's component declares for hashAlgorithm,
+// or the zero Hash if it declares none for that algorithm.
+func manifestHash(m Manifest, hashAlgorithm cdx.HashAlgorithm) Hash {
+	if m.Component.Hashes == nil {
+		return Hash{}
+	}
+
+	for _, h := range *m.Component.Hashes {
+		if h.Algorithm == hashAlgorithm {
+			return Hash{Algorithm: h.Algorithm, Value: h.Value}
+		}
+	}
+
+	return Hash{}
 }
 
 // writeManifest records component (with computed merged into its Hashes,
@@ -304,7 +394,7 @@ func manifestPath(baseDir string, component cdx.Component) string {
 }
 
 // pidPath returns the deterministic path of a component's pid file, a
-// sibling of its componentDir and manifest. Pull writes this file for the
+// sibling of its componentDir and manifest. Pull claims this file for the
 // duration of a pull and removes it once the pull completes (whether it
 // succeeded or failed), so its existence signals a pull currently in
 // flight for that component.
@@ -312,12 +402,76 @@ func pidPath(baseDir string, component cdx.Component) string {
 	return filepath.Join(baseDir, purlHash(component)+".pid")
 }
 
-// writePIDFile records the current process's PID at path.
-func writePIDFile(path string) error {
-	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+// claimPIDFile atomically creates path containing the current process's
+// pid. It returns an error satisfying os.IsExist if path already exists,
+// meaning another process claimed it first.
+func claimPIDFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(strconv.Itoa(os.Getpid())); err != nil {
 		return fmt.Errorf("write pid file %s: %w", path, err)
 	}
+
 	return nil
+}
+
+// readPID reads the pid recorded at path. ok is false if the file doesn't
+// exist or doesn't contain a valid pid.
+func readPID(path string) (pid int, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, false
+	}
+
+	return n, true
+}
+
+// processAlive reports whether a process with the given pid currently
+// exists.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+
+	if runtime.GOOS == "windows" {
+		// On Windows, os.FindProcess itself opens (and so validates) a
+		// handle to the process, so success here already confirms it
+		// exists.
+		return true
+	}
+
+	// On POSIX, os.FindProcess always succeeds regardless of whether pid
+	// exists; signal 0 probes for real existence without affecting it.
+	return process.Signal(syscall.Signal(0)) == nil
+}
+
+// waitForPIDFile blocks until path is removed (the process that owns it
+// finished) or owner is no longer alive (it crashed without cleaning up),
+// whichever happens first.
+func waitForPIDFile(path string, owner int) {
+	for {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return
+		}
+		if !processAlive(owner) {
+			return
+		}
+		time.Sleep(pidPollInterval)
+	}
 }
 
 // run invokes the plugin binary at path with subcommand verb, passing purl
