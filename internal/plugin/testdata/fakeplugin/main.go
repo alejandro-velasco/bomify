@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/package-url/packageurl-go"
 )
 
 type hash struct {
@@ -26,29 +27,27 @@ type result struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin <pull|push> --component <json> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin <pull|push> --purl <purl> ...")
 		os.Exit(1)
 	}
 
 	verb := os.Args[1]
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
-	componentJSON := fs.String("component", "", "JSON-encoded CycloneDX component")
+	purl := fs.String("purl", "", "component purl")
 	output := fs.String("output", "", "output directory (pull)")
 	input := fs.String("input", "", "input directory (push)")
 	remote := fs.String("remote", "", "remote endpoint (push)")
 	hashAlgorithm := fs.String("hash", "", "hash algorithm to report (pull)")
 	fs.Parse(os.Args[2:])
 
-	var component cdx.Component
-	if err := json.Unmarshal([]byte(*componentJSON), &component); err != nil {
-		fmt.Fprintf(os.Stderr, "decode component: %v\n", err)
-		os.Exit(1)
-	}
-
-	if component.Name == "fail-me" {
+	// "fail-me" is a magic purl value tests use to simulate a plugin
+	// failure, since it's never a real, parseable purl.
+	if *purl == "fail-me" {
 		fmt.Fprintln(os.Stderr, "simulated failure")
 		os.Exit(1)
 	}
+
+	name, version := nameVersion(*purl)
 
 	var res result
 	switch verb {
@@ -59,16 +58,16 @@ func main() {
 		}
 
 		res = result{
-			OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, component.Name, component.Version),
+			OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, name, version),
 			Message:    "fake pull ok",
 		}
 
-		// "nohash-*" components simulate a plugin that can't compute the
+		// "nohash-*" purls simulate a plugin that can't compute the
 		// requested hash algorithm and leaves Hash unset.
-		if *hashAlgorithm != "" && !strings.HasPrefix(component.Name, "nohash-") {
+		if *hashAlgorithm != "" && !strings.HasPrefix(*purl, "nohash-") {
 			res.Hash = hash{
 				Algorithm: cdx.HashAlgorithm(*hashAlgorithm),
-				Value:     fmt.Sprintf("fakehash-%s-%s", component.Name, component.Version),
+				Value:     fmt.Sprintf("fakehash-%s-%s", name, version),
 			}
 		}
 	case "push":
@@ -78,7 +77,7 @@ func main() {
 		}
 
 		res = result{
-			OutputPath: fmt.Sprintf("%s/%s:%s", *remote, component.Name, component.Version),
+			OutputPath: fmt.Sprintf("%s/%s:%s", *remote, name, version),
 			Message:    "fake push ok",
 		}
 	default:
@@ -90,4 +89,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "encode result: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// nameVersion extracts a name and version from purlString, falling back to
+// treating the whole string as the name when it isn't a real purl (as with
+// the synthetic "nohash-*" values tests use).
+func nameVersion(purlString string) (name, version string) {
+	p, err := packageurl.FromString(purlString)
+	if err != nil {
+		return purlString, "unknown"
+	}
+	return p.Name, p.Version
 }

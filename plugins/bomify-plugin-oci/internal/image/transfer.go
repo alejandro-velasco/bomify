@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	gcrv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/package-url/packageurl-go"
 
 	"bomify/internal/plugin"
 )
@@ -20,7 +21,7 @@ import (
 // hashAlgorithm is the hash bomify wants reported in the result. OCI/docker
 // images are always content-addressed with SHA-256, so any other
 // algorithm is unsupported and returns an error.
-func Pull(ref string, component cdx.Component, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
+func Pull(ref string, outputDir string, hashAlgorithm cdx.HashAlgorithm) (*plugin.Result, error) {
 	img, err := crane.Pull(ref)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
@@ -55,7 +56,7 @@ func digestHash(img gcrv1.Image, hashAlgorithm cdx.HashAlgorithm) (plugin.Hash, 
 
 // Push reads the OCI Image Layout a prior Pull wrote into inputDir and
 // pushes it to a tag under remote.
-func Push(inputDir string, component cdx.Component, remote string) (*plugin.Result, error) {
+func Push(inputDir string, purlString string, remote string) (*plugin.Result, error) {
 	idx, err := layout.ImageIndexFromPath(inputDir)
 	if err != nil {
 		return nil, fmt.Errorf("read OCI layout at %s: %w", inputDir, err)
@@ -74,7 +75,11 @@ func Push(inputDir string, component cdx.Component, remote string) (*plugin.Resu
 		return nil, fmt.Errorf("read image from OCI layout at %s: %w", inputDir, err)
 	}
 
-	dst := destinationReference(remote, component)
+	dst, err := destinationReference(remote, purlString)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := crane.Push(img, dst); err != nil {
 		return nil, fmt.Errorf("push %s to %s: %w", inputDir, dst, err)
 	}
@@ -82,7 +87,19 @@ func Push(inputDir string, component cdx.Component, remote string) (*plugin.Resu
 	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", inputDir, dst)}, nil
 }
 
-func destinationReference(remote string, component cdx.Component) string {
+// destinationReference derives a "<remote>/<name>:<version>" reference from
+// purlString, defaulting to "latest" when it declares no version.
+func destinationReference(remote, purlString string) (string, error) {
+	purl, err := packageurl.FromString(purlString)
+	if err != nil {
+		return "", fmt.Errorf("parse purl %q: %w", purlString, err)
+	}
+
+	version := purl.Version
+	if version == "" {
+		version = "latest"
+	}
+
 	remote = strings.TrimSuffix(remote, "/")
-	return fmt.Sprintf("%s/%s:%s", remote, component.Name, versionOrLatest(component))
+	return fmt.Sprintf("%s/%s:%s", remote, purl.Name, version), nil
 }

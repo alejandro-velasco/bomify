@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,7 @@ func TestPullFailureRemovesComponentDir(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
 
-	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
 	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
@@ -131,7 +132,7 @@ func TestPullHashSkippedWhenPluginOmitsHash(t *testing.T) {
 	// can't compute the requested algorithm. A declared-but-wrong SBOM
 	// hash must not cause a failure since there's nothing to compare.
 	component := cdx.Component{
-		Name: "nohash-nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27",
+		Name: "nginx", Version: "1.27", PackageURL: "nohash-nginx",
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
@@ -169,16 +170,104 @@ func TestNormalizeHashAlgorithmUnrecognized(t *testing.T) {
 	}
 }
 
+func TestPullWritesManifest(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(manifestPath(baseDir, component))
+	if err != nil {
+		t.Fatalf("ReadFile manifest: %v", err)
+	}
+
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal manifest: %v", err)
+	}
+
+	if m.Component.Name != "nginx" || m.Component.Version != "1.27" {
+		t.Errorf("manifest component = %+v, want name=nginx version=1.27", m.Component)
+	}
+
+	if m.Component.Hashes == nil {
+		t.Fatal("manifest component has no Hashes")
+	}
+
+	found := false
+	for _, h := range *m.Component.Hashes {
+		if h.Algorithm == cdx.HashAlgoSHA256 && h.Value == "fakehash-nginx-1.27" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("manifest component Hashes = %+v, want the computed SHA-256 hash included", *m.Component.Hashes)
+	}
+}
+
+func TestPullFailureDoesNotWriteManifest(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
+
+	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256); err == nil {
+		t.Fatal("Pull() with failing plugin: expected error, got nil")
+	}
+
+	if _, err := os.Stat(manifestPath(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("manifest exists after failed Pull: %v", err)
+	}
+}
+
+func TestMergeHash(t *testing.T) {
+	existing := []cdx.Hash{{Algorithm: cdx.HashAlgoMD5, Value: "existing-md5"}}
+
+	got := mergeHash(&existing, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "new-sha256"})
+	if got == nil || len(*got) != 2 {
+		t.Fatalf("mergeHash() append = %v, want 2 entries", got)
+	}
+
+	got = mergeHash(got, Hash{Algorithm: cdx.HashAlgoMD5, Value: "updated-md5"})
+	if got == nil || len(*got) != 2 {
+		t.Fatalf("mergeHash() replace = %v, want 2 entries", got)
+	}
+	for _, h := range *got {
+		if h.Algorithm == cdx.HashAlgoMD5 && h.Value != "updated-md5" {
+			t.Errorf("MD5 value = %q, want %q", h.Value, "updated-md5")
+		}
+	}
+
+	got = mergeHash(nil, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "only"})
+	if got == nil || len(*got) != 1 {
+		t.Fatalf("mergeHash(nil, ...) = %v, want 1 entry", got)
+	}
+}
+
+// simulatePriorPull creates baseDir's component directory and manifest as
+// a successful Pull would, so Push has something to find.
+func simulatePriorPull(t *testing.T, baseDir string, component cdx.Component) {
+	t.Helper()
+
+	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := writeManifest(baseDir, component, Hash{}); err != nil {
+		t.Fatalf("writeManifest: %v", err)
+	}
+}
+
 func TestPush(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	// Simulate a prior successful Pull, which Push requires.
-	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
+	simulatePriorPull(t, baseDir, component)
 
 	result, err := Push(bin, component, baseDir, "registry.example.com/mirror")
 	if err != nil {
@@ -204,11 +293,9 @@ func TestPushFailure(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
 
-	component := cdx.Component{Name: "fail-me", Version: "1.0.0"}
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
+	simulatePriorPull(t, baseDir, component)
 
 	if _, err := Push(bin, component, baseDir, "registry.example.com/mirror"); err == nil {
 		t.Fatal("Push() with failing plugin: expected error, got nil")

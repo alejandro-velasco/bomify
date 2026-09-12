@@ -5,8 +5,8 @@
 // A plugin for "kind" must be named "bomify-plugin-<kind>", be discoverable
 // on PATH, and implement two subcommands:
 //
-//	bomify-plugin-<kind> pull --component '<JSON-encoded CycloneDX component>' --output <dir>
-//	bomify-plugin-<kind> push --component '<JSON-encoded CycloneDX component>' --input <dir> --remote <endpoint>
+//	bomify-plugin-<kind> pull --purl '<component purl>' --output <dir>
+//	bomify-plugin-<kind> push --purl '<component purl>' --input <dir> --remote <endpoint>
 //
 // Both dir arguments are the same directory: a subdirectory of the base
 // directory bomify was given, named after a hash of the component's purl,
@@ -15,9 +15,12 @@
 //
 // pull fetches or builds the component and writes it into dir, which Pull
 // creates before invoking the plugin — the plugin may assume dir already
-// exists. If the plugin fails, Pull removes dir. push publishes the
-// component pull already wrote into dir to the remote endpoint; Push fails
-// before invoking the plugin if dir doesn't exist (nothing was pulled).
+// exists. If the plugin fails, Pull removes dir. On success, Pull writes a
+// "<hash>.json" manifest next to dir (see Manifest); that manifest's
+// existence is the authoritative signal that the pull succeeded. push
+// publishes the component pull already wrote into dir to the remote
+// endpoint; Push fails before invoking the plugin if that manifest doesn't
+// exist (nothing was successfully pulled).
 //
 // On success the plugin must print a single JSON object describing the
 // result to stdout (see Result) and exit 0. On failure it should exit
@@ -103,20 +106,12 @@ func NormalizeHashAlgorithm(name string) (cdx.HashAlgorithm, error) {
 // print to stdout on success. Plugins should call this instead of
 // re-implementing JSON encoding themselves.
 func (r *Result) Print(w io.Writer) error {
-	if err := json.NewEncoder(w).Encode(r); err != nil {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
 		return fmt.Errorf("encode result: %w", err)
 	}
 	return nil
-}
-
-// DecodeComponent unmarshals the JSON-encoded CycloneDX component a plugin
-// receives via its --component flag.
-func DecodeComponent(componentJSON string) (cdx.Component, error) {
-	var component cdx.Component
-	if err := json.Unmarshal([]byte(componentJSON), &component); err != nil {
-		return cdx.Component{}, fmt.Errorf("decode component: %w", err)
-	}
-	return component, nil
 }
 
 // Detect returns the plugin kind corresponding to the given SBOM component.
@@ -167,7 +162,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 		return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 	}
 
-	result, err := run(path, "pull", component, "--output", dir, "--hash", string(hashAlgorithm))
+	result, err := run(path, "pull", component.PackageURL, "--output", dir, "--hash", string(hashAlgorithm))
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, err
@@ -178,7 +173,67 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 		return nil, err
 	}
 
+	if err := writeManifest(baseDir, component, result.Hash); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+
 	return result, nil
+}
+
+// Manifest is the record Pull writes to "<baseDir>/<purl-hash>.json" after
+// a successful pull. Its existence at that path is the authoritative
+// signal that the pull for the component it describes succeeded.
+type Manifest struct {
+	// Component is the SBOM component that was pulled, with the hash
+	// computed during that pull (if any) merged into its Hashes.
+	Component cdx.Component `json:"component"`
+}
+
+// writeManifest records component (with computed merged into its Hashes,
+// if set) as the manifest for baseDir's component directory.
+func writeManifest(baseDir string, component cdx.Component, computed Hash) error {
+	if computed.Algorithm != "" {
+		component.Hashes = mergeHash(component.Hashes, computed)
+	}
+
+	// json.Marshal HTML-escapes '&', '<', and '>' by default, which would
+	// otherwise mangle purl query strings (e.g. "...&tag=..." becomes
+	// "...&tag=..."). Encode directly with that disabled instead.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(Manifest{Component: component}); err != nil {
+		return fmt.Errorf("marshal manifest: %w", err)
+	}
+
+	path := manifestPath(baseDir, component)
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write manifest %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// mergeHash returns existing with computed either replacing the entry for
+// the same algorithm or appended, so a component's Hashes always reflects
+// the most recently computed value for that algorithm.
+func mergeHash(existing *[]cdx.Hash, computed Hash) *[]cdx.Hash {
+	hashes := []cdx.Hash{}
+	if existing != nil {
+		hashes = append(hashes, *existing...)
+	}
+
+	for i, h := range hashes {
+		if h.Algorithm == computed.Algorithm {
+			hashes[i].Value = computed.Value
+			return &hashes
+		}
+	}
+
+	hashes = append(hashes, cdx.Hash{Algorithm: computed.Algorithm, Value: computed.Value})
+	return &hashes
 }
 
 // verifyHash checks, when component declares an SBOM hash for the same
@@ -204,36 +259,42 @@ func verifyHash(component cdx.Component, result *Result) error {
 
 // Push invokes the plugin binary's "push" subcommand, which publishes to
 // remote the component a prior call to Pull wrote into baseDir. Push looks
-// up that same hash-named subdirectory of baseDir and fails before
-// invoking the plugin if it doesn't exist.
+// for that pull's manifest and fails before invoking the plugin if it
+// doesn't exist (Pull only writes it after succeeding).
 func Push(path string, component cdx.Component, baseDir, remote string) (*Result, error) {
 	dir := componentDir(baseDir, component)
 
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
 		return nil, fmt.Errorf("component not found in %s (run bomify build first): %w", dir, err)
 	}
 
-	return run(path, "push", component, "--input", dir, "--remote", remote)
+	return run(path, "push", component.PackageURL, "--input", dir, "--remote", remote)
+}
+
+// purlHash returns a hex-encoded hash of component's purl, used to derive
+// both componentDir and manifestPath so pull and push independently agree
+// on the same locations.
+func purlHash(component cdx.Component) string {
+	sum := sha256.Sum256([]byte(component.PackageURL))
+	return hex.EncodeToString(sum[:])
 }
 
 // componentDir returns the deterministic subdirectory of baseDir where a
-// component's pulled artifact lives, derived from a hash of its purl so
-// Pull and Push independently agree on the same location.
+// component's pulled artifact lives.
 func componentDir(baseDir string, component cdx.Component) string {
-	sum := sha256.Sum256([]byte(component.PackageURL))
-	return filepath.Join(baseDir, hex.EncodeToString(sum[:]))
+	return filepath.Join(baseDir, purlHash(component))
 }
 
-// run invokes the plugin binary at path with subcommand verb, passing
-// component and the given extra arguments, and returns the plugin's parsed
-// result.
-func run(path, verb string, component cdx.Component, extraArgs ...string) (*Result, error) {
-	componentJSON, err := json.Marshal(component)
-	if err != nil {
-		return nil, fmt.Errorf("marshal component: %w", err)
-	}
+// manifestPath returns the deterministic path of a component's manifest
+// file (see Manifest), a sibling of its componentDir.
+func manifestPath(baseDir string, component cdx.Component) string {
+	return filepath.Join(baseDir, purlHash(component)+".json")
+}
 
-	args := append([]string{verb, "--component", string(componentJSON)}, extraArgs...)
+// run invokes the plugin binary at path with subcommand verb, passing purl
+// and the given extra arguments, and returns the plugin's parsed result.
+func run(path, verb, purl string, extraArgs ...string) (*Result, error) {
+	args := append([]string{verb, "--purl", purl}, extraArgs...)
 	cmd := exec.Command(path, args...)
 
 	var stdout, stderr bytes.Buffer
