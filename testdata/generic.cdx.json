@@ -1,0 +1,39 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:0c1a2b3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "example-tooling",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "file",
+      "name": "hello",
+      "version": "1.0",
+      "purl": "pkg:generic/hello@1.0?download_url=https://raw.githubusercontent.com/octocat/Hello-World/master/README",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "03ba204e50d126e4674c005e04d82e84c21366780af1f43bd54a37816b6ab340"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "go-gitignore",
+      "version": "1.0",
+      "purl": "pkg:generic/go-gitignore@1.0?download_url=https://raw.githubusercontent.com/github/gitignore/main/Go.gitignore",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "63a6bdc727e45c5811e6a6d664205d2a07948f03881839831c2fa92434509da2"
+        }
+      ]
+    }
+  ]
+}
