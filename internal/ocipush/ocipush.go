@@ -7,14 +7,12 @@
 package ocipush
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -131,6 +129,18 @@ func pushBytes(ctx context.Context, target oras.Target, data []byte, mediaType, 
 		Size:      int64(len(data)),
 	}
 
+	// A remote registry tolerates re-pushing a blob whose digest it
+	// already has, but a local content/oci.Store — as used when Save
+	// packages more than one tag sharing a component into the same
+	// store — rejects it outright. Checking first makes either target
+	// happy, and avoids re-uploading identical content to a registry
+	// that already has it.
+	if exists, err := target.Exists(ctx, desc); err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("check %s: %w", desc.Digest, err)
+	} else if exists {
+		return desc, nil
+	}
+
 	pw := progress(label, desc.Size)
 	defer pw.Close()
 
@@ -168,6 +178,16 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 		},
 	}
 
+	// See pushBytes for why this check matters beyond just efficiency:
+	// content/oci.Store (unlike a remote registry) rejects a re-push of a
+	// digest it already has, which a shared component across more than
+	// one tag in the same Save call would otherwise trigger.
+	if exists, err := target.Exists(ctx, desc); err != nil {
+		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("check layer %s: %w", desc.Digest, err)
+	} else if exists {
+		return desc, Layer{Purl: purl, Hash: hash}, nil
+	}
+
 	f, err := os.Open(tarPath)
 	if err != nil {
 		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("open %s: %w", tarPath, err)
@@ -188,10 +208,10 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	return desc, Layer{Purl: purl, Hash: hash}, nil
 }
 
-// tarDir archives dir's contents into a new temp file (which the caller
-// must remove), returning its path, sha256 content digest (hex-encoded,
-// unprefixed, matching bomify's on-disk hash convention elsewhere), and
-// size.
+// tarDir archives dir's contents (see ocitransfer.WriteTar) into a new
+// temp file (which the caller must remove), returning its path, sha256
+// content digest (hex-encoded, unprefixed, matching bomify's on-disk hash
+// convention elsewhere), and size.
 func tarDir(dir string) (path string, hash string, size int64, err error) {
 	tmp, err := os.CreateTemp("", "bomify-push-layer-*.tar")
 	if err != nil {
@@ -200,53 +220,9 @@ func tarDir(dir string) (path string, hash string, size int64, err error) {
 	defer tmp.Close()
 
 	h := sha256.New()
-	tw := tar.NewWriter(io.MultiWriter(tmp, h))
-
-	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		hdr, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = filepath.ToSlash(rel)
-
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		_, err = io.Copy(tw, f)
-		return err
-	})
-	if walkErr != nil {
+	if err := ocitransfer.WriteTar(dir, io.MultiWriter(tmp, h)); err != nil {
 		os.Remove(tmp.Name())
-		return "", "", 0, walkErr
-	}
-
-	if err := tw.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return "", "", 0, fmt.Errorf("finalize tar: %w", err)
+		return "", "", 0, err
 	}
 
 	info, err := tmp.Stat()

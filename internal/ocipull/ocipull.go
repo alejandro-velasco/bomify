@@ -15,7 +15,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
@@ -281,7 +280,7 @@ func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocis
 	defer pw.Close()
 
 	verified := content.NewVerifyReader(rc, desc)
-	if err := untar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
+	if err := ocitransfer.ExtractTar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
 		return fmt.Errorf("unpack %s: %w", desc.Digest, err)
 	}
 	if err := verified.Verify(); err != nil {
@@ -296,67 +295,4 @@ func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocis
 	}
 
 	return nil
-}
-
-// untar extracts every entry from tr into destDir. Entry names come from
-// the tar stream — untrusted input, whether the artifact is bomify's own
-// or a foreign one — so each is rejected if, once cleaned, it would
-// resolve outside destDir (a "zip slip" path-traversal attempt via "../"
-// segments or an absolute path) rather than being joined into a
-// filesystem write.
-func untar(tr *tar.Reader, destDir string) error {
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		// hdr.Name is always "/"-separated per the tar format spec,
-		// regardless of host OS, so check its rawest form for a leading
-		// "/" here: filepath.IsAbs on the FromSlash-converted name isn't
-		// portable for this — on Windows it only considers a
-		// drive-lettered path absolute, so a POSIX-style "/etc/..." entry
-		// would silently pass that check while still not being a path
-		// this destDir-relative extraction should ever honor.
-		if strings.HasPrefix(hdr.Name, "/") {
-			return fmt.Errorf("unsafe tar entry name %q: absolute path", hdr.Name)
-		}
-
-		name := filepath.Clean(filepath.FromSlash(hdr.Name))
-		if name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("unsafe tar entry name %q: escapes destination", hdr.Name)
-		}
-		target := filepath.Join(destDir, name)
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			mode := os.FileMode(hdr.Mode) & 0o777
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
-				return err
-			}
-			if err := f.Close(); err != nil {
-				return err
-			}
-		default:
-			// Bomify's own tar layers only ever contain regular files
-			// (see ocipush's tarDir); silently skip anything else
-			// (symlinks, devices, ...) a foreign tar might contain
-			// rather than trying to recreate it.
-		}
-	}
 }

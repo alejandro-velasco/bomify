@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
-	"time"
 
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 
 	"bomify/internal/build"
@@ -54,19 +51,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	}
 
 	mb := newMultiBar(cmd.OutOrStderr())
-
-	progress := func(name string, size int64) io.WriteCloser {
-		// Same reasoning as pull.go: no OptionClearOnFinish, so every
-		// layer — even one small/fast enough to upload in a single
-		// write — still renders at least once.
-		return progressbar.NewOptions64(size,
-			progressbar.OptionSetWriter(mb.reserve()),
-			progressbar.OptionSetDescription(name),
-			progressbar.OptionShowBytes(true),
-			progressbar.OptionSetWidth(30),
-			progressbar.OptionThrottle(65*time.Millisecond),
-		)
-	}
+	progress := newProgressFunc(mb)
 
 	result, err := ocipush.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress)
 	if err != nil {

@@ -4,6 +4,11 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
+
+	"github.com/schollz/progressbar/v3"
+
+	"bomify/internal/ocitransfer"
 )
 
 // multiBar lets several progressbar.ProgressBar instances, each redrawing
@@ -65,4 +70,25 @@ func (w *barLineWriter) Write(p []byte) (int, error) {
 	fmt.Fprint(w.m.out, "\r")
 
 	return n, err
+}
+
+// newProgressFunc returns an ocitransfer.ProgressFunc that renders each
+// blob as its own bar via mb, shared by every command that transfers OCI
+// blobs (pull, push, save, load).
+func newProgressFunc(mb *multiBar) ocitransfer.ProgressFunc {
+	return func(name string, size int64) io.WriteCloser {
+		// Deliberately no OptionClearOnFinish: without OptionUseANSICodes
+		// too, progressbar's finish path is a no-op, so a blob small or
+		// fast enough to complete within a single write would render
+		// nothing at all — no bar, ever. Leaving the completed bar in
+		// place (like a finished `docker pull` layer line) guarantees at
+		// least one real render for every blob, regardless of its size.
+		return progressbar.NewOptions64(size,
+			progressbar.OptionSetWriter(mb.reserve()),
+			progressbar.OptionSetDescription(name),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionSetWidth(30),
+			progressbar.OptionThrottle(65*time.Millisecond),
+		)
+	}
 }

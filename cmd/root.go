@@ -59,6 +59,7 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory to store bomify data (e.g., built packages)")
 
 	rootCmd.AddCommand(buildCmd())
+	rootCmd.AddCommand(loadCmd())
 	rootCmd.AddCommand(loginCmd())
 	rootCmd.AddCommand(logoutCmd())
 	rootCmd.AddCommand(mirrorCmd())
@@ -67,6 +68,7 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.AddCommand(pullCmd())
 	rootCmd.AddCommand(pushCmd())
 	rootCmd.AddCommand(rmpCmd())
+	rootCmd.AddCommand(saveCmd())
 	rootCmd.AddCommand(tagCmd())
 	rootCmd.AddCommand(versionCmd())
 
