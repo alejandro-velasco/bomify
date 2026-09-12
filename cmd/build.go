@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
-	"os"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -15,7 +14,6 @@ import (
 
 type buildOptions struct {
 	file        string
-	clean       bool
 	hash        string
 	concurrency int
 	tags        []string
@@ -40,7 +38,6 @@ func buildCmd() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().BoolVar(&buildOpts.clean, "clean", false, "remove the output directory before building")
 	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
@@ -52,13 +49,6 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	hashAlgorithm, err := plugin.NormalizeHashAlgorithm(opts.hash)
 	if err != nil {
 		return err
-	}
-
-	if opts.clean {
-		logger.Info("cleaning output directory", "path", dataDir)
-		if err := os.RemoveAll(dataDir); err != nil {
-			return fmt.Errorf("clean output directory %s: %w", dataDir, err)
-		}
 	}
 
 	if err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {

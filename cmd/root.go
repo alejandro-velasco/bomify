@@ -62,9 +62,11 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.AddCommand(loginCmd())
 	rootCmd.AddCommand(logoutCmd())
 	rootCmd.AddCommand(mirrorCmd())
+	rootCmd.AddCommand(packageCmd())
 	rootCmd.AddCommand(packagesCmd())
 	rootCmd.AddCommand(pullCmd())
 	rootCmd.AddCommand(pushCmd())
+	rootCmd.AddCommand(rmpCmd())
 	rootCmd.AddCommand(tagCmd())
 	rootCmd.AddCommand(versionCmd())
 

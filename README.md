@@ -21,6 +21,8 @@ bomify login registry.example.com
 bomify build path/to/bom.cdx.json --tag registry.example.com/myapp:1.0
 bomify mirror path/to/bom.cdx.json --remote registry.example.com/mirror
 bomify packages
+bomify package prune
+bomify package remove registry.example.com/myapp:1.0   # or: bomify rmp registry.example.com/myapp:1.0
 bomify tag registry.example.com/myapp:1.0 registry.example.com/myapp:latest
 bomify pull registry.example.com/myapp:1.0
 bomify push registry.example.com/myapp:1.0
@@ -31,6 +33,8 @@ bomify logout registry.example.com
 - `build` pulls each component a CycloneDX SBOM describes and records the SBOM itself as a manifest; `--tag` (repeatable) points a name at that manifest, Docker-style.
 - `mirror` pushes each component to a remote endpoint instead of pulling it locally.
 - `packages` lists built packages by tag, similar to `docker images`.
+- `package prune` removes every manifest and layer not reachable from a current tag, similar to `docker image prune` — a component still used by any tagged package survives, even one also used by an otherwise-unreferenced one.
+- `package remove` (or the top-level shorthand `rmp`, mirroring `docker rmi`) untags one or more `<tag>`s and immediately reclaims anything that tag was the last reference to, similar to `docker image rm`/`docker rmi`.
 - `tag` points a new tag at whatever an existing tag currently resolves to, similar to `docker tag`.
 - `pull` downloads a previously published bomify package (its manifest and component layers) from an OCI registry.
 - `push` publishes a build's manifest and component layers as an OCI artifact under `<tag>`, exactly like `docker push` — `<tag>` doubles as both the local bookkeeping key and the destination reference.

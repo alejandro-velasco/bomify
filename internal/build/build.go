@@ -120,8 +120,6 @@ func UpdateRepositories(baseDir string, tags []string, sbomHash string) error {
 		return nil
 	}
 
-	path := RepositoriesPath(baseDir)
-
 	repos, err := ReadRepositories(baseDir)
 	if err != nil {
 		return err
@@ -134,6 +132,41 @@ func UpdateRepositories(baseDir string, tags []string, sbomHash string) error {
 		}
 		repos[repo][version] = sbomHash
 	}
+
+	return writeRepositories(baseDir, repos)
+}
+
+// RemoveTag removes tag's mapping from
+// "<baseDir>/package/repositories.json", returning an error if tag isn't
+// currently mapped to anything. RemoveTag only removes the tag itself —
+// reclaiming the manifest and any components this was the last tag for
+// is Prune's job, not RemoveTag's.
+func RemoveTag(baseDir, tag string) error {
+	repos, err := ReadRepositories(baseDir)
+	if err != nil {
+		return err
+	}
+
+	repo, version := splitTag(tag)
+	versions, ok := repos[repo]
+	if !ok {
+		return fmt.Errorf("no such tag: %s", tag)
+	}
+	if _, ok := versions[version]; !ok {
+		return fmt.Errorf("no such tag: %s", tag)
+	}
+
+	delete(versions, version)
+	if len(versions) == 0 {
+		delete(repos, repo)
+	}
+
+	return writeRepositories(baseDir, repos)
+}
+
+// writeRepositories writes repos to baseDir's repositories.json.
+func writeRepositories(baseDir string, repos Repositories) error {
+	path := RepositoriesPath(baseDir)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create package directory: %w", err)
