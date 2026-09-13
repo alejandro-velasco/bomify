@@ -18,8 +18,11 @@
         "successComment": false,
         "failComment": false,
         "assets": [
-          { "path": "dist/*.tar.gz", "label": "Binaries (tar.gz)" },
-          { "path": "dist/*.zip", "label": "Binaries (zip)" },
+          { "path": "dist/bomify-*-linux-amd64.tar.gz", "label": "Linux (amd64)" },
+          { "path": "dist/bomify-*-linux-arm64.tar.gz", "label": "Linux (arm64)" },
+          { "path": "dist/bomify-*-darwin-amd64.tar.gz", "label": "macOS (amd64)" },
+          { "path": "dist/bomify-*-darwin-arm64.tar.gz", "label": "macOS (arm64)" },
+          { "path": "dist/bomify-*-windows-amd64.zip", "label": "Windows (amd64)" },
           { "path": "dist/checksums.txt", "label": "Checksums" }
         ]
       }
