@@ -8,35 +8,7 @@ on:
   pull_request:
 
 jobs:
-  semantic-release-preview:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.semantic-release.outputs.version }}
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Preview next release
-        id: semantic-release
-        run: |
-          npx --yes \
-            --package=semantic-release \
-            --package=@semantic-release/commit-analyzer \
-            --package=@semantic-release/release-notes-generator \
-            --package=@semantic-release/changelog \
-            --package=@semantic-release/exec \
-            semantic-release --dry-run
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
-    needs: semantic-release-preview
-    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -48,14 +20,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        env:
-          NEXT_VERSION: ${{ needs.semantic-release-preview.outputs.version }}
-        run: |
-          if [ -n "$NEXT_VERSION" ]; then
-            make build VERSION="$NEXT_VERSION"
-          else
-            make build
-          fi
+        run: make build
 
       - name: Test
         run: make test

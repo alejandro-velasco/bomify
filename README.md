@@ -58,7 +58,7 @@ make build-container
 Its entrypoint is `bomify`, so `docker run`/`podman run` arguments are just the CLI arguments you'd pass locally:
 
 ```sh
-docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tmp/helm.cdx.json --rm --user $(id -u):$(id -g) -it avelasco1423/bomify:latest build -t registry.com/container-test:1.0.0 /tmp/helm.cdx.json
+docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tmp/helm.cdx.json --rm --user $(id -u):$(id -g) -it ghcr.io/alejandro-velasco/bomify:latest build -t registry.com/container-test:1.0.0 /tmp/helm.cdx.json
 ```
 
 ## Testing locally

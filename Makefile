@@ -23,8 +23,8 @@ LDFLAGS := -X github.com/alejandro-velasco/bomify/internal/buildinfo.version=$(V
 ################################################################################
 
 CONTAINER_TOOL ?= docker
-CONTAINER_REGISTRY ?= docker.io
-CONTAINER_REPO ?= avelasco1423/bomify
+CONTAINER_REGISTRY ?= ghcr.io
+CONTAINER_REPO ?= alejandro-velasco/bomify
 CONTAINER_TAG ?= latest
 CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
 
