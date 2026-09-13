@@ -1,4 +1,4 @@
-package ocipush
+package push
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"bomify/internal/build"
-	"bomify/internal/ocipull"
+	"bomify/internal/oci/pull"
 	"bomify/internal/plugin"
 )
 
@@ -32,7 +32,7 @@ var (
 
 // TestPushThenPullRoundTrip exercises Push against a real local OCI store
 // (no mocking of oras-go), then pulls the result back with the real
-// ocipull.Pull — proving the two independently-written packages agree on
+// pull.Pull — proving the two independently-written packages agree on
 // the artifact format end to end, not just that Push runs without error.
 // One component's layer is a single file (as bomify-plugin-generic
 // produces); the other's is a directory tree (as bomify-plugin-oci
@@ -82,7 +82,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := ocipull.Pull(ctx, store, tag, pulledDir, 2, nil)
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}

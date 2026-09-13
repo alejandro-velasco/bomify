@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bomify/internal/logging"
-	"bomify/internal/ocisave"
+	"bomify/internal/oci/save"
 )
 
 type saveOptions struct {
@@ -54,7 +54,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	if err := ocisave.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress); err != nil {
+	if err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress); err != nil {
 		return err
 	}
 

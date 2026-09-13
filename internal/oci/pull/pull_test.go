@@ -1,4 +1,4 @@
-package ocipull
+package pull
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"bomify/internal/build"
-	"bomify/internal/ocipush"
-	"bomify/internal/ocitransfer"
+	"bomify/internal/oci/push"
+	"bomify/internal/oci/transfer"
 	"bomify/internal/plugin"
 )
 
@@ -116,7 +116,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 	var progressCalls int32
 	progress := func(name string, size int64) io.WriteCloser {
 		atomic.AddInt32(&progressCalls, 1)
-		return ocitransfer.Discard(name, size)
+		return transfer.Discard(name, size)
 	}
 
 	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress)
@@ -280,7 +280,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := ocipush.Push(ctx, store, tag, baseDir, sbomHash, 1, nil); err != nil {
+	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -289,7 +289,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 	var progressCalls int32
 	progress := func(name string, size int64) io.WriteCloser {
 		atomic.AddInt32(&progressCalls, 1)
-		return ocitransfer.Discard(name, size)
+		return transfer.Discard(name, size)
 	}
 
 	result1, err := Pull(ctx, store, tag, dataDir, 1, progress)

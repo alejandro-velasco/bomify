@@ -1,15 +1,15 @@
-// Package ocisave lets a bomify package move between machines as a single
+// Package save lets a bomify package move between machines as a single
 // tarball, with no registry involved: Save packages one or more tags into
-// an OCI image-layout directory (the same layout internal/ocipush already
+// an OCI image-layout directory (the same layout internal/oci/push already
 // knows how to write to, and bomify-plugin-oci itself uses) and archives
 // that directory into a tarball; Load does the reverse, restoring every
 // tag the tarball contains into a data directory exactly as `bomify pull`
-// would have for each. Both are thin wrappers around internal/ocipush and
-// internal/ocipull: an OCI image-layout directory (content/oci.Store)
+// would have for each. Both are thin wrappers around internal/oci/push and
+// internal/oci/pull: an OCI image-layout directory (content/oci.Store)
 // satisfies the same oras.Target/oras.ReadOnlyTarget interfaces those
 // packages already push to and pull from over a network, so pointing them
 // at a local directory instead needs no new packing/unpacking logic here.
-package ocisave
+package save
 
 import (
 	"archive/tar"
@@ -21,9 +21,9 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"bomify/internal/build"
-	"bomify/internal/ocipull"
-	"bomify/internal/ocipush"
-	"bomify/internal/ocitransfer"
+	"bomify/internal/oci/pull"
+	"bomify/internal/oci/push"
+	"bomify/internal/oci/transfer"
 )
 
 // Save resolves each of tags in baseDir's repositories.json and packages
@@ -32,7 +32,7 @@ import (
 // any other, with no registry involved. Shared components (the same purl
 // pulled by more than one of the given tags) are stored once. Layers
 // upload concurrently within each tag, bounded by concurrency.
-func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress ocitransfer.ProgressFunc) error {
+func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc) error {
 	if len(tags) == 0 {
 		return fmt.Errorf("no tags to save")
 	}
@@ -53,12 +53,12 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concu
 		if err != nil {
 			return err
 		}
-		if _, err := ocipush.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress); err != nil {
+		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress); err != nil {
 			return fmt.Errorf("package %s: %w", tag, err)
 		}
 	}
 
-	if err := ocitransfer.WriteTar(stageDir, w); err != nil {
+	if err := transfer.WriteTar(stageDir, w); err != nil {
 		return fmt.Errorf("archive: %w", err)
 	}
 
@@ -69,14 +69,14 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concu
 // restores every tag it contains into baseDir exactly as `bomify pull`
 // would have for each, recording each in repositories.json. Returns the
 // tags it found and restored.
-func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, progress ocitransfer.ProgressFunc) ([]string, error) {
+func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, progress transfer.ProgressFunc) ([]string, error) {
 	stageDir, err := os.MkdirTemp("", "bomify-load-*")
 	if err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
 	}
 	defer os.RemoveAll(stageDir)
 
-	if err := ocitransfer.ExtractTar(tar.NewReader(r), stageDir); err != nil {
+	if err := transfer.ExtractTar(tar.NewReader(r), stageDir); err != nil {
 		return nil, fmt.Errorf("extract archive: %w", err)
 	}
 
@@ -94,7 +94,7 @@ func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, pro
 	}
 
 	for _, tag := range tags {
-		result, err := ocipull.Pull(ctx, store, tag, baseDir, concurrency, progress)
+		result, err := pull.Pull(ctx, store, tag, baseDir, concurrency, progress)
 		if err != nil {
 			return nil, fmt.Errorf("restore %s: %w", tag, err)
 		}

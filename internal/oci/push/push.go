@@ -1,10 +1,10 @@
-// Package ocipush publishes a bomify package as an OCI artifact: the
-// counterpart to internal/ocipull. Push packages the SBOM manifest a prior
+// Package push publishes a bomify package as an OCI artifact: the
+// counterpart to internal/oci/pull. Push packages the SBOM manifest a prior
 // `bomify build` recorded (see internal/build) as the artifact's config,
 // and each component that SBOM describes as a layer — tarring up whatever
 // build pulled for it and annotating the layer with its purl — then pushes
 // the whole thing to a registry under a tag.
-package ocipush
+package push
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"bomify/internal/build"
-	"bomify/internal/ocitransfer"
+	"bomify/internal/oci/transfer"
 	"bomify/internal/plugin"
 	"bomify/internal/sbom"
 )
@@ -45,9 +45,9 @@ type Result struct {
 // config, and each component it describes as a layer — and pushes it to
 // target, tagging the result ref. Layers upload concurrently, bounded by
 // concurrency (values less than 1 are treated as 1).
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress ocitransfer.ProgressFunc) (Result, error) {
+func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc) (Result, error) {
 	if progress == nil {
-		progress = ocitransfer.Discard
+		progress = transfer.Discard
 	}
 	if concurrency < 1 {
 		concurrency = 1
@@ -94,7 +94,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, err
 	}
 
-	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, ocitransfer.ArtifactType, oras.PackManifestOptions{
+	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
 		ConfigDescriptor: &configDesc,
 		Layers:           layerDescs,
 	})
@@ -121,7 +121,7 @@ func configMediaType(data []byte) string {
 
 // pushBytes pushes data as a single blob, reporting its progress through
 // progress, and returns its descriptor.
-func pushBytes(ctx context.Context, target oras.Target, data []byte, mediaType, label string, progress ocitransfer.ProgressFunc) (ocispec.Descriptor, error) {
+func pushBytes(ctx context.Context, target oras.Target, data []byte, mediaType, label string, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
 	sum := sha256.Sum256(data)
 	desc := ocispec.Descriptor{
 		MediaType: mediaType,
@@ -154,7 +154,7 @@ func pushBytes(ctx context.Context, target oras.Target, data []byte, mediaType, 
 // pushComponentLayer archives "<baseDir>/layers/<purl-hash>/" — whatever
 // `bomify build` pulled for component — into a single tar blob and pushes
 // it, annotated with component's purl.
-func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress ocitransfer.ProgressFunc) (ocispec.Descriptor, Layer, error) {
+func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress transfer.ProgressFunc) (ocispec.Descriptor, Layer, error) {
 	purl := component.PackageURL
 	dir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
 
@@ -169,12 +169,12 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	defer os.Remove(tarPath)
 
 	desc := ocispec.Descriptor{
-		MediaType: ocitransfer.LayerMediaType,
+		MediaType: transfer.LayerMediaType,
 		Digest:    digest.NewDigestFromEncoded(digest.SHA256, hash),
 		Size:      size,
 		Annotations: map[string]string{
-			ocispec.AnnotationTitle:   hash + ".tar",
-			ocitransfer.AnnotationPurl: purl,
+			ocispec.AnnotationTitle: hash + ".tar",
+			transfer.AnnotationPurl: purl,
 		},
 	}
 
@@ -208,7 +208,7 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	return desc, Layer{Purl: purl, Hash: hash}, nil
 }
 
-// tarDir archives dir's contents (see ocitransfer.WriteTar) into a new
+// tarDir archives dir's contents (see transfer.WriteTar) into a new
 // temp file (which the caller must remove), returning its path, sha256
 // content digest (hex-encoded, unprefixed, matching bomify's on-disk hash
 // convention elsewhere), and size.
@@ -220,7 +220,7 @@ func tarDir(dir string) (path string, hash string, size int64, err error) {
 	defer tmp.Close()
 
 	h := sha256.New()
-	if err := ocitransfer.WriteTar(dir, io.MultiWriter(tmp, h)); err != nil {
+	if err := transfer.WriteTar(dir, io.MultiWriter(tmp, h)); err != nil {
 		os.Remove(tmp.Name())
 		return "", "", 0, err
 	}

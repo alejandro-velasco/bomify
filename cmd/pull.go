@@ -11,7 +11,7 @@ import (
 	"bomify/internal/auth"
 	"bomify/internal/build"
 	"bomify/internal/logging"
-	"bomify/internal/ocipull"
+	"bomify/internal/oci/pull"
 )
 
 type pullOptions struct {
@@ -51,7 +51,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	mb := newMultiBar(cmd.OutOrStderr())
 	progress := newProgressFunc(mb)
 
-	result, err := ocipull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress)
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	return nil
 }
 
-func logPulledLayers(logger *slog.Logger, result ocipull.Result) {
+func logPulledLayers(logger *slog.Logger, result pull.Result) {
 	logger.Info("sbom manifest restored", "hash", result.SBOMHash)
 	for _, layer := range result.Layers {
 		logger.Info("layer restored", "purl", layer.Purl, "hash", layer.Hash, "path", layer.Path)

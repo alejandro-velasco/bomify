@@ -1,4 +1,4 @@
-package ocisave
+package save
 
 import (
 	"bytes"

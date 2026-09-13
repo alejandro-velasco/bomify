@@ -8,7 +8,7 @@ import (
 
 	"github.com/schollz/progressbar/v3"
 
-	"bomify/internal/ocitransfer"
+	"bomify/internal/oci/transfer"
 )
 
 // multiBar lets several progressbar.ProgressBar instances, each redrawing
@@ -72,10 +72,10 @@ func (w *barLineWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// newProgressFunc returns an ocitransfer.ProgressFunc that renders each
+// newProgressFunc returns a transfer.ProgressFunc that renders each
 // blob as its own bar via mb, shared by every command that transfers OCI
 // blobs (pull, push, save, load).
-func newProgressFunc(mb *multiBar) ocitransfer.ProgressFunc {
+func newProgressFunc(mb *multiBar) transfer.ProgressFunc {
 	return func(name string, size int64) io.WriteCloser {
 		// Deliberately no OptionClearOnFinish: without OptionUseANSICodes
 		// too, progressbar's finish path is a no-op, so a blob small or

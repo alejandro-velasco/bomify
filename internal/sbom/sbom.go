@@ -57,7 +57,7 @@ func LoadBytes(data []byte) (*cdx.BOM, error) {
 // DetectFormat detects data's CycloneDX BOMFileFormat from its first
 // non-whitespace byte: '{' for JSON, '<' for XML. Exported so callers that
 // need to know the format for a reason other than parsing it (e.g.
-// internal/ocipush choosing a media type for the raw bytes it's about to
+// internal/oci/push choosing a media type for the raw bytes it's about to
 // push) don't have to re-implement the same sniffing LoadBytes does.
 func DetectFormat(data []byte) (cdx.BOMFileFormat, error) {
 	trimmed := bytes.TrimSpace(data)

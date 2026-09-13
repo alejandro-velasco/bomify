@@ -1,11 +1,11 @@
-// Package ocipull restores a bomify package from an OCI artifact: a
+// Package pull restores a bomify package from an OCI artifact: a
 // manifest whose config blob is the aggregate SBOM manifest (see
 // internal/build) and whose layers are the components that SBOM describes,
 // each annotated with the purl it was pulled for. Pull downloads that
 // manifest's config and layers concurrently, laying them out in a data
 // directory exactly as `bomify build` would have, so packages and tag work
 // against either source.
-package ocipull
+package pull
 
 import (
 	"archive/tar"
@@ -24,13 +24,13 @@ import (
 	"oras.land/oras-go/v2/content"
 
 	"bomify/internal/build"
-	"bomify/internal/ocitransfer"
+	"bomify/internal/oci/transfer"
 	"bomify/internal/plugin"
 )
 
 // AnnotationPurl is the OCI descriptor annotation identifying the purl a
 // layer was pulled for.
-const AnnotationPurl = ocitransfer.AnnotationPurl
+const AnnotationPurl = transfer.AnnotationPurl
 
 // ProgressFunc is called once per blob (the config, then each layer) before
 // it starts downloading, naming it and giving its total size in bytes. The
@@ -38,12 +38,12 @@ const AnnotationPurl = ocitransfer.AnnotationPurl
 // rendering a progress bar, and is closed once that blob's download ends
 // (successfully or not). A nil ProgressFunc is fine; Pull renders no
 // progress in that case.
-type ProgressFunc = ocitransfer.ProgressFunc
+type ProgressFunc = transfer.ProgressFunc
 
 // Layer describes one component layer that was pulled. Path is a
 // directory — "<dataDir>/layers/<purl-hash>/", exactly matching what
 // `bomify build` would have produced for this component — when the layer
-// was one bomify itself pushed (see ocitransfer.LayerMediaType), since
+// was one bomify itself pushed (see transfer.LayerMediaType), since
 // Pull unpacks that tar automatically. For any other layer format, Path is
 // the single file Pull wrote the blob to verbatim, since Pull has no way
 // to know how a foreign format ought to be laid out on disk.
@@ -67,7 +67,7 @@ type Result struct {
 // by concurrency (values less than 1 are treated as 1).
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc) (Result, error) {
 	if progress == nil {
-		progress = ocitransfer.Discard
+		progress = transfer.Discard
 	}
 	if concurrency < 1 {
 		concurrency = 1
@@ -157,7 +157,7 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 	// without one (shouldn't happen for anything bomify pushed, but this
 	// is still someone else's registry data) fall through to the generic
 	// verbatim-file path below instead of erroring.
-	if desc.MediaType == ocitransfer.LayerMediaType && purl != "" {
+	if desc.MediaType == transfer.LayerMediaType && purl != "" {
 		destDir := filepath.Join(dataDir, "layers", plugin.PurlHash(cdx.Component{PackageURL: purl}))
 
 		// downloadAndUntar only ever swaps destDir into place as a whole,
@@ -201,7 +201,7 @@ func blobHash(desc ocispec.Descriptor) (string, error) {
 // or traversal segment is rejected rather than joined into destPath, which
 // would otherwise let a crafted title escape dataDir/layers entirely.
 func layerFilename(desc ocispec.Descriptor) string {
-	if title := desc.Annotations[ocispec.AnnotationTitle]; ocitransfer.IsSafeFilename(title) {
+	if title := desc.Annotations[ocispec.AnnotationTitle]; transfer.IsSafeFilename(title) {
 		return title
 	}
 	return desc.Digest.Encoded()
@@ -223,7 +223,7 @@ func downloadBlob(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".ocipull-*")
+	tmp, err := os.CreateTemp(dir, ".pull-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
@@ -270,7 +270,7 @@ func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocis
 		return fmt.Errorf("create %s: %w", parent, err)
 	}
 
-	tmpDir, err := os.MkdirTemp(parent, ".ocipull-*")
+	tmpDir, err := os.MkdirTemp(parent, ".pull-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -280,7 +280,7 @@ func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocis
 	defer pw.Close()
 
 	verified := content.NewVerifyReader(rc, desc)
-	if err := ocitransfer.ExtractTar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
+	if err := transfer.ExtractTar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
 		return fmt.Errorf("unpack %s: %w", desc.Digest, err)
 	}
 	if err := verified.Verify(); err != nil {

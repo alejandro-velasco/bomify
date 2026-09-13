@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bomify/internal/logging"
-	"bomify/internal/ocisave"
+	"bomify/internal/oci/save"
 )
 
 type loadOptions struct {
@@ -54,7 +54,7 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	tags, err := ocisave.Load(cmd.Context(), dataDir, r, opts.concurrency, progress)
+	tags, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress)
 	if err != nil {
 		return err
 	}

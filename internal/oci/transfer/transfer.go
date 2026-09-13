@@ -1,10 +1,10 @@
-// Package ocitransfer holds the pieces internal/ocipull, internal/ocipush,
-// and internal/ocisave need to agree on: the OCI artifact type and
+// Package transfer holds the pieces internal/oci/pull, internal/oci/push,
+// and internal/oci/save need to agree on: the OCI artifact type and
 // annotation bomify's package format uses, the progress-reporting contract
 // Pull and Push expose to their callers, a filename-safety check for
 // untrusted OCI annotations, and the tar/untar primitives all three use to
 // pack a directory into a single blob and unpack one back.
-package ocitransfer
+package transfer
 
 import (
 	"archive/tar"

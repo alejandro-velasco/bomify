@@ -1,4 +1,4 @@
-package ocitransfer
+package transfer
 
 import (
 	"archive/tar"

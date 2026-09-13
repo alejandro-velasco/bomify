@@ -8,7 +8,7 @@ import (
 
 	"bomify/internal/build"
 	"bomify/internal/logging"
-	"bomify/internal/ocipush"
+	"bomify/internal/oci/push"
 )
 
 type pushOptions struct {
@@ -53,7 +53,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	mb := newMultiBar(cmd.OutOrStderr())
 	progress := newProgressFunc(mb)
 
-	result, err := ocipush.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress)
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	return nil
 }
 
-func logPushedLayers(logger *slog.Logger, result ocipush.Result) {
+func logPushedLayers(logger *slog.Logger, result push.Result) {
 	logger.Info("manifest pushed", "digest", result.ManifestDigest)
 	for _, layer := range result.Layers {
 		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
