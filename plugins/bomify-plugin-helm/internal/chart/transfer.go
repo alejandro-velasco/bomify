@@ -19,12 +19,19 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
-// newRegistryClient builds a Helm OCI registry client authenticated,
+// newRegistryClient is a var — rather than a plain func — solely so tests
+// can substitute a different constructor (e.g. one that enables plain
+// HTTP for a local, in-process test registry) without changing real CLI
+// behavior; see internal/auth's newStore/newPlaintextStore for the same
+// pattern.
+var newRegistryClient = defaultRegistryClient
+
+// defaultRegistryClient builds a Helm OCI registry client authenticated,
 // for host, with whatever bomify's shared credential store (see
 // internal/auth — the same store `bomify login`/`docker login` write)
 // has for it. A host with nothing stored gets an anonymous client,
 // exactly like a bomify pull/push against a public registry.
-func newRegistryClient(host string) (*registry.Client, error) {
+func defaultRegistryClient(host string) (*registry.Client, error) {
 	var opts []registry.ClientOption
 
 	if host != "" {
