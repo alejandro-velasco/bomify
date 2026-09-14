@@ -6,7 +6,10 @@ Give it an SBOM and `bomify build`/`bomify mirror` walk its components and deleg
 
 ## Status
 
-Early Development
+**Pre-Alpha.** bomify is under active early development. Its CLI flags, data
+directory layout, and plugin contract can all still change without notice,
+and there is currently no guarantee of stability or backward compatibility
+between versions. This will change as the project matures.
 
 ## Build
 
