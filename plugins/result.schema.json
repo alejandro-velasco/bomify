@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/result.schema.json",
+  "title": "bomify plugin Result",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success, per plugins/CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outputPath"],
+  "properties": {
+    "outputPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "For pull: the local path the artifact was written to (normally --output, echoed back). For push: the reference the artifact was published under at --remote."
+    },
+    "message": {
+      "type": "string",
+      "description": "Optional, human-readable summary of what happened. Omit this key entirely rather than sending an empty string."
+    },
+    "hash": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "May be omitted entirely, or present as {} or with both fields set — bomify parses a missing key and an empty object identically. algorithm and value are either both present or both absent.",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "MD5",
+            "SHA-1",
+            "SHA-256",
+            "SHA-384",
+            "SHA-512",
+            "SHA3-256",
+            "SHA3-384",
+            "SHA3-512",
+            "BLAKE2b-256",
+            "BLAKE2b-384",
+            "BLAKE2b-512",
+            "BLAKE3",
+            "Streebog-256",
+            "Streebog-512"
+          ],
+          "description": "Must exactly equal the --hash value the plugin was given."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[0-9a-fA-F]+$",
+          "description": "The digest, hex-encoded. Case-insensitive; lowercase is the convention every first-party plugin follows."
+        }
+      },
+      "dependencies": {
+        "algorithm": ["value"],
+        "value": ["algorithm"]
+      }
+    }
+  }
+}

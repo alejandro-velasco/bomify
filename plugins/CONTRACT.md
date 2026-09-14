@@ -87,7 +87,11 @@ tempted to write to stdout or stderr — must go to the file named by
 
 ## Result
 
-The single JSON object a plugin prints to stdout on success:
+The single JSON object a plugin prints to stdout on success. bomify parses
+this straight into a Go struct, where a missing key and a key present with
+its zero value are indistinguishable — so `hash` may be omitted entirely,
+or present as `{}` or with both fields set; all three are equally valid
+and bomify treats them identically:
 
 ```json
 {
@@ -97,17 +101,26 @@ The single JSON object a plugin prints to stdout on success:
 }
 ```
 
+```json
+{ "outputPath": "path/to/artifact/or/remote/reference" }
+```
+
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `outputPath` | string | yes | For `pull`: the local path the artifact was written to (normally just `--output`, echoed back). For `push`: the reference the artifact was published under at `--remote` (e.g. `<remote>/<name>:<version>`). |
 | `message` | string | no | A short, human-readable summary of what happened (e.g. `"pulled nginx:1.27"`). Purely informational — bomify logs it but never parses it. |
-| `hash` | object | no | The content hash of the pulled artifact, for the algorithm `--hash` requested. Only meaningful for `pull`; omit entirely for `push`, and for `pull` when either `--hash` was empty or the algorithm requested isn't one the plugin can compute — never report a hash for a different algorithm than what was requested, and never guess. |
-| `hash.algorithm` | string | yes, if `hash` is present | One of the [CycloneDX hash algorithm names](#hash-algorithms) below — must exactly equal the `--hash` value the plugin was given. |
-| `hash.value` | string | yes, if `hash` is present | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
+| `hash` | object | no | The content hash of the pulled artifact, for the algorithm `--hash` requested. Only meaningful for `pull`; leave both of its fields unset for `push`, and for `pull` when either `--hash` was empty or the algorithm requested isn't one the plugin can compute — never report a hash for a different algorithm than what was requested, and never guess. |
+| `hash.algorithm` | string | present only together with `hash.value` | One of the [CycloneDX hash algorithm names](#hash-algorithms) below — must exactly equal the `--hash` value the plugin was given. |
+| `hash.value` | string | present only together with `hash.algorithm` | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
 
 Go plugins should build this as a `plugin.Result` (see
 [`internal/plugin`](../internal/plugin)) and print it with `(*Result).Print`,
 rather than hand-rolling the JSON encoding.
+
+A machine-readable version of this schema, suitable for validating a
+plugin's actual stdout output with any off-the-shelf JSON Schema
+validator, is published at
+[`result.schema.json`](result.schema.json).
 
 ### Hash algorithms
 
