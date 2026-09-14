@@ -93,8 +93,11 @@ possible — it's not a persistent log, and is deleted again once the
 plugin exits, whether it succeeded or failed.
 
 See [`plugins/README.md`](plugins/README.md) for the first-party plugins
-bomify ships (`oci`, `helm`, `generic`) and the exact contract a third-party
-plugin must implement.
+bomify ships (`oci`, `helm`, `generic`), and
+[`plugins/CONTRACT.md`](plugins/CONTRACT.md) for the full, authoritative
+specification of the contract above — required/optional flags, the exact
+`Result` JSON schema, valid hash algorithm names, and the logging contract
+— that a third-party plugin must implement.
 
 ![Plugin dispatch sequence](docs/diagrams/plugin-dispatch.svg)
 
