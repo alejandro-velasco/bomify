@@ -3,8 +3,7 @@
 Plugins created and supported by the bomify project itself, as opposed to
 third-party plugins a user might install separately. Each subdirectory here
 is a standalone `bomify-plugin-<kind>` binary implementing the pull/push
-contract described in [`internal/plugin`](../internal/plugin) and the
-[README](../README.md#plugins).
+contract specified in [`CONTRACT.md`](CONTRACT.md).
 
 | Plugin                                        | Kind     | Backing library                                                                   |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|
@@ -31,4 +30,4 @@ sending it to `--remote` exactly as given (with a correct
 upload URL, where appending anything to `--remote` would invalidate it.
 
 To add a new one, create `plugins/bomify-plugin-<kind>`, implement `pull`
-and `push` per the contract, and add a row above.
+and `push` per [`CONTRACT.md`](CONTRACT.md), and add a row above.
