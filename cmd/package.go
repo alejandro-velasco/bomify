@@ -9,6 +9,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
+	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 )
 
 func packageCmd() *cobra.Command {
@@ -19,6 +20,7 @@ func packageCmd() *cobra.Command {
 
 	cmd.AddCommand(packagePruneCmd())
 	cmd.AddCommand(packageRemoveCmd())
+	cmd.AddCommand(packageManifestCmd())
 
 	return cmd
 }
@@ -58,6 +60,39 @@ func runPackagePrune(cmd *cobra.Command) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Removed %d item(s)\n", len(result.Removed))
 
 	return nil
+}
+
+// packageManifestCmd builds the `bomify package manifest` command.
+func packageManifestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "manifest <reference>",
+		Short: "Print a remote package's CycloneDX manifest",
+		Long:  "Manifest fetches <reference> from an OCI registry and writes its aggregate CycloneDX SBOM manifest (the artifact's config blob) verbatim to stdout, without pulling any of its layers or writing anything to the data directory.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := runPackageManifest(cmd, args[0]); err != nil {
+				return fmt.Errorf("package manifest: %w", err)
+			}
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func runPackageManifest(cmd *cobra.Command, ref string) error {
+	repo, err := newRepository(ref)
+	if err != nil {
+		return err
+	}
+
+	data, err := pull.Manifest(cmd.Context(), repo, ref)
+	if err != nil {
+		return err
+	}
+
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
 }
 
 func packageRemoveCmd() *cobra.Command {

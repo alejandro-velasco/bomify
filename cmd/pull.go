@@ -6,9 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry"
-	"oras.land/oras-go/v2/registry/remote"
 
-	"github.com/alejandro-velasco/bomify/internal/auth"
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
@@ -81,23 +79,4 @@ func logPulledLayers(logger *slog.Logger, result pull.Result) {
 	for _, layer := range result.Layers {
 		logger.Info("layer restored", "purl", layer.Purl, "hash", layer.Hash, "path", layer.Path)
 	}
-}
-
-// newRepository builds a remote.Repository for ref, authenticating with
-// whatever credentials `bomify login` (or `docker login` — they share a
-// store) has for its registry. A registry with no stored credentials is
-// accessed anonymously.
-func newRepository(ref string) (*remote.Repository, error) {
-	repo, err := remote.NewRepository(ref)
-	if err != nil {
-		return nil, fmt.Errorf("parse reference %s: %w", ref, err)
-	}
-
-	client, err := auth.Client()
-	if err != nil {
-		return nil, err
-	}
-	repo.Client = client
-
-	return repo, nil
 }

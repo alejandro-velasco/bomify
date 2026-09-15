@@ -109,6 +109,30 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 	return Result{SBOMHash: sbomHash, Layers: layers}, nil
 }
 
+// Manifest resolves ref against target and returns the raw bytes of its
+// config blob — the aggregate CycloneDX SBOM manifest — directly from the
+// registry. Unlike Pull, it never touches a data directory or any layers:
+// it's for inspecting a remote package's manifest, not restoring it
+// locally.
+func Manifest(ctx context.Context, target oras.ReadOnlyTarget, ref string) ([]byte, error) {
+	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", ref, err)
+	}
+
+	manifest, err := fetchManifest(ctx, target, desc)
+	if err != nil {
+		return nil, fmt.Errorf("fetch manifest %s: %w", ref, err)
+	}
+
+	data, err := content.FetchAll(ctx, target, manifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("fetch config: %w", err)
+	}
+
+	return data, nil
+}
+
 func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor) (ocispec.Manifest, error) {
 	data, err := content.FetchAll(ctx, target, desc)
 	if err != nil {
