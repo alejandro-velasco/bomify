@@ -168,6 +168,47 @@ func TestPruneSkipsManifestWithPidFile(t *testing.T) {
 	}
 }
 
+// TestPruneReportsUnprotectedForUnparsableManifest guards against a real
+// bug: a tagged SBOM manifest that exists but fails to parse used to be
+// treated identically to a missing one, so Prune silently pruned its
+// components as unreachable — even though a tag still pointed at it. It
+// must instead be reported via PruneResult.Unprotected, loudly, rather
+// than the same data loss happening with no signal at all.
+func TestPruneReportsUnprotectedForUnparsableManifest(t *testing.T) {
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
+	writeComponentFixture(t, baseDir, component)
+
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	writeSBOM(t, sbomPath, component)
+	sbomHash, _, err := RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	// Corrupt the recorded manifest after the fact, simulating e.g. a
+	// truncated write or on-disk corruption — not something RecordManifest
+	// itself would ever produce, but something Prune must still handle
+	// safely if it happens.
+	if err := os.WriteFile(ManifestPath(baseDir, sbomHash), []byte("not json"), 0o644); err != nil {
+		t.Fatalf("corrupt manifest: %v", err)
+	}
+
+	if err := UpdateRepositories(baseDir, []string{"myapp:v1.0"}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+
+	result, err := Prune(baseDir)
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if len(result.Unprotected) != 1 || result.Unprotected[0] != sbomHash {
+		t.Errorf("Unprotected = %v, want [%s]", result.Unprotected, sbomHash)
+	}
+}
+
 func TestPruneWithNoManifestsDirectory(t *testing.T) {
 	baseDir := t.TempDir()
 
