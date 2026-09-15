@@ -19,6 +19,7 @@ Manage individual bomify packages
 ### SEE ALSO
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify package manifest](bomify_package_manifest.md)	 - Print a package's CycloneDX manifest
 * [bomify package prune](bomify_package_prune.md)	 - Remove packages not associated with any tag
 * [bomify package remove](bomify_package_remove.md)	 - Remove packages by tag
 

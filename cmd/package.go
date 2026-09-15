@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ func packageCmd() *cobra.Command {
 
 	cmd.AddCommand(packagePruneCmd())
 	cmd.AddCommand(packageRemoveCmd())
+	cmd.AddCommand(packageManifestCmd())
 
 	return cmd
 }
@@ -58,6 +60,39 @@ func runPackagePrune(cmd *cobra.Command) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Removed %d item(s)\n", len(result.Removed))
 
 	return nil
+}
+
+// packageManifestCmd builds the `bomify package manifest` command.
+func packageManifestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "manifest <tag>",
+		Short: "Print a package's CycloneDX manifest",
+		Long:  "Manifest resolves <tag> to the build recorded for it (see `bomify build`) and writes its aggregate CycloneDX SBOM manifest verbatim to stdout.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := runPackageManifest(cmd, args[0]); err != nil {
+				return fmt.Errorf("package manifest: %w", err)
+			}
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func runPackageManifest(cmd *cobra.Command, tag string) error {
+	sbomHash, err := build.ResolveTag(dataDir, tag)
+	if err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(build.ManifestPath(dataDir, sbomHash))
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
 }
 
 func packageRemoveCmd() *cobra.Command {
