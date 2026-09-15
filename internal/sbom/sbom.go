@@ -39,7 +39,17 @@ func Load(path string) (*cdx.BOM, error) {
 // trustworthy .json/.xml path — e.g. internal/build's recorded manifests,
 // which are always named "<hash>.json" regardless of the original SBOM's
 // real format, since RecordManifest copies it verbatim.
+//
+// A leading UTF-8 byte-order-mark, if present, is stripped before
+// detection and decoding — see utf8BOM. This strip is done here, up
+// front, rather than left to DetectFormat's own (also necessary — see
+// its doc comment) one: DetectFormat only returns a format, not cleaned
+// bytes, and the decoder below needs BOM-free input to work at all
+// (confirmed experimentally: Go's JSON decoder, unlike its XML one,
+// rejects a raw BOM even once the format is already known).
 func LoadBytes(data []byte) (*cdx.BOM, error) {
+	data = bytes.TrimPrefix(data, utf8BOM)
+
 	format, err := DetectFormat(data)
 	if err != nil {
 		return nil, fmt.Errorf("detect sbom format: %w", err)
@@ -54,13 +64,24 @@ func LoadBytes(data []byte) (*cdx.BOM, error) {
 	return bom, nil
 }
 
+// utf8BOM is the UTF-8 byte-order-mark some tools — XML writers
+// especially, and text editors on Windows — prepend to files they save
+// as "UTF-8". It's invisible in most editors and, since it isn't
+// Unicode whitespace, survives bytes.TrimSpace untouched: left alone, it
+// makes DetectFormat see neither '{' nor '<' and misreport the SBOM as
+// unrecognized, and makes Go's JSON decoder (though not, as it happens,
+// its XML one) fail outright even once the format is known. LoadBytes
+// and DetectFormat both strip it before doing anything else.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 // DetectFormat detects data's CycloneDX BOMFileFormat from its first
-// non-whitespace byte: '{' for JSON, '<' for XML. Exported so callers that
-// need to know the format for a reason other than parsing it (e.g.
+// non-whitespace byte, after stripping a leading UTF-8 byte-order-mark if
+// present (see utf8BOM): '{' for JSON, '<' for XML. Exported so callers
+// that need to know the format for a reason other than parsing it (e.g.
 // internal/oci/push choosing a media type for the raw bytes it's about to
 // push) don't have to re-implement the same sniffing LoadBytes does.
 func DetectFormat(data []byte) (cdx.BOMFileFormat, error) {
-	trimmed := bytes.TrimSpace(data)
+	trimmed := bytes.TrimSpace(bytes.TrimPrefix(data, utf8BOM))
 	if len(trimmed) == 0 {
 		return 0, fmt.Errorf("empty sbom")
 	}
