@@ -6,7 +6,9 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"golang.org/x/sync/errgroup"
+	"oras.land/oras-go/v2/registry/remote"
 
+	"github.com/alejandro-velasco/bomify/internal/auth"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
@@ -76,4 +78,23 @@ func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string
 	}
 
 	return kind, path, nil
+}
+
+// newRepository builds a remote.Repository for ref, authenticating with
+// whatever credentials `bomify login` (or `docker login` — they share a
+// store) has for its registry. A registry with no stored credentials is
+// accessed anonymously.
+func newRepository(ref string) (*remote.Repository, error) {
+	repo, err := remote.NewRepository(ref)
+	if err != nil {
+		return nil, fmt.Errorf("parse reference %s: %w", ref, err)
+	}
+
+	client, err := auth.Client()
+	if err != nil {
+		return nil, err
+	}
+	repo.Client = client
+
+	return repo, nil
 }
