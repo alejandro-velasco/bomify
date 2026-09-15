@@ -1,0 +1,32 @@
+flowchart TD
+    classDef source fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef kept fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef removed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+    classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
+    classDef unprotected fill:#FEF2F2,stroke:#DC2626,stroke-width:1.5px,stroke-dasharray:4 2,color:#7f1d1d
+
+    Repos[("repositories.json<br/>repo -&gt; tag -&gt; sbom hash")] --> Walk["for each tagged sbom hash"]
+    Walk --> MarkSelf["mark the sbom's own manifest kept"]
+    MarkSelf --> ReadManifest{"read manifests/&lt;hash&gt;.json"}
+
+    ReadManifest -->|"missing"| NothingToMark["nothing to mark<br/>(nothing pulled for it yet)"]
+    ReadManifest -->|"exists"| Parse{"sbom.LoadBytes"}
+
+    Parse -->|"parses"| MarkComponents["mark every component's<br/>purl hash kept"]
+    Parse -->|"fails to parse<br/>(corrupt manifest)"| Unprotected["report sbom hash in<br/>PruneResult.Unprotected<br/>— its components stay unmarked"]
+
+    NothingToMark --> Sweep
+    MarkComponents --> Sweep
+    Unprotected --> Sweep["sweep every entry under<br/>manifests/ and layers/"]
+
+    Sweep --> Reachable{"hash in the<br/>kept set?"}
+    Reachable -->|"yes"| Keep["left alone"]
+    Reachable -->|"no"| PidCheck{"&lt;hash&gt;.pid<br/>present?"}
+    PidCheck -->|"yes, pull in flight"| Skip["Skipped"]
+    PidCheck -->|"no"| Remove["Removed"]
+
+    class Repos source
+    class MarkSelf,MarkComponents,NothingToMark,Keep kept
+    class Remove removed
+    class Skip skipped
+    class Unprotected unprotected

@@ -139,13 +139,32 @@ currently resolves to. Docker's `repositories.json` layout is followed
 exactly (`repo -> tag -> id`), tag defaulting to `latest` when a `--tag`/
 argument has no `:version` suffix.
 
+### Pruning
+
 `bomify package prune` (and `package remove`, which prunes automatically
-after untagging) reclaims anything unreachable: it walks every tag in
-`repositories.json`, parses the SBOM each resolves to, and marks that SBOM's
-own manifest plus the purl hash of every component it describes as "kept" —
-everything else under `manifests/` and `layers/` is removed (skipping
-anything with a live pid file, since that might be a pull in progress). A
-component shared by two tags survives as long as either tag does.
+after untagging) reclaims anything unreachable — mirroring `docker image
+prune`. For each tag in `repositories.json` it marks two things "kept": the
+tagged SBOM's own manifest (by its content hash), and the purl hash of every
+component that SBOM's manifest describes. Everything under `manifests/` and
+`layers/` that walk never reaches is removed, except anything with a live
+`.pid` file (a pull might be in progress for it), which is left alone and
+reported as **Skipped** instead. A component shared by two tags survives as
+long as either tag does.
+
+The one subtlety is a tagged manifest that exists but fails to parse — e.g.
+on-disk corruption or a truncated write. That's different from a manifest
+that's simply missing (nothing pulled for it yet, so nothing to protect
+either way): here there really are components the SBOM describes, but
+`Prune` can't identify them, so it can't mark them kept. Left unhandled,
+those components would look unreachable and get silently deleted even
+though a tag still points at that build. `Prune` instead reports the SBOM's
+hash in `PruneResult.Unprotected`, and both `package prune` and `package
+remove` log a warning for each one so the gap is visible rather than
+silent — see `internal/build/prune.go`'s `markComponents`.
+
+![Pruning reachability walk](docs/diagrams/prune.svg)
+
+*Source: [`docs/diagrams/prune.mmd`](docs/diagrams/prune.mmd)*
 
 ## Push & pull (OCI registry)
 

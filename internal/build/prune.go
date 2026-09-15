@@ -23,6 +23,14 @@ type PruneResult struct {
 	// Skipped lists manifest/layer paths Prune left alone because a pid
 	// file suggested a pull might currently be in flight for them.
 	Skipped []string
+	// Unprotected lists the SBOM content hashes of tagged builds whose
+	// manifest exists but could not be parsed — so this Prune could not
+	// determine, and therefore could not protect, the components that
+	// build's manifest describes. Unlike a build whose manifest is simply
+	// missing (nothing to protect either way), this is a real gap: any of
+	// that build's components not also kept by some other tag may have
+	// just been removed even though a tag still points at this SBOM.
+	Unprotected []string
 }
 
 // Prune removes every manifest and layer under baseDir that isn't
@@ -41,7 +49,7 @@ type PruneResult struct {
 // removes everything else in manifests/ and layers/ that walk never
 // reached.
 func Prune(baseDir string) (PruneResult, error) {
-	kept, err := reachableHashes(baseDir)
+	kept, unprotected, err := reachableHashes(baseDir)
 	if err != nil {
 		return PruneResult{}, err
 	}
@@ -50,12 +58,12 @@ func Prune(baseDir string) (PruneResult, error) {
 	entries, err := os.ReadDir(manifestsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return PruneResult{}, nil
+			return PruneResult{Unprotected: unprotected}, nil
 		}
 		return PruneResult{}, fmt.Errorf("read %s: %w", manifestsDir, err)
 	}
 
-	var result PruneResult
+	result := PruneResult{Unprotected: unprotected}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
@@ -92,44 +100,56 @@ func Prune(baseDir string) (PruneResult, error) {
 
 // reachableHashes returns the set of manifest/layer hashes still
 // reachable from repositories.json: every tagged SBOM's own hash, plus
-// the purl hash of every component that SBOM actually describes.
-func reachableHashes(baseDir string) (map[string]bool, error) {
+// the purl hash of every component that SBOM actually describes. It also
+// returns the SBOM hash of every tagged build whose manifest exists but
+// couldn't be parsed, so Prune can report that it wasn't able to protect
+// that build's components — see PruneResult.Unprotected.
+func reachableHashes(baseDir string) (kept map[string]bool, unprotected []string, err error) {
 	repos, err := ReadRepositories(baseDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	kept := map[string]bool{}
+	kept = map[string]bool{}
 	for _, versions := range repos {
 		for _, sbomHash := range versions {
 			if kept[sbomHash] {
 				continue
 			}
 			kept[sbomHash] = true
-			markComponents(baseDir, sbomHash, kept)
+			if !markComponents(baseDir, sbomHash, kept) {
+				unprotected = append(unprotected, sbomHash)
+			}
 		}
 	}
 
-	return kept, nil
+	return kept, unprotected, nil
 }
 
 // markComponents parses the SBOM manifest for sbomHash and marks each
-// component it describes as kept. A missing or unparsable manifest is
-// left alone rather than treated as an error: whatever's kept from other
-// tags still needs pruning correctly, and a manifest that isn't there
-// has nothing to prune under it anyway.
-func markComponents(baseDir, sbomHash string, kept map[string]bool) {
+// component it describes as kept, reporting whether it was able to. A
+// missing manifest is left alone and still reported as ok — whatever's
+// kept from other tags still needs pruning correctly, and a manifest
+// that isn't there has nothing to prune under it anyway — but a manifest
+// that exists and fails to parse is reported as not ok: unlike "missing",
+// this means there really are components here Prune can't identify, and
+// so can't protect.
+func markComponents(baseDir, sbomHash string, kept map[string]bool) (ok bool) {
 	data, err := os.ReadFile(ManifestPath(baseDir, sbomHash))
 	if err != nil {
-		return
+		return true
 	}
 
 	bom, err := sbom.LoadBytes(data)
-	if err != nil || bom.Components == nil {
-		return
+	if err != nil {
+		return false
+	}
+	if bom.Components == nil {
+		return true
 	}
 
 	for _, component := range *bom.Components {
 		kept[plugin.PurlHash(component)] = true
 	}
+	return true
 }
