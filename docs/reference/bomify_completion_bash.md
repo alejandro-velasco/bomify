@@ -40,7 +40,7 @@ bomify completion bash
 ### Options inherited from parent commands
 
 ```
-      --data-dir string   directory to store bomify data (e.g., built packages) (default "C:\\Users\\aleja\\.bomify")
+      --data-dir string   directory to store bomify data (e.g., built packages). default is $HOME/.bomify or the value of the BOMIFY_DATA_DIR environment variable
       --docs-dir string   directory to write documentation to (if empty, no docs are generated)
       --verbose           enable verbose (debug) logging
 ```

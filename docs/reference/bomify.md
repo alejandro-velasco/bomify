@@ -14,7 +14,7 @@ bomify [flags]
 ### Options
 
 ```
-      --data-dir string   directory to store bomify data (e.g., built packages) (default "C:\\Users\\aleja\\.bomify")
+      --data-dir string   directory to store bomify data (e.g., built packages). default is $HOME/.bomify or the value of the BOMIFY_DATA_DIR environment variable
       --docs-dir string   directory to write documentation to (if empty, no docs are generated)
   -h, --help              help for bomify
       --verbose           enable verbose (debug) logging

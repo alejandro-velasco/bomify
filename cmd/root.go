@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"github.com/alejandro-velasco/bomify/internal/logging"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/alejandro-velasco/bomify/internal/logging"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -30,8 +31,12 @@ type rootOptions struct {
 
 // NewRootCmd builds the bomify root command and wires up its subcommands.
 func NewRootCmd() (*cobra.Command, error) {
-	rootOpts := &rootOptions{}
+	defaultDataDir, err := defaultDataDir()
+	if err != nil {
+		return nil, fmt.Errorf("determine default data dir: %w", err)
+	}
 
+	rootOpts := &rootOptions{}
 	rootCmd := &cobra.Command{
 		Use:           "bomify",
 		Short:         "bomify builds packages from CycloneDX SBOMs",
@@ -41,20 +46,22 @@ func NewRootCmd() (*cobra.Command, error) {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			logger := logging.New(rootOpts.verbose)
 			cmd.SetContext(logging.WithContext(cmd.Context(), logger))
+
+			if dataDir == "" {
+				dataDir = defaultDataDir
+			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if rootOpts.docsDir != "" {
 				if err := doc.GenMarkdownTree(cmd, rootOpts.docsDir); err != nil {
 					return fmt.Errorf("generate docs: %w", err)
 				}
+
+				return nil
 			}
+
 			return cmd.Help()
 		},
-	}
-
-	defaultDataDir, err := defaultDataDir()
-	if err != nil {
-		return nil, fmt.Errorf("determine default data dir: %w", err)
 	}
 
 	// Disable the auto-generated tag in the documentation.
@@ -62,7 +69,7 @@ func NewRootCmd() (*cobra.Command, error) {
 
 	rootCmd.PersistentFlags().BoolVar(&rootOpts.verbose, "verbose", false, "enable verbose (debug) logging")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.docsDir, "docs-dir", "", "directory to write documentation to (if empty, no docs are generated)")
-	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory to store bomify data (e.g., built packages)")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "directory to store bomify data (e.g., built packages). default is $HOME/.bomify or the value of the BOMIFY_DATA_DIR environment variable")
 
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(loadCmd())
