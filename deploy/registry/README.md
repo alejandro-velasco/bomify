@@ -1,6 +1,6 @@
 # Local test registry
 
-A throwaway, TLS-enabled Docker registry (the reference [`registry:3`](https://hub.docker.com/_/registry) implementation, the [CNCF Distribution](https://github.com/distribution/distribution) project) for exercising `bomify build`/`mirror`/`pull` against a real OCI registry without needing an account anywhere. It's TLS-only, deliberately: bomify (and its `oci`/`helm` plugins) never support plain HTTP or skip-verify — see [`plugins/README.md`](../../plugins/README.md) — so this mirrors what you'd actually be pointed at in the real world, self-signed cert and all.
+A throwaway, TLS-enabled Docker registry (the reference [`registry:3`](https://hub.docker.com/_/registry) implementation, the [CNCF Distribution](https://github.com/distribution/distribution) project) for exercising `bomify build`/`distribute`/`pull` against a real OCI registry without needing an account anywhere. It's TLS-only, deliberately: bomify (and its `oci`/`helm` plugins) never support plain HTTP or skip-verify — see [`plugins/README.md`](../../plugins/README.md) — so this mirrors what you'd actually be pointed at in the real world, self-signed cert and all.
 
 ## Quickstart
 
@@ -10,7 +10,7 @@ make up     # generates ./certs on the host if needed, then `docker compose up -
 
 This starts a `registry:3` container named `bomify-test-registry`, listening on `https://localhost:443` (the standard HTTPS port, so it's reachable as a bare `localhost` with no port at all), backed by `./data` (gitignored) and `./certs` (gitignored — generated fresh per checkout, never committed since it includes the private key).
 
-A bare `localhost` matters more than it might look: `bomify login`/`pull`/`push` (via `oras-go`) always assume https regardless of port, but `bomify build`/`mirror`'s OCI plugin (via `crane`) specifically treats **any** `localhost:<port>` — even `localhost:443` spelled out — as plain HTTP; only a portless `localhost` gets https from it. So if you can't bind host port 443 (it typically needs root on Linux/macOS; Docker Desktop on Windows generally doesn't need anything extra) and override it with `PORT=8443 make up`, only `bomify login`/`pull`/`push` against `localhost:8443` will still work as https — the `build`/`mirror` walkthrough below needs port 443 specifically to behave.
+A bare `localhost` matters more than it might look: `bomify login`/`pull`/`push` (via `oras-go`) always assume https regardless of port, but `bomify build`/`distribute`'s OCI plugin (via `crane`) specifically treats **any** `localhost:<port>` — even `localhost:443` spelled out — as plain HTTP; only a portless `localhost` gets https from it. So if you can't bind host port 443 (it typically needs root on Linux/macOS; Docker Desktop on Windows generally doesn't need anything extra) and override it with `PORT=8443 make up`, only `bomify login`/`pull`/`push` against `localhost:8443` will still work as https — the `build`/`distribute` walkthrough below needs port 443 specifically to behave.
 
 Because the cert is self-signed, nothing trusts it by default — bomify, crane, oras, and `docker`/`podman push` will all reject the connection with an "unknown authority" error otherwise. `generate-certs.sh` trusts it for you as its last step, on the first (non-idempotent) run only, via `update-ca-certificates` (Debian/Ubuntu) or `update-ca-trust` (Fedora/RHEL) — the only two it supports. This runs `sudo`, so you'll see (and need to approve) a password prompt.
 
@@ -22,11 +22,11 @@ The registry also requires authentication (`generate-htpasswd.sh`, also run by `
 bomify login localhost -u testuser -p testpassword
 ```
 
-Then point bomify at it. [`example.cdx.json`](example.cdx.json) is a minimal one-component SBOM (`alpine:3.20`) for exactly this: `bomify build` pulls it from the real Docker Hub, then `bomify mirror` re-pushes what was pulled into the test registry — `bomify-plugin-oci` names the pushed ref `<remote>/<component-name>:<version>`, so this ends up at `localhost/alpine:3.20`:
+Then point bomify at it. [`example.cdx.json`](example.cdx.json) is a minimal one-component SBOM (`alpine:3.20`) for exactly this: `bomify build` pulls it from the real Docker Hub, then `bomify distribute` re-pushes what was pulled into the test registry — `bomify-plugin-oci` names the pushed ref `<remote>/<component-name>:<version>`, so this ends up at `localhost/alpine:3.20`:
 
 ```sh
-bomify build  example.cdx.json --data-dir ./data-out
-bomify mirror example.cdx.json --data-dir ./data-out --remote localhost
+bomify build      example.cdx.json --data-dir ./data-out
+bomify distribute example.cdx.json --data-dir ./data-out --remote localhost
 ```
 
 or drive it directly with `crane`/`oras`/`docker` the same way you would any other registry — once the cert is trusted and you're logged in, `localhost` behaves like any other authenticated TLS registry.

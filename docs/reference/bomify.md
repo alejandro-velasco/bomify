@@ -24,10 +24,10 @@ bomify [flags]
 
 * [bomify build](bomify_build.md)	 - Build builds the package described by a CycloneDX SBOM
 * [bomify completion](bomify_completion.md)	 - Generate the autocompletion script for the specified shell
+* [bomify distribute](bomify_distribute.md)	 - Distribute publishes the packages described by a CycloneDX SBOM to a remote endpoint
 * [bomify load](bomify_load.md)	 - Load packages from a tarball
 * [bomify login](bomify_login.md)	 - Log in to an OCI registry
 * [bomify logout](bomify_logout.md)	 - Log out from an OCI registry
-* [bomify mirror](bomify_mirror.md)	 - Mirror publishes the packages described by a CycloneDX SBOM to a remote endpoint
 * [bomify package](bomify_package.md)	 - Manage individual bomify packages
 * [bomify packages](bomify_packages.md)	 - List built packages
 * [bomify pull](bomify_pull.md)	 - Pull downloads a bomify package from an OCI registry
