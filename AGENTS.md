@@ -24,6 +24,13 @@ sources under `docs/diagrams/*.mmd`. Never hand-edit an `.svg` directly:
 edit the corresponding `.mmd` source, then regenerate every diagram with
 `make diagrams`. Commit both the updated `.mmd` and its regenerated `.svg`.
 
+## Regenerate the CLI reference after flag/arg changes
+
+[docs/reference/](docs/reference) is generated, not hand-written. Any time a
+change touches a command's flags, arguments, or `Short`/`Long` description,
+run `make docs` in the same pass and commit the regenerated files — never
+hand-edit anything under `docs/reference/`.
+
 ## Keep README.md current
 
 [README.md](README.md) should stay high level: how to run the tool and its
