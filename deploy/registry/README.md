@@ -22,11 +22,11 @@ The registry also requires authentication (`generate-htpasswd.sh`, also run by `
 bomify login localhost -u testuser -p testpassword
 ```
 
-Then point bomify at it. [`example.cdx.json`](example.cdx.json) is a minimal one-component SBOM (`alpine:3.20`) for exactly this: `bomify build` pulls it from the real Docker Hub, then `bomify distribute` re-pushes what was pulled into the test registry — `bomify-plugin-oci` names the pushed ref `<remote>/<component-name>:<version>`, so this ends up at `localhost/alpine:3.20`:
+Then point bomify at it. [`example.cdx.json`](example.cdx.json) is a minimal one-component SBOM (`alpine:3.20`) for exactly this: `bomify build` pulls it from the real Docker Hub and tags it locally, then `bomify distribute` re-pushes the tagged package into the test registry — `bomify-plugin-oci` names the pushed ref `<remote>/<component-name>:<version>`, so this ends up at `localhost/alpine:3.20`:
 
 ```sh
-bomify build      example.cdx.json --data-dir ./data-out
-bomify distribute example.cdx.json --data-dir ./data-out --remote localhost
+bomify build      example.cdx.json --data-dir ./data-out --tag example:1.0
+bomify distribute example:1.0      --data-dir ./data-out --remote oci=localhost
 ```
 
 or drive it directly with `crane`/`oras`/`docker` the same way you would any other registry — once the cert is trusted and you're logged in, `localhost` behaves like any other authenticated TLS registry.

@@ -2,7 +2,7 @@
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build`/`bomify distribute` walk its components and delegate each one to an external plugin binary that knows how to pull or push it.
+Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time.
 
 ## Status
 

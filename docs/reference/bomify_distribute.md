@@ -1,21 +1,21 @@
 ## bomify distribute
 
-Distribute publishes the packages described by a CycloneDX SBOM to a remote endpoint
+Distribute publishes a locally available bomify package to a remote endpoint
 
 ### Synopsis
 
-Distribute reads a CycloneDX SBOM and publishes each component it describes to a remote endpoint.
+Distribute resolves <tag> to the SBOM manifest a prior `bomify build`/`bomify pull` recorded for it (see `bomify tag`/`bomify packages`) and publishes each component that SBOM describes to a remote endpoint. The endpoint used is chosen per component by its plugin kind: pass one or more `--remote kind=endpoint` (e.g. --remote oci=registry.example.com --remote helm=charts.example.com/helm). A kind with no matching --remote falls back to the data directory's conf/distribution.json.
 
 ```
-bomify distribute <sbom-file> [flags]
+bomify distribute <tag> [flags]
 ```
 
 ### Options
 
 ```
-  -c, --concurrency int   number of components to push concurrently (default 1)
-  -h, --help              help for distribute
-  -r, --remote string     remote endpoint to distribute components to
+  -c, --concurrency int         number of components to push concurrently (default 1)
+  -h, --help                    help for distribute
+  -r, --remote stringToString   kind=endpoint remote mapping (repeatable); kinds not given fall back to <data-dir>/conf/distribution.json (default [])
 ```
 
 ### Options inherited from parent commands

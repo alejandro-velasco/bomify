@@ -105,19 +105,29 @@ func Push(inputDir string, purlString string, remote string, logger *slog.Logger
 	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", inputDir, dst)}, nil
 }
 
-// destinationReference derives a "<remote>/<name>:<version>" reference from
-// purlString, defaulting to "latest" when it declares no version.
+// destinationReference derives a "<remote>/<name>" reference from
+// purlString, preferring the "tag" qualifier, then a digest-shaped version
+// (joined with "@"), then a plain tag-shaped version (joined with ":"), and
+// finally the "latest" tag when purlString declares neither — the same
+// precedence Resolve uses for pull.
 func destinationReference(remote, purlString string) (string, error) {
 	purl, err := packageurl.FromString(purlString)
 	if err != nil {
 		return "", fmt.Errorf("parse purl %q: %w", purlString, err)
 	}
 
-	version := purl.Version
-	if version == "" {
-		version = "latest"
-	}
-
 	remote = strings.TrimSuffix(remote, "/")
-	return fmt.Sprintf("%s/%s:%s", remote, purl.Name, version), nil
+	repository := remote + "/" + purl.Name
+
+	qualifiers := purl.Qualifiers.Map()
+	switch {
+	case qualifiers["tag"] != "":
+		return repository + ":" + qualifiers["tag"], nil
+	case strings.HasPrefix(purl.Version, "sha256:"):
+		return repository + "@" + purl.Version, nil
+	case purl.Version != "":
+		return repository + ":" + purl.Version, nil
+	default:
+		return repository + ":latest", nil
+	}
 }

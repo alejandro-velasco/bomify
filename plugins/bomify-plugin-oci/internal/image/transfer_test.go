@@ -150,6 +150,72 @@ func TestPush(t *testing.T) {
 	}
 }
 
+func TestPushDigestVersion(t *testing.T) {
+	host := newTestRegistry(t)
+
+	img, err := random.Image(1024, 2)
+	if err != nil {
+		t.Fatalf("random.Image: %v", err)
+	}
+	wantDigest, err := img.Digest()
+	if err != nil {
+		t.Fatalf("img.Digest: %v", err)
+	}
+
+	inputDir := t.TempDir()
+	if err := crane.SaveOCI(img, inputDir); err != nil {
+		t.Fatalf("crane.SaveOCI (seed local layout): %v", err)
+	}
+
+	remote := host + "/test"
+	result, err := Push(inputDir, "pkg:oci/push-image@"+wantDigest.String(), remote, testLogger())
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	wantDst := host + "/test/push-image@" + wantDigest.String()
+	if result.OutputPath != wantDst {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, wantDst)
+	}
+
+	pulled, err := crane.Pull(wantDst)
+	if err != nil {
+		t.Fatalf("crane.Pull(%q) after Push: %v", wantDst, err)
+	}
+	gotDigest, err := pulled.Digest()
+	if err != nil {
+		t.Fatalf("pulled.Digest: %v", err)
+	}
+	if gotDigest != wantDigest {
+		t.Errorf("pulled digest = %s, want %s", gotDigest, wantDigest)
+	}
+}
+
+func TestPushTagQualifierTakesPrecedence(t *testing.T) {
+	host := newTestRegistry(t)
+
+	img, err := random.Image(1024, 2)
+	if err != nil {
+		t.Fatalf("random.Image: %v", err)
+	}
+
+	inputDir := t.TempDir()
+	if err := crane.SaveOCI(img, inputDir); err != nil {
+		t.Fatalf("crane.SaveOCI (seed local layout): %v", err)
+	}
+
+	remote := host + "/test"
+	result, err := Push(inputDir, "pkg:oci/push-image@sha256:deadbeef?tag=2.0", remote, testLogger())
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	wantDst := host + "/test/push-image:2.0"
+	if result.OutputPath != wantDst {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, wantDst)
+	}
+}
+
 func TestPushInvalidPurl(t *testing.T) {
 	host := newTestRegistry(t)
 
