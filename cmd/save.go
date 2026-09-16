@@ -29,6 +29,7 @@ func saveCmd() *cobra.Command {
 			}
 			return nil
 		},
+		ValidArgsFunction: completeLocalTags,
 	}
 
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the tarball here instead of stdout")

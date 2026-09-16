@@ -17,9 +17,21 @@ func tagCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTag(args[0], args[1])
 		},
+		ValidArgsFunction: completeSourceTag,
 	}
 
 	return cmd
+}
+
+// completeSourceTag completes <source-tag> from known local tags, the same
+// way completeLocalTags does, but offers nothing for <destination-tag>
+// since that's a new name the user is choosing, not one that already
+// exists.
+func completeSourceTag(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return completeLocalTags(cmd, args, toComplete)
 }
 
 func runTag(sourceTag, destTag string) error {

@@ -34,6 +34,7 @@ func distributeCmd() *cobra.Command {
 			}
 			return nil
 		},
+		ValidArgsFunction: completeLocalTags,
 	}
 
 	distributeCmd.Flags().StringToStringVarP(&distributeOpts.remotes, "remote", "r", map[string]string{}, "kind=endpoint remote mapping (repeatable); kinds not given fall back to <data-dir>/conf/distribution.json")

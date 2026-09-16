@@ -3,12 +3,15 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2/registry/remote"
 
 	"github.com/alejandro-velasco/bomify/internal/auth"
+	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
@@ -97,4 +100,45 @@ func newRepository(ref string) (*remote.Repository, error) {
 	repo.Client = client
 
 	return repo, nil
+}
+
+// resolvedDataDir returns the data directory a completion invocation
+// should use. Shell completion runs cobra's hidden `__complete` command
+// directly, which never runs the root command's PersistentPreRun — the
+// one place the global dataDir variable normally gets its default — so an
+// explicit --data-dir on the command line being completed is read back
+// here instead, falling back to the same default root.go's PersistentPreRun
+// would have used.
+func resolvedDataDir(cmd *cobra.Command) string {
+	if dir, err := cmd.Flags().GetString("data-dir"); err == nil && dir != "" {
+		return dir
+	}
+	if dir, err := defaultDataDir(); err == nil {
+		return dir
+	}
+	return ""
+}
+
+// completeLocalTags is a cobra ValidArgsFunction shared by every command
+// that takes an already-tagged local package (push, distribute, save,
+// package remove/rmp): it lists "<repo>:<version>" tags recorded in
+// "<data-dir>/package/repositories.json" (see `bomify packages`), filtered
+// to whatever's typed so far.
+func completeLocalTags(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	repos, err := build.ReadRepositories(resolvedDataDir(cmd))
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var tags []string
+	for repo, versions := range repos {
+		for version := range versions {
+			tag := repo + ":" + version
+			if strings.HasPrefix(tag, toComplete) {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	return tags, cobra.ShellCompDirectiveNoFileComp
 }

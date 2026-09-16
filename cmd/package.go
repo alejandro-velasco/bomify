@@ -111,6 +111,7 @@ func packageRemoveCmd() *cobra.Command {
 			}
 			return nil
 		},
+		ValidArgsFunction: completeLocalTags,
 	}
 
 	return cmd
@@ -129,6 +130,7 @@ func rmpCmd() *cobra.Command {
 			}
 			return nil
 		},
+		ValidArgsFunction: completeLocalTags,
 	}
 
 	return cmd

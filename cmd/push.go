@@ -29,6 +29,7 @@ func pushCmd() *cobra.Command {
 			}
 			return nil
 		},
+		ValidArgsFunction: completeLocalTags,
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to upload concurrently")
