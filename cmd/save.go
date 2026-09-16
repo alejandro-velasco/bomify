@@ -53,8 +53,13 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	if err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress); err != nil {
+	skipped, err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress)
+	if err != nil {
 		return err
+	}
+
+	for _, component := range skipped {
+		logger.Warn("empty package found, skipping", "component", component)
 	}
 
 	destination := "stdout"

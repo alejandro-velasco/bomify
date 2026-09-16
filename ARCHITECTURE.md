@@ -67,7 +67,14 @@ anything themselves. For each SBOM component they:
 
 1. **Detect** a "kind" from the component's purl type (`plugin.Detect`) —
    `pkg:oci/nginx@1.27` is kind `oci`, `pkg:helm/...` is kind `helm`, and so
-   on. A component with no purl, or an unparseable one, fails immediately.
+   on. A component with an unparseable purl, or whose purl type has no
+   matching plugin on `PATH`, fails immediately. `bomify build` handles one
+   edge case itself, before ever calling `plugin.Detect`/`plugin.Find`: a
+   component with no purl at all is always logged as a warning and
+   skipped, never a fatal error — and `bomify push`/`bomify save` skip that
+   same component (by the same empty-purl check) when packaging the build,
+   rather than failing on the local layer it was never pulled for (see
+   `push.Push`).
 2. **Find** a `bomify-plugin-<kind>` executable on `PATH` (`plugin.Find`).
 3. **Delegate** to it via a small subprocess contract: `pull`/`push`
    subcommands taking `--purl`/`--output`/`--hash`/`--log`/`--log-color` or

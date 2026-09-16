@@ -3,7 +3,10 @@
 // `bomify build` recorded (see internal/build) as the artifact's config,
 // and each component that SBOM describes as a layer — tarring up whatever
 // build pulled for it and annotating the layer with its purl — then pushes
-// the whole thing to a registry under a tag.
+// the whole thing to a registry under a tag. A component with no purl was
+// never pulled (`bomify build` skips those), so Push leaves it out of the
+// pushed layers too, rather than failing on the local layer it never had;
+// see Result.Skipped.
 package push
 
 import (
@@ -38,6 +41,10 @@ type Layer struct {
 type Result struct {
 	ManifestDigest string
 	Layers         []Layer
+	// Skipped names, as "name@version", each component Push left out of
+	// the pushed artifact because it has no package URL — see the loop in
+	// Push for why that's not an error.
+	Skipped []string
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
@@ -74,24 +81,50 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		components = *bom.Components
 	}
 
-	layerDescs := make([]ocispec.Descriptor, len(components))
-	layers := make([]Layer, len(components))
+	// componentResults holds one slot per component, filled in either
+	// directly below (for a component with no purl, which was never
+	// pulled — see cmd/build.go) or by the goroutine pushing everything
+	// else, so results land back in the SBOM's own order regardless of
+	// which goroutine finishes first.
+	type componentResult struct {
+		desc    ocispec.Descriptor
+		layer   Layer
+		skipped bool
+		label   string
+	}
+
+	results := make([]componentResult, len(components))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 	for i, component := range components {
 		i, component := i, component
+		if component.PackageURL == "" {
+			results[i] = componentResult{skipped: true, label: fmt.Sprintf("%s@%s", component.Name, component.Version)}
+			continue
+		}
 		g.Go(func() error {
 			desc, layer, err := pushComponentLayer(gctx, target, baseDir, component, progress)
 			if err != nil {
 				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
 			}
-			layerDescs[i] = desc
-			layers[i] = layer
+			results[i] = componentResult{desc: desc, layer: layer}
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return Result{}, err
+	}
+
+	var layerDescs []ocispec.Descriptor
+	var layers []Layer
+	var skipped []string
+	for _, r := range results {
+		if r.skipped {
+			skipped = append(skipped, r.label)
+			continue
+		}
+		layerDescs = append(layerDescs, r.desc)
+		layers = append(layers, r.layer)
 	}
 
 	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
@@ -106,7 +139,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
 
-	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers}, nil
+	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers, Skipped: skipped}, nil
 }
 
 // configMediaType picks the OCI config media type matching data's sniffed

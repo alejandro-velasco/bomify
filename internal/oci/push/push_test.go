@@ -160,6 +160,56 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 	}
 }
 
+// TestPushSkipsComponentWithoutPurl exercises a component with no package
+// URL — which `bomify build` never pulls (see cmd/build.go) — alongside one
+// that was pulled normally, proving Push leaves the empty-purl component
+// out of the pushed artifact (rather than failing on its missing local
+// layer, like TestPushFailsWithoutLocalLayer) and reports it as skipped.
+func TestPushSkipsComponentWithoutPurl(t *testing.T) {
+	baseDir := t.TempDir()
+
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{
+		"artifact": "single file contents",
+	})
+
+	sbomBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[` +
+		`{"type":"container","name":"single-file","version":"1.0","purl":"pkg:generic/single-file@1.0?download_url=https://example.com/single-file"},` +
+		`{"type":"file","name":"internal-notes","version":"1.0"}` +
+		`]}`)
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	if err := os.WriteFile(sbomPath, sbomBytes, 0o644); err != nil {
+		t.Fatalf("write sbom fixture: %v", err)
+	}
+
+	sbomHash, _, err := build.RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+
+	result, err := Push(context.Background(), store, "test", baseDir, sbomHash, 1, nil)
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	if len(result.Layers) != 1 || result.Layers[0].Purl != singleFileComponent.PackageURL {
+		t.Errorf("Layers = %+v, want exactly the single-file component", result.Layers)
+	}
+
+	if len(result.Skipped) != 1 || result.Skipped[0] != "internal-notes@1.0" {
+		t.Errorf("Skipped = %v, want [\"internal-notes@1.0\"]", result.Skipped)
+	}
+
+	pulledDir := t.TempDir()
+	if _, err := pull.Pull(context.Background(), store, "test", pulledDir, 1, nil); err != nil {
+		t.Fatalf("Pull() error = %v, want the pushed artifact to round-trip despite the skipped component", err)
+	}
+}
+
 func writeLayer(t *testing.T, baseDir string, component cdx.Component, files map[string]string) {
 	t.Helper()
 

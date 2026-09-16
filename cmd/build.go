@@ -51,6 +51,11 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	}
 
 	if err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+		if component.PackageURL == "" {
+			log.Warn("empty package found, skipping")
+			return nil
+		}
+
 		kind, path, err := resolvePlugin(component, log)
 		if err != nil {
 			return err

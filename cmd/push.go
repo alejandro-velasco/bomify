@@ -67,4 +67,7 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	for _, layer := range result.Layers {
 		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
 	}
+	for _, component := range result.Skipped {
+		logger.Warn("empty package found, skipping", "component", component)
+	}
 }

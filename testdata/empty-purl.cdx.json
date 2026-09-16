@@ -1,0 +1,32 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "example-tooling",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "file",
+      "name": "hello",
+      "version": "1.0",
+      "purl": "pkg:generic/hello@1.0?download_url=https://raw.githubusercontent.com/octocat/Hello-World/master/README",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "03ba204e50d126e4674c005e04d82e84c21366780af1f43bd54a37816b6ab340"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "internal-notes",
+      "version": "1.0"
+    }
+  ]
+}

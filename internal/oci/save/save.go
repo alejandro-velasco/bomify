@@ -31,38 +31,45 @@ import (
 // self-contained archive Load can restore from later, on this machine or
 // any other, with no registry involved. Shared components (the same purl
 // pulled by more than one of the given tags) are stored once. Layers
-// upload concurrently within each tag, bounded by concurrency.
-func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc) error {
+// upload concurrently within each tag, bounded by concurrency. Skipped
+// names, as "tag: name@version", each component some tag's packaging left
+// out because it has no package URL — see push.Result.Skipped.
+func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc) ([]string, error) {
 	if len(tags) == 0 {
-		return fmt.Errorf("no tags to save")
+		return nil, fmt.Errorf("no tags to save")
 	}
 
 	stageDir, err := os.MkdirTemp("", "bomify-save-*")
 	if err != nil {
-		return fmt.Errorf("create staging directory: %w", err)
+		return nil, fmt.Errorf("create staging directory: %w", err)
 	}
 	defer os.RemoveAll(stageDir)
 
 	store, err := oci.New(stageDir)
 	if err != nil {
-		return fmt.Errorf("create oci layout store: %w", err)
+		return nil, fmt.Errorf("create oci layout store: %w", err)
 	}
 
+	var skipped []string
 	for _, tag := range tags {
 		sbomHash, err := build.ResolveTag(baseDir, tag)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress); err != nil {
-			return fmt.Errorf("package %s: %w", tag, err)
+		result, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress)
+		if err != nil {
+			return nil, fmt.Errorf("package %s: %w", tag, err)
+		}
+		for _, component := range result.Skipped {
+			skipped = append(skipped, fmt.Sprintf("%s: %s", tag, component))
 		}
 	}
 
 	if err := transfer.WriteTar(stageDir, w); err != nil {
-		return fmt.Errorf("archive: %w", err)
+		return nil, fmt.Errorf("archive: %w", err)
 	}
 
-	return nil
+	return skipped, nil
 }
 
 // Load extracts r — an OCI image-layout tarball Save produced — and
