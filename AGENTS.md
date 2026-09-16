@@ -38,6 +38,17 @@ main features. If a change affects either of those, update README.md in the
 same pass — but don't let it grow into a place for implementation detail;
 that belongs in ARCHITECTURE.md or the relevant plugins doc instead.
 
+## Opening pull requests
+
+When a PR needs to be written for this repo:
+
+- Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) as
+  the body — fill in its sections rather than writing an ad hoc description.
+- Title the PR in Conventional Commits style (`<type>[(scope)]: <description>`),
+  with the type and scope matching the actual scope of the code change.
+- Never merge the PR. Always stop once it's opened and leave merging to a
+  human.
+
 ## Keep plugin docs current
 
 - Keep [plugins/README.md](plugins/README.md) current if making any high
