@@ -4,7 +4,7 @@ Log in to an OCI registry
 
 ### Synopsis
 
-Login authenticates against an OCI registry (default: docker.io) and stores the credentials for later build/mirror/pull/push operations to reuse — using the same credential store `docker login` itself reads and writes, so credentials from either tool work for both.
+Login authenticates against an OCI registry (default: docker.io) and stores the credentials for later build/distribute/pull/push operations to reuse — using the same credential store `docker login` itself reads and writes, so credentials from either tool work for both.
 
 ```
 bomify login [server] [flags]

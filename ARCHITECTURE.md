@@ -62,7 +62,7 @@ layer behind — only ever a missing one, which just triggers a redo.
 
 ## Plugin architecture
 
-Neither `bomify build` nor `bomify mirror` know how to fetch or publish
+Neither `bomify build` nor `bomify distribute` know how to fetch or publish
 anything themselves. For each SBOM component they:
 
 1. **Detect** a "kind" from the component's purl type (`plugin.Detect`) —

@@ -25,7 +25,7 @@ func loginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login [server]",
 		Short: "Log in to an OCI registry",
-		Long:  "Login authenticates against an OCI registry (default: docker.io) and stores the credentials for later build/mirror/pull/push operations to reuse — using the same credential store `docker login` itself reads and writes, so credentials from either tool work for both.",
+		Long:  "Login authenticates against an OCI registry (default: docker.io) and stores the credentials for later build/distribute/pull/push operations to reuse — using the same credential store `docker login` itself reads and writes, so credentials from either tool work for both.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := auth.DefaultHost

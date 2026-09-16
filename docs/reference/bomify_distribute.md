@@ -1,21 +1,21 @@
-## bomify mirror
+## bomify distribute
 
-Mirror publishes the packages described by a CycloneDX SBOM to a remote endpoint
+Distribute publishes the packages described by a CycloneDX SBOM to a remote endpoint
 
 ### Synopsis
 
-Mirror reads a CycloneDX SBOM and publishes each component it describes to a remote endpoint.
+Distribute reads a CycloneDX SBOM and publishes each component it describes to a remote endpoint.
 
 ```
-bomify mirror <sbom-file> [flags]
+bomify distribute <sbom-file> [flags]
 ```
 
 ### Options
 
 ```
   -c, --concurrency int   number of components to push concurrently (default 1)
-  -h, --help              help for mirror
-  -r, --remote string     remote endpoint to mirror components to
+  -h, --help              help for distribute
+  -r, --remote string     remote endpoint to distribute components to
 ```
 
 ### Options inherited from parent commands

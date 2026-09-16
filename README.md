@@ -2,7 +2,7 @@
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build`/`bomify mirror` walk its components and delegate each one to an external plugin binary that knows how to pull or push it.
+Give it an SBOM and `bomify build`/`bomify distribute` walk its components and delegate each one to an external plugin binary that knows how to pull or push it.
 
 ## Status
 
@@ -66,11 +66,11 @@ docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tm
 
 ## Testing locally
 
-[`deploy/registry/`](deploy/registry) spins up a throwaway, TLS-enabled OCI registry (self-signed cert generated and trusted for you) for exercising `build`/`mirror`/`pull` against a real registry without needing an account anywhere — see its [README](deploy/registry/README.md).
+[`deploy/registry/`](deploy/registry) spins up a throwaway, TLS-enabled OCI registry (self-signed cert generated and trusted for you) for exercising `build`/`distribute`/`pull` against a real registry without needing an account anywhere — see its [README](deploy/registry/README.md).
 
 ## Plugins
 
-Neither `bomify build` nor `bomify mirror` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
+Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch, the pull/push contract, and result reporting work.
 
