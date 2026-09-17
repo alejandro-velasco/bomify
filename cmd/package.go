@@ -22,6 +22,15 @@ func packageCmd() *cobra.Command {
 	cmd.AddCommand(packageRemoveCmd())
 	cmd.AddCommand(packageManifestCmd())
 
+	// Aliases for the top-level commands relating to package management
+	cmd.AddCommand(buildCmd())
+	cmd.AddCommand(pushCmd())
+	cmd.AddCommand(pullCmd())
+	cmd.AddCommand(tagCmd())
+	cmd.AddCommand(saveCmd())
+	cmd.AddCommand(loadCmd())
+	cmd.AddCommand(distributeCmd())
+
 	return cmd
 }
 
