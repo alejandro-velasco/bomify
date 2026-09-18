@@ -56,13 +56,8 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 
 	logPulledLayers(logger, result)
 
-	// ref is both the OCI reference just pulled from and, like `bomify
-	// push`'s <tag>, the natural local bookkeeping key for it: record it
-	// in repositories.json so `bomify packages`/`tag`/`push` all see this
-	// pull as a known local package. Only do this when ref is actually a
-	// tag, though: a digest reference (repo@sha256:...) fed through the
-	// same repo:version split `bomify build -t`/`bomify tag` use would be
-	// mis-split on the digest's own colon.
+	// Record ref as a local tag, unless it's a digest reference
+	// (repo@sha256:...), which would mis-split on its own colon.
 	if parsed, err := registry.ParseReference(ref); err == nil && parsed.ValidateReferenceAsTag() == nil {
 		if err := build.UpdateRepositories(dataDir, []string{ref}, result.SBOMHash); err != nil {
 			return fmt.Errorf("update repositories: %w", err)

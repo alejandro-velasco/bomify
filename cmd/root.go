@@ -53,6 +53,8 @@ func NewRootCmd() (*cobra.Command, error) {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if rootOpts.docsDir != "" {
+				cmd.DisableAutoGenTag = true
+
 				if err := doc.GenMarkdownTree(cmd, rootOpts.docsDir); err != nil {
 					return fmt.Errorf("generate docs: %w", err)
 				}
@@ -63,9 +65,6 @@ func NewRootCmd() (*cobra.Command, error) {
 			return cmd.Help()
 		},
 	}
-
-	// Disable the auto-generated tag in the documentation.
-	rootCmd.DisableAutoGenTag = true
 
 	rootCmd.PersistentFlags().BoolVar(&rootOpts.verbose, "verbose", false, "enable verbose (debug) logging")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.docsDir, "docs-dir", "", "directory to write documentation to (if empty, no docs are generated)")

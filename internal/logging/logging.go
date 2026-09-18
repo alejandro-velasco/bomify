@@ -12,10 +12,7 @@ import (
 	"github.com/lmittmann/tint"
 )
 
-const (
-	// noColorEnv is the environment variable for disabling colored log output.
-	noColorEnv = "NO_COLOR"
-)
+const noColorEnv = "NO_COLOR"
 
 // New returns a logger that writes leveled log lines to stderr, colored
 // when stderr is a terminal. Debug-level messages are enabled only when
@@ -28,14 +25,10 @@ func New(verbose bool) *slog.Logger {
 // an open log file. Debug-level messages are enabled only when verbose is
 // true; color enables ANSI color codes in the output.
 //
-// Plugin binaries use this to log to the file bomify names via --log,
-// since they must not write general logging to stdout (reserved for their
-// single JSON result on success) or stderr (reserved for a single fatal
-// error message on failure) — see the plugin contract documented in
-// github.com/alejandro-velasco/bomify/internal/plugin. color there should be whatever value bomify
-// gave via the plugin's --log-color flag: only bomify, which streams that
-// file to its own stdout, knows whether those bytes will land on a real
-// terminal.
+// Plugin binaries use this to log to the file named by their --log flag
+// (see plugins/CONTRACT.md), passing --log-color through as color: only
+// bomify, which streams that file to its own stdout, knows whether those
+// bytes will land on a real terminal.
 func NewFile(w io.Writer, color, verbose bool) *slog.Logger {
 	return newLogger(w, !color, verbose)
 }

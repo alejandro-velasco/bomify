@@ -23,10 +23,8 @@ func tagCmd() *cobra.Command {
 	return cmd
 }
 
-// completeSourceTag completes <source-tag> from known local tags, the same
-// way completeLocalTags does, but offers nothing for <destination-tag>
-// since that's a new name the user is choosing, not one that already
-// exists.
+// completeSourceTag completes only <source-tag>; <destination-tag> is a new
+// name the user is choosing, not one that already exists.
 func completeSourceTag(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp

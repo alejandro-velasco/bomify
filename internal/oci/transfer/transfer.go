@@ -27,14 +27,11 @@ const AnnotationPurl = "land.bomify.purl"
 
 // LayerMediaType identifies a pushed component layer: a tar archive of
 // whatever `bomify build` wrote into "<baseDir>/layers/<purl-hash>/" for
-// it, since that can be a single file (bomify-plugin-generic) or a whole
-// directory tree (bomify-plugin-oci's OCI layout) and an OCI layer is
-// always exactly one blob. Pull unpacks a layer with this media type back
-// into "<dataDir>/layers/<purl-hash>/", exactly reproducing the directory
-// build would have produced; any other media type (e.g. a real-world
-// artifact this package format didn't originate) is instead written
-// verbatim as a single file, since Pull has no way to know how to unpack
-// an arbitrary foreign format.
+// it — a single file or a whole directory tree, since an OCI layer is
+// always exactly one blob either way. Pull unpacks a layer with this
+// media type back into that same directory shape; any other media type
+// is instead written verbatim as a single file, since Pull has no way to
+// know how to unpack an arbitrary foreign format.
 const LayerMediaType = "application/vnd.bomify.component.layer.v1.tar"
 
 // ProgressFunc is called once per blob (the config, then each layer) before

@@ -16,12 +16,8 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
-// forEachComponent loads the SBOM at sbomPath, logs a summary, and calls fn
-// for every component it describes, running up to concurrency components
-// at once (concurrency < 1 is treated as 1, i.e. sequential). fn receives
-// a logger already scoped to that component. The first error any
-// component returns aborts the rest and is returned, wrapped with that
-// component's identity.
+// forEachComponent calls fn for every component in the SBOM at sbomPath,
+// up to concurrency at a time (concurrency < 1 runs sequentially).
 func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn func(component cdx.Component, log *slog.Logger) error) error {
 	logger.Debug("loading sbom", "path", sbomPath)
 
@@ -102,13 +98,8 @@ func newRepository(ref string) (*remote.Repository, error) {
 	return repo, nil
 }
 
-// resolvedDataDir returns the data directory a completion invocation
-// should use. Shell completion runs cobra's hidden `__complete` command
-// directly, which never runs the root command's PersistentPreRun — the
-// one place the global dataDir variable normally gets its default — so an
-// explicit --data-dir on the command line being completed is read back
-// here instead, falling back to the same default root.go's PersistentPreRun
-// would have used.
+// resolvedDataDir mirrors root.go's PersistentPreRun default, which
+// completion invocations skip (cobra's __complete runs without it).
 func resolvedDataDir(cmd *cobra.Command) string {
 	if dir, err := cmd.Flags().GetString("data-dir"); err == nil && dir != "" {
 		return dir
@@ -121,9 +112,7 @@ func resolvedDataDir(cmd *cobra.Command) string {
 
 // completeLocalTags is a cobra ValidArgsFunction shared by every command
 // that takes an already-tagged local package (push, distribute, save,
-// package remove/rmp): it lists "<repo>:<version>" tags recorded in
-// "<data-dir>/package/repositories.json" (see `bomify packages`), filtered
-// to whatever's typed so far.
+// package remove/rmp).
 func completeLocalTags(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	repos, err := build.ReadRepositories(resolvedDataDir(cmd))
 	if err != nil {

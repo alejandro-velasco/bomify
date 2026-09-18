@@ -73,13 +73,8 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	return finalizeBuild(opts, logger)
 }
 
-// finalizeBuild runs once every component in the SBOM has been pulled
-// successfully: it records the SBOM itself as this build's manifest
-// (keyed by the SBOM file's own content hash), skipping that specifically
-// if that exact SBOM has already been built. Either way, it still maps
-// any --tag values onto the manifest's hash: a tag is bookkeeping about
-// this invocation's request, not about the manifest, so it's applied even
-// when the manifest itself already existed.
+// finalizeBuild records the SBOM as this build's manifest and applies any
+// --tag values, even if that exact manifest already existed.
 func finalizeBuild(opts *buildOptions, logger *slog.Logger) error {
 	sbomHash, skipped, err := build.RecordManifest(dataDir, opts.file)
 	if err != nil {

@@ -74,7 +74,6 @@ func runPackagePrune(cmd *cobra.Command) error {
 	return nil
 }
 
-// packageManifestCmd builds the `bomify package manifest` command.
 func packageManifestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "manifest <reference>",
@@ -126,8 +125,6 @@ func packageRemoveCmd() *cobra.Command {
 	return cmd
 }
 
-// rmpCmd builds the top-level `bomify rmp` command: a shorthand for
-// `bomify package remove`
 func rmpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rmp <tag>...",

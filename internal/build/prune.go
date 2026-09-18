@@ -24,29 +24,23 @@ type PruneResult struct {
 	// file suggested a pull might currently be in flight for them.
 	Skipped []string
 	// Unprotected lists the SBOM content hashes of tagged builds whose
-	// manifest exists but could not be parsed — so this Prune could not
-	// determine, and therefore could not protect, the components that
-	// build's manifest describes. Unlike a build whose manifest is simply
-	// missing (nothing to protect either way), this is a real gap: any of
-	// that build's components not also kept by some other tag may have
-	// just been removed even though a tag still points at this SBOM.
+	// manifest exists but couldn't be parsed, so this Prune couldn't tell
+	// which components to protect for them: unlike a simply-missing
+	// manifest (nothing to protect either way), a tag still points at
+	// this SBOM, so its components may have just been removed.
 	Unprotected []string
 }
 
 // Prune removes every manifest and layer under baseDir that isn't
 // reachable from a tag currently recorded in repositories.json.
 //
-// "Reachable" means: a tagged SBOM's own manifest file, plus the
-// manifest and layer directory of every component that SBOM's actual
-// content describes. That last part matters — bomify has no way to tell
-// an SBOM-level manifest file apart from a per-component one just from
-// its name, since both live in the same "manifests/<hash>.json" scheme
-// (keyed by the SBOM's own content hash and by each component's purl
-// hash, respectively, which share no distinguishing prefix or directory).
-// So rather than guess at a file's kind from its content, Prune walks
-// outward from repositories.json — the one place that actually says
-// what's still in use — marking everything it finds along the way, and
-// removes everything else in manifests/ and layers/ that walk never
+// "Reachable" means: a tagged SBOM's own manifest file, plus the manifest
+// and layer directory of every component that SBOM's actual content
+// describes. Both kinds of manifest live in the same
+// "manifests/<hash>.json" scheme with no distinguishing name, so rather
+// than guess a file's kind from its content, Prune walks outward from
+// repositories.json — the one place that actually says what's still in
+// use — and removes everything in manifests/ and layers/ that walk never
 // reached.
 func Prune(baseDir string) (PruneResult, error) {
 	kept, unprotected, err := reachableHashes(baseDir)

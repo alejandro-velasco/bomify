@@ -1,46 +1,9 @@
 // Package plugin dispatches SBOM components to external "bomify-plugin-*"
 // helper binaries, letting bomify delegate component types it doesn't know
 // how to build itself (e.g. container images) to a separate executable.
-//
-// A plugin for "kind" must be named "bomify-plugin-<kind>", be discoverable
-// on PATH, and implement two subcommands:
-//
-//	bomify-plugin-<kind> pull --purl '<component purl>' --output <dir> --log <path> --log-color <bool>
-//	bomify-plugin-<kind> push --purl '<component purl>' --input <dir> --remote <endpoint> --log <path> --log-color <bool>
-//
-// A plugin must not print anything to stdout other than the single JSON
-// Result on success (see below): stdout is reserved for that. Likewise,
-// stderr is reserved for a single fatal error message on failure (see
-// below) — a plugin's own general logging must go to the file named by
-// --log instead, at "<baseDir>/logs/<hash>.log". That file exists solely
-// so Pull/Push can stream it live to bomify's own stdout while the plugin
-// runs, when verbose logging is enabled; it is not a persistent log, and
-// is removed again once the plugin exits, regardless of outcome. --log-color
-// tells the plugin whether to include ANSI color codes in its log output —
-// bomify sets it based on whether its own stdout is a terminal, since only
-// bomify (which streams the file there) knows whether that matters.
-//
-// Both dir arguments are the same directory: "<baseDir>/layers/<hash>",
-// where hash is a hash of the component's purl, so pull and push (even in
-// separate bomify invocations) independently agree on where the
-// component's artifact lives without bomify tracking any state. baseDir
-// splits into two subdirectories: "layers" holds the artifacts
-// themselves (dir, above), and "manifests" holds the bookkeeping
-// described below — a component's manifest and pid file, both named
-// after the same purl hash as its layers directory.
-//
-// pull fetches or builds the component and writes it into dir, which Pull
-// creates before invoking the plugin — the plugin may assume dir already
-// exists. For the duration of the pull, Pull also maintains a
-// "manifests/<hash>.pid" file containing its own process ID; that file's
-// existence signals a pull currently in flight for the component, and
-// it's removed once the pull completes, successfully or not. If the
-// plugin fails, Pull removes dir. On success, Pull writes a
-// "manifests/<hash>.json" manifest (see Manifest); that manifest's
-// existence is the authoritative signal that the pull succeeded. push
-// publishes the component pull already wrote into dir to the remote
-// endpoint; Push fails before invoking the plugin if that manifest
-// doesn't exist (nothing was successfully pulled).
+// See plugins/CONTRACT.md for the full subprocess contract a plugin must
+// implement (naming, flags, stdout/stderr, logging, Result JSON); this
+// comment covers only bomify's own caller-side bookkeeping around it.
 //
 // Pull is safe to call concurrently, even from separate bomify processes,
 // for components that hash to the same directory (e.g. duplicate purls
@@ -52,10 +15,6 @@
 // nothing is pulling, Pull reuses it. Whichever of those applies, Pull
 // finishes by verifying the resulting hash as described below, so even a
 // reused result fails if it doesn't match this call's component.
-//
-// On success the plugin must print a single JSON object describing the
-// result to stdout (see Result) and exit 0. On failure it should exit
-// non-zero; anything written to stderr is surfaced in bomify's error.
 package plugin
 
 import (
@@ -191,20 +150,17 @@ func Find(kind string) (string, error) {
 }
 
 // Pull invokes the plugin binary's "pull" subcommand, which fetches or
-// builds component and writes it into a subdirectory of baseDir named
-// after a hash of component's purl. Pull creates that subdirectory before
-// invoking the plugin and removes it again if the plugin fails.
+// builds component and writes it into componentDir's directory. Pull
+// creates that directory before invoking the plugin and removes it again
+// if the plugin fails.
 //
 // hashAlgorithm is passed to the plugin via --hash, asking it to report
-// the pulled artifact's content hash for that algorithm in the result. If
-// component declares its own hash for hashAlgorithm (in its SBOM
-// metadata), Pull verifies the reported hash matches it — whether that
-// hash came from a pull this call just performed (removing dir and
-// failing on a mismatch) or from reusing a concurrent or prior pull's
-// result (failing without touching dir, since this call doesn't own it).
-// If either side has no hash to compare (the plugin couldn't compute one,
-// or the SBOM doesn't declare one for this algorithm), verification is
-// skipped.
+// the pulled artifact's content hash. If component declares its own hash
+// for that algorithm in its SBOM metadata, Pull verifies the two match —
+// removing dir and failing on a mismatch for a pull this call just
+// performed, or failing without touching dir when reusing a concurrent
+// or prior pull's result, since this call doesn't own it. Verification is
+// skipped if either side has no hash to compare.
 //
 // Pull is safe to call concurrently — including from separate bomify
 // processes — for components that hash to the same directory (e.g.

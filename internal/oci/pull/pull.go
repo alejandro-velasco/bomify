@@ -32,12 +32,8 @@ import (
 // layer was pulled for.
 const AnnotationPurl = transfer.AnnotationPurl
 
-// ProgressFunc is called once per blob (the config, then each layer) before
-// it starts downloading, naming it and giving its total size in bytes. The
-// returned writer receives the raw bytes as they arrive off the wire, for
-// rendering a progress bar, and is closed once that blob's download ends
-// (successfully or not). A nil ProgressFunc is fine; Pull renders no
-// progress in that case.
+// ProgressFunc is transfer.ProgressFunc, aliased here for callers that only
+// import this package.
 type ProgressFunc = transfer.ProgressFunc
 
 // Layer describes one component layer that was pulled. Path is a

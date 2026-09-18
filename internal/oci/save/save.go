@@ -1,14 +1,13 @@
 // Package save lets a bomify package move between machines as a single
 // tarball, with no registry involved: Save packages one or more tags into
-// an OCI image-layout directory (the same layout internal/oci/push already
-// knows how to write to, and bomify-plugin-oci itself uses) and archives
-// that directory into a tarball; Load does the reverse, restoring every
-// tag the tarball contains into a data directory exactly as `bomify pull`
-// would have for each. Both are thin wrappers around internal/oci/push and
-// internal/oci/pull: an OCI image-layout directory (content/oci.Store)
-// satisfies the same oras.Target/oras.ReadOnlyTarget interfaces those
-// packages already push to and pull from over a network, so pointing them
-// at a local directory instead needs no new packing/unpacking logic here.
+// an OCI image-layout directory and archives that directory into a
+// tarball; Load does the reverse, restoring every tag the tarball
+// contains into a data directory exactly as `bomify pull` would have for
+// each. Both are thin wrappers around internal/oci/push and
+// internal/oci/pull: an OCI image-layout directory satisfies the same
+// oras.Target/oras.ReadOnlyTarget interfaces those packages already push
+// to and pull from over a network, so no new packing/unpacking logic is
+// needed here.
 package save
 
 import (

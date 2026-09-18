@@ -95,8 +95,7 @@ func manifestCreated(baseDir, sbomHash string) time.Time {
 	return info.ModTime()
 }
 
-// humanAge renders t the way `docker images` renders CREATED: a rough,
-// human-friendly age, or "-" if t is unknown.
+// humanAge renders t as a rough, human-friendly age, or "-" if t is unknown.
 func humanAge(t time.Time) string {
 	if t.IsZero() {
 		return "-"

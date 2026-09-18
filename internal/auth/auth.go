@@ -1,15 +1,9 @@
-// Package auth is bomify's single, shared source of registry credentials
-// for both the main binary and its plugins: a thin wrapper around the
-// standard Docker config.json plus native OS credential store (Windows
-// Credential Manager, macOS Keychain, or a configured Linux helper) — the
-// exact files and stores `docker login`/`docker logout` themselves read
-// and write, via oras-go's credentials package, which in turn talks to
-// that native store through github.com/docker/docker-credential-helpers.
-//
-// Every registry-talking piece of bomify goes through this package rather
-// than re-deriving its own notion of where credentials live: cmd/push.go
-// and cmd/pull.go via Client, and each plugin via Get (see HelperFunc for
-// adapting it to a third-party SDK's own credential-helper interface).
+// Package auth is bomify's single, shared source of registry credentials:
+// a thin wrapper around the standard Docker config.json plus native OS
+// credential store, the same files and stores `docker login`/`docker
+// logout` read and write. cmd/push.go and cmd/pull.go use Client; plugins
+// use Get (see HelperFunc to adapt it to a third-party SDK's own
+// credential-helper interface).
 package auth
 
 import (
@@ -28,13 +22,9 @@ import (
 const DefaultHost = "docker.io"
 
 // Store returns the credential store bomify reads and writes: the
-// standard Docker config file ($DOCKER_CONFIG/config.json, or
-// $HOME/.docker/config.json if that's unset), delegating to the
-// platform's native credential helper when the config file names one
-// (auto-detecting and recording the platform default the first time a
-// credential is stored, if none is configured yet), exactly as `docker
-// login` does. A bomify login is thus also a docker login, and vice
-// versa: both read and write the same store.
+// standard Docker config file, delegating to the platform's native
+// credential helper exactly as `docker login` does. A bomify login is
+// thus also a docker login, and vice versa.
 func Store() (credentials.Store, error) {
 	store, err := newStore()
 	if err != nil {
@@ -44,11 +34,8 @@ func Store() (credentials.Store, error) {
 }
 
 // newStore is Store's actual construction, factored out so tests can
-// substitute an in-memory store — Store's real implementation would
-// otherwise auto-detect and configure this machine's actual native
-// credential helper (Windows Credential Manager, macOS Keychain, ...) the
-// first time a test writes a credential, polluting real, shared,
-// system-wide state well outside any temp directory a test controls.
+// substitute an in-memory store instead of touching this machine's real
+// native credential helper.
 var newStore = func() (credentials.Store, error) {
 	return credentials.NewStoreFromDocker(credentials.StoreOptions{
 		DetectDefaultNativeStore: true,
@@ -65,8 +52,7 @@ var newPlaintextStore = func() (credentials.Store, error) {
 	})
 }
 
-// Lookup returns whatever credentials are stored for host (a registry
-// hostname, e.g. "registry-1.docker.io" or "localhost:5000"), or
+// Lookup returns whatever credentials are stored for host, or
 // orasauth.EmptyCredential — not an error — if none are stored, so an
 // anonymous pull/push against a public registry is never blocked by a
 // missing login.
@@ -82,11 +68,9 @@ func Lookup(ctx context.Context, host string) (orasauth.Credential, error) {
 
 // Get returns just the username and secret stored for serverURL, or two
 // empty strings if none are stored. Its signature deliberately matches
-// the single-method "Get(serverURL string) (string, string, error)"
-// shape both docker-credential-helpers' and go-containerregistry's own
-// credential-helper interfaces use, so a plugin that needs to hand
-// bomify's credentials to a third-party SDK expecting one of those can do
-// so via HelperFunc without any bomify-specific glue inside that SDK.
+// the "Get(serverURL string) (string, string, error)" shape several
+// third-party credential-helper interfaces use, so plugins can hand it
+// straight to whatever SDK they call (see HelperFunc).
 func Get(serverURL string) (string, string, error) {
 	cred, err := Lookup(context.Background(), serverURL)
 	if err != nil {
@@ -109,25 +93,20 @@ func Get(serverURL string) (string, string, error) {
 	}
 }
 
-// ErrNotFound signals "no credentials for this server" through a
-// single-method Helper interface — the convention docker-credential-helpers
-// (and adapters built on it, like go-containerregistry's
-// authn.NewKeychainFromHelper) actually use to fall back to anonymous
-// access. It's distinct from Get's own convention for the same situation
-// (empty username/password, nil error): a Helper-consuming adapter that
-// only checks for a non-nil error — as authn.NewKeychainFromHelper does —
-// would otherwise treat Get's empty strings as a real (if blank) Basic
-// credential, and have the registry reject the request as a bad login
-// instead of an anonymous one.
+// ErrNotFound is the docker-credential-helpers convention for "no
+// credentials for this server", which adapters like
+// authn.NewKeychainFromHelper check for to fall back to anonymous access.
+// Get's own convention for the same case is empty strings with a nil
+// error instead — without this translation, such an adapter would send
+// Get's empty strings as a real (if blank) Basic credential and get
+// rejected rather than falling back to anonymous.
 var ErrNotFound = errors.New("credentials not found")
 
-// HelperFunc adapts a function shaped like Get into any single-method
-// "Get(serverURL string) (string, string, error)" interface, translating
-// "not found" into ErrNotFound as it does — see ErrNotFound for why that
-// translation matters. For example,
-// authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)) builds a
-// go-containerregistry Keychain backed directly by this package, without
-// go-containerregistry's authn package needing to know bomify exists.
+// HelperFunc adapts a Get-shaped function to the single-method
+// "Get(serverURL string) (string, string, error)" interface several SDKs
+// expect, translating "not found" into ErrNotFound (see ErrNotFound). For
+// example, authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)) builds a
+// go-containerregistry Keychain backed directly by this package.
 type HelperFunc func(serverURL string) (string, string, error)
 
 // Get implements the single-method Helper shape HelperFunc adapts to.
@@ -159,9 +138,8 @@ func Client() (*orasauth.Client, error) {
 type LoginResult struct {
 	// PlaintextFallback is true when no native credential helper was
 	// available, so the credential was stored as plaintext in the config
-	// file itself instead — the same fallback (with the same "this isn't
-	// encrypted" caveat) `docker login` falls back to when no credsStore
-	// is configured.
+	// file itself instead — the same fallback `docker login` makes when
+	// no credsStore is configured.
 	PlaintextFallback bool
 }
 
@@ -191,15 +169,10 @@ func loginToRegistry(ctx context.Context, reg *remote.Registry, username, passwo
 
 	err = credentials.Login(ctx, store, reg, cred)
 	if errors.Is(err, credentials.ErrPlaintextPutDisabled) {
-		// credentials.Login already verified username/password against
-		// the registry successfully — only the store step failed, because
-		// no native credential helper is available here. Save as
-		// plaintext instead of blocking the login outright, exactly as
-		// `docker login` itself falls back.
-		// Store under the same normalized hostname credentials.Login
-		// itself would have used (e.g. "docker.io" maps to
-		// "https://index.docker.io/v1/"), so this fallback is found by
-		// the exact same lookups a successful Login's write would be.
+		// Verification already succeeded; only the store step failed for
+		// lack of a native credential helper. Fall back to plaintext, same
+		// as `docker login`, under the same normalized hostname
+		// credentials.Login itself would use so later lookups find it.
 		hostname := credentials.ServerAddressFromRegistry(reg.Reference.Registry)
 
 		plainStore, perr := newPlaintextStore()
