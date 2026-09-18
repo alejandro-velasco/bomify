@@ -1,9 +1,9 @@
 // Package auth is bomify's single, shared source of registry credentials:
 // a thin wrapper around the standard Docker config.json plus native OS
 // credential store, the same files and stores `docker login`/`docker
-// logout` read and write. cmd/push.go and cmd/pull.go use Client; plugins
-// use Get (see HelperFunc to adapt it to a third-party SDK's own
-// credential-helper interface).
+// logout` read and write. cmd/push.go and cmd/pull.go use Client; see
+// pkg/auth for the Get/HelperFunc library plugins use to reach this same
+// store, importable from outside this module.
 package auth
 
 import (
@@ -64,58 +64,6 @@ func Lookup(ctx context.Context, host string) (orasauth.Credential, error) {
 
 	credentialFn := credentials.Credential(store)
 	return credentialFn(ctx, host)
-}
-
-// Get returns just the username and secret stored for serverURL, or two
-// empty strings if none are stored. Its signature deliberately matches
-// the "Get(serverURL string) (string, string, error)" shape several
-// third-party credential-helper interfaces use, so plugins can hand it
-// straight to whatever SDK they call (see HelperFunc).
-func Get(serverURL string) (string, string, error) {
-	cred, err := Lookup(context.Background(), serverURL)
-	if err != nil {
-		return "", "", err
-	}
-
-	if cred.Username != "" {
-		return cred.Username, cred.Password, nil
-	}
-
-	// A registry using token-based auth (no username) still has a real
-	// secret worth handing over.
-	switch {
-	case cred.RefreshToken != "":
-		return "", cred.RefreshToken, nil
-	case cred.AccessToken != "":
-		return "", cred.AccessToken, nil
-	default:
-		return "", "", nil
-	}
-}
-
-// ErrNotFound is the docker-credential-helpers convention for "no
-// credentials for this server", which adapters like
-// authn.NewKeychainFromHelper check for to fall back to anonymous access.
-// Get's own convention for the same case is empty strings with a nil
-// error instead — without this translation, such an adapter would send
-// Get's empty strings as a real (if blank) Basic credential and get
-// rejected rather than falling back to anonymous.
-var ErrNotFound = errors.New("credentials not found")
-
-// HelperFunc adapts a Get-shaped function to the single-method
-// "Get(serverURL string) (string, string, error)" interface several SDKs
-// expect, translating "not found" into ErrNotFound (see ErrNotFound). For
-// example, authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)) builds a
-// go-containerregistry Keychain backed directly by this package.
-type HelperFunc func(serverURL string) (string, string, error)
-
-// Get implements the single-method Helper shape HelperFunc adapts to.
-func (f HelperFunc) Get(serverURL string) (string, string, error) {
-	username, password, err := f(serverURL)
-	if err == nil && username == "" && password == "" {
-		return "", "", ErrNotFound
-	}
-	return username, password, err
 }
 
 // Client returns an oras-go auth.Client backed by the shared store, ready

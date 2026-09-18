@@ -12,12 +12,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/package-url/packageurl-go"
 
-	"github.com/alejandro-velasco/bomify/internal/auth"
+	"github.com/alejandro-velasco/bomify/pkg/auth"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // craneAuth resolves crane's registry credentials from bomify's shared
-// credential store (see internal/auth) rather than crane's own default
+// credential store (see pkg/auth) rather than crane's own default
 // keychain, so `bomify login` covers this plugin the same way it covers
 // `bomify push`/`bomify pull`. In practice the two end up equivalent —
 // both ultimately read $HOME/.docker/config.json — but this makes that

@@ -218,8 +218,10 @@ tarball, same as a registry push would dedupe it.
 
 [`internal/auth`](internal/auth) is bomify's single shared source of
 registry credentials, used by `login`/`logout`, `push`/`pull` directly, and
-by plugins (via `auth.Get`/`auth.HelperFunc`, adaptable to a third-party
-SDK's own credential-helper interface). It reads and writes the exact same
+by plugins via [`pkg/auth`](pkg/auth)'s `auth.Get`/`auth.HelperFunc`
+(adaptable to a third-party SDK's own credential-helper interface, and
+importable from outside this module since it's a plugin-facing library).
+It reads and writes the exact same
 `~/.docker/config.json` plus native OS credential store (Windows Credential
 Manager, macOS Keychain, or a configured Linux helper) that `docker login`
 itself uses — so a `docker login` and a `bomify login` are interchangeable.
