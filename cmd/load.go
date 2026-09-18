@@ -54,6 +54,7 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	progress := newProgressFunc(mb)
 
 	tags, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress)
+	mb.Wait()
 	if err != nil {
 		return err
 	}
