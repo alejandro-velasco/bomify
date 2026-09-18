@@ -23,10 +23,11 @@ Other places to check, depending on the task:
 - [`plugins/result.schema.json`](../../../plugins/result.schema.json) — the
   machine-readable JSON Schema for the `Result` object. Update it alongside
   `CONTRACT.md` if the result shape changes.
-- [`internal/plugin`](../../../internal/plugin) — bomify's own Go
-  implementation of this contract (`plugin.Result`, `plugin.Hash`,
-  `plugin.OpenLog`, `(*Result).Print`). A Go-based plugin should use these
-  helpers instead of hand-rolling JSON encoding or log setup.
+- [`pkg/plugin`](../../../pkg/plugin) — the Go library implementing this
+  contract's Go-facing side (`plugin.Result`, `plugin.Hash`,
+  `plugin.OpenLog`, `(*Result).Print`), importable from any Go module. A
+  Go-based plugin — first- or third-party — should use these helpers
+  instead of hand-rolling JSON encoding or log setup.
 - [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) — how the plugin contract
   fits into bomify's design as a whole.
 

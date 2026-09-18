@@ -15,7 +15,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/auth"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // setAuth adds HTTP Basic auth to req from bomify's shared credential

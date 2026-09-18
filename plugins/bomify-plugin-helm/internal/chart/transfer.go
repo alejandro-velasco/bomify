@@ -16,7 +16,7 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/auth"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // newRegistryClient is a var — rather than a plain func — solely so tests

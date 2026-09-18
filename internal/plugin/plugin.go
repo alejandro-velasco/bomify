@@ -2,8 +2,10 @@
 // helper binaries, letting bomify delegate component types it doesn't know
 // how to build itself (e.g. container images) to a separate executable.
 // See plugins/CONTRACT.md for the full subprocess contract a plugin must
-// implement (naming, flags, stdout/stderr, logging, Result JSON); this
-// comment covers only bomify's own caller-side bookkeeping around it.
+// implement, and pkg/plugin for the Go library (Result, Hash, Print,
+// OpenLog) a plugin author — first- or third-party — implements it with;
+// this package is bomify's own caller-side orchestration around that
+// contract, not importable outside this module.
 //
 // Pull is safe to call concurrently, even from separate bomify processes,
 // for components that hash to the same directory (e.g. duplicate purls
@@ -39,28 +41,11 @@ import (
 	"github.com/package-url/packageurl-go"
 
 	"github.com/alejandro-velasco/bomify/internal/logging"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // binaryPrefix precedes the kind in a plugin's executable name.
 const binaryPrefix = "bomify-plugin-"
-
-// Result is the structured output a plugin prints to stdout on success.
-type Result struct {
-	// OutputPath is the location of the artifact the plugin produced.
-	OutputPath string `json:"outputPath"`
-	// Message is an optional human-readable summary of what happened.
-	Message string `json:"message,omitempty"`
-	// Hash is the content hash of the pulled artifact, for the algorithm
-	// requested via --hash. A pull plugin should leave this zero if it
-	// cannot compute a hash for the requested algorithm.
-	Hash Hash `json:"hash,omitempty"`
-}
-
-// Hash is a content hash reported by a plugin, mirroring cdx.Hash.
-type Hash struct {
-	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
-	Value     string            `json:"value,omitempty"`
-}
 
 // hashAlgorithms lists the CycloneDX hash algorithms recognized by
 // NormalizeHashAlgorithm.
@@ -98,18 +83,6 @@ func NormalizeHashAlgorithm(name string) (cdx.HashAlgorithm, error) {
 	}
 
 	return "", fmt.Errorf("unrecognized hash algorithm %q", name)
-}
-
-// Print writes r to w as the single JSON object bomify expects a plugin to
-// print to stdout on success. Plugins should call this instead of
-// re-implementing JSON encoding themselves.
-func (r *Result) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode result: %w", err)
-	}
-	return nil
 }
 
 // Detect returns the plugin kind corresponding to the given SBOM
@@ -171,7 +144,7 @@ func Find(kind string) (string, error) {
 // logger controls whether the plugin's own log file is streamed live to
 // stdout while it runs: it is if logger has debug-level logging enabled
 // (i.e. bomify was run with --verbose), and isn't otherwise.
-func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*Result, error) {
+func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
 	dir := componentDir(baseDir, component)
 	pid := pidPath(baseDir, component)
 	manifest := manifestPath(baseDir, component)
@@ -193,7 +166,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			// Nothing is pulling right now, and a prior pull already
 			// succeeded: reuse it instead of pulling again. Still verify
 			// it against this call's component before trusting it.
-			result := &Result{
+			result := &pluginlib.Result{
 				OutputPath: dir,
 				Message:    "reused prior pull",
 				Hash:       manifestHash(m, hashAlgorithm),
@@ -273,23 +246,23 @@ func readManifest(path string) (Manifest, error) {
 
 // manifestHash returns the Hash m's component declares for hashAlgorithm,
 // or the zero Hash if it declares none for that algorithm.
-func manifestHash(m Manifest, hashAlgorithm cdx.HashAlgorithm) Hash {
+func manifestHash(m Manifest, hashAlgorithm cdx.HashAlgorithm) pluginlib.Hash {
 	if m.Component.Hashes == nil {
-		return Hash{}
+		return pluginlib.Hash{}
 	}
 
 	for _, h := range *m.Component.Hashes {
 		if h.Algorithm == hashAlgorithm {
-			return Hash{Algorithm: h.Algorithm, Value: h.Value}
+			return pluginlib.Hash{Algorithm: h.Algorithm, Value: h.Value}
 		}
 	}
 
-	return Hash{}
+	return pluginlib.Hash{}
 }
 
 // writeManifest records component (with computed merged into its Hashes,
 // if set) as the manifest for baseDir's component directory.
-func writeManifest(baseDir string, component cdx.Component, computed Hash) error {
+func writeManifest(baseDir string, component cdx.Component, computed pluginlib.Hash) error {
 	if computed.Algorithm != "" {
 		component.Hashes = mergeHash(component.Hashes, computed)
 	}
@@ -319,7 +292,7 @@ func writeManifest(baseDir string, component cdx.Component, computed Hash) error
 // mergeHash returns existing with computed either replacing the entry for
 // the same algorithm or appended, so a component's Hashes always reflects
 // the most recently computed value for that algorithm.
-func mergeHash(existing *[]cdx.Hash, computed Hash) *[]cdx.Hash {
+func mergeHash(existing *[]cdx.Hash, computed pluginlib.Hash) *[]cdx.Hash {
 	hashes := []cdx.Hash{}
 	if existing != nil {
 		hashes = append(hashes, *existing...)
@@ -338,7 +311,7 @@ func mergeHash(existing *[]cdx.Hash, computed Hash) *[]cdx.Hash {
 
 // verifyHash checks, when component declares an SBOM hash for the same
 // algorithm result.Hash reports, that the two values match.
-func verifyHash(component cdx.Component, result *Result) error {
+func verifyHash(component cdx.Component, result *pluginlib.Result) error {
 	if result.Hash.Algorithm == "" || component.Hashes == nil {
 		return nil
 	}
@@ -363,7 +336,7 @@ func verifyHash(component cdx.Component, result *Result) error {
 // doesn't exist (Pull only writes it after succeeding).
 //
 // logger controls log streaming exactly as it does for Pull.
-func Push(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*Result, error) {
+func Push(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
 	dir := componentDir(baseDir, component)
 
 	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
@@ -496,7 +469,7 @@ const logStreamPollInterval = 100 * time.Millisecond
 // plugin and, if verbose, streams its content live to stdout for the
 // duration of the run; either way, logFile exists only to make that
 // streaming possible, so run removes it again once the plugin exits.
-func run(path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*Result, error) {
+func run(path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*pluginlib.Result, error) {
 	if err := prepareLogFile(logFile); err != nil {
 		return nil, err
 	}
@@ -532,7 +505,7 @@ func run(path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*
 		return nil, fmt.Errorf("run plugin %s %s: %w%s", path, verb, err, formatStderr(stderr.String()))
 	}
 
-	var result Result
+	var result pluginlib.Result
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		return nil, fmt.Errorf("parse output of plugin %s %s: %w", path, verb, err)
 	}

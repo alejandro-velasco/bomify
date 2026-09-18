@@ -15,6 +15,8 @@ import (
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // testLogger returns a non-verbose logger that discards its output,
@@ -428,7 +430,7 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "existing-hash"}); err != nil {
+	if err := writeManifest(baseDir, component, pluginlib.Hash{Algorithm: cdx.HashAlgoSHA256, Value: "existing-hash"}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
@@ -550,7 +552,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "different-hash"}); err != nil {
+	if err := writeManifest(baseDir, component, pluginlib.Hash{Algorithm: cdx.HashAlgoSHA256, Value: "different-hash"}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
@@ -623,12 +625,12 @@ func deadPID(t *testing.T) int {
 func TestMergeHash(t *testing.T) {
 	existing := []cdx.Hash{{Algorithm: cdx.HashAlgoMD5, Value: "existing-md5"}}
 
-	got := mergeHash(&existing, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "new-sha256"})
+	got := mergeHash(&existing, pluginlib.Hash{Algorithm: cdx.HashAlgoSHA256, Value: "new-sha256"})
 	if got == nil || len(*got) != 2 {
 		t.Fatalf("mergeHash() append = %v, want 2 entries", got)
 	}
 
-	got = mergeHash(got, Hash{Algorithm: cdx.HashAlgoMD5, Value: "updated-md5"})
+	got = mergeHash(got, pluginlib.Hash{Algorithm: cdx.HashAlgoMD5, Value: "updated-md5"})
 	if got == nil || len(*got) != 2 {
 		t.Fatalf("mergeHash() replace = %v, want 2 entries", got)
 	}
@@ -638,7 +640,7 @@ func TestMergeHash(t *testing.T) {
 		}
 	}
 
-	got = mergeHash(nil, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "only"})
+	got = mergeHash(nil, pluginlib.Hash{Algorithm: cdx.HashAlgoSHA256, Value: "only"})
 	if got == nil || len(*got) != 1 {
 		t.Fatalf("mergeHash(nil, ...) = %v, want 1 entry", got)
 	}
@@ -652,7 +654,7 @@ func simulatePriorPull(t *testing.T, baseDir string, component cdx.Component) {
 	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{}); err != nil {
+	if err := writeManifest(baseDir, component, pluginlib.Hash{}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 }

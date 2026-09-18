@@ -13,7 +13,7 @@ import (
 	"github.com/package-url/packageurl-go"
 
 	"github.com/alejandro-velasco/bomify/internal/auth"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // craneAuth resolves crane's registry credentials from bomify's shared
