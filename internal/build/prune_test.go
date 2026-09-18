@@ -3,7 +3,9 @@ package build
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -57,9 +59,41 @@ func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component
 	}
 }
 
+// writePulledLayerFixture writes only a layer directory for component,
+// with no manifest — the layout `bomify pull` produces for a component
+// restored from a registry, unlike `bomify build`'s writeComponentFixture
+// (which also writes a per-component manifest).
+func writePulledLayerFixture(t *testing.T, baseDir string, component cdx.Component) {
+	t.Helper()
+
+	layerDir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	if err := os.MkdirAll(layerDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", layerDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(layerDir, "artifact"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("write layer file: %v", err)
+	}
+}
+
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// deadPID returns a pid guaranteed not to belong to any running process,
+// by spawning a throwaway process and waiting for it to exit.
+func deadPID(t *testing.T) int {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start throwaway process: %v", err)
+	}
+
+	pid := cmd.Process.Pid
+	_ = cmd.Wait()
+
+	return pid
 }
 
 // TestPruneRemovesOnlyUnreachableManifestsAndLayers is the core
@@ -136,18 +170,49 @@ func TestPruneRemovesOnlyUnreachableManifestsAndLayers(t *testing.T) {
 	}
 }
 
-func TestPruneSkipsManifestWithPidFile(t *testing.T) {
+// TestPruneRemovesUnreachablePulledLayerWithNoManifest guards against the
+// real bug this fix addresses: a component restored via `bomify pull`
+// (rather than `bomify build`) has a layers/<hash> directory but no
+// per-component manifests/<hash>.json — internal/oci/pull never writes
+// one, only the SBOM-level manifest. Prune used to discover removal
+// candidates solely from manifests/, so such a component's layer
+// directory was never even considered for removal and survived forever,
+// however unreachable it became.
+func TestPruneRemovesUnreachablePulledLayerWithNoManifest(t *testing.T) {
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
+	writePulledLayerFixture(t, baseDir, component)
+
+	// No tags at all, so this component is unreachable.
+	result, err := Prune(baseDir)
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	hash := plugin.PurlHash(component)
+	if exists(filepath.Join(baseDir, "layers", hash)) {
+		t.Error("unreachable pulled component's layer dir still exists")
+	}
+	if len(result.Removed) != 1 || result.Removed[0].Kind != "layer" {
+		t.Errorf("Removed = %v, want a single layer entry", result.Removed)
+	}
+}
+
+func TestPruneSkipsManifestWithLivePidFile(t *testing.T) {
 	baseDir := t.TempDir()
 
 	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
 	writeComponentFixture(t, baseDir, component)
 
 	// No tags at all, so this component is unreachable — but a pid file
-	// suggests a pull might be in flight for it, so Prune should leave
-	// it alone rather than deleting out from under that pull.
+	// naming a still-running process means a pull is genuinely in
+	// flight for it, so Prune should leave it alone rather than deleting
+	// out from under that pull. os.Getpid() (this test process) is
+	// guaranteed alive for the duration of the test.
 	hash := plugin.PurlHash(component)
 	pidPath := filepath.Join(baseDir, "manifests", hash+".pid")
-	if err := os.WriteFile(pidPath, []byte("12345"), 0o644); err != nil {
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
 
@@ -163,8 +228,48 @@ func TestPruneSkipsManifestWithPidFile(t *testing.T) {
 	if !exists(filepath.Join(baseDir, "layers", hash)) {
 		t.Error("layer dir with an in-flight pid file was removed")
 	}
-	if len(result.Skipped) != 1 || result.Skipped[0] != manifestPath {
-		t.Errorf("Skipped = %v, want [%s]", result.Skipped, manifestPath)
+	if !exists(pidPath) {
+		t.Error("live pid file was removed")
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0] != hash {
+		t.Errorf("Skipped = %v, want [%s]", result.Skipped, hash)
+	}
+}
+
+// TestPruneReclaimsManifestWithStalePidFile guards against a related
+// bug: a pid file left behind by a pull that crashed (or was Ctrl+C'd)
+// without cleaning up used to permanently block that component from
+// ever being pruned, since Prune only checked whether the pid file
+// existed, not whether its owning process was actually still alive.
+func TestPruneReclaimsManifestWithStalePidFile(t *testing.T) {
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
+	writeComponentFixture(t, baseDir, component)
+
+	hash := plugin.PurlHash(component)
+	pidPath := filepath.Join(baseDir, "manifests", hash+".pid")
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(deadPID(t))), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	result, err := Prune(baseDir)
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	manifestPath := filepath.Join(baseDir, "manifests", hash+".json")
+	if exists(manifestPath) {
+		t.Error("manifest with a stale pid file was not removed")
+	}
+	if exists(filepath.Join(baseDir, "layers", hash)) {
+		t.Error("layer dir with a stale pid file was not removed")
+	}
+	if exists(pidPath) {
+		t.Error("stale pid file itself was not cleaned up")
+	}
+	if len(result.Skipped) != 0 {
+		t.Errorf("Skipped = %v, want none", result.Skipped)
 	}
 }
 
