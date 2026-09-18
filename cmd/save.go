@@ -54,7 +54,9 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	if err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress); err != nil {
+	err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress)
+	mb.Wait()
+	if err != nil {
 		return err
 	}
 

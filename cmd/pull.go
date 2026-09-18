@@ -49,6 +49,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	progress := newProgressFunc(mb)
 
 	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress)
+	mb.Wait()
 	if err != nil {
 		return err
 	}
