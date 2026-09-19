@@ -428,7 +428,7 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "existing-hash"}); err != nil {
+	if err := WriteManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "existing-hash"}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
@@ -443,6 +443,46 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 
 	if got := invokeLog.count(t); got != 0 {
 		t.Errorf("plugin was invoked %d times, want 0 (should have reused the manifest)", got)
+	}
+}
+
+// TestPullReusesComponentRestoredByPreviousPull simulates the exact
+// scenario internal/oci/pull.Pull now produces: a per-component manifest
+// written with the zero Hash (see WriteManifest), carrying only whatever
+// hashes the component's own SBOM metadata already declares — as opposed
+// to a hash a plugin invocation freshly computed. `bomify build` needing
+// the same purl must reuse it exactly like a build-originated manifest,
+// not just one this package's own Pull happened to write.
+func TestPullReusesComponentRestoredByPreviousPull(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	invokeLog := newInvocationLog(t)
+
+	component := cdx.Component{
+		Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "hash-from-a-prior-pull"}},
+	}
+
+	dir := componentDir(baseDir, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := WriteManifest(baseDir, component, Hash{}); err != nil {
+		t.Fatalf("WriteManifest: %v", err)
+	}
+
+	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	if err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if result.Hash.Value != "hash-from-a-prior-pull" {
+		t.Errorf("Hash.Value = %q, want %q", result.Hash.Value, "hash-from-a-prior-pull")
+	}
+
+	if got := invokeLog.count(t); got != 0 {
+		t.Errorf("plugin was invoked %d times, want 0 (should have reused the pulled component)", got)
 	}
 }
 
@@ -550,7 +590,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "different-hash"}); err != nil {
+	if err := WriteManifest(baseDir, component, Hash{Algorithm: cdx.HashAlgoSHA256, Value: "different-hash"}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
@@ -652,7 +692,7 @@ func simulatePriorPull(t *testing.T, baseDir string, component cdx.Component) {
 	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := writeManifest(baseDir, component, Hash{}); err != nil {
+	if err := WriteManifest(baseDir, component, Hash{}); err != nil {
 		t.Fatalf("writeManifest: %v", err)
 	}
 }

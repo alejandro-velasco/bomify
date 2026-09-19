@@ -26,6 +26,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
 // AnnotationPurl is the OCI descriptor annotation identifying the purl a
@@ -59,8 +60,11 @@ type Result struct {
 // aggregate SBOM manifest and whose layers are pulled components — and
 // writes it into dataDir the same way `bomify build` does: the config as
 // "<dataDir>/manifests/<hash>.json" and each layer as
-// "<dataDir>/layers/<hash>/<name>". Layers download concurrently, bounded
-// by concurrency (values less than 1 are treated as 1).
+// "<dataDir>/layers/<hash>/<name>", plus (see fetchLayer) that
+// component's own manifest for a layer bomify itself pushed, so a later
+// `bomify build` can reuse it instead of re-invoking a plugin. Layers
+// download concurrently, bounded by concurrency (values less than 1 are
+// treated as 1).
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
@@ -79,10 +83,11 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 		return Result{}, fmt.Errorf("fetch manifest %s: %w", ref, err)
 	}
 
-	sbomHash, err := fetchConfig(ctx, target, manifest.Config, dataDir, progress)
+	sbomHash, bom, err := fetchConfig(ctx, target, manifest.Config, dataDir, progress)
 	if err != nil {
 		return Result{}, fmt.Errorf("fetch config: %w", err)
 	}
+	componentsByPurl := indexComponentsByPurl(bom)
 
 	layers := make([]Layer, len(manifest.Layers))
 	g, gctx := errgroup.WithContext(ctx)
@@ -90,7 +95,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 	for i, layerDesc := range manifest.Layers {
 		i, layerDesc := i, layerDesc
 		g.Go(func() error {
-			layer, err := fetchLayer(gctx, target, layerDesc, dataDir, progress)
+			layer, err := fetchLayer(gctx, target, layerDesc, dataDir, componentsByPurl, progress)
 			if err != nil {
 				return fmt.Errorf("fetch layer %s: %w", layerDesc.Digest, err)
 			}
@@ -103,6 +108,22 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 	}
 
 	return Result{SBOMHash: sbomHash, Layers: layers}, nil
+}
+
+// indexComponentsByPurl indexes bom's components by purl, so fetchLayer
+// can look one up by its layer's purl annotation. A nil bom or one with
+// no components indexes nothing.
+func indexComponentsByPurl(bom *cdx.BOM) map[string]cdx.Component {
+	index := map[string]cdx.Component{}
+	if bom == nil || bom.Components == nil {
+		return index
+	}
+	for _, c := range *bom.Components {
+		if c.PackageURL != "" {
+			index[c.PackageURL] = c
+		}
+	}
+	return index
 }
 
 // Manifest resolves ref against target and returns the raw bytes of its
@@ -143,21 +164,34 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec
 	return manifest, nil
 }
 
-func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress ProgressFunc) (string, error) {
+// fetchConfig downloads desc — the aggregate SBOM manifest — to
+// "<dataDir>/manifests/<hash>.json" and parses it, so callers that need
+// to inspect its components (see indexComponentsByPurl) don't have to
+// read the file back themselves.
+func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress ProgressFunc) (string, *cdx.BOM, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	destPath := build.ManifestPath(dataDir, hash)
 	if err := downloadBlob(ctx, target, desc, destPath, "sbom manifest", progress); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	return hash, nil
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("read %s: %w", destPath, err)
+	}
+	bom, err := sbom.LoadBytes(data)
+	if err != nil {
+		return "", nil, fmt.Errorf("parse %s: %w", destPath, err)
+	}
+
+	return hash, bom, nil
 }
 
-func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress ProgressFunc) (Layer, error) {
+func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, componentsByPurl map[string]cdx.Component, progress ProgressFunc) (Layer, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
 		return Layer{}, err
@@ -186,10 +220,16 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 		// same reasoning build.RecordManifest relies on for its own
 		// content-addressed skip.
 		if info, err := os.Stat(destDir); err == nil && info.IsDir() {
+			if err := recordComponentManifest(dataDir, componentsByPurl, purl); err != nil {
+				return Layer{}, err
+			}
 			return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
 		}
 
 		if err := downloadAndUntar(ctx, target, desc, destDir, label, progress); err != nil {
+			return Layer{}, err
+		}
+		if err := recordComponentManifest(dataDir, componentsByPurl, purl); err != nil {
 			return Layer{}, err
 		}
 		return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
@@ -201,6 +241,18 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 	}
 
 	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
+}
+
+// recordComponentManifest writes component's own manifest (matched by
+// purl) so a later `bomify build` can reuse it instead of re-invoking a
+// plugin. No hash is computed — the SBOM already declares one — and
+// nothing is written if purl matches no component in it.
+func recordComponentManifest(dataDir string, componentsByPurl map[string]cdx.Component, purl string) error {
+	component, ok := componentsByPurl[purl]
+	if !ok {
+		return nil
+	}
+	return plugin.WriteManifest(dataDir, component, plugin.Hash{})
 }
 
 // blobHash returns desc's digest as the hex hash bomify's on-disk layout
