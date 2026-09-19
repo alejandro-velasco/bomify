@@ -481,6 +481,18 @@ func processAlive(pid int) bool {
 	return process.Signal(syscall.Signal(0)) == nil
 }
 
+// PIDFileLive reports whether path names a pid file whose owning process
+// is still alive — i.e. whether a pull is genuinely still in flight for
+// whatever component that pid file belongs to (see pidPath). A missing
+// file is not live, and neither is one left behind by a pull that
+// crashed without cleaning up (see Pull's own stale-pid handling): only
+// Prune calls this, to avoid reclaiming a component out from under a
+// pull that's actually still running.
+func PIDFileLive(path string) bool {
+	pid, ok := readPID(path)
+	return ok && processAlive(pid)
+}
+
 // waitForPIDFile blocks until path is removed (the process that owns it
 // finished) or owner is no longer alive (it crashed without cleaning up),
 // whichever happens first.
