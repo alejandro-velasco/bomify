@@ -491,6 +491,52 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 	}
 }
 
+// TestPullClearsPreexistingDirWithNoPIDOrManifest guards against a real
+// gap: a component of the same purl restored via `bomify pull` (rather
+// than `bomify build`) leaves componentDir populated but writes neither a
+// pid file nor a manifest, since only Pull's own bookkeeping produces
+// those. Falling into neither the stale-pid branch nor the reuse branch,
+// Pull used to invoke the plugin against that already-populated
+// directory as-is — violating the plugin contract's guarantee that
+// --output starts out empty. Pull must clear it first, the same as it
+// already does for a stale pid file's leftovers.
+func TestPullClearsPreexistingDirWithNoPIDOrManifest(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	invokeLog := newInvocationLog(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	dir := componentDir(baseDir, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// Stands in for content a prior `bomify pull` (not `bomify build`)
+	// would have left here: no pid file, no manifest, just this.
+	if err := os.WriteFile(filepath.Join(dir, "leftover.txt"), []byte("from a prior pull"), 0o644); err != nil {
+		t.Fatalf("WriteFile leftover: %v", err)
+	}
+
+	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	if err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if got := invokeLog.count(t); got != 1 {
+		t.Errorf("plugin was invoked %d times, want 1 (fresh pull, not a reuse)", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "leftover.txt")); !os.IsNotExist(err) {
+		t.Errorf("leftover file from the prior pull still exists: %v", err)
+	}
+
+	want := filepath.ToSlash(filepath.Join(dir, "nginx-1.27.tar"))
+	if got := filepath.ToSlash(result.OutputPath); got != want {
+		t.Errorf("OutputPath = %q, want %q", got, want)
+	}
+}
+
 func TestPullConcurrentCallersPullOnce(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
