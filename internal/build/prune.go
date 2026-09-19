@@ -20,8 +20,11 @@ type PrunedItem struct {
 // PruneResult is the outcome of a Prune call.
 type PruneResult struct {
 	Removed []PrunedItem
-	// Skipped lists manifest/layer paths Prune left alone because a pid
-	// file suggested a pull might currently be in flight for them.
+	// Skipped lists the hashes of components Prune left alone because a
+	// pid file names a still-live process — a pull genuinely in flight
+	// for them (see plugin.PIDFileLive). A pid file left behind by a
+	// pull that crashed without cleaning up does not count: Prune
+	// reclaims that component instead of skipping it.
 	Skipped []string
 	// Unprotected lists the SBOM content hashes of tagged builds whose
 	// manifest exists but couldn't be parsed, so this Prune couldn't tell
@@ -34,14 +37,19 @@ type PruneResult struct {
 // Prune removes every manifest and layer under baseDir that isn't
 // reachable from a tag currently recorded in repositories.json.
 //
-// "Reachable" means: a tagged SBOM's own manifest file, plus the manifest
-// and layer directory of every component that SBOM's actual content
-// describes. Both kinds of manifest live in the same
-// "manifests/<hash>.json" scheme with no distinguishing name, so rather
-// than guess a file's kind from its content, Prune walks outward from
-// repositories.json — the one place that actually says what's still in
-// use — and removes everything in manifests/ and layers/ that walk never
-// reached.
+// "Reachable" means: a tagged SBOM's own manifest, plus the manifest and
+// layer directory of every component that SBOM describes. Both kinds of
+// manifest share the same "manifests/<hash>.json" naming with no way to
+// tell them apart by content alone, so Prune walks outward from
+// repositories.json instead of guessing — the one place that says what's
+// still in use.
+//
+// Candidates are gathered from both manifests/ and layers/, not just
+// manifests/: `bomify build` writes a manifest for every component, but
+// `bomify pull` writes only the SBOM-level manifest — a pulled
+// component's layer directory has no manifest of its own. Relying on
+// manifests/ alone would leave such a directory permanently
+// undiscovered, however unreachable it becomes.
 func Prune(baseDir string) (PruneResult, error) {
 	kept, unprotected, err := reachableHashes(baseDir)
 	if err != nil {
@@ -49,38 +57,37 @@ func Prune(baseDir string) (PruneResult, error) {
 	}
 
 	manifestsDir := filepath.Join(baseDir, "manifests")
-	entries, err := os.ReadDir(manifestsDir)
+	layersDir := filepath.Join(baseDir, "layers")
+
+	hashes, err := candidateHashes(manifestsDir, layersDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return PruneResult{Unprotected: unprotected}, nil
-		}
-		return PruneResult{}, fmt.Errorf("read %s: %w", manifestsDir, err)
+		return PruneResult{}, err
 	}
 
 	result := PruneResult{Unprotected: unprotected}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-
-		hash := strings.TrimSuffix(entry.Name(), ".json")
+	for _, hash := range hashes {
 		if kept[hash] {
 			continue
 		}
 
-		manifestPath := filepath.Join(manifestsDir, entry.Name())
-
-		if _, err := os.Stat(filepath.Join(manifestsDir, hash+".pid")); err == nil {
-			result.Skipped = append(result.Skipped, manifestPath)
+		if plugin.PIDFileLive(filepath.Join(manifestsDir, hash+".pid")) {
+			result.Skipped = append(result.Skipped, hash)
 			continue
 		}
+		// A stale pid file (its process crashed without cleaning up)
+		// doesn't block reclaiming this component; remove it too, so a
+		// future Prune doesn't need to re-derive that it's stale.
+		os.Remove(filepath.Join(manifestsDir, hash+".pid"))
 
-		if err := os.Remove(manifestPath); err != nil {
-			return PruneResult{}, fmt.Errorf("remove %s: %w", manifestPath, err)
+		manifestPath := filepath.Join(manifestsDir, hash+".json")
+		if _, err := os.Stat(manifestPath); err == nil {
+			if err := os.Remove(manifestPath); err != nil {
+				return PruneResult{}, fmt.Errorf("remove %s: %w", manifestPath, err)
+			}
+			result.Removed = append(result.Removed, PrunedItem{Kind: "manifest", Path: manifestPath})
 		}
-		result.Removed = append(result.Removed, PrunedItem{Kind: "manifest", Path: manifestPath})
 
-		layerDir := filepath.Join(baseDir, "layers", hash)
+		layerDir := filepath.Join(layersDir, hash)
 		if info, err := os.Stat(layerDir); err == nil && info.IsDir() {
 			if err := os.RemoveAll(layerDir); err != nil {
 				return PruneResult{}, fmt.Errorf("remove %s: %w", layerDir, err)
@@ -90,6 +97,47 @@ func Prune(baseDir string) (PruneResult, error) {
 	}
 
 	return result, nil
+}
+
+// candidateHashes returns every hash with either a manifest file under
+// manifestsDir or a layer directory under layersDir (or both) — i.e.
+// every hash Prune might need to reclaim. A missing directory
+// contributes no candidates rather than erroring, since a fresh baseDir
+// (or one with nothing pulled yet) simply has nothing to prune there.
+func candidateHashes(manifestsDir, layersDir string) ([]string, error) {
+	seen := map[string]bool{}
+	var hashes []string
+
+	add := func(hash string) {
+		if !seen[hash] {
+			seen[hash] = true
+			hashes = append(hashes, hash)
+		}
+	}
+
+	manifestEntries, err := os.ReadDir(manifestsDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read %s: %w", manifestsDir, err)
+	}
+	for _, entry := range manifestEntries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		add(strings.TrimSuffix(entry.Name(), ".json"))
+	}
+
+	layerEntries, err := os.ReadDir(layersDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read %s: %w", layersDir, err)
+	}
+	for _, entry := range layerEntries {
+		if !entry.IsDir() {
+			continue
+		}
+		add(entry.Name())
+	}
+
+	return hashes, nil
 }
 
 // reachableHashes returns the set of manifest/layer hashes still
