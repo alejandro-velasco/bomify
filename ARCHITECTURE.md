@@ -45,11 +45,13 @@ keyed on:
   content hash. This is what `repositories.json` tags point at.
 - **A component's pull manifest** (see [`internal/plugin`](internal/plugin))
   records one component's SBOM entry (with its computed hash merged in) and
-  is keyed by a hash of that component's purl (`plugin.PurlHash`). This is
-  what makes an identical component pulled by two different SBOMs — or the
-  same SBOM built twice — get reused instead of re-pulled. `internal/oci/pull`
-  writes this same manifest for a component restored from a registry, so
-  a later `bomify build` needing the same purl reuses it too.
+  is keyed by a hash of that component's purl (`plugin.PurlHash` — this
+  stays in `internal/plugin` since it's bomify's own on-disk layout, not
+  part of the plugin-facing contract). This is what makes an identical
+  component pulled by two different SBOMs — or the same SBOM built twice
+  — get reused instead of re-pulled. `internal/oci/pull` writes this same
+  manifest for a component restored from a registry, so a later `bomify
+  build` needing the same purl reuses it too.
 
 `logs/<purlHash>.log` is a plugin's own log output for one pull/push of
 that component, named after the same purl hash as its manifest and layers
@@ -80,7 +82,7 @@ anything themselves. For each SBOM component they:
 A plugin must never write general logging to stdout (reserved for that one
 JSON result) or stderr (reserved for a single fatal message bomify surfaces
 on failure) — instead it logs to the file named by `--log`,
-`<baseDir>/logs/<purlHash>.log` (`plugin.OpenLog` gives a ready-made
+`<baseDir>/logs/<purlHash>.log` (`pkg/plugin`'s `plugin.OpenLog` gives a ready-made
 `*slog.Logger` for this, in bomify's own `tint`-based format). `--log-color`
 tells the plugin whether to include ANSI color codes in that output;
 bomify sets it to whether its own stdout is a terminal
@@ -218,8 +220,10 @@ tarball, same as a registry push would dedupe it.
 
 [`internal/auth`](internal/auth) is bomify's single shared source of
 registry credentials, used by `login`/`logout`, `push`/`pull` directly, and
-by plugins (via `auth.Get`/`auth.HelperFunc`, adaptable to a third-party
-SDK's own credential-helper interface). It reads and writes the exact same
+by plugins via [`pkg/auth`](pkg/auth)'s `auth.Get`/`auth.HelperFunc`
+(adaptable to a third-party SDK's own credential-helper interface, and
+importable from outside this module since it's a plugin-facing library).
+It reads and writes the exact same
 `~/.docker/config.json` plus native OS credential store (Windows Credential
 Manager, macOS Keychain, or a configured Linux helper) that `docker login`
 itself uses — so a `docker login` and a `bomify login` are interchangeable.
@@ -242,6 +246,8 @@ A few things worth keeping in mind when changing any of the above:
   as "hasn't happened yet."
 - **bomify orchestrates, plugins do the work.** The core binary has no
   code for talking to any specific package ecosystem — that boundary is
-  the pull/push JSON-over-subprocess contract in
-  [`internal/plugin`](internal/plugin), which is deliberately minimal so a
-  third-party plugin needs almost nothing bomify-specific to implement.
+  the pull/push JSON-over-subprocess contract specified in
+  [`plugins/CONTRACT.md`](plugins/CONTRACT.md), which is deliberately
+  minimal so a third-party plugin needs almost nothing bomify-specific to
+  implement (its optional Go helper library, `pkg/plugin`, is importable
+  from any module for exactly that reason).

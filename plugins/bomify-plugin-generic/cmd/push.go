@@ -3,7 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-generic/internal/artifact"
 )
 

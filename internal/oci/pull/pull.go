@@ -27,6 +27,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // AnnotationPurl is the OCI descriptor annotation identifying the purl a
@@ -252,7 +253,7 @@ func recordComponentManifest(dataDir string, componentsByPurl map[string]cdx.Com
 	if !ok {
 		return nil
 	}
-	return plugin.WriteManifest(dataDir, component, plugin.Hash{})
+	return plugin.WriteManifest(dataDir, component, pluginlib.Hash{})
 }
 
 // blobHash returns desc's digest as the hex hash bomify's on-disk layout

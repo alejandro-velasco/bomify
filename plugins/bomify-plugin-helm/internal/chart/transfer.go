@@ -15,8 +15,8 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
 
-	"github.com/alejandro-velasco/bomify/internal/auth"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/auth"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // newRegistryClient is a var — rather than a plain func — solely so tests
@@ -27,10 +27,11 @@ import (
 var newRegistryClient = defaultRegistryClient
 
 // defaultRegistryClient builds a Helm OCI registry client authenticated,
-// for host, with whatever bomify's shared credential store (see
-// internal/auth — the same store `bomify login`/`docker login` write)
-// has for it. A host with nothing stored gets an anonymous client,
-// exactly like a bomify pull/push against a public registry.
+// for host, with whatever bomify's shared credential store (fetched via
+// pkg/auth.Get; see internal/auth for the store itself, the same one
+// `bomify login`/`docker login` write) has for it. A host with nothing
+// stored gets an anonymous client, exactly like a bomify pull/push
+// against a public registry.
 func defaultRegistryClient(host string) (*registry.Client, error) {
 	var opts []registry.ClientOption
 

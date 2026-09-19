@@ -14,14 +14,15 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
-	"github.com/alejandro-velasco/bomify/internal/auth"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/pkg/auth"
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // setAuth adds HTTP Basic auth to req from bomify's shared credential
-// store (see internal/auth — the same store `bomify login`/`docker
-// login` write), if any credentials are stored for req's host. A host
-// with nothing stored is left as an anonymous request.
+// store (fetched via pkg/auth.Get; see internal/auth for the store
+// itself, the same one `bomify login`/`docker login` write), if any
+// credentials are stored for req's host. A host with nothing stored is
+// left as an anonymous request.
 func setAuth(req *http.Request) error {
 	host := req.URL.Host
 	if host == "" {

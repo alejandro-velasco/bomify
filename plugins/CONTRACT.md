@@ -3,11 +3,11 @@
 This is the authoritative specification for the subprocess contract between
 `bomify` and a `bomify-plugin-<kind>` binary. It's aimed at anyone writing a
 plugin, first- or third-party. The Go types referenced below
-(`plugin.Result`, `plugin.Hash`) live in [`internal/plugin`](../internal/plugin)
-— that package is bomify's own (caller-side) implementation of this same
-contract, and `plugin.OpenLog`/`(*Result).Print` are ready-made helpers a
-Go-based plugin can use instead of re-implementing this spec by hand. See
-also [`README.md`](README.md) for the list of first-party plugins and
+(`plugin.Result`, `plugin.Hash`) live in [`pkg/plugin`](../pkg/plugin) — a
+small library, importable from any Go module, and `plugin.OpenLog`/
+`(*Result).Print` are ready-made helpers a Go-based plugin can use instead
+of re-implementing this spec by hand. See also [`README.md`](README.md)
+for the list of first-party plugins and
 [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for how this contract fits into
 bomify's design as a whole.
 
@@ -114,7 +114,7 @@ and bomify treats them identically:
 | `hash.value` | string | present only together with `hash.algorithm` | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
 
 Go plugins should build this as a `plugin.Result` (see
-[`internal/plugin`](../internal/plugin)) and print it with `(*Result).Print`,
+[`pkg/plugin`](../pkg/plugin)) and print it with `(*Result).Print`,
 rather than hand-rolling the JSON encoding.
 
 A machine-readable version of this schema, suitable for validating a
@@ -162,7 +162,7 @@ failure). Instead:
   visibility into what bomify's stdout is ultimately connected to.
 
 Go plugins should call `plugin.OpenLog(logPath, logColor)` (see
-[`internal/plugin`](../internal/plugin)) to get a ready-made
+[`pkg/plugin`](../pkg/plugin)) to get a ready-made
 `*slog.Logger` for this, in the same format bomify's own CLI logging uses,
 rather than constructing one by hand.
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
 	orasauth "oras.land/oras-go/v2/registry/remote/auth"
@@ -43,19 +42,7 @@ func TestLookupReturnsEmptyWhenNothingStored(t *testing.T) {
 	}
 }
 
-func TestGetReturnsEmptyWhenNothingStored(t *testing.T) {
-	useMemoryStore(t)
-
-	username, password, err := Get("example.com")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if username != "" || password != "" {
-		t.Errorf("Get() = (%q, %q), want (\"\", \"\")", username, password)
-	}
-}
-
-func TestLookupAndGetReturnStoredCredential(t *testing.T) {
+func TestLookupReturnsStoredCredential(t *testing.T) {
 	store := useMemoryStore(t)
 
 	ctx := context.Background()
@@ -70,107 +57,6 @@ func TestLookupAndGetReturnStoredCredential(t *testing.T) {
 	}
 	if cred != want {
 		t.Errorf("Lookup() = %+v, want %+v", cred, want)
-	}
-
-	username, password, err := Get("example.com")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if username != want.Username || password != want.Password {
-		t.Errorf("Get() = (%q, %q), want (%q, %q)", username, password, want.Username, want.Password)
-	}
-}
-
-func TestGetFallsBackToRefreshToken(t *testing.T) {
-	store := useMemoryStore(t)
-
-	ctx := context.Background()
-	if err := store.Put(ctx, "example.com", orasauth.Credential{RefreshToken: "a-refresh-token"}); err != nil {
-		t.Fatalf("store.Put: %v", err)
-	}
-
-	username, password, err := Get("example.com")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if username != "" || password != "a-refresh-token" {
-		t.Errorf("Get() = (%q, %q), want (\"\", \"a-refresh-token\")", username, password)
-	}
-}
-
-func TestHelperFuncAdaptsGet(t *testing.T) {
-	store := useMemoryStore(t)
-
-	ctx := context.Background()
-	if err := store.Put(ctx, "example.com", orasauth.Credential{Username: "alice", Password: "s3cret"}); err != nil {
-		t.Fatalf("store.Put: %v", err)
-	}
-
-	var helper interface {
-		Get(serverURL string) (string, string, error)
-	} = HelperFunc(Get)
-
-	username, password, err := helper.Get("example.com")
-	if err != nil {
-		t.Fatalf("helper.Get() error = %v", err)
-	}
-	if username != "alice" || password != "s3cret" {
-		t.Errorf("helper.Get() = (%q, %q), want (\"alice\", \"s3cret\")", username, password)
-	}
-}
-
-type fakeResource string
-
-func (r fakeResource) String() string      { return string(r) }
-func (r fakeResource) RegistryStr() string { return string(r) }
-
-// TestHelperFuncSignalsAnonymousToRealKeychainAdapter reproduces a real
-// bug: fed through go-containerregistry's own
-// authn.NewKeychainFromHelper — used by bomify-plugin-oci to authenticate
-// crane's pull/push — a host with nothing stored used to resolve to a
-// real (if blank) Basic authenticator rather than anonymous access,
-// because that adapter only falls back to Anonymous on a non-nil error,
-// not on empty username/password. A registry then rejected that blank
-// Basic credential as a bad login, turning what should have been an
-// always-succeeding anonymous pull of a public image into a guaranteed
-// failure. This exercises the real go-containerregistry adapter, not
-// just HelperFunc.Get's return values, so it fails the same way the
-// original bug did if the fix regresses.
-func TestHelperFuncSignalsAnonymousToRealKeychainAdapter(t *testing.T) {
-	useMemoryStore(t) // nothing stored for "example.com"
-
-	kc := authn.NewKeychainFromHelper(HelperFunc(Get))
-
-	authenticator, err := kc.Resolve(fakeResource("example.com"))
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if authenticator != authn.Anonymous {
-		t.Errorf("Resolve() = %#v, want authn.Anonymous", authenticator)
-	}
-}
-
-func TestHelperFuncSignalsRealCredentialToKeychainAdapter(t *testing.T) {
-	store := useMemoryStore(t)
-
-	ctx := context.Background()
-	if err := store.Put(ctx, "example.com", orasauth.Credential{Username: "alice", Password: "s3cret"}); err != nil {
-		t.Fatalf("store.Put: %v", err)
-	}
-
-	kc := authn.NewKeychainFromHelper(HelperFunc(Get))
-
-	authenticator, err := kc.Resolve(fakeResource("example.com"))
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-
-	cfg, err := authenticator.Authorization()
-	if err != nil {
-		t.Fatalf("Authorization() error = %v", err)
-	}
-	if cfg.Username != "alice" || cfg.Password != "s3cret" {
-		t.Errorf("Authorization() = %+v, want Username=alice Password=s3cret", cfg)
 	}
 }
 
