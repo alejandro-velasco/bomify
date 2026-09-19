@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -329,5 +330,131 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("marker file gone after second pull, want left in place (skip, not re-unpack): %v", err)
+	}
+}
+
+// pushComponentFixture builds a source data directory containing
+// component's layer content, records and pushes it as a package tagged
+// tag, and returns the store to pull it back from.
+func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []byte) (store *oci.Store, tag string) {
+	t.Helper()
+
+	sourceDir := t.TempDir()
+	layerDir := filepath.Join(sourceDir, "layers", plugin.PurlHash(component))
+	if err := os.MkdirAll(layerDir, 0o755); err != nil {
+		t.Fatalf("mkdir layer dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(layerDir, "artifact"), layerContent, 0o644); err != nil {
+		t.Fatalf("write layer file: %v", err)
+	}
+
+	sbomBytes, err := json.Marshal(struct {
+		BOMFormat   string          `json:"bomFormat"`
+		SpecVersion string          `json:"specVersion"`
+		Version     int             `json:"version"`
+		Components  []cdx.Component `json:"components"`
+	}{"CycloneDX", "1.5", 1, []cdx.Component{component}})
+	if err != nil {
+		t.Fatalf("marshal sbom fixture: %v", err)
+	}
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	if err := os.WriteFile(sbomPath, sbomBytes, 0o644); err != nil {
+		t.Fatalf("write sbom fixture: %v", err)
+	}
+
+	sbomHash, _, err := build.RecordManifest(sourceDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	store, err = oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+
+	tag = "test"
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	return store, tag
+}
+
+// TestPullRecordsComponentManifest guards against a real gap: `bomify
+// pull` used to write only the SBOM-level manifest, never a
+// per-component one, so a component restored this way had no way to be
+// reused by a later `bomify build` needing the same purl —
+// internal/plugin.Pull only reuses a prior pull if a manifest already
+// exists for it. Pull now writes that manifest too, preserving whatever
+// hash the SBOM already declares (no new hash is computed).
+func TestPullRecordsComponentManifest(t *testing.T) {
+	component := cdx.Component{
+		Type:       cdx.ComponentTypeContainer,
+		Name:       "nginx",
+		Version:    "1.27",
+		PackageURL: "pkg:oci/nginx@1.27",
+		Hashes:     &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "fakehash-nginx-1.27"}},
+	}
+
+	store, tag := pushComponentFixture(t, component, []byte("image contents"))
+
+	dataDir := t.TempDir()
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil); err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+
+	manifestPath := filepath.Join(dataDir, "manifests", plugin.PurlHash(component)+".json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read component manifest: %v", err)
+	}
+
+	var m plugin.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("parse component manifest: %v", err)
+	}
+	if m.Component.PackageURL != component.PackageURL {
+		t.Errorf("manifest purl = %q, want %q", m.Component.PackageURL, component.PackageURL)
+	}
+	if m.Component.Hashes == nil || len(*m.Component.Hashes) != 1 || (*m.Component.Hashes)[0].Value != "fakehash-nginx-1.27" {
+		t.Errorf("manifest hashes = %v, want [{SHA-256 fakehash-nginx-1.27}]", m.Component.Hashes)
+	}
+}
+
+// TestPullBackfillsComponentManifestForPreexistingLayer guards against
+// data pulled before this fix: a layer directory with no manifest, which
+// is what every prior `bomify pull` produced. Pulling the same package
+// again should still write the missing manifest via the
+// already-unpacked fast path, not just skip re-downloading and leave the
+// component permanently unreusable by a later `bomify build`.
+func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
+	component := cdx.Component{
+		Type:       cdx.ComponentTypeContainer,
+		Name:       "nginx",
+		Version:    "1.27",
+		PackageURL: "pkg:oci/nginx@1.27",
+	}
+
+	store, tag := pushComponentFixture(t, component, []byte("image contents"))
+
+	dataDir := t.TempDir()
+	// Simulate a pre-fix pull: the layer directory already exists, but no
+	// manifest — planted directly rather than via Pull, so this doesn't
+	// depend on the very behavior TestPullRecordsComponentManifest covers.
+	preexistingDir := filepath.Join(dataDir, "layers", plugin.PurlHash(component))
+	if err := os.MkdirAll(preexistingDir, 0o755); err != nil {
+		t.Fatalf("mkdir preexisting layer dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(preexistingDir, "artifact"), []byte("image contents"), 0o644); err != nil {
+		t.Fatalf("write preexisting layer file: %v", err)
+	}
+
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil); err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+
+	manifestPath := filepath.Join(dataDir, "manifests", plugin.PurlHash(component)+".json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Errorf("component manifest not backfilled for preexisting layer: %v", err)
 	}
 }

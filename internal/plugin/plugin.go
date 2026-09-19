@@ -243,7 +243,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			return nil, err
 		}
 
-		if err := writeManifest(baseDir, component, result.Hash); err != nil {
+		if err := WriteManifest(baseDir, component, result.Hash); err != nil {
 			os.RemoveAll(dir)
 			return nil, err
 		}
@@ -297,9 +297,11 @@ func manifestHash(m Manifest, hashAlgorithm cdx.HashAlgorithm) Hash {
 	return Hash{}
 }
 
-// writeManifest records component (with computed merged into its Hashes,
-// if set) as the manifest for baseDir's component directory.
-func writeManifest(baseDir string, component cdx.Component, computed Hash) error {
+// WriteManifest records component (with computed merged into its Hashes)
+// as the manifest for baseDir's component directory. Pass the zero Hash
+// to leave component's existing Hashes untouched when there's nothing
+// new to merge in.
+func WriteManifest(baseDir string, component cdx.Component, computed Hash) error {
 	if computed.Algorithm != "" {
 		component.Hashes = mergeHash(component.Hashes, computed)
 	}

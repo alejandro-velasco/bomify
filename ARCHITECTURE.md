@@ -47,7 +47,9 @@ keyed on:
   records one component's SBOM entry (with its computed hash merged in) and
   is keyed by a hash of that component's purl (`plugin.PurlHash`). This is
   what makes an identical component pulled by two different SBOMs — or the
-  same SBOM built twice — get reused instead of re-pulled.
+  same SBOM built twice — get reused instead of re-pulled. `internal/oci/pull`
+  writes this same manifest for a component restored from a registry, so
+  a later `bomify build` needing the same purl reuses it too.
 
 `logs/<purlHash>.log` is a plugin's own log output for one pull/push of
 that component, named after the same purl hash as its manifest and layers
