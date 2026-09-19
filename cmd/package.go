@@ -63,7 +63,7 @@ func runPackagePrune(cmd *cobra.Command) error {
 		logger.Info("removed", "kind", item.Kind, "path", item.Path)
 	}
 	for _, hash := range result.Skipped {
-		logger.Info("skipped (pull in flight)", "hash", hash)
+		logger.Info("skipped (pull in progress)", "hash", hash)
 	}
 	for _, hash := range result.Unprotected {
 		logger.Warn("could not parse this build's manifest; its components could not be protected from pruning", "hash", hash)
@@ -176,7 +176,7 @@ func pruneAfterRemove(logger *slog.Logger) error {
 		logger.Info("removed", "kind", item.Kind, "path", item.Path)
 	}
 	for _, hash := range result.Skipped {
-		logger.Info("skipped (pull in flight)", "hash", hash)
+		logger.Info("skipped (pull in progress)", "hash", hash)
 	}
 	for _, hash := range result.Unprotected {
 		logger.Warn("could not parse this build's manifest; its components could not be protected from pruning", "hash", hash)

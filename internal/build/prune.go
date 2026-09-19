@@ -37,22 +37,19 @@ type PruneResult struct {
 // Prune removes every manifest and layer under baseDir that isn't
 // reachable from a tag currently recorded in repositories.json.
 //
-// "Reachable" means: a tagged SBOM's own manifest file, plus the manifest
-// and layer directory of every component that SBOM's actual content
-// describes. Both kinds of manifest live in the same
-// "manifests/<hash>.json" scheme with no distinguishing name, so rather
-// than guess a file's kind from its content, Prune walks outward from
-// repositories.json — the one place that actually says what's still in
-// use — and removes everything in manifests/ and layers/ that walk never
-// reached.
+// "Reachable" means: a tagged SBOM's own manifest, plus the manifest and
+// layer directory of every component that SBOM describes. Both kinds of
+// manifest share the same "manifests/<hash>.json" naming with no way to
+// tell them apart by content alone, so Prune walks outward from
+// repositories.json instead of guessing — the one place that says what's
+// still in use.
 //
-// Candidates come from both manifests/ and layers/, not just manifests/:
-// a component `bomify build` pulled has both a manifest and a layer
-// directory, but one `bomify pull` restored from a registry has only a
-// layer directory (internal/oci/pull never writes a per-component
-// manifest, only the SBOM-level one) — so relying on manifests/ alone
-// would never even consider such a component's layer directory for
-// removal, however unreachable it becomes.
+// Candidates are gathered from both manifests/ and layers/, not just
+// manifests/: `bomify build` writes a manifest for every component, but
+// `bomify pull` writes only the SBOM-level manifest — a pulled
+// component's layer directory has no manifest of its own. Relying on
+// manifests/ alone would leave such a directory permanently
+// undiscovered, however unreachable it becomes.
 func Prune(baseDir string) (PruneResult, error) {
 	kept, unprotected, err := reachableHashes(baseDir)
 	if err != nil {
