@@ -49,7 +49,9 @@ keyed on:
   stays in `internal/plugin` since it's bomify's own on-disk layout, not
   part of the plugin-facing contract). This is what makes an identical
   component pulled by two different SBOMs — or the same SBOM built twice
-  — get reused instead of re-pulled.
+  — get reused instead of re-pulled. `internal/oci/pull` writes this same
+  manifest for a component restored from a registry, so a later `bomify
+  build` needing the same purl reuses it too.
 
 `logs/<purlHash>.log` is a plugin's own log output for one pull/push of
 that component, named after the same purl hash as its manifest and layers

@@ -10,13 +10,15 @@
 // Pull is safe to call concurrently, even from separate bomify processes,
 // for components that hash to the same directory (e.g. duplicate purls
 // within or across SBOMs): if a pid file already names a live process,
-// Pull waits for it instead of pulling again; if that pid file is stale
-// (its process is gone without cleaning up, e.g. it crashed), Pull
-// discards the leftover directory and pulls fresh; if neither a pid file
-// nor a manifest exists, Pull pulls; if a manifest already exists and
-// nothing is pulling, Pull reuses it. Whichever of those applies, Pull
-// finishes by verifying the resulting hash as described below, so even a
-// reused result fails if it doesn't match this call's component.
+// Pull waits for it instead of pulling again; if a manifest already
+// exists and nothing is pulling, Pull reuses it; otherwise Pull pulls
+// fresh, discarding whatever the directory already contains first —
+// a stale pid's leftovers, or (having no manifest at all) a component of
+// the same purl restored via `bomify pull` rather than `bomify build` —
+// since the plugin contract guarantees the directory starts out empty.
+// Whichever of those applies, Pull finishes by verifying the resulting
+// hash as described below, so even a reused result fails if it doesn't
+// match this call's component.
 package plugin
 
 import (
@@ -124,8 +126,9 @@ func Find(kind string) (string, error) {
 
 // Pull invokes the plugin binary's "pull" subcommand, which fetches or
 // builds component and writes it into componentDir's directory. Pull
-// creates that directory before invoking the plugin and removes it again
-// if the plugin fails.
+// clears that directory (if it already exists) and recreates it empty
+// before invoking the plugin — see the package doc comment for why it
+// might not already be empty — and removes it again if the plugin fails.
 //
 // hashAlgorithm is passed to the plugin via --hash, asking it to report
 // the pulled artifact's content hash. If component declares its own hash
@@ -159,9 +162,9 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			}
 
 			// Stale pid file: a previous pull crashed before cleaning up.
-			// Discard its leftovers and pull fresh below.
+			// Its leftovers in dir are discarded below, along with any
+			// other reason dir might already have content.
 			os.Remove(pid)
-			os.RemoveAll(dir)
 		} else if m, err := readManifest(manifest); err == nil {
 			// Nothing is pulling right now, and a prior pull already
 			// succeeded: reuse it instead of pulling again. Still verify
@@ -175,10 +178,6 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 				return nil, err
 			}
 			return result, nil
-		}
-
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 		}
 
 		if err := os.MkdirAll(filepath.Dir(pid), 0o755); err != nil {
@@ -195,6 +194,17 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 		}
 		defer os.Remove(pid)
 
+		// dir can already have content here — a stale pid's leftovers, or
+		// (see the package doc comment) a component restored via `bomify
+		// pull` instead of `bomify build`. Either way the plugin contract
+		// guarantees --output starts empty, so clear it unconditionally.
+		if err := os.RemoveAll(dir); err != nil {
+			return nil, fmt.Errorf("clear component directory %s: %w", dir, err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
+		}
+
 		result, err := run(path, "pull", component.PackageURL, logFile, verbose, "--output", dir, "--hash", string(hashAlgorithm))
 		if err != nil {
 			os.RemoveAll(dir)
@@ -206,7 +216,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			return nil, err
 		}
 
-		if err := writeManifest(baseDir, component, result.Hash); err != nil {
+		if err := WriteManifest(baseDir, component, result.Hash); err != nil {
 			os.RemoveAll(dir)
 			return nil, err
 		}
@@ -260,9 +270,11 @@ func manifestHash(m Manifest, hashAlgorithm cdx.HashAlgorithm) pluginlib.Hash {
 	return pluginlib.Hash{}
 }
 
-// writeManifest records component (with computed merged into its Hashes,
-// if set) as the manifest for baseDir's component directory.
-func writeManifest(baseDir string, component cdx.Component, computed pluginlib.Hash) error {
+// WriteManifest records component (with computed merged into its Hashes)
+// as the manifest for baseDir's component directory. Pass the zero Hash
+// to leave component's existing Hashes untouched when there's nothing
+// new to merge in.
+func WriteManifest(baseDir string, component cdx.Component, computed pluginlib.Hash) error {
 	if computed.Algorithm != "" {
 		component.Hashes = mergeHash(component.Hashes, computed)
 	}
@@ -442,6 +454,18 @@ func processAlive(pid int) bool {
 	// On POSIX, os.FindProcess always succeeds regardless of whether pid
 	// exists; signal 0 probes for real existence without affecting it.
 	return process.Signal(syscall.Signal(0)) == nil
+}
+
+// PIDFileLive reports whether path names a pid file whose owning process
+// is still alive — i.e. whether a pull is genuinely still in flight for
+// whatever component that pid file belongs to (see pidPath). A missing
+// file is not live, and neither is one left behind by a pull that
+// crashed without cleaning up (see Pull's own stale-pid handling): only
+// Prune calls this, to avoid reclaiming a component out from under a
+// pull that's actually still running.
+func PIDFileLive(path string) bool {
+	pid, ok := readPID(path)
+	return ok && processAlive(pid)
 }
 
 // waitForPIDFile blocks until path is removed (the process that owns it
