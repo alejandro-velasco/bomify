@@ -10,6 +10,23 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
 )
 
+const saveShort = "Save packages to a tarball"
+
+const saveLong = `Save packages one or more tagged packages into a single tarball — an
+OCI image-layout archive containing each package's manifest and
+components — that "bomify load" can restore on any machine, with no
+registry involved. A component shared by more than one given tag is
+stored once. Writes to stdout if --output isn't given.`
+
+const saveExample = `  # Save one package to stdout, redirected to a file
+  bomify save myapp:latest > packages.tar
+
+  # Save several packages to a file
+  bomify save myapp:v1 myapp:v2 --output packages.tar
+
+  # Archive up to 6 layers concurrently
+  bomify save myapp:latest --output packages.tar --concurrency 6`
+
 type saveOptions struct {
 	output      string
 	concurrency int
@@ -19,10 +36,11 @@ func saveCmd() *cobra.Command {
 	opts := &saveOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "save <tag>...",
-		Short: "Save packages to a tarball",
-		Long:  "Save packages one or more tagged packages into a single tarball — an OCI image-layout archive containing each package's manifest and components — that `bomify load` can restore on any machine, with no registry involved. A component shared by more than one given tag is stored once. Writes to stdout if --output isn't given, mirroring `docker save`.",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "save <tag>...",
+		Short:   saveShort,
+		Long:    saveLong,
+		Example: saveExample,
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runSave(cmd, args, opts); err != nil {
 				return fmt.Errorf("save: %w", err)

@@ -11,6 +11,22 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 )
 
+const pushShort = "Publish a bomify package to an OCI registry"
+
+const pushLong = `Push packages the SBOM manifest a prior "bomify build" recorded for
+<tag> (and each component it describes) as an OCI artifact, and
+publishes it under <tag>. <tag> is both the local bookkeeping key
+(see "bomify tag" / "bomify packages") and the destination reference.`
+
+const pushExample = `  # Push the package tagged myapp:latest to its own registry reference
+  bomify push myapp:latest
+
+  # Push using a fully qualified registry reference as the tag
+  bomify push registry.example.com/myapp:latest
+
+  # Upload up to 6 layers concurrently
+  bomify push myapp:latest --concurrency 6`
+
 type pushOptions struct {
 	concurrency int
 }
@@ -19,10 +35,11 @@ func pushCmd() *cobra.Command {
 	opts := &pushOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "push <tag>",
-		Short: "Push publishes a bomify package to an OCI registry",
-		Long:  "Push packages the SBOM manifest a prior `bomify build` recorded for <tag> (and each component it describes) as an OCI artifact, and publishes it under <tag>. <tag> is both the local bookkeeping key (see `bomify tag`/`bomify packages`) and the destination reference, exactly like `docker push`.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "push <tag>",
+		Short:   pushShort,
+		Long:    pushLong,
+		Example: pushExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPush(cmd, args[0], opts); err != nil {
 				return fmt.Errorf("push: %w", err)

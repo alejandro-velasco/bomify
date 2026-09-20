@@ -13,6 +13,28 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
+const distributeShort = "Publish a locally available package to a remote endpoint"
+
+const distributeLong = `Distribute resolves <tag> to the SBOM manifest a prior "bomify build" or
+"bomify pull" recorded for it (see "bomify tag" / "bomify packages")
+and publishes each component that SBOM describes to a remote
+endpoint.
+
+The endpoint used is chosen per component by its plugin kind: pass
+one or more --remote kind=endpoint flags (e.g. --remote
+oci=registry.example.com --remote helm=charts.example.com/helm). A
+kind with no matching --remote falls back to the data directory's
+conf/distribution.json.`
+
+const distributeExample = `  # Distribute myapp:latest using endpoints from "bomify distribution create"
+  bomify distribute myapp:latest
+
+  # Distribute with explicit per-kind remotes
+  bomify distribute myapp:latest --remote oci=registry.example.com --remote helm=charts.example.com/helm
+
+  # Distribute 4 components concurrently
+  bomify distribute myapp:latest --concurrency 4`
+
 type distributeOptions struct {
 	tag         string
 	remotes     map[string]string
@@ -23,10 +45,11 @@ func distributeCmd() *cobra.Command {
 	distributeOpts := &distributeOptions{}
 
 	distributeCmd := &cobra.Command{
-		Use:   "distribute <tag>",
-		Short: "Distribute publishes a locally available bomify package to a remote endpoint",
-		Long:  "Distribute resolves <tag> to the SBOM manifest a prior `bomify build`/`bomify pull` recorded for it (see `bomify tag`/`bomify packages`) and publishes each component that SBOM describes to a remote endpoint. The endpoint used is chosen per component by its plugin kind: pass one or more `--remote kind=endpoint` (e.g. --remote oci=registry.example.com --remote helm=charts.example.com/helm). A kind with no matching --remote falls back to the data directory's conf/distribution.json.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "distribute <tag>",
+		Short:   distributeShort,
+		Long:    distributeLong,
+		Example: distributeExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			distributeOpts.tag = args[0]
 			if err := runDistribute(distributeOpts, logging.FromContext(cmd.Context())); err != nil {

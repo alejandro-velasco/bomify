@@ -12,6 +12,23 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 )
 
+const pullShort = "Download a bomify package from an OCI registry"
+
+const pullLong = `Pull downloads a bomify package artifact from an OCI registry: its
+config (the aggregate SBOM manifest) and each of its layers (the
+components that SBOM describes), laying them out in the data
+directory exactly as "bomify build" would have. Layers download
+concurrently, each with its own progress bar.`
+
+const pullExample = `  # Pull a tagged reference
+  bomify pull registry.example.com/myapp:latest
+
+  # Pull by digest
+  bomify pull registry.example.com/myapp@sha256:abcdef...
+
+  # Download up to 6 layers concurrently
+  bomify pull registry.example.com/myapp:latest --concurrency 6`
+
 type pullOptions struct {
 	concurrency int
 }
@@ -20,10 +37,11 @@ func pullCmd() *cobra.Command {
 	opts := &pullOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "pull <reference>",
-		Short: "Pull downloads a bomify package from an OCI registry",
-		Long:  "Pull downloads a bomify package artifact from an OCI registry: its config (the aggregate SBOM manifest) and each of its layers (the components that SBOM describes), laying them out in the data directory exactly as `bomify build` would have. Layers download concurrently, each with its own progress bar.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "pull <reference>",
+		Short:   pullShort,
+		Long:    pullLong,
+		Example: pullExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPull(cmd, args[0], opts); err != nil {
 				return fmt.Errorf("pull: %w", err)

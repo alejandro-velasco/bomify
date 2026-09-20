@@ -13,6 +13,21 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/auth"
 )
 
+const loginShort = "Log in to an OCI registry"
+
+const loginLong = `Login authenticates against an OCI registry (default: docker.io) and
+stores the credentials for later build/distribute/pull/push
+operations to reuse.`
+
+const loginExample = `  # Log in to docker.io, prompting for username and password
+  bomify login
+
+  # Log in to a specific registry
+  bomify login registry.example.com
+
+  # Log in non-interactively, e.g. from a script or CI pipeline
+  echo "$PASSWORD" | bomify login registry.example.com -u myuser --password-stdin`
+
 type loginOptions struct {
 	username      string
 	password      string
@@ -23,10 +38,11 @@ func loginCmd() *cobra.Command {
 	opts := &loginOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "login [server]",
-		Short: "Log in to an OCI registry",
-		Long:  "Login authenticates against an OCI registry (default: docker.io) and stores the credentials for later build/distribute/pull/push operations to reuse — using the same credential store `docker login` itself reads and writes, so credentials from either tool work for both.",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "login [server]",
+		Short:   loginShort,
+		Long:    loginLong,
+		Example: loginExample,
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := auth.DefaultHost
 			if len(args) == 1 {

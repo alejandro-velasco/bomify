@@ -12,6 +12,23 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
+const buildShort = "Build the package described by a CycloneDX SBOM"
+
+const buildLong = `Build reads a CycloneDX SBOM and builds a package containing each
+component it describes. Each component is resolved to a plugin by its
+kind and pulled through it, and the SBOM is then recorded as this
+build's manifest so later commands (push, distribute, tag, packages)
+can find it.`
+
+const buildExample = `  # Build the package described by sbom.json
+  bomify build sbom.json
+
+  # Build and tag the result as myapp:latest
+  bomify build sbom.json --tag myapp:latest
+
+  # Pull up to 4 components concurrently, verifying against sha-512
+  bomify build sbom.json --concurrency 4 --hash sha-512`
+
 type buildOptions struct {
 	file        string
 	hash        string
@@ -24,10 +41,11 @@ func buildCmd() *cobra.Command {
 	buildOpts := &buildOptions{}
 
 	buildCmd := &cobra.Command{
-		Use:   "build <sbom-file>",
-		Short: "Build builds the package described by a CycloneDX SBOM",
-		Long:  "Build reads a CycloneDX SBOM and builds a containing each component it describes.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "build <sbom-file>",
+		Short:   buildShort,
+		Long:    buildLong,
+		Example: buildExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			buildOpts.file = args[0]
 			if err := runBuild(buildOpts, logging.FromContext(cmd.Context())); err != nil {

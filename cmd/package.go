@@ -12,10 +12,12 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 )
 
+const packageShort = "Manage individual bomify packages"
+
 func packageCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "package",
-		Short: "Manage individual bomify packages",
+		Short: packageShort,
 	}
 
 	cmd.AddCommand(packagePruneCmd())
@@ -34,12 +36,23 @@ func packageCmd() *cobra.Command {
 	return cmd
 }
 
+const packagePruneShort = "Remove packages not associated with any tag"
+
+const packagePruneLong = `Prune removes every manifest and layer in the data directory that
+isn't reachable from a tag currently recorded in repositories.json. A
+component still used by any tagged package, even one also used by an
+otherwise-unreferenced package, is left alone.`
+
+const packagePruneExample = `  # Remove every untagged manifest and layer
+  bomify package prune`
+
 func packagePruneCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "prune",
-		Short: "Remove packages not associated with any tag",
-		Long:  "Prune removes every manifest and layer in the data directory that isn't reachable from a tag currently recorded in repositories.json — mirroring `docker image prune`. A component still used by any tagged package, even one also used by an otherwise-unreferenced package, is left alone.",
-		Args:  cobra.NoArgs,
+		Use:     "prune",
+		Short:   packagePruneShort,
+		Long:    packagePruneLong,
+		Example: packagePruneExample,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPackagePrune(cmd); err != nil {
 				return fmt.Errorf("package prune: %w", err)
@@ -74,12 +87,26 @@ func runPackagePrune(cmd *cobra.Command) error {
 	return nil
 }
 
+const packageManifestShort = "Print a remote package's CycloneDX manifest"
+
+const packageManifestLong = `Manifest fetches <reference> from an OCI registry and writes its
+aggregate CycloneDX SBOM manifest (the artifact's config blob)
+verbatim to stdout, without pulling any of its layers or writing
+anything to the data directory.`
+
+const packageManifestExample = `  # Print the manifest for a tagged reference
+  bomify package manifest registry.example.com/myapp:latest
+
+  # Print the manifest for a digest reference
+  bomify package manifest registry.example.com/myapp@sha256:abcdef...`
+
 func packageManifestCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "manifest <reference>",
-		Short: "Print a remote package's CycloneDX manifest",
-		Long:  "Manifest fetches <reference> from an OCI registry and writes its aggregate CycloneDX SBOM manifest (the artifact's config blob) verbatim to stdout, without pulling any of its layers or writing anything to the data directory.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "manifest <reference>",
+		Short:   packageManifestShort,
+		Long:    packageManifestLong,
+		Example: packageManifestExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPackageManifest(cmd, args[0]); err != nil {
 				return fmt.Errorf("package manifest: %w", err)
@@ -106,12 +133,25 @@ func runPackageManifest(cmd *cobra.Command, ref string) error {
 	return err
 }
 
+const packageRemoveShort = "Remove packages by tag"
+
+const packageRemoveLong = `Remove untags each given <tag> and reclaims any manifest or component
+no longer used by a remaining tag. Also available as the top-level
+shorthand "bomify rmp".`
+
+const packageRemoveExample = `  # Remove a single tagged package
+  bomify package remove myapp:latest
+
+  # Remove several at once
+  bomify package remove myapp:v1 myapp:v2`
+
 func packageRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "remove <tag>...",
 		Aliases: []string{"rm"},
-		Short:   "Remove packages by tag",
-		Long:    "Remove untags each given <tag> and reclaims any manifest or component no longer used by a remaining tag — mirroring `docker image rm`/`docker rmi` (also available as the top-level shorthand `bomify rmp`).",
+		Short:   packageRemoveShort,
+		Long:    packageRemoveLong,
+		Example: packageRemoveExample,
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPackageRemove(cmd, args); err != nil {
@@ -125,11 +165,20 @@ func packageRemoveCmd() *cobra.Command {
 	return cmd
 }
 
+const rmpShort = "Remove packages by tag (shorthand for \"bomify package remove\")"
+
+const rmpExample = `  # Remove a single tagged package
+  bomify rmp myapp:latest
+
+  # Remove several at once
+  bomify rmp myapp:v1 myapp:v2`
+
 func rmpCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rmp <tag>...",
-		Short: "Remove packages by tag (shorthand for `bomify package remove`)",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "rmp <tag>...",
+		Short:   rmpShort,
+		Example: rmpExample,
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runPackageRemove(cmd, args); err != nil {
 				return fmt.Errorf("rmp: %w", err)

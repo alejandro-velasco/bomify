@@ -8,12 +8,24 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 )
 
+const tagShort = "Create a new tag pointing at an existing package"
+
+const tagLong = `Tag creates <destination-tag> as an alias for the package that
+<source-tag> currently resolves to.`
+
+const tagExample = `  # Point a new tag at an existing package
+  bomify tag myapp:v1 myapp:latest
+
+  # Re-tag a package under a different repository name
+  bomify tag myapp:latest registry.example.com/myapp:latest`
+
 func tagCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tag <source-tag> <destination-tag>",
-		Short: "Tag creates a new tag pointing at an existing package",
-		Long:  "Tag creates <destination-tag> as an alias for the package that <source-tag> currently resolves to, similar to `docker tag`.",
-		Args:  cobra.ExactArgs(2),
+		Use:     "tag <source-tag> <destination-tag>",
+		Short:   tagShort,
+		Long:    tagLong,
+		Example: tagExample,
+		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTag(args[0], args[1])
 		},

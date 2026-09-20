@@ -18,6 +18,18 @@ const (
 	defaultDataDirName = ".bomify"
 )
 
+const rootShort = "bomify builds packages from CycloneDX SBOMs"
+
+const rootLong = `bomify is a CLI that consumes a CycloneDX Software Bill of Materials
+(SBOM) and builds packages from the components it describes.`
+
+const rootExample = `  # Build a package from an SBOM, then publish it
+  bomify build sbom.json --tag myapp:latest
+  bomify push myapp:latest
+
+  # See what's built locally
+  bomify packages`
+
 var (
 	// DataDir is the directory where bomify stores its data (e.g., built packages).
 	// It is set by the main package.
@@ -39,8 +51,9 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootOpts := &rootOptions{}
 	rootCmd := &cobra.Command{
 		Use:           "bomify",
-		Short:         "bomify builds packages from CycloneDX SBOMs",
-		Long:          "bomify is a CLI that consumes a CycloneDX Software Bill of Materials (SBOM)\nand builds packages from the components it describes.",
+		Short:         rootShort,
+		Long:          rootLong,
+		Example:       rootExample,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {

@@ -9,6 +9,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const versionShort = "Print version, commit, and build date information"
+
+const versionExample = `  # Print human-readable version info
+  bomify version
+
+  # Print version info as JSON
+  bomify version --output json`
+
 type VersionOptions struct {
 	Output string
 }
@@ -17,8 +25,9 @@ func versionCmd() *cobra.Command {
 	versionOpts := &VersionOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "version",
-		Short: "Print version, commit, and build date information",
+		Use:     "version",
+		Short:   versionShort,
+		Example: versionExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			buildInfo := buildinfo.GetBuildInfo()
 

@@ -12,15 +12,24 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 )
 
+const packagesShort = "List built packages"
+
+const packagesLong = `Packages lists the packages recorded in
+<data-dir>/package/repositories.json, one row per repository:tag.`
+
+const packagesExample = `  # List every locally recorded package
+  bomify packages`
+
 type packagesOptions struct{}
 
 func packagesCmd() *cobra.Command {
 	opts := &packagesOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "packages",
-		Short: "List built packages",
-		Long:  "Packages lists the packages recorded in <output>/package/repositories.json, one row per repository:tag, similar to `docker images`.",
+		Use:     "packages",
+		Short:   packagesShort,
+		Long:    packagesLong,
+		Example: packagesExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPackages(cmd, opts)
 		},
