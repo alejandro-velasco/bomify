@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -433,7 +434,8 @@ func readPID(path string) (pid int, ok bool) {
 }
 
 // processAlive reports whether a process with the given pid currently
-// exists.
+// exists, including one owned by another user that this process has no
+// permission to signal.
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -453,7 +455,11 @@ func processAlive(pid int) bool {
 
 	// On POSIX, os.FindProcess always succeeds regardless of whether pid
 	// exists; signal 0 probes for real existence without affecting it.
-	return process.Signal(syscall.Signal(0)) == nil
+	// EPERM means the process exists but is owned by another user we
+	// can't signal — still alive, just not ours — whereas any other
+	// error (typically ESRCH) means no such process exists.
+	err = process.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // PIDFileLive reports whether path names a pid file whose owning process
