@@ -28,14 +28,10 @@ import (
 )
 
 // keychain resolves registry credentials from bomify's shared credential
-// store (see pkg/auth), the same store defaultRegistryClient reads via
-// auth.Get. It's only used by CheckPush's push-permission probe, which
-// borrows go-containerregistry's remote.CheckPushPermission rather than
-// hand-rolling an upload-init-then-cancel request against the Helm SDK's
-// own authorizer — a Helm OCI chart is an ordinary OCI Distribution
-// artifact, so the same probe applies regardless of which client later
-// uploads the real bytes (bomify-plugin-oci uses the exact same helper,
-// for the exact same reason, against its own images).
+// store (see pkg/auth), for CheckPush's remote.CheckPushPermission probe
+// — a Helm OCI chart is an ordinary OCI Distribution artifact, so
+// go-containerregistry's permission check applies here too, same as
+// bomify-plugin-oci.
 var keychain = authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get))
 
 // newRegistryClient is a var — rather than a plain func — solely so tests
@@ -147,11 +143,10 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}, nil
 }
 
-// CheckPull verifies that a real Pull of ref would succeed — the chart
-// exists and the caller is authorized to fetch it — without downloading
-// it: an OCI manifest resolve (no chart layer fetched) for an OCI
-// registry, or a fetch of the small index.yaml every `helm pull` already
-// consults first for a classic HTTP(S) repository.
+// CheckPull verifies ref exists and is fetchable without downloading it:
+// an OCI manifest resolve (no chart layer) for an OCI registry, or a
+// fetch of the small index.yaml a real Pull consults first, for a
+// classic HTTP(S) repository.
 func CheckPull(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
 	if ref.OCI {
 		return checkPullOCI(ref, logger)
@@ -160,9 +155,9 @@ func CheckPull(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*
 }
 
 // checkPullOCI resolves ref's manifest without pulling its chart layer.
-// Unlike checkPullHTTP, the resolved descriptor is the OCI manifest's own
-// digest, not the chart tarball's content hash chartHash computes for a
-// real Pull, so no hash is reported here.
+// The resolved descriptor's digest is the OCI manifest's own digest, not
+// the chart tarball hash chartHash computes for a real Pull, so no hash
+// is reported here.
 func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	registryClient, err := newRegistryClient(registryHost(ref.RepositoryURL))
 	if err != nil {
@@ -170,10 +165,8 @@ func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	}
 
 	displayRef := strings.TrimSuffix(ref.RepositoryURL, "/") + "/" + ref.Name + ":" + ref.Version
-	// Client.Resolve wants a bare "host/repository:tag" reference, unlike
-	// everywhere else in this package that accepts (and keeps) an
-	// "oci://" scheme — see Client.ValidateReference for the same
-	// convention.
+	// Client.Resolve wants a bare "host/repository:tag", no "oci://"
+	// scheme — see Client.ValidateReference for the same convention.
 	resolveRef := strings.TrimPrefix(displayRef, registry.OCIScheme+"://")
 
 	logger.Info("resolving chart", "ref", resolveRef)
@@ -185,13 +178,11 @@ func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	return &plugin.Result{OutputPath: displayRef, Message: fmt.Sprintf("%s exists and is pullable", displayRef)}, nil
 }
 
-// checkPullHTTP fetches ref.RepositoryURL's index.yaml — a small,
-// read-only listing every classic chart repository serves, the same one
-// a real Pull consults first to resolve ref.Name/ref.Version to a
-// download URL — and looks for a matching entry, without downloading the
-// chart itself. Each entry's digest field is set when the index was
-// generated and is the same SHA-256 chartHash would compute from the
-// downloaded chart, so hash comes back populated at no extra cost.
+// checkPullHTTP fetches ref.RepositoryURL's small index.yaml — the same
+// listing a real Pull consults first — and looks for a matching entry,
+// without downloading the chart. Its digest field is the same SHA-256
+// chartHash would compute from the downloaded chart, so hash comes back
+// populated at no extra cost.
 func checkPullHTTP(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
 	indexURL := strings.TrimSuffix(ref.RepositoryURL, "/") + "/index.yaml"
 
@@ -311,17 +302,10 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", path, dst)}, nil
 }
 
-// CheckPush verifies that a real Push of ref to remote would succeed —
-// the caller is authorized to write there — without publishing anything.
-// Like Push, it only supports OCI registries; a classic HTTP(S) remote
-// fails the same way a real Push against one would.
-//
-// It reuses go-containerregistry's remote.CheckPushPermission (see the
-// keychain doc comment above) rather than the Helm SDK, which has no
-// permission-probe of its own: CheckPushPermission initiates an upload
-// session and immediately cancels it, never sending any actual blob
-// content — the same inexpensive pattern a push-permission check should
-// use for any OCI Distribution registry.
+// CheckPush verifies the caller is authorized to push ref to remote,
+// without publishing anything, via remote.CheckPushPermission (see the
+// keychain doc comment). Like Push, it's OCI-only; a classic HTTP(S)
+// remote fails the same way a real Push would.
 func CheckPush(ref Ref, remote string, logger *slog.Logger) (*plugin.Result, error) {
 	if !registry.IsOCI(remote) {
 		return nil, fmt.Errorf("push only supports OCI registries, got %q", remote)

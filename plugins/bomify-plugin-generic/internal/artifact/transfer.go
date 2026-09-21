@@ -89,12 +89,9 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}, nil
 }
 
-// CheckPull verifies that a real Pull of ref would succeed — the
-// artifact exists and the caller is authorized to fetch it — with a
+// CheckPull verifies ref.DownloadURL exists and is fetchable with a
 // plain HTTP HEAD instead of downloading it. No hash is reported: a HEAD
-// response carries no content to hash, and unlike bomify-plugin-helm's
-// classic-repository check, there's no separate index/manifest to
-// consult for one either.
+// response carries no content to hash.
 func CheckPull(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("HEAD", "url", ref.DownloadURL)
 	req, err := http.NewRequest(http.MethodHead, ref.DownloadURL, nil)
@@ -163,18 +160,13 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 	return &plugin.Result{OutputPath: remote, Message: fmt.Sprintf("pushed %s to %s", path, remote)}, nil
 }
 
-// CheckPush is a best-effort verification that a real Push to remote
-// would succeed. Unlike CheckPull, it never falls back to actually
-// performing the real operation: remote is typically a presigned,
-// single-use upload URL, and issuing the real PUT as a "check" would
-// consume it (or overwrite whatever's already there) as a side effect —
-// exactly what --check is supposed to avoid. The only thing tried is an
-// HTTP HEAD against remote; a clear authorization rejection (401/403) is
-// reported as a failure, but anything else (including a HEAD remote
-// doesn't support at all, or a 404 for a destination that simply doesn't
-// exist yet — normal for a push target) is reported as success, with a
-// message making clear that write permission specifically wasn't
-// verified.
+// CheckPush is a best-effort check, unlike CheckPull: it never falls
+// back to a real PUT, since remote is often a single-use presigned URL
+// a "check" must not consume. Only a plain HEAD is tried; a clear
+// auth rejection (401/403) fails, anything else (including a HEAD
+// remote doesn't support, or a 404 — normal for a push target) is
+// reported as success with a message noting write permission wasn't
+// actually verified.
 func CheckPush(remote string, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("HEAD", "url", remote)
 	req, err := http.NewRequest(http.MethodHead, remote, nil)
