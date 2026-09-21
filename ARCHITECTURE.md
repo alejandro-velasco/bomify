@@ -36,6 +36,11 @@ default, or `--data-dir`):
 
 *Source: [`docs/diagrams/data-directory.mmd`](docs/diagrams/data-directory.mmd)*
 
+`conf/distribution.json` records `bomify distribute`'s remote-endpoint
+rules (see [`internal/distribution`](internal/distribution) and `bomify
+distribution create`) — a fallback for any component not given a matching
+`--remote` on the command line.
+
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
 keyed on:
@@ -53,11 +58,12 @@ keyed on:
   manifest for a component restored from a registry, so a later `bomify
   build` needing the same purl reuses it too.
 
-`logs/<purlHash>.log` is a plugin's own log output for one pull/push of
-that component, named after the same purl hash as its manifest and layers
-directory — but unlike everything else here, it's transient: it exists
-only for the duration of that pull/push and is removed once the plugin
-exits. See [Plugin architecture](#plugin-architecture) below.
+`logs/<purlHash>.log` is a plugin's own log output for one pull/push/remote
+invocation for that component, named after the same purl hash as its
+manifest and layers directory — but unlike everything else here, it's
+transient: it exists only for the duration of that invocation and is
+removed once the plugin exits. See [Plugin architecture](#plugin-architecture)
+below.
 
 Everything is content-addressed and every write that matters is atomic (a
 temp file/directory renamed into place once fully written and verified, see
@@ -77,7 +83,14 @@ anything themselves. For each SBOM component they:
    subcommands taking `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
    `--purl`/`--input`/`--remote`/`--log`/`--log-color`, the plugin doing the
    real work and reporting a single JSON `{outputPath, message, hash}`
-   object on stdout.
+   object on stdout. `bomify distribute` additionally calls a `remote`
+   subcommand (`--purl`/`--log`/`--log-color`) before `push`, to learn
+   where a component's content currently lives — a pure, stateless query
+   reporting `{remote}` — and resolves the actual destination itself: an
+   explicit `--remote <kind>=<endpoint>` flag first, else the
+   best-matching rule in `conf/distribution.json` (see
+   [`internal/distribution`](internal/distribution)), whose `--match`
+   compares against exactly what `remote` reported.
 
 A plugin must never write general logging to stdout (reserved for that one
 JSON result) or stderr (reserved for a single fatal message bomify surfaces
@@ -246,7 +259,7 @@ A few things worth keeping in mind when changing any of the above:
   as "hasn't happened yet."
 - **bomify orchestrates, plugins do the work.** The core binary has no
   code for talking to any specific package ecosystem — that boundary is
-  the pull/push JSON-over-subprocess contract specified in
+  the pull/push/remote JSON-over-subprocess contract specified in
   [`plugins/CONTRACT.md`](plugins/CONTRACT.md), which is deliberately
   minimal so a third-party plugin needs almost nothing bomify-specific to
   implement (its optional Go helper library, `pkg/plugin`, is importable

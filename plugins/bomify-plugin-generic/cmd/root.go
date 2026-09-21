@@ -6,7 +6,7 @@ import (
 )
 
 // NewRootCmd builds the bomify-plugin-generic root command and wires up
-// its pull/push subcommands.
+// its pull/push/remote subcommands.
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "bomify-plugin-generic",
@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(newPullCmd())
 	rootCmd.AddCommand(newPushCmd())
+	rootCmd.AddCommand(newRemoteCmd())
 
 	return rootCmd
 }

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/remote-result.schema.json",
+  "title": "bomify plugin RemoteResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"remote\" subcommand, per plugins/CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["remote"],
+  "properties": {
+    "remote": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Where the component comes from or is published under, in whatever shape is meaningful for this plugin's kind (a registry/repository address, a source URL, etc.)."
+    }
+  }
+}

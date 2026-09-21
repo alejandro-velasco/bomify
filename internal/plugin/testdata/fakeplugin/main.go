@@ -1,6 +1,6 @@
 // Command fakeplugin is a synthetic bomify-plugin-* plugin used only by
-// internal/plugin's tests, so Pull and Push can be exercised without
-// depending on a real external tool.
+// internal/plugin's tests, so Pull, Push, and Remote can be exercised
+// without depending on a real external tool.
 package main
 
 import (
@@ -27,9 +27,13 @@ type result struct {
 	Hash       hash   `json:"hash,omitempty"`
 }
 
+type remoteResult struct {
+	Remote string `json:"remote"`
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin <pull|push> --purl <purl> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin <pull|push|remote> --purl <purl> ...")
 		os.Exit(1)
 	}
 
@@ -122,6 +126,12 @@ func main() {
 			OutputPath: fmt.Sprintf("%s/%s:%s", *remote, name, version),
 			Message:    "fake push ok",
 		}
+	case "remote":
+		if err := json.NewEncoder(os.Stdout).Encode(remoteResult{Remote: fmt.Sprintf("fake-origin/%s", name)}); err != nil {
+			fmt.Fprintf(os.Stderr, "encode remote result: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown verb %q\n", verb)
 		os.Exit(1)

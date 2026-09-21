@@ -20,16 +20,21 @@ const distributeLong = `Distribute resolves <tag> to the SBOM manifest a prior "
 and publishes each component that SBOM describes to a remote
 endpoint.
 
-The endpoint used is chosen per component by its plugin kind: pass
-one or more --remote kind=endpoint flags (e.g. --remote
-oci=registry.example.com --remote helm=charts.example.com/helm). A
-kind with no matching --remote falls back to the data directory's
-conf/distribution.json.`
+The endpoint used is chosen per component: pass one or more --remote
+kind=endpoint flags (e.g. --remote oci=registry.example.com --remote
+helm=charts.example.com/helm) for a quick one-off override by plugin
+kind. A kind with no matching --remote falls back to the rules in the
+data directory's conf/distribution.json (see "bomify distribution
+create"). A rule scoped with --match acts as a mirror: it doesn't just
+pick an endpoint, it carries over whatever of the component's origin
+came after the matched prefix, so distinct repositories under that
+prefix still land at distinct destinations under the mirror instead of
+all colliding on one endpoint.`
 
-const distributeExample = `  # Distribute myapp:latest using endpoints from "bomify distribution create"
+const distributeExample = `  # Distribute myapp:latest using the rules from "bomify distribution create"
   bomify distribute myapp:latest
 
-  # Distribute with explicit per-kind remotes
+  # Distribute with explicit per-kind remotes, overriding any rule
   bomify distribute myapp:latest --remote oci=registry.example.com --remote helm=charts.example.com/helm
 
   # Distribute 4 components concurrently
@@ -72,7 +77,7 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 		return err
 	}
 
-	fallback, err := distribution.Remotes(dataDir)
+	rules, err := distribution.Read(dataDir)
 	if err != nil {
 		return err
 	}
@@ -83,12 +88,17 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 			return err
 		}
 
-		remote, err := resolveRemote(kind, opts.remotes, fallback)
+		origin, err := plugin.Remote(path, component, dataDir, log)
 		if err != nil {
 			return err
 		}
 
-		log.Info("delegating to plugin", "kind", kind, "path", path, "remote", remote)
+		remote, err := resolveRemote(kind, origin, opts.remotes, rules)
+		if err != nil {
+			return err
+		}
+
+		log.Info("delegating to plugin", "kind", kind, "origin", origin, "remote", remote)
 
 		result, err := plugin.Push(path, component, dataDir, remote, log)
 		if err != nil {
@@ -101,15 +111,17 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 	})
 }
 
-// resolveRemote picks the endpoint for kind, preferring flags (from --remote)
-// over fallback (from conf/distribution.json), and erroring if neither has
-// an entry for kind.
-func resolveRemote(kind string, flags, fallback map[string]string) (string, error) {
+// resolveRemote picks the endpoint for a component of kind and origin
+// (see plugin.Remote), preferring flags (from --remote, a one-off
+// override by kind only) over the best-matching rule in rules (from
+// conf/distribution.json, see distribution.Resolve), and erroring if
+// neither has one.
+func resolveRemote(kind, origin string, flags map[string]string, rules distribution.Config) (string, error) {
 	if remote, ok := flags[kind]; ok {
 		return remote, nil
 	}
-	if remote, ok := fallback[kind]; ok {
+	if remote, ok := distribution.Resolve(rules, kind, origin); ok {
 		return remote, nil
 	}
-	return "", fmt.Errorf("no remote configured for kind %q: pass --remote %s=<endpoint> or add it to %s", kind, kind, distribution.ConfigPath(dataDir))
+	return "", fmt.Errorf("no remote configured for kind %q origin %q: pass --remote %s=<endpoint> or add a matching rule to %s", kind, origin, kind, distribution.ConfigPath(dataDir))
 }
