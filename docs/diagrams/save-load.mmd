@@ -1,20 +1,10 @@
-flowchart TD
+flowchart LR
     classDef saveStep fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
     classDef loadStep fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
 
-    subgraph Save["bomify save"]
-        direction LR
-        S1("resolve tag<br/>to sbom hash") --> S2("push into a temp<br/>oci.Store") --> S3[("tar to<br/>--output")]
-    end
-
-    S3 -.->|"tarball moved to another machine"| L1
-
-    subgraph Load["bomify load"]
-        direction LR
-        L1[("untar<br/>--input")] --> L2("open as<br/>an oci.Store") --> L3("pull each tag<br/>it contains") --> L4("record<br/>the tags")
-    end
+    S1("resolve tag to<br/>sbom hash") --> S2("push to temp<br/>oci.Store") --> S3[("tar to<br/>--output")]
+    S3 -.->|"moved to another machine"| L1[("untar<br/>--input")]
+    L1 --> L2("open as<br/>oci.Store") --> L3("pull each<br/>tag") --> L4("record<br/>the tags")
 
     class S1,S2,S3 saveStep
     class L1,L2,L3,L4 loadStep
-    style Save fill:#F8FAFF,stroke:#C7D2FE,stroke-width:1px,color:#334155
-    style Load fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
