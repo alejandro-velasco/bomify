@@ -36,6 +36,11 @@ default, or `--data-dir`):
 
 *Source: [`docs/diagrams/data-directory.mmd`](docs/diagrams/data-directory.mmd)*
 
+`conf/distribution.json` records `bomify distribute`'s remote-endpoint
+rules (see [`internal/distribution`](internal/distribution) and `bomify
+distribution create`) — a fallback for any component not given a matching
+`--remote` on the command line.
+
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
 keyed on:
@@ -78,7 +83,14 @@ anything themselves. For each SBOM component they:
    subcommands taking `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
    `--purl`/`--input`/`--remote`/`--log`/`--log-color`, the plugin doing the
    real work and reporting a single JSON `{outputPath, message, hash}`
-   object on stdout.
+   object on stdout. `bomify distribute` additionally calls a `remote`
+   subcommand (`--purl`/`--log`/`--log-color`) before `push`, to learn
+   where a component's content currently lives — a pure, stateless query
+   reporting `{remote}` — and resolves the actual destination itself: an
+   explicit `--remote <kind>=<endpoint>` flag first, else the
+   best-matching rule in `conf/distribution.json` (see
+   [`internal/distribution`](internal/distribution)), whose `--match`
+   compares against exactly what `remote` reported.
 
 A plugin must never write general logging to stdout (reserved for that one
 JSON result) or stderr (reserved for a single fatal message bomify surfaces

@@ -8,6 +8,9 @@ flowchart TD
     Root -->|"tags"| Package["package/"]
     Package -->|"repo -&gt; tag -&gt; sbom hash"| Repos[("repositories.json")]
 
+    Root -->|"distribute config"| Conf["conf/"]
+    Conf -->|"remote-endpoint rules, most specific match wins"| DistConfig[("distribution.json")]
+
     Root -->|"build & pull bookkeeping"| Manifests["manifests/"]
     Manifests -->|"SBOM build manifest, keyed by content hash"| ManifestFile[("&lt;hash&gt;.json")]
     Manifests -->|"marks a pull in flight, keyed by the same hash"| PidFile("&lt;hash&gt;.pid")
@@ -18,6 +21,6 @@ flowchart TD
     Root -->|"plugin logs"| Logs["logs/"]
     Logs -->|"transient: exists only during that pull/push"| LogFile("&lt;purl-hash&gt;.log")
 
-    class Root,Package,Manifests,Layers,Logs dir
-    class Repos,ManifestFile,LayerDir store
+    class Root,Package,Conf,Manifests,Layers,Logs dir
+    class Repos,DistConfig,ManifestFile,LayerDir store
     class PidFile,LogFile transient
