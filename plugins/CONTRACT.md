@@ -84,7 +84,13 @@ Reports where the component `--purl` identifies comes from or is
 published under — its registry, repository, or source location — without
 fetching or publishing anything. bomify uses this to match `--purl`
 against a `bomify distribute` rule scoped by origin (`bomify distribution
-create`'s `--match`), not just by plugin kind.
+create`'s `--match`), not just by plugin kind, and — when that rule's
+`--match` is non-empty — as the basis for a mirror substitution: the
+part of `remote` past the matched prefix is preserved and handed back to
+`push` as part of `--remote`, so a matched rule redirects a component
+without collapsing everything under it onto one shared destination. See
+[RemoteResult](#remoteresult) for exactly what shape `remote` must
+report for that substitution to come out right.
 
 | Flag | Required | Meaning |
 | --- | --- | --- |
@@ -171,12 +177,34 @@ The single JSON object a plugin's `remote` subcommand prints to stdout on
 success:
 
 ```json
-{ "remote": "docker.io/library/nginx" }
+{ "remote": "docker.io/library" }
 ```
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `remote` | string | yes | Where this component comes from or is published under, in whatever shape is meaningful for this plugin's kind (a registry/repository address, a source URL, etc.) — the same address `pull` itself resolves the purl to, just without a specific tag/digest/version. The only thing bomify relies on structurally is that two components sharing a common origin (e.g. the same registry namespace) report a `remote` sharing a common `/`-separated prefix, since that's what a `bomify distribute` rule's `--match` compares against. |
+| `remote` | string | yes | Where this component comes from or is published under, in whatever shape is meaningful for this plugin's kind (a registry/namespace address, a source URL, etc.). |
+
+`remote` must be reported in **the same shape your plugin's own `push`
+expects `--remote` to arrive in** — because a matched `bomify distribute`
+rule can hand `push` back a `--remote` built directly from what `remote`
+reported (see `remote`'s [Commands](#commands) entry above for the mirror
+substitution this enables). Concretely:
+
+- If `push` appends the component's own name/tag onto `--remote` itself
+  (as every first-party plugin's OCI/Helm-style `push` does), `remote`
+  must **not** include that trailing name — report only the
+  registry/namespace it lives under (e.g. `docker.io/library`, not
+  `docker.io/library/nginx`), exactly as `bomify-plugin-oci` does.
+- If `push` instead treats `--remote` as the exact, complete destination
+  with nothing appended (as `bomify-plugin-generic`'s does, since a
+  presigned upload URL can't tolerate anything appended to it), `remote`
+  should be that same complete address, unabridged.
+
+The only thing bomify relies on structurally, either way, is that two
+components sharing a common origin (e.g. the same registry namespace)
+report a `remote` sharing a common `/`-separated prefix, since that's
+what a `bomify distribute` rule's `--match` compares against, and what
+gets substituted out of it on a match.
 
 Go plugins should build this as a `plugin.RemoteResult` (see
 [`pkg/plugin`](../pkg/plugin)) and print it with `(*RemoteResult).Print`,

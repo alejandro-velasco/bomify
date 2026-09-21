@@ -17,7 +17,7 @@ func newRemoteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "remote",
-		Short: "Report the registry/repository this component's purl names",
+		Short: "Report the registry/namespace this component's purl names",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger, closeLog, err := plugin.OpenLog(logFile, logColor)
 			if err != nil {
@@ -25,13 +25,13 @@ func newRemoteCmd() *cobra.Command {
 			}
 			defer closeLog()
 
-			repository, err := image.Repository(purl)
+			location, err := image.Location(purl)
 			if err != nil {
 				return err
 			}
-			logger.Info("resolved repository", "repository", repository)
+			logger.Info("resolved location", "location", location)
 
-			res := plugin.RemoteResult{Remote: repository}
+			res := plugin.RemoteResult{Remote: location}
 			return res.Print(cmd.OutOrStdout())
 		},
 	}

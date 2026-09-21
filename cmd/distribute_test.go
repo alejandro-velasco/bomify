@@ -51,8 +51,8 @@ func TestResolveRemotePrefersMostSpecificRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveRemote: unexpected error: %v", err)
 	}
-	if remote != "myorg-mirror" {
-		t.Errorf("resolveRemote: got %q, want %q", remote, "myorg-mirror")
+	if want := "myorg-mirror/myrepo"; remote != want {
+		t.Errorf("resolveRemote: got %q, want %q (a matched rule mirrors the remainder past its Match)", remote, want)
 	}
 }
 

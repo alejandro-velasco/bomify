@@ -25,8 +25,11 @@ kind=endpoint flags (e.g. --remote oci=registry.example.com --remote
 helm=charts.example.com/helm) for a quick one-off override by plugin
 kind. A kind with no matching --remote falls back to the rules in the
 data directory's conf/distribution.json (see "bomify distribution
-create"), which can also match by a component's origin — not just its
-kind — for finer-grained routing.`
+create"). A rule scoped with --match acts as a mirror: it doesn't just
+pick an endpoint, it carries over whatever of the component's origin
+came after the matched prefix, so distinct repositories under that
+prefix still land at distinct destinations under the mirror instead of
+all colliding on one endpoint.`
 
 const distributeExample = `  # Distribute myapp:latest using the rules from "bomify distribution create"
   bomify distribute myapp:latest

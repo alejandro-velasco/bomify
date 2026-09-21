@@ -34,19 +34,32 @@ func Resolve(purlString string) (string, error) {
 	}
 }
 
-// Repository returns the registry/repository address purlString's purl
-// names — its "repository_url" qualifier, or (namespace/)name if it has
-// none — without any tag or digest. Unlike Resolve's full pull
-// reference, this is what identifies where the component comes from
-// independent of which specific version, which is what the "remote"
-// subcommand reports (see plugins/CONTRACT.md).
-func Repository(purlString string) (string, error) {
+// Location returns the registry/namespace prefix purlString's purl names
+// — its repository address (see repositoryFor) with the component's own
+// trailing "/<name>" segment removed, so it's in the same shape Push's
+// own --remote expects: destinationReference below appends "/<name>:<tag>"
+// onto whatever --remote it's given, so reporting that name back as part
+// of "remote" would double it up. This is what the "remote" subcommand
+// reports (see plugins/CONTRACT.md): where this component's registry
+// lives, not the component's own specific repository within it.
+func Location(purlString string) (string, error) {
 	purl, err := packageurl.FromString(purlString)
 	if err != nil {
 		return "", fmt.Errorf("parse purl %q: %w", purlString, err)
 	}
 
-	return repositoryFor(purl), nil
+	repository := repositoryFor(purl)
+	if repository == purl.Name {
+		// No registry/namespace prefix at all (e.g. a bare local name) —
+		// nothing left once the name itself is removed.
+		return "", nil
+	}
+
+	// Only strip a segment-aligned "/<name>" suffix, not just any
+	// trailing occurrence of the string purl.Name — a repository like
+	// "docker.io/mynginx" must be left alone for purl.Name "nginx",
+	// since "mynginx" isn't actually this component's own segment.
+	return strings.TrimSuffix(repository, "/"+purl.Name), nil
 }
 
 // repositoryFor returns purl's registry/repository address: its

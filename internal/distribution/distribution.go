@@ -26,9 +26,14 @@ type Rule struct {
 	// Remote its plugin's "remote" subcommand reports (see
 	// internal/plugin.Remote and plugins/CONTRACT.md) — e.g. "docker.io",
 	// "docker.io/myorg", or "docker.io/myorg/myrepo" — matched at segment
-	// boundaries. Empty matches a component of any (or no) origin.
+	// boundaries. Empty matches a component of any (or no) origin, but
+	// also means there's nothing for Resolve to mirror: see Resolve for
+	// how a non-empty Match acts as a prefix substitution rather than a
+	// plain lookup key.
 	Match string `json:"match,omitempty"`
-	// Endpoint is the remote this rule resolves to.
+	// Endpoint is the remote this rule resolves to — see Resolve for how
+	// a non-empty Match can extend it with the rest of the component's
+	// origin, rather than using it bare.
 	Endpoint string `json:"endpoint"`
 }
 
@@ -118,7 +123,16 @@ func RemoveRule(baseDir, ruleType, match string) error {
 // among equally specific matches, a Rule whose Type also matches kind
 // wins over one with no Type at all. It reports ok=false if no rule
 // matches at all.
-func Resolve(rules Config, kind, origin string) (endpoint string, ok bool) {
+//
+// The winning rule's Endpoint isn't necessarily returned verbatim: when
+// its Match is non-empty, Resolve acts as a mirror — origin's portion
+// past the matched prefix is preserved and appended to Endpoint, so a
+// rule matching "docker.io/myorg" against "docker.io/myorg/sub/repo"
+// resolves to "<endpoint>/sub/repo", not just "<endpoint>". A rule with
+// no Match (a type-only or catch-all rule) has no prefix to subtract, so
+// its Endpoint is returned bare — the plugin's own push logic decides
+// what to publish under it, exactly as if --remote had named it directly.
+func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
 	origin = normalizeAddress(origin)
 
 	var best *Rule
@@ -146,7 +160,27 @@ func Resolve(rules Config, kind, origin string) (endpoint string, ok bool) {
 	if best == nil {
 		return "", false
 	}
-	return best.Endpoint, true
+	return mirror(*best, origin), true
+}
+
+// mirror returns what rule resolves to for origin: its bare Endpoint if
+// Match is empty (nothing to preserve), otherwise Endpoint with origin's
+// remainder past the matched prefix appended — see Resolve.
+func mirror(rule Rule, origin string) string {
+	match := normalizeAddress(rule.Match)
+	if match == "" {
+		return rule.Endpoint
+	}
+
+	// matchesOrigin already established match is a segment-boundary
+	// prefix of origin, so this TrimPrefix pair is exact: either origin
+	// == match (remainder == "") or the next character was "/".
+	remainder := strings.TrimPrefix(strings.TrimPrefix(origin, match), "/")
+	if remainder == "" {
+		return rule.Endpoint
+	}
+
+	return strings.TrimSuffix(rule.Endpoint, "/") + "/" + remainder
 }
 
 // matchesOrigin reports whether match — a "/"-separated prefix, e.g.

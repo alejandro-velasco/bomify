@@ -50,12 +50,14 @@ func (r *Result) Print(w io.Writer) error {
 // success for its "remote" subcommand.
 type RemoteResult struct {
 	// Remote identifies where a component's content comes from or is
-	// published under — a registry/repository address, a source URL,
-	// etc. Its shape is entirely kind-specific; the only contract bomify
-	// relies on is that components sharing a common origin (e.g. the same
-	// registry namespace) report a Remote sharing a common "/"-separated
-	// prefix, since that's what a distribution rule's --match compares
-	// against.
+	// published under — a registry/namespace address, a source URL, etc.
+	// It must be in the same shape push's own --remote expects to
+	// receive: without the component's own trailing name if push appends
+	// that itself, or the exact complete destination if push doesn't
+	// append anything at all — see plugins/CONTRACT.md's RemoteResult
+	// section for why. A distribution rule matched by --match can
+	// substitute part of this value back into --remote for a later push,
+	// preserving whatever came after the matched prefix.
 	Remote string `json:"remote"`
 }
 

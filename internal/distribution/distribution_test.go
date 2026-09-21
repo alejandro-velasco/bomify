@@ -217,12 +217,12 @@ func TestResolvePrefersLongerMatchOverType(t *testing.T) {
 		{Match: "docker.io/myorg", Endpoint: "match-only"},
 	}
 
-	endpoint, ok := Resolve(rules, "oci", "docker.io/myorg/myrepo")
+	destination, ok := Resolve(rules, "oci", "docker.io/myorg/myrepo")
 	if !ok {
 		t.Fatal("Resolve: want a match, got none")
 	}
-	if endpoint != "match-only" {
-		t.Errorf("Resolve() = %q, want %q (the more specific match wins)", endpoint, "match-only")
+	if want := "match-only/myrepo"; destination != want {
+		t.Errorf("Resolve() = %q, want %q (the more specific match wins)", destination, want)
 	}
 }
 
@@ -232,12 +232,63 @@ func TestResolveUsesTypeAsTiebreaker(t *testing.T) {
 		{Type: "oci", Match: "docker.io/myorg", Endpoint: "typed"},
 	}
 
-	endpoint, ok := Resolve(rules, "oci", "docker.io/myorg/myrepo")
+	destination, ok := Resolve(rules, "oci", "docker.io/myorg/myrepo")
 	if !ok {
 		t.Fatal("Resolve: want a match, got none")
 	}
-	if endpoint != "typed" {
-		t.Errorf("Resolve() = %q, want %q (equally specific match, typed rule wins the tie)", endpoint, "typed")
+	if want := "typed/myrepo"; destination != want {
+		t.Errorf("Resolve() = %q, want %q (equally specific match, typed rule wins the tie)", destination, want)
+	}
+}
+
+// TestResolveMirrorsRemainderPastMatch is the core correctness test for
+// mirror semantics: a matched rule doesn't just select an endpoint, it
+// preserves whatever of origin came after the matched prefix — so a rule
+// scoped to an org still routes each of that org's repos to its own
+// place under the mirror, not all to one shared destination.
+func TestResolveMirrorsRemainderPastMatch(t *testing.T) {
+	rules := Config{{Type: "oci", Match: "docker.io/myorg", Endpoint: "mirror.example.com"}}
+
+	destination, ok := Resolve(rules, "oci", "docker.io/myorg/sub/repo")
+	if !ok {
+		t.Fatal("Resolve: want a match, got none")
+	}
+	if want := "mirror.example.com/sub/repo"; destination != want {
+		t.Errorf("Resolve() = %q, want %q", destination, want)
+	}
+}
+
+// TestResolveMirrorReturnsBareEndpointOnExactMatch guards the case where
+// origin doesn't extend past the matched prefix at all: mirror has
+// nothing left to append, so it must return Endpoint bare rather than a
+// dangling trailing slash.
+func TestResolveMirrorReturnsBareEndpointOnExactMatch(t *testing.T) {
+	rules := Config{{Match: "docker.io/myorg/repo", Endpoint: "mirror.example.com"}}
+
+	destination, ok := Resolve(rules, "oci", "docker.io/myorg/repo")
+	if !ok {
+		t.Fatal("Resolve: want a match, got none")
+	}
+	if destination != "mirror.example.com" {
+		t.Errorf("Resolve() = %q, want %q", destination, "mirror.example.com")
+	}
+}
+
+// TestResolveWildcardRuleDoesNotMirror guards the other half of the
+// design: a rule with no Match (type-only or catch-all) is a plain
+// lookup, not a mirror — its Endpoint is returned bare even though
+// origin is non-empty, since there's no matched prefix to subtract from
+// it, and grafting the whole origin on would surprise anyone using a
+// rule as a simple fallback.
+func TestResolveWildcardRuleDoesNotMirror(t *testing.T) {
+	rules := Config{{Type: "oci", Endpoint: "registry.example.com"}}
+
+	destination, ok := Resolve(rules, "oci", "docker.io/library/redis")
+	if !ok {
+		t.Fatal("Resolve: want a match, got none")
+	}
+	if destination != "registry.example.com" {
+		t.Errorf("Resolve() = %q, want %q (no Match, so nothing to mirror)", destination, "registry.example.com")
 	}
 }
 

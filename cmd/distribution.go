@@ -31,19 +31,29 @@ const distributionCreateLong = `Create adds a rule to <data-dir>/conf/distributi
 "bomify distribute" falls back to for any component not given a
 matching --remote. A rule matches a component by --type (a plugin
 kind, e.g. "oci" or "helm") and/or --match (a "/"-separated prefix of
-the component's origin — its purl's repository_url, or download_url
-if it has none — e.g. "docker.io", "docker.io/myorg", or
-"docker.io/myorg/myrepo"); either or both can be omitted to widen the
-rule, down to a single catch-all rule matching everything. When more
-than one rule matches a component, the one with the longer --match
-wins, and a matching --type breaks a tie between two equally specific
-matches. Running create again for the same --type/--match pair
-overwrites its endpoint.`
+the component's origin — its plugin's own report of where it comes
+from, e.g. "docker.io", "docker.io/myorg", or "docker.io/myorg/myrepo");
+either or both can be omitted to widen the rule, down to a single
+catch-all rule matching everything. When more than one rule matches a
+component, the one with the longer --match wins, and a matching --type
+breaks a tie between two equally specific matches. Running create
+again for the same --type/--match pair overwrites its endpoint.
+
+A rule with a non-empty --match acts as a mirror, not just a lookup: whatever
+of the component's origin comes after the matched prefix is carried
+over onto <endpoint>, so distinct repositories under that prefix still
+land at distinct destinations instead of all colliding on one endpoint
+(e.g. --match docker.io/myorg against origin docker.io/myorg/app
+resolves to <endpoint>/app). A rule with no --match has nothing to
+carry over, so <endpoint> is used exactly as given — it's up to the
+component's own plugin to decide what to publish under it.`
 
 const distributionCreateExample = `  # Fall back to this OCI registry for any OCI component
   bomify distribution create registry.example.com --type oci
 
-  # Mirror anything pulled from docker.io/myorg specifically
+  # Mirror anything from docker.io/myorg under a new registry, keeping
+  # the rest of each repository's path: docker.io/myorg/app becomes
+  # mirror.example.com/myorg/app
   bomify distribution create mirror.example.com/myorg --type oci --match docker.io/myorg
 
   # Match by origin alone, regardless of plugin kind
