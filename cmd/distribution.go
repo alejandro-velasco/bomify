@@ -121,6 +121,8 @@ func runDistributionList(cmd *cobra.Command) error {
 		return err
 	}
 
+	// Display order only (alphabetical by type, then match) — unrelated to
+	// the specificity ranking used when rules are matched against a component.
 	sort.SliceStable(rules, func(i, j int) bool {
 		if rules[i].Type != rules[j].Type {
 			return rules[i].Type < rules[j].Type
