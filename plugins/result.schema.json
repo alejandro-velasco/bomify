@@ -10,7 +10,7 @@
     "outputPath": {
       "type": "string",
       "minLength": 1,
-      "description": "For pull: the local path the artifact was written to (normally --output, echoed back). For push: the reference the artifact was published under at --remote."
+      "description": "For pull: the local path the artifact was written to (normally --output, echoed back). For push: the reference the artifact was published under at --remote. For either subcommand with --check=true: no path was written to or read from, so this identifies the artifact/destination that was checked instead (e.g. the resolved registry reference or download URL)."
     },
     "message": {
       "type": "string",

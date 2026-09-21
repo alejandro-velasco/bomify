@@ -786,6 +786,91 @@ func TestPushFailure(t *testing.T) {
 	}
 }
 
+func TestCheckPull(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	result, err := CheckPull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPull returned error: %v", err)
+	}
+
+	if want := "checked:nginx-1.27"; result.OutputPath != want {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
+	}
+}
+
+func TestCheckPullDoesNotRequirePriorState(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	// Unlike Pull, CheckPull never creates componentDir, a manifest, or a
+	// pid file — it's a pure query, exactly like Remote.
+	baseDir := t.TempDir()
+	if _, err := CheckPull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+		t.Fatalf("CheckPull returned error: %v", err)
+	}
+
+	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("componentDir exists after CheckPull: %v", err)
+	}
+	if _, err := os.Stat(manifestPath(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("manifest exists after CheckPull: %v", err)
+	}
+}
+
+func TestCheckPullFailure(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
+
+	if _, err := CheckPull(bin, component, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+		t.Fatal("CheckPull() with failing plugin: expected error, got nil")
+	}
+}
+
+func TestCheckPullHashMismatchFails(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{
+		Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
+	}
+
+	if _, err := CheckPull(bin, component, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+		t.Fatal("CheckPull() with mismatched hash: expected error, got nil")
+	}
+}
+
+func TestCheckPush(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	// Unlike Push, CheckPush requires no prior Pull for this component.
+	result, err := CheckPush(bin, component, t.TempDir(), "registry.example.com/mirror", testLogger())
+	if err != nil {
+		t.Fatalf("CheckPush returned error: %v", err)
+	}
+
+	if want := "checked:registry.example.com/mirror/nginx:1.27"; result.OutputPath != want {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
+	}
+}
+
+func TestCheckPushFailure(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
+
+	if _, err := CheckPush(bin, component, t.TempDir(), "registry.example.com/mirror", testLogger()); err == nil {
+		t.Fatal("CheckPush() with failing plugin: expected error, got nil")
+	}
+}
+
 func TestRemote(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()

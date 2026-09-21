@@ -19,6 +19,11 @@
 // Whichever of those applies, Pull finishes by verifying the resulting
 // hash as described below, so even a reused result fails if it doesn't
 // match this call's component.
+//
+// CheckPull/CheckPush are the --check counterparts of Pull/Push: cheap,
+// stateless verification queries (no directory, pid file, or manifest
+// involved) that report whether a real Pull/Push would succeed, without
+// transferring anything — see their own doc comments below.
 package plugin
 
 import (
@@ -359,6 +364,55 @@ func Push(path string, component cdx.Component, baseDir, remote string, logger *
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--input", dir, "--remote", remote)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// CheckPull invokes the plugin binary's "pull" subcommand in --check
+// mode: an inexpensive verification that a real Pull would succeed —
+// the artifact exists and the caller is authorized to fetch it — without
+// transferring its content. Unlike Pull, CheckPull is a pure, stateless
+// query exactly like Remote: it never touches baseDir beyond a throwaway
+// log file, never creates or clears a component directory, and is never
+// skipped or deduplicated against a concurrent or prior call.
+//
+// hashAlgorithm is passed to the plugin the same way it is for Pull, and
+// if the plugin's check incidentally learns the artifact's hash for free
+// (e.g. a registry HEAD returning a digest), CheckPull verifies it
+// against component's SBOM-declared hash exactly as Pull does.
+//
+// logger controls log streaming exactly as it does for Pull/Push/Remote.
+func CheckPull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	result, err := run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--hash", string(hashAlgorithm), "--check=true")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := verifyHash(component, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// CheckPush invokes the plugin binary's "push" subcommand in --check
+// mode: an inexpensive verification that a real Push to remote would
+// succeed — the destination is reachable and the caller is authorized to
+// publish to it — without publishing anything. Like CheckPull, it's a
+// pure, stateless query: it never looks for (or requires) a prior Pull's
+// manifest, and never touches baseDir beyond a throwaway log file.
+//
+// logger controls log streaming exactly as it does for Pull/Push/Remote.
+func CheckPush(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--remote", remote, "--check=true")
 	if err != nil {
 		return nil, err
 	}

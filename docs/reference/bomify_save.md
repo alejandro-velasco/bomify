@@ -4,10 +4,27 @@ Save packages to a tarball
 
 ### Synopsis
 
-Save packages one or more tagged packages into a single tarball — an OCI image-layout archive containing each package's manifest and components — that `bomify load` can restore on any machine, with no registry involved. A component shared by more than one given tag is stored once. Writes to stdout if --output isn't given, mirroring `docker save`.
+Save packages one or more tagged packages into a single tarball — an
+OCI image-layout archive containing each package's manifest and
+components — that "bomify load" can restore on any machine, with no
+registry involved. A component shared by more than one given tag is
+stored once. Writes to stdout if --output isn't given.
 
 ```
 bomify save <tag>... [flags]
+```
+
+### Examples
+
+```
+  # Save one package to stdout, redirected to a file
+  bomify save myapp:latest > packages.tar
+
+  # Save several packages to a file
+  bomify save myapp:v1 myapp:v2 --output packages.tar
+
+  # Archive up to 6 layers concurrently
+  bomify save myapp:latest --output packages.tar --concurrency 6
 ```
 
 ### Options

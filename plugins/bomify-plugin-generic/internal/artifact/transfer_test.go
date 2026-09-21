@@ -88,6 +88,96 @@ func TestPullNonSuccessStatus(t *testing.T) {
 	}
 }
 
+func TestCheckPull(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead {
+			t.Errorf("method = %s, want HEAD", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL + "/widget-1.0.bin"}
+
+	result, err := CheckPull(ref, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPull() error = %v", err)
+	}
+	if result.OutputPath != ref.DownloadURL {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, ref.DownloadURL)
+	}
+}
+
+func TestCheckPullNonSuccessStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL}
+
+	if _, err := CheckPull(ref, testLogger()); err == nil {
+		t.Fatal("CheckPull() with a 404 response: expected error, got nil")
+	}
+}
+
+func TestCheckPush(t *testing.T) {
+	var gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	remote := srv.URL + "/upload/widget-1.0.bin"
+	result, err := CheckPush(remote, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPush() error = %v", err)
+	}
+	if result.OutputPath != remote {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, remote)
+	}
+	if gotMethod != http.MethodHead {
+		t.Errorf("method = %s, want HEAD", gotMethod)
+	}
+}
+
+// TestCheckPushNeverPuts proves CheckPush never falls back to a real PUT
+// even when it can't conclusively verify write permission — the
+// destination in this test doesn't implement HEAD at all (a common
+// shape for a presigned upload URL), which must still be reported as a
+// (caveated) success rather than tried as a real upload.
+func TestCheckPushNeverPuts(t *testing.T) {
+	var gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}))
+	defer srv.Close()
+
+	result, err := CheckPush(srv.URL, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPush() error = %v", err)
+	}
+	if gotMethod != http.MethodHead {
+		t.Errorf("method = %s, want HEAD (never PUT)", gotMethod)
+	}
+	if result.OutputPath != srv.URL {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, srv.URL)
+	}
+}
+
+func TestCheckPushRejectsUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	if _, err := CheckPush(srv.URL, testLogger()); err == nil {
+		t.Fatal("CheckPush() with a 401 response: expected error, got nil")
+	}
+}
+
 func TestPush(t *testing.T) {
 	const content = "the artifact's actual bytes"
 

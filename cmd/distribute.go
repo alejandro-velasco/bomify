@@ -29,7 +29,11 @@ create"). A rule scoped with --match acts as a mirror: it doesn't just
 pick an endpoint, it carries over whatever of the component's origin
 came after the matched prefix, so distinct repositories under that
 prefix still land at distinct destinations under the mirror instead of
-all colliding on one endpoint.`
+all colliding on one endpoint.
+
+--check verifies push permission to every component's resolved remote —
+an inexpensive check each plugin performs itself, without publishing
+anything.`
 
 const distributeExample = `  # Distribute myapp:latest using the rules from "bomify distribution create"
   bomify distribute myapp:latest
@@ -38,12 +42,16 @@ const distributeExample = `  # Distribute myapp:latest using the rules from "bom
   bomify distribute myapp:latest --remote oci=registry.example.com --remote helm=charts.example.com/helm
 
   # Distribute 4 components concurrently
-  bomify distribute myapp:latest --concurrency 4`
+  bomify distribute myapp:latest --concurrency 4
+
+  # Verify push permission to every component's remote, without publishing anything
+  bomify distribute myapp:latest --check`
 
 type distributeOptions struct {
 	tag         string
 	remotes     map[string]string
 	concurrency int
+	check       bool
 }
 
 func distributeCmd() *cobra.Command {
@@ -67,6 +75,7 @@ func distributeCmd() *cobra.Command {
 
 	distributeCmd.Flags().StringToStringVarP(&distributeOpts.remotes, "remote", "r", map[string]string{}, "kind=endpoint remote mapping (repeatable); kinds not given fall back to <data-dir>/conf/distribution.json")
 	distributeCmd.Flags().IntVarP(&distributeOpts.concurrency, "concurrency", "c", 1, "number of components to push concurrently")
+	distributeCmd.Flags().BoolVar(&distributeOpts.check, "check", false, "verify push permission to every component's remote, without publishing anything")
 
 	return distributeCmd
 }
@@ -99,6 +108,15 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 		}
 
 		log.Info("delegating to plugin", "kind", kind, "origin", origin, "remote", remote)
+
+		if opts.check {
+			result, err := plugin.CheckPush(path, component, dataDir, remote, log)
+			if err != nil {
+				return err
+			}
+			log.Info("check complete", "output", result.OutputPath, "message", result.Message)
+			return nil
+		}
 
 		result, err := plugin.Push(path, component, dataDir, remote, log)
 		if err != nil {

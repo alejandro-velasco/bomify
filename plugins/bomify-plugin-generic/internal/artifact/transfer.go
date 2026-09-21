@@ -89,6 +89,36 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}, nil
 }
 
+// CheckPull verifies that a real Pull of ref would succeed — the
+// artifact exists and the caller is authorized to fetch it — with a
+// plain HTTP HEAD instead of downloading it. No hash is reported: a HEAD
+// response carries no content to hash, and unlike bomify-plugin-helm's
+// classic-repository check, there's no separate index/manifest to
+// consult for one either.
+func CheckPull(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
+	logger.Info("HEAD", "url", ref.DownloadURL)
+	req, err := http.NewRequest(http.MethodHead, ref.DownloadURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build HEAD request for %s: %w", ref.DownloadURL, err)
+	}
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HEAD %s: %w", ref.DownloadURL, err)
+	}
+	defer resp.Body.Close()
+	logger.Info("response received", "status", resp.Status)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("HEAD %s: unexpected status %s", ref.DownloadURL, resp.Status)
+	}
+
+	return &plugin.Result{OutputPath: ref.DownloadURL, Message: fmt.Sprintf("%s exists and is pullable", ref.DownloadURL)}, nil
+}
+
 // Push uploads the artifact a prior Pull wrote into inputDir to remote
 // with a plain HTTP PUT. remote is used exactly as given, with nothing
 // appended: it's expected to already be the full destination URL (e.g. a
@@ -131,6 +161,47 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 	}
 
 	return &plugin.Result{OutputPath: remote, Message: fmt.Sprintf("pushed %s to %s", path, remote)}, nil
+}
+
+// CheckPush is a best-effort verification that a real Push to remote
+// would succeed. Unlike CheckPull, it never falls back to actually
+// performing the real operation: remote is typically a presigned,
+// single-use upload URL, and issuing the real PUT as a "check" would
+// consume it (or overwrite whatever's already there) as a side effect —
+// exactly what --check is supposed to avoid. The only thing tried is an
+// HTTP HEAD against remote; a clear authorization rejection (401/403) is
+// reported as a failure, but anything else (including a HEAD remote
+// doesn't support at all, or a 404 for a destination that simply doesn't
+// exist yet — normal for a push target) is reported as success, with a
+// message making clear that write permission specifically wasn't
+// verified.
+func CheckPush(remote string, logger *slog.Logger) (*plugin.Result, error) {
+	logger.Info("HEAD", "url", remote)
+	req, err := http.NewRequest(http.MethodHead, remote, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build HEAD request for %s: %w", remote, err)
+	}
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// remote is unreachable, not merely unwritable — that's the one
+		// case worth failing on, even for a best-effort check.
+		return nil, fmt.Errorf("HEAD %s: %w", remote, err)
+	}
+	defer resp.Body.Close()
+	logger.Info("response received", "status", resp.Status)
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("HEAD %s: unexpected status %s", remote, resp.Status)
+	}
+
+	return &plugin.Result{
+		OutputPath: remote,
+		Message:    fmt.Sprintf("%s is reachable; write permission not verified (HEAD is not authoritative for a PUT URL)", remote),
+	}, nil
 }
 
 func digestHash(hashAlgorithm cdx.HashAlgorithm, hasher hash.Hash) (plugin.Hash, error) {

@@ -44,6 +44,7 @@ func main() {
 	input := fs.String("input", "", "input directory (push)")
 	remote := fs.String("remote", "", "remote endpoint (push)")
 	hashAlgorithm := fs.String("hash", "", "hash algorithm to report (pull)")
+	check := fs.Bool("check", false, "check-only mode: skip --output/--input and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
 	fs.Parse(os.Args[2:])
@@ -80,32 +81,38 @@ func main() {
 	var res result
 	switch verb {
 	case "pull":
-		if info, err := os.Stat(*output); err != nil || !info.IsDir() {
-			fmt.Fprintf(os.Stderr, "expected --output %q to already exist as a directory: %v\n", *output, err)
-			os.Exit(1)
-		}
+		if !*check {
+			if info, err := os.Stat(*output); err != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "expected --output %q to already exist as a directory: %v\n", *output, err)
+				os.Exit(1)
+			}
 
-		// "slow-me" tells fakeplugin to block until a ".proceed" file
-		// appears in --output, so tests can observe state while a pull is
-		// still in flight.
-		if *purl == "slow-me" {
-			proceed := filepath.Join(*output, ".proceed")
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				if _, err := os.Stat(proceed); err == nil {
-					break
+			// "slow-me" tells fakeplugin to block until a ".proceed" file
+			// appears in --output, so tests can observe state while a pull
+			// is still in flight.
+			if *purl == "slow-me" {
+				proceed := filepath.Join(*output, ".proceed")
+				deadline := time.Now().Add(5 * time.Second)
+				for {
+					if _, err := os.Stat(proceed); err == nil {
+						break
+					}
+					if time.Now().After(deadline) {
+						fmt.Fprintln(os.Stderr, "timed out waiting for .proceed")
+						os.Exit(1)
+					}
+					time.Sleep(10 * time.Millisecond)
 				}
-				if time.Now().After(deadline) {
-					fmt.Fprintln(os.Stderr, "timed out waiting for .proceed")
-					os.Exit(1)
-				}
-				time.Sleep(10 * time.Millisecond)
 			}
 		}
 
-		res = result{
-			OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, name, version),
-			Message:    "fake pull ok",
+		if *check {
+			res = result{OutputPath: fmt.Sprintf("checked:%s-%s", name, version), Message: "fake check ok"}
+		} else {
+			res = result{
+				OutputPath: fmt.Sprintf("%s/%s-%s.tar", *output, name, version),
+				Message:    "fake pull ok",
+			}
 		}
 
 		// "nohash-*" purls simulate a plugin that can't compute the
@@ -117,14 +124,20 @@ func main() {
 			}
 		}
 	case "push":
-		if info, err := os.Stat(*input); err != nil || !info.IsDir() {
-			fmt.Fprintf(os.Stderr, "expected --input %q to already exist as a directory: %v\n", *input, err)
-			os.Exit(1)
+		if !*check {
+			if info, err := os.Stat(*input); err != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "expected --input %q to already exist as a directory: %v\n", *input, err)
+				os.Exit(1)
+			}
 		}
 
-		res = result{
-			OutputPath: fmt.Sprintf("%s/%s:%s", *remote, name, version),
-			Message:    "fake push ok",
+		if *check {
+			res = result{OutputPath: fmt.Sprintf("checked:%s/%s:%s", *remote, name, version), Message: "fake push check ok"}
+		} else {
+			res = result{
+				OutputPath: fmt.Sprintf("%s/%s:%s", *remote, name, version),
+				Message:    "fake push ok",
+			}
 		}
 	case "remote":
 		if err := json.NewEncoder(os.Stdout).Encode(remoteResult{Remote: fmt.Sprintf("fake-origin/%s", name)}); err != nil {

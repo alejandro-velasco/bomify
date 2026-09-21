@@ -1,13 +1,29 @@
 ## bomify push
 
-Push publishes a bomify package to an OCI registry
+Publish a bomify package to an OCI registry
 
 ### Synopsis
 
-Push packages the SBOM manifest a prior `bomify build` recorded for <tag> (and each component it describes) as an OCI artifact, and publishes it under <tag>. <tag> is both the local bookkeeping key (see `bomify tag`/`bomify packages`) and the destination reference, exactly like `docker push`.
+Push packages the SBOM manifest a prior "bomify build" recorded for
+<tag> (and each component it describes) as an OCI artifact, and
+publishes it under <tag>. <tag> is both the local bookkeeping key
+(see "bomify tag" / "bomify packages") and the destination reference.
 
 ```
 bomify push <tag> [flags]
+```
+
+### Examples
+
+```
+  # Push the package tagged myapp:latest to its own registry reference
+  bomify push myapp:latest
+
+  # Push using a fully qualified registry reference as the tag
+  bomify push registry.example.com/myapp:latest
+
+  # Upload up to 6 layers concurrently
+  bomify push myapp:latest --concurrency 6
 ```
 
 ### Options

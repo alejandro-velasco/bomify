@@ -1,13 +1,30 @@
 ## bomify package pull
 
-Pull downloads a bomify package from an OCI registry
+Download a bomify package from an OCI registry
 
 ### Synopsis
 
-Pull downloads a bomify package artifact from an OCI registry: its config (the aggregate SBOM manifest) and each of its layers (the components that SBOM describes), laying them out in the data directory exactly as `bomify build` would have. Layers download concurrently, each with its own progress bar.
+Pull downloads a bomify package artifact from an OCI registry: its
+config (the aggregate SBOM manifest) and each of its layers (the
+components that SBOM describes), laying them out in the data
+directory exactly as "bomify build" would have. Layers download
+concurrently, each with its own progress bar.
 
 ```
 bomify package pull <reference> [flags]
+```
+
+### Examples
+
+```
+  # Pull a tagged reference
+  bomify pull registry.example.com/myapp:latest
+
+  # Pull by digest
+  bomify pull registry.example.com/myapp@sha256:abcdef...
+
+  # Download up to 6 layers concurrently
+  bomify pull registry.example.com/myapp:latest --concurrency 6
 ```
 
 ### Options

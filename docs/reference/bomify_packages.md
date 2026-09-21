@@ -4,10 +4,18 @@ List built packages
 
 ### Synopsis
 
-Packages lists the packages recorded in <output>/package/repositories.json, one row per repository:tag, similar to `docker images`.
+Packages lists the packages recorded in
+<data-dir>/package/repositories.json, one row per repository:tag.
 
 ```
 bomify packages [flags]
+```
+
+### Examples
+
+```
+  # List every locally recorded package
+  bomify packages
 ```
 
 ### Options

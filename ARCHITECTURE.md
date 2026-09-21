@@ -109,12 +109,22 @@ to it. Either way, the file exists solely to make that streaming
 possible — it's not a persistent log, and is deleted again once the
 plugin exits, whether it succeeded or failed.
 
+Both `bomify build --check` and `bomify distribute --check` skip step 3's
+real transfer: they pass `--check=true` (and neither `--output` nor
+`--input`) to `pull`/`push`, asking the plugin to do the cheapest
+verification it can — existence and authorization — that a real
+pull/push would succeed, without touching any content. `plugin.CheckPull`/
+`plugin.CheckPush` are the stateless counterparts of `plugin.Pull`/
+`plugin.Push` this uses: like `remote`, a check never creates a pid file,
+manifest, or component directory, and `bomify build --check` records
+nothing afterward, since nothing was actually pulled.
+
 See [`plugins/README.md`](plugins/README.md) for the first-party plugins
 bomify ships (`oci`, `helm`, `generic`), and
 [`plugins/CONTRACT.md`](plugins/CONTRACT.md) for the full, authoritative
-specification of the contract above — required/optional flags, the exact
-`Result` JSON schema, valid hash algorithm names, and the logging contract
-— that a third-party plugin must implement.
+specification of the contract above — required/optional flags, `--check`
+mode, the exact `Result` JSON schema, valid hash algorithm names, and the
+logging contract — that a third-party plugin must implement.
 
 ![Plugin dispatch sequence](docs/diagrams/plugin-dispatch.svg)
 

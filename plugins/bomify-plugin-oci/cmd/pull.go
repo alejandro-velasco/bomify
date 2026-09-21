@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
@@ -14,6 +16,7 @@ func newPullCmd() *cobra.Command {
 		purl     string
 		output   string
 		hash     string
+		check    bool
 		logFile  string
 		logColor bool
 	)
@@ -35,6 +38,14 @@ func newPullCmd() *cobra.Command {
 			}
 			logger.Info("resolved reference", "ref", ref)
 
+			if check {
+				res, err := image.CheckPull(ref, cdx.HashAlgorithm(hash), logger)
+				if err != nil {
+					return err
+				}
+				return res.Print(cmd.OutOrStdout())
+			}
+
 			res, err := image.Pull(ref, output, cdx.HashAlgorithm(hash), logger)
 			if err != nil {
 				return err
@@ -42,15 +53,21 @@ func newPullCmd() *cobra.Command {
 
 			return res.Print(cmd.OutOrStdout())
 		},
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if !check && output == "" {
+				return fmt.Errorf("required flag(s) \"output\" not set")
+			}
+			return nil
+		},
 	}
 
 	cmd.Flags().StringVar(&purl, "purl", "", "component purl (required)")
-	cmd.Flags().StringVar(&output, "output", "", "directory to save the pulled image into (required)")
+	cmd.Flags().StringVar(&output, "output", "", "directory to save the pulled image into (required unless --check)")
 	cmd.Flags().StringVar(&hash, "hash", "", "hash algorithm to report the pulled image's digest as")
+	cmd.Flags().BoolVar(&check, "check", false, "verify the image exists and is pullable without downloading it")
 	cmd.Flags().StringVar(&logFile, "log", "", "file to write plugin logs to (required)")
 	cmd.Flags().BoolVar(&logColor, "log-color", false, "enable ANSI color codes in the log output")
 	_ = cmd.MarkFlagRequired("purl")
-	_ = cmd.MarkFlagRequired("output")
 	_ = cmd.MarkFlagRequired("log")
 
 	return cmd

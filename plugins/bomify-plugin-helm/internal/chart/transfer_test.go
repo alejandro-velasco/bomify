@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -177,5 +178,135 @@ func TestOCIPushThenPullRoundTrip(t *testing.T) {
 	}
 	if want := hex.EncodeToString(wantSum[:]); pullResult.Hash.Value != want {
 		t.Errorf("Pull() Hash.Value = %q, want %q", pullResult.Hash.Value, want)
+	}
+}
+
+// TestOCICheckPullAndCheckPush exercises CheckPull/CheckPush against a
+// real in-process OCI registry, proving they report success without
+// ever actually publishing or downloading anything — unlike
+// TestOCIPushThenPullRoundTrip, no chart should exist server-side by the
+// time these calls return.
+func TestOCICheckPullAndCheckPush(t *testing.T) {
+	usePlainHTTPRegistryClient(t)
+	host := newTestOCIRegistry(t)
+
+	const name, version = "widget", "1.2.3"
+	remote := "oci://" + host + "/charts"
+
+	pushRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
+	if _, err := CheckPush(pushRef, remote, testLogger()); err != nil {
+		t.Fatalf("CheckPush() error = %v", err)
+	}
+
+	// Nothing was actually published, so resolving it must fail.
+	registryClient, err := newRegistryClient(registryHost(remote))
+	if err != nil {
+		t.Fatalf("newRegistryClient: %v", err)
+	}
+	ociRef := host + "/charts/" + name + ":" + version
+	if _, err := registryClient.Resolve(ociRef); err == nil {
+		t.Fatal("CheckPush() published a chart, want no-op")
+	}
+
+	// Seed it for real, then confirm CheckPull finds it.
+	inputDir := t.TempDir()
+	buildTestChart(t, inputDir, name, version)
+	if _, err := Push(inputDir, pushRef, remote, testLogger()); err != nil {
+		t.Fatalf("Push() (seeding) error = %v", err)
+	}
+
+	pullRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
+	pullResult, err := CheckPull(pullRef, cdx.HashAlgoSHA256, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPull() error = %v", err)
+	}
+	if want := remote + "/" + name + ":" + version; pullResult.OutputPath != want {
+		t.Errorf("CheckPull() OutputPath = %q, want %q", pullResult.OutputPath, want)
+	}
+}
+
+func TestOCICheckPullMissingChart(t *testing.T) {
+	usePlainHTTPRegistryClient(t)
+	host := newTestOCIRegistry(t)
+
+	ref := Ref{Name: "does-not-exist", Version: "1.0.0", RepositoryURL: "oci://" + host + "/charts", OCI: true}
+	if _, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger()); err == nil {
+		t.Fatal("CheckPull() for a chart never pushed: expected error, got nil")
+	}
+}
+
+func TestOCICheckPushClassicRepoRejected(t *testing.T) {
+	ref := Ref{Name: "widget", Version: "1.2.3", RepositoryURL: "https://charts.example.com", OCI: false}
+	if _, err := CheckPush(ref, "https://charts.example.com", testLogger()); err == nil {
+		t.Fatal("CheckPush() against a classic repository: expected error, got nil")
+	}
+}
+
+// newTestHTTPRepo starts an in-process HTTP chart repository serving a
+// single index.yaml with the given content at "/index.yaml", and returns
+// its base URL.
+func newTestHTTPRepo(t *testing.T, indexYAML string) string {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/index.yaml" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(indexYAML))
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv.URL
+}
+
+func TestHTTPCheckPull(t *testing.T) {
+	const digest = "48d492eade212236b0c6bb101caaab594b0b6721b14afe1d0df72182738ab8e6"
+	const index = `apiVersion: v1
+entries:
+  widget:
+    - name: widget
+      version: 1.2.3
+      urls:
+        - widget-1.2.3.tgz
+      digest: ` + digest + `
+generated: "2024-01-01T00:00:00Z"
+`
+
+	base := newTestHTTPRepo(t, index)
+	ref := Ref{Name: "widget", Version: "1.2.3", RepositoryURL: base, OCI: false}
+
+	result, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger())
+	if err != nil {
+		t.Fatalf("CheckPull() error = %v", err)
+	}
+
+	if want := base + "/widget-1.2.3.tgz"; result.OutputPath != want {
+		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
+	}
+	if result.Hash.Algorithm != cdx.HashAlgoSHA256 {
+		t.Errorf("Hash.Algorithm = %q, want %q", result.Hash.Algorithm, cdx.HashAlgoSHA256)
+	}
+	if result.Hash.Value != digest {
+		t.Errorf("Hash.Value = %q, want %q", result.Hash.Value, digest)
+	}
+}
+
+func TestHTTPCheckPullMissingVersion(t *testing.T) {
+	const index = `apiVersion: v1
+entries:
+  widget:
+    - name: widget
+      version: 1.2.3
+      urls:
+        - widget-1.2.3.tgz
+generated: "2024-01-01T00:00:00Z"
+`
+
+	base := newTestHTTPRepo(t, index)
+	ref := Ref{Name: "widget", Version: "9.9.9", RepositoryURL: base, OCI: false}
+
+	if _, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger()); err == nil {
+		t.Fatal("CheckPull() for a version not in index.yaml: expected error, got nil")
 	}
 }
