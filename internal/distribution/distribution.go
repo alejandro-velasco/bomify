@@ -150,7 +150,12 @@ func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
 		segments := matchSegments(rule.Match)
 		typed := rule.Type != ""
 
-		if best == nil || segments > bestSegments || (segments == bestSegments && typed && !bestTyped) {
+		// A rule wins if it's more specific (more Match segments), or it
+		// ties on specificity but narrows by Type where the current best
+		// doesn't.
+		moreSpecific := segments > bestSegments
+		tiebreakOnType := segments == bestSegments && typed && !bestTyped
+		if best == nil || moreSpecific || tiebreakOnType {
 			best = &rules[i]
 			bestSegments = segments
 			bestTyped = typed
