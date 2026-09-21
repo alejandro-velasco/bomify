@@ -6,6 +6,16 @@ Print version, commit, and build date information
 bomify version [flags]
 ```
 
+### Examples
+
+```
+  # Print human-readable version info
+  bomify version
+
+  # Print version info as JSON
+  bomify version --output json
+```
+
 ### Options
 
 ```

@@ -89,6 +89,33 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}, nil
 }
 
+// CheckPull verifies ref.DownloadURL exists and is fetchable with a
+// plain HTTP HEAD instead of downloading it. No hash is reported: a HEAD
+// response carries no content to hash.
+func CheckPull(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
+	logger.Info("HEAD", "url", ref.DownloadURL)
+	req, err := http.NewRequest(http.MethodHead, ref.DownloadURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build HEAD request for %s: %w", ref.DownloadURL, err)
+	}
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HEAD %s: %w", ref.DownloadURL, err)
+	}
+	defer resp.Body.Close()
+	logger.Info("response received", "status", resp.Status)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("HEAD %s: unexpected status %s", ref.DownloadURL, resp.Status)
+	}
+
+	return &plugin.Result{OutputPath: ref.DownloadURL, Message: fmt.Sprintf("%s exists and is pullable", ref.DownloadURL)}, nil
+}
+
 // Push uploads the artifact a prior Pull wrote into inputDir to remote
 // with a plain HTTP PUT. remote is used exactly as given, with nothing
 // appended: it's expected to already be the full destination URL (e.g. a
@@ -131,6 +158,42 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 	}
 
 	return &plugin.Result{OutputPath: remote, Message: fmt.Sprintf("pushed %s to %s", path, remote)}, nil
+}
+
+// CheckPush is a best-effort check, unlike CheckPull: it never falls
+// back to a real PUT, since remote is often a single-use presigned URL
+// a "check" must not consume. Only a plain HEAD is tried; a clear
+// auth rejection (401/403) fails, anything else (including a HEAD
+// remote doesn't support, or a 404 — normal for a push target) is
+// reported as success with a message noting write permission wasn't
+// actually verified.
+func CheckPush(remote string, logger *slog.Logger) (*plugin.Result, error) {
+	logger.Info("HEAD", "url", remote)
+	req, err := http.NewRequest(http.MethodHead, remote, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build HEAD request for %s: %w", remote, err)
+	}
+	if err := setAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// remote is unreachable, not merely unwritable — that's the one
+		// case worth failing on, even for a best-effort check.
+		return nil, fmt.Errorf("HEAD %s: %w", remote, err)
+	}
+	defer resp.Body.Close()
+	logger.Info("response received", "status", resp.Status)
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("HEAD %s: unexpected status %s", remote, resp.Status)
+	}
+
+	return &plugin.Result{
+		OutputPath: remote,
+		Message:    fmt.Sprintf("%s is reachable; write permission not verified (HEAD is not authoritative for a PUT URL)", remote),
+	}, nil
 }
 
 func digestHash(hashAlgorithm cdx.HashAlgorithm, hasher hash.Hash) (plugin.Hash, error) {

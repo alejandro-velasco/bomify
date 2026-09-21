@@ -29,6 +29,14 @@ sending it to `--remote` exactly as given (with a correct
 `Content-Length`, not chunked) — useful for destinations like a presigned
 upload URL, where appending anything to `--remote` would invalidate it.
 
+All three support `pull --check`/`push --check` (see
+[`CONTRACT.md`](CONTRACT.md#check-mode)), with the same per-plugin limits
+their real `pull`/`push` have: `bomify-plugin-helm`'s `push --check` is
+OCI-only, same as `push` itself, and `bomify-plugin-generic`'s
+`push --check` is best-effort only (a HEAD, never a real PUT — see its
+own doc comment on `CheckPush`), since a presigned upload URL can't be
+verified without actually writing to it.
+
 To add a new one, create `plugins/bomify-plugin-<kind>`, implement `pull`,
 `push`, and `remote` per [`CONTRACT.md`](CONTRACT.md), and add a row
 above.

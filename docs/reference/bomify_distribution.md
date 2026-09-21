@@ -1,6 +1,6 @@
 ## bomify distribution
 
-Manage default remote endpoints for `bomify distribute`
+Manage remote-endpoint rules for bomify distribute
 
 ### Options
 
@@ -19,5 +19,7 @@ Manage default remote endpoints for `bomify distribute`
 ### SEE ALSO
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
-* [bomify distribution create](bomify_distribution_create.md)	 - Create or update the default remote endpoint for a plugin kind
+* [bomify distribution create](bomify_distribution_create.md)	 - Create or update a remote-endpoint rule
+* [bomify distribution list](bomify_distribution_list.md)	 - List remote-endpoint rules
+* [bomify distribution remove](bomify_distribution_remove.md)	 - Remove a remote-endpoint rule
 

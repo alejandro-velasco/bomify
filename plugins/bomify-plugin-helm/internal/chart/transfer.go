@@ -4,20 +4,35 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
+
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
+	"helm.sh/helm/v3/pkg/repo"
+	"sigs.k8s.io/yaml"
 
 	"github.com/alejandro-velasco/bomify/pkg/auth"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
+
+// keychain resolves registry credentials from bomify's shared credential
+// store (see pkg/auth), for CheckPush's remote.CheckPushPermission probe
+// — a Helm OCI chart is an ordinary OCI Distribution artifact, so
+// go-containerregistry's permission check applies here too, same as
+// bomify-plugin-oci.
+var keychain = authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get))
 
 // newRegistryClient is a var — rather than a plain func — solely so tests
 // can substitute a different constructor (e.g. one that enables plain
@@ -128,6 +143,132 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}, nil
 }
 
+// CheckPull verifies ref exists and is fetchable without downloading it:
+// an OCI manifest resolve (no chart layer) for an OCI registry, or a
+// fetch of the small index.yaml a real Pull consults first, for a
+// classic HTTP(S) repository.
+func CheckPull(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+	if ref.OCI {
+		return checkPullOCI(ref, logger)
+	}
+	return checkPullHTTP(ref, hashAlgorithm, logger)
+}
+
+// checkPullOCI resolves ref's manifest without pulling its chart layer.
+// The resolved descriptor's digest is the OCI manifest's own digest, not
+// the chart tarball hash chartHash computes for a real Pull, so no hash
+// is reported here.
+func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
+	registryClient, err := newRegistryClient(registryHost(ref.RepositoryURL))
+	if err != nil {
+		return nil, err
+	}
+
+	displayRef := strings.TrimSuffix(ref.RepositoryURL, "/") + "/" + ref.Name + ":" + ref.Version
+	// Client.Resolve wants a bare "host/repository:tag", no "oci://"
+	// scheme — see Client.ValidateReference for the same convention.
+	resolveRef := strings.TrimPrefix(displayRef, registry.OCIScheme+"://")
+
+	logger.Info("resolving chart", "ref", resolveRef)
+	if _, err := registryClient.Resolve(resolveRef); err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", displayRef, err)
+	}
+	logger.Info("check complete", "ref", displayRef)
+
+	return &plugin.Result{OutputPath: displayRef, Message: fmt.Sprintf("%s exists and is pullable", displayRef)}, nil
+}
+
+// checkPullHTTP fetches ref.RepositoryURL's small index.yaml — the same
+// listing a real Pull consults first — and looks for a matching entry,
+// without downloading the chart. Its digest field is the same SHA-256
+// chartHash would compute from the downloaded chart, so hash comes back
+// populated at no extra cost.
+func checkPullHTTP(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+	indexURL := strings.TrimSuffix(ref.RepositoryURL, "/") + "/index.yaml"
+
+	req, err := http.NewRequest(http.MethodGet, indexURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build GET request for %s: %w", indexURL, err)
+	}
+	if host := registryHost(ref.RepositoryURL); host != "" {
+		username, password, err := auth.Get(host)
+		if err != nil {
+			return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
+		}
+		if username != "" || password != "" {
+			req.SetBasicAuth(username, password)
+		}
+	}
+
+	logger.Info("GET", "url", indexURL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", indexURL, err)
+	}
+	defer resp.Body.Close()
+	logger.Info("response received", "status", resp.Status)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("GET %s: unexpected status %s: %s", indexURL, resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", indexURL, err)
+	}
+
+	var idx repo.IndexFile
+	if err := yaml.Unmarshal(data, &idx); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", indexURL, err)
+	}
+
+	entry := findChartVersion(idx, ref.Name, ref.Version)
+	if entry == nil {
+		return nil, fmt.Errorf("chart %s@%s not found in %s", ref.Name, ref.Version, indexURL)
+	}
+	logger.Info("check complete", "chart", ref.Name, "version", ref.Version)
+
+	result := &plugin.Result{
+		OutputPath: entryURL(ref.RepositoryURL, entry),
+		Message:    fmt.Sprintf("%s@%s exists at %s", ref.Name, ref.Version, ref.RepositoryURL),
+	}
+	if hashAlgorithm == cdx.HashAlgoSHA256 && entry.Digest != "" {
+		result.Hash = plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: entry.Digest}
+	}
+	return result, nil
+}
+
+// findChartVersion looks up the entry for name@version in idx, or nil if
+// there isn't one.
+func findChartVersion(idx repo.IndexFile, name, version string) *repo.ChartVersion {
+	for _, v := range idx.Entries[name] {
+		if v.Version == version {
+			return v
+		}
+	}
+	return nil
+}
+
+// entryURL resolves entry's first download URL against repositoryURL
+// (index.yaml entries are allowed to use a URL relative to the index
+// itself), falling back to repositoryURL when entry has no URLs at all.
+func entryURL(repositoryURL string, entry *repo.ChartVersion) string {
+	if len(entry.URLs) == 0 {
+		return repositoryURL
+	}
+
+	base, err := url.Parse(repositoryURL)
+	if err != nil {
+		return entry.URLs[0]
+	}
+	ref, err := url.Parse(entry.URLs[0])
+	if err != nil {
+		return entry.URLs[0]
+	}
+	return base.ResolveReference(ref).String()
+}
+
 // Push uploads the chart a prior Pull wrote into inputDir to remote,
 // using the Helm SDK's push action — the same implementation behind the
 // `helm push` CLI command.
@@ -159,6 +300,30 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 	logger.Info("push complete", "destination", dst)
 
 	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", path, dst)}, nil
+}
+
+// CheckPush verifies the caller is authorized to push ref to remote,
+// without publishing anything, via remote.CheckPushPermission (see the
+// keychain doc comment). Like Push, it's OCI-only; a classic HTTP(S)
+// remote fails the same way a real Push would.
+func CheckPush(ref Ref, remote string, logger *slog.Logger) (*plugin.Result, error) {
+	if !registry.IsOCI(remote) {
+		return nil, fmt.Errorf("push only supports OCI registries, got %q", remote)
+	}
+
+	dst := strings.TrimSuffix(strings.TrimPrefix(remote, registry.OCIScheme+"://"), "/") + "/" + ref.Name + ":" + ref.Version
+	nameRef, err := name.ParseReference(dst)
+	if err != nil {
+		return nil, fmt.Errorf("parse destination %q: %w", dst, err)
+	}
+
+	logger.Info("checking push permission", "destination", dst)
+	if err := gcrremote.CheckPushPermission(nameRef, keychain, http.DefaultTransport); err != nil {
+		return nil, fmt.Errorf("check push permission for %s: %w", dst, err)
+	}
+	logger.Info("check complete", "destination", dst)
+
+	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("authorized to push to %s", dst)}, nil
 }
 
 // chartHash returns the content hash to report for a pulled chart,

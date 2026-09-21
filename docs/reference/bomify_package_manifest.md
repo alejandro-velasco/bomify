@@ -4,10 +4,23 @@ Print a remote package's CycloneDX manifest
 
 ### Synopsis
 
-Manifest fetches <reference> from an OCI registry and writes its aggregate CycloneDX SBOM manifest (the artifact's config blob) verbatim to stdout, without pulling any of its layers or writing anything to the data directory.
+Manifest fetches <reference> from an OCI registry and writes its
+aggregate CycloneDX SBOM manifest (the artifact's config blob)
+verbatim to stdout, without pulling any of its layers or writing
+anything to the data directory.
 
 ```
 bomify package manifest <reference> [flags]
+```
+
+### Examples
+
+```
+  # Print the manifest for a tagged reference
+  bomify package manifest registry.example.com/myapp:latest
+
+  # Print the manifest for a digest reference
+  bomify package manifest registry.example.com/myapp@sha256:abcdef...
 ```
 
 ### Options

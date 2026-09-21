@@ -18,7 +18,12 @@ const buildLong = `Build reads a CycloneDX SBOM and builds a package containing 
 component it describes. Each component is resolved to a plugin by its
 kind and pulled through it, and the SBOM is then recorded as this
 build's manifest so later commands (push, distribute, tag, packages)
-can find it.`
+can find it.
+
+--check verifies every component is pullable and authorized — an
+inexpensive existence/auth check each plugin performs itself, without
+downloading anything — and skips recording a build, since nothing was
+actually pulled.`
 
 const buildExample = `  # Build the package described by sbom.json
   bomify build sbom.json
@@ -27,13 +32,17 @@ const buildExample = `  # Build the package described by sbom.json
   bomify build sbom.json --tag myapp:latest
 
   # Pull up to 4 components concurrently, verifying against sha-512
-  bomify build sbom.json --concurrency 4 --hash sha-512`
+  bomify build sbom.json --concurrency 4 --hash sha-512
+
+  # Verify every component is pullable, without downloading anything
+  bomify build sbom.json --check`
 
 type buildOptions struct {
 	file        string
 	hash        string
 	concurrency int
 	tags        []string
+	check       bool
 }
 
 func buildCmd() *cobra.Command {
@@ -58,6 +67,7 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
+	buildCmd.Flags().BoolVar(&buildOpts.check, "check", false, "verify every component is pullable and authorized, without downloading any of them or recording a build")
 
 	return buildCmd
 }
@@ -76,6 +86,15 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
+		if opts.check {
+			result, err := plugin.CheckPull(path, component, dataDir, hashAlgorithm, log)
+			if err != nil {
+				return err
+			}
+			log.Info("check complete", "output", result.OutputPath, "message", result.Message, "hash", result.Hash.Value)
+			return nil
+		}
+
 		result, err := plugin.Pull(path, component, dataDir, hashAlgorithm, log)
 		if err != nil {
 			return err
@@ -86,6 +105,11 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	if opts.check {
+		// Nothing was actually pulled, so there's no build to record.
+		return nil
 	}
 
 	return finalizeBuild(opts, logger)

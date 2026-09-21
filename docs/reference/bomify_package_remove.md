@@ -4,10 +4,22 @@ Remove packages by tag
 
 ### Synopsis
 
-Remove untags each given <tag> and reclaims any manifest or component no longer used by a remaining tag — mirroring `docker image rm`/`docker rmi` (also available as the top-level shorthand `bomify rmp`).
+Remove untags each given <tag> and reclaims any manifest or component
+no longer used by a remaining tag. Also available as the top-level
+shorthand "bomify rmp".
 
 ```
 bomify package remove <tag>... [flags]
+```
+
+### Examples
+
+```
+  # Remove a single tagged package
+  bomify package remove myapp:latest
+
+  # Remove several at once
+  bomify package remove myapp:v1 myapp:v2
 ```
 
 ### Options

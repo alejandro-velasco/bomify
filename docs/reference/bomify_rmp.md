@@ -1,9 +1,19 @@
 ## bomify rmp
 
-Remove packages by tag (shorthand for `bomify package remove`)
+Remove packages by tag (shorthand for "bomify package remove")
 
 ```
 bomify rmp <tag>... [flags]
+```
+
+### Examples
+
+```
+  # Remove a single tagged package
+  bomify rmp myapp:latest
+
+  # Remove several at once
+  bomify rmp myapp:v1 myapp:v2
 ```
 
 ### Options

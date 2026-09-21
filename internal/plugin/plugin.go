@@ -19,6 +19,9 @@
 // Whichever of those applies, Pull finishes by verifying the resulting
 // hash as described below, so even a reused result fails if it doesn't
 // match this call's component.
+//
+// CheckPull/CheckPush are the --check counterparts of Pull/Push: cheap,
+// stateless queries reporting whether a real Pull/Push would succeed.
 package plugin
 
 import (
@@ -359,6 +362,43 @@ func Push(path string, component cdx.Component, baseDir, remote string, logger *
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--input", dir, "--remote", remote)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// CheckPull invokes the plugin's "pull" subcommand in --check mode: an
+// inexpensive verification that a real Pull would succeed, without
+// transferring content. Like Remote, it's stateless — no component
+// directory, pid file, or dedup against a concurrent/prior call. If the
+// plugin reports a hash, CheckPull verifies it against component's
+// SBOM-declared hash exactly as Pull does.
+func CheckPull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	result, err := run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--hash", string(hashAlgorithm), "--check=true")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := verifyHash(component, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// CheckPush invokes the plugin's "push" subcommand in --check mode: an
+// inexpensive verification that a real Push to remote would succeed,
+// without publishing anything. Like CheckPull, it's stateless and
+// requires no prior Pull.
+func CheckPush(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--remote", remote, "--check=true")
 	if err != nil {
 		return nil, err
 	}

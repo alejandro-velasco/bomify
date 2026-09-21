@@ -14,6 +14,7 @@ sequenceDiagram
             Plugin-->>CLI: a single JSON result on stdout
         end
         CLI->>Disk: record the component's manifest
+        Note over CLI,Disk: --check: pull --check instead - no Disk access,<br/>no manifest recorded
     else bomify distribute
         CLI->>Plugin: remote, over a subprocess call
         Plugin-->>CLI: a single JSON RemoteResult on stdout
@@ -24,4 +25,5 @@ sequenceDiagram
             Plugin->>Disk: write its own log output, never to stdout
             Plugin-->>CLI: a single JSON result on stdout
         end
+        Note over CLI,Disk: --check: push --check instead - no Disk access
     end

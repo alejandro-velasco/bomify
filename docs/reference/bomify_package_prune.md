@@ -4,10 +4,20 @@ Remove packages not associated with any tag
 
 ### Synopsis
 
-Prune removes every manifest and layer in the data directory that isn't reachable from a tag currently recorded in repositories.json — mirroring `docker image prune`. A component still used by any tagged package, even one also used by an otherwise-unreferenced package, is left alone.
+Prune removes every manifest and layer in the data directory that
+isn't reachable from a tag currently recorded in repositories.json. A
+component still used by any tagged package, even one also used by an
+otherwise-unreferenced package, is left alone.
 
 ```
 bomify package prune [flags]
+```
+
+### Examples
+
+```
+  # Remove every untagged manifest and layer
+  bomify package prune
 ```
 
 ### Options

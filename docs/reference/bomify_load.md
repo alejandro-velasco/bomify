@@ -4,10 +4,25 @@ Load packages from a tarball
 
 ### Synopsis
 
-Load restores every package a `bomify save` tarball contains into the data directory, exactly as `bomify pull` would have for each, and records each of their tags. Reads from stdin if --input isn't given, mirroring `docker load`.
+Load restores every package a "bomify save" tarball contains into the
+data directory, exactly as "bomify pull" would have for each, and
+records each of their tags. Reads from stdin if --input isn't given.
 
 ```
 bomify load [flags]
+```
+
+### Examples
+
+```
+  # Load a tarball piped in from stdin
+  cat packages.tar | bomify load
+
+  # Load a tarball from a file
+  bomify load --input packages.tar
+
+  # Restore up to 6 layers concurrently
+  bomify load --input packages.tar --concurrency 6
 ```
 
 ### Options

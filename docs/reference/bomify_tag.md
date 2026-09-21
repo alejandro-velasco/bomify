@@ -1,13 +1,24 @@
 ## bomify tag
 
-Tag creates a new tag pointing at an existing package
+Create a new tag pointing at an existing package
 
 ### Synopsis
 
-Tag creates <destination-tag> as an alias for the package that <source-tag> currently resolves to, similar to `docker tag`.
+Tag creates <destination-tag> as an alias for the package that
+<source-tag> currently resolves to.
 
 ```
 bomify tag <source-tag> <destination-tag> [flags]
+```
+
+### Examples
+
+```
+  # Point a new tag at an existing package
+  bomify tag myapp:v1 myapp:latest
+
+  # Re-tag a package under a different repository name
+  bomify tag myapp:latest registry.example.com/myapp:latest
 ```
 
 ### Options

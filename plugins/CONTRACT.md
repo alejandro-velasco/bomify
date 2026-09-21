@@ -46,8 +46,9 @@ Fetches or builds the component `--purl` identifies and writes it into
 | Flag | Required | Meaning |
 | --- | --- | --- |
 | `--purl` | yes | *The component's package URL. The plugin derives everything it needs to know about what to fetch from this string.* |
-| `--output` | yes | Directory to write the pulled artifact into. bomify creates this directory before invoking the plugin — the plugin may assume it already exists and is empty, and should write directly into it (a single file, or a directory tree — whatever shape suits the artifact). |
+| `--output` | only when `--check` is false | Directory to write the pulled artifact into. bomify creates this directory before invoking the plugin — the plugin may assume it already exists and is empty, and should write directly into it (a single file, or a directory tree — whatever shape suits the artifact). Not passed at all when `--check=true`, since nothing is written. |
 | `--hash` | no | Hash algorithm (see [Hash algorithms](#hash-algorithms) below) bomify wants the pulled artifact's content hash reported as, in the result's `hash` field. May be empty, in which case the plugin should omit `hash` from its result entirely. |
+| `--check` | no | *See [Check mode](#check-mode). Defaults to `false`.* |
 | `--log` | yes | *See [Logging](#logging).* |
 | `--log-color` | yes | *See [Logging](#logging).* |
 
@@ -65,8 +66,9 @@ Publishes the artifact a prior `pull` wrote into `--input` to `--remote`.
 | Flag | Required | Meaning |
 | --- | --- | --- |
 | `--purl` | yes | *Same purl as the `pull` that produced `--input`'s contents.* |
-| `--input` | yes | Directory a prior `pull` (with the same `--purl`) wrote the artifact into. bomify guarantees this directory exists and holds exactly what that `pull` produced — never invoking `push` without a preceding successful `pull` for the same purl. |
+| `--input` | only when `--check` is false | Directory a prior `pull` (with the same `--purl`) wrote the artifact into. bomify guarantees this directory exists and holds exactly what that `pull` produced — never invoking `push` without a preceding successful `pull` for the same purl, unless `--check=true`, in which case `--input` isn't passed at all and no prior `pull` is required. |
 | `--remote` | yes | Destination to publish to — the shape of this string is entirely kind-specific (a registry/repository prefix, a plain URL, etc.); document it in your plugin's own `--help`/README. |
+| `--check` | no | *See [Check mode](#check-mode). Defaults to `false`.* |
 | `--log` | yes | *See [Logging](#logging).* |
 | `--log-color` | yes | *See [Logging](#logging).* |
 
@@ -105,6 +107,41 @@ On success, the plugin must print a single `RemoteResult` JSON object (see
 never touches the data directory, is never skipped or cached by bomify,
 and may be invoked far more often per purl than `pull`/`push` ever are.
 
+## Check mode
+
+Passing `--check=true` to `pull` or `push` asks the plugin to verify
+that a real `pull`/`push` would succeed — the artifact exists and the
+caller is authorized to fetch it (`pull`), or the destination is
+reachable and the caller is authorized to write to it (`push`) —
+without actually transferring the artifact's content. `--output`
+(`pull`) / `--input` (`push`) are not passed at all in this mode, since
+nothing is written or read; a plugin must not require them when
+`--check=true`.
+
+A plugin should exhaust every inexpensive option before falling back to
+anything approximating the real operation:
+
+- Prefer a manifest/metadata HEAD or resolve, a small index/listing
+  fetch, or similar — something whose cost doesn't scale with the
+  artifact's size.
+- For `pull --check`, actually performing a full `pull` is an acceptable
+  (if undesirable) last resort when no cheaper verification exists.
+- For `push --check`, a real, mutating write is **never** acceptable as
+  a fallback — unlike a redundant `pull`, a redundant `push` can have
+  real side effects (consuming a single-use destination like a
+  presigned upload URL, or overwriting something the caller didn't
+  intend to touch yet). If nothing cheaper is available, report
+  whatever partial verification was possible (e.g. reachability, but
+  not authorization) rather than actually writing — see
+  `bomify-plugin-generic`'s `push --check` for exactly this tradeoff.
+
+On success, print a single `Result` JSON object (the same shape as a
+normal `pull`/`push`) to stdout and exit `0`; on failure, exit non-zero
+with the usual one-line stderr message. `hash` may still be populated if
+the check happens to learn it for free (e.g. a registry HEAD returning a
+digest) — same optional, best-effort rules as a normal `pull`. See
+[Result](#result) for how `outputPath`'s meaning broadens in this mode.
+
 ## Standard streams
 
 | Stream | Reserved for |
@@ -139,7 +176,7 @@ and bomify treats them identically:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `outputPath` | string | yes | For `pull`: the local path the artifact was written to (normally just `--output`, echoed back). For `push`: the reference the artifact was published under at `--remote` (e.g. `<remote>/<name>:<version>`). |
+| `outputPath` | string | yes | For `pull`: the local path the artifact was written to (normally just `--output`, echoed back). For `push`: the reference the artifact was published under at `--remote` (e.g. `<remote>/<name>:<version>`). For either subcommand with `--check=true`: no path was written to or read from, so report whatever identifies the artifact/destination that was checked instead (e.g. the resolved registry reference or download URL). |
 | `message` | string | no | A short, human-readable summary of what happened (e.g. `"pulled nginx:1.27"`). Purely informational — bomify logs it but never parses it. |
 | `hash` | object | no | The content hash of the pulled artifact, for the algorithm `--hash` requested. Only meaningful for `pull`; leave both of its fields unset for `push`, and for `pull` when either `--hash` was empty or the algorithm requested isn't one the plugin can compute — never report a hash for a different algorithm than what was requested, and never guess. |
 | `hash.algorithm` | string | present only together with `hash.value` | One of the [CycloneDX hash algorithm names](#hash-algorithms) below — must exactly equal the `--hash` value the plugin was given. |
