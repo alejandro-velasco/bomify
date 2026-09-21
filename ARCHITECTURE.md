@@ -53,11 +53,12 @@ keyed on:
   manifest for a component restored from a registry, so a later `bomify
   build` needing the same purl reuses it too.
 
-`logs/<purlHash>.log` is a plugin's own log output for one pull/push of
-that component, named after the same purl hash as its manifest and layers
-directory — but unlike everything else here, it's transient: it exists
-only for the duration of that pull/push and is removed once the plugin
-exits. See [Plugin architecture](#plugin-architecture) below.
+`logs/<purlHash>.log` is a plugin's own log output for one pull/push/remote
+invocation for that component, named after the same purl hash as its
+manifest and layers directory — but unlike everything else here, it's
+transient: it exists only for the duration of that invocation and is
+removed once the plugin exits. See [Plugin architecture](#plugin-architecture)
+below.
 
 Everything is content-addressed and every write that matters is atomic (a
 temp file/directory renamed into place once fully written and verified, see
@@ -246,7 +247,7 @@ A few things worth keeping in mind when changing any of the above:
   as "hasn't happened yet."
 - **bomify orchestrates, plugins do the work.** The core binary has no
   code for talking to any specific package ecosystem — that boundary is
-  the pull/push JSON-over-subprocess contract specified in
+  the pull/push/remote JSON-over-subprocess contract specified in
   [`plugins/CONTRACT.md`](plugins/CONTRACT.md), which is deliberately
   minimal so a third-party plugin needs almost nothing bomify-specific to
   implement (its optional Go helper library, `pkg/plugin`, is importable

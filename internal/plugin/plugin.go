@@ -205,7 +205,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 		}
 
-		result, err := run(path, "pull", component.PackageURL, logFile, verbose, "--output", dir, "--hash", string(hashAlgorithm))
+		result, err := run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--output", dir, "--hash", string(hashAlgorithm))
 		if err != nil {
 			os.RemoveAll(dir)
 			return nil, err
@@ -358,7 +358,31 @@ func Push(path string, component cdx.Component, baseDir, remote string, logger *
 	logFile := logPath(baseDir, component)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
-	return run(path, "push", component.PackageURL, logFile, verbose, "--input", dir, "--remote", remote)
+	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--input", dir, "--remote", remote)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Remote invokes the plugin binary's "remote" subcommand, which reports
+// where component's content comes from or is published under (see
+// pluginlib.RemoteResult), independent of any specific --remote a push
+// might target — this is what a distribution rule's --match compares
+// against (see internal/distribution). Unlike Pull/Push, Remote is a
+// pure, stateless query: it never touches baseDir beyond a throwaway log
+// file, and nothing about its result is cached.
+//
+// logger controls log streaming exactly as it does for Pull/Push.
+func Remote(path string, component cdx.Component, baseDir string, logger *slog.Logger) (string, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	result, err := run[pluginlib.RemoteResult](path, "remote", component.PackageURL, logFile, verbose)
+	if err != nil {
+		return "", err
+	}
+	return result.Remote, nil
 }
 
 // PurlHash returns a hex-encoded hash of component's purl, used to derive
@@ -488,12 +512,13 @@ func waitForPIDFile(path string, owner int) {
 const logStreamPollInterval = 100 * time.Millisecond
 
 // run invokes the plugin binary at path with subcommand verb, passing purl,
-// logFile (as --log), and the given extra arguments, and returns the
-// plugin's parsed result. It creates logFile fresh before starting the
-// plugin and, if verbose, streams its content live to stdout for the
-// duration of the run; either way, logFile exists only to make that
-// streaming possible, so run removes it again once the plugin exits.
-func run(path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*pluginlib.Result, error) {
+// logFile (as --log), and the given extra arguments, and returns its
+// stdout parsed as T — pluginlib.Result for pull/push, pluginlib.RemoteResult
+// for remote. It creates logFile fresh before starting the plugin and, if
+// verbose, streams its content live to stdout for the duration of the
+// run; either way, logFile exists only to make that streaming possible,
+// so run removes it again once the plugin exits.
+func run[T any](path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*T, error) {
 	if err := prepareLogFile(logFile); err != nil {
 		return nil, err
 	}
@@ -529,7 +554,7 @@ func run(path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*
 		return nil, fmt.Errorf("run plugin %s %s: %w%s", path, verb, err, formatStderr(stderr.String()))
 	}
 
-	var result pluginlib.Result
+	var result T
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		return nil, fmt.Errorf("parse output of plugin %s %s: %w", path, verb, err)
 	}

@@ -38,3 +38,39 @@ func TestResolveInvalidPurl(t *testing.T) {
 		t.Fatal("Resolve() with an unparseable purl: expected error, got nil")
 	}
 }
+
+func TestRepository(t *testing.T) {
+	tests := []struct {
+		name string
+		purl string
+		want string
+	}{
+		{"plain tag dropped", "pkg:oci/nginx@1.27", "nginx"},
+		{"digest dropped", "pkg:oci/nginx@sha256:abcd1234", "nginx"},
+		{"no version", "pkg:oci/nginx", "nginx"},
+		{"namespace", "pkg:docker/library/nginx@1.27", "library/nginx"},
+		{
+			"repository_url qualifier overrides name/namespace",
+			"pkg:oci/nginx@1.27?repository_url=docker.io/library/nginx",
+			"docker.io/library/nginx",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Repository(tt.purl)
+			if err != nil {
+				t.Fatalf("Repository(%q) error = %v", tt.purl, err)
+			}
+			if got != tt.want {
+				t.Errorf("Repository(%q) = %q, want %q", tt.purl, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepositoryInvalidPurl(t *testing.T) {
+	if _, err := Repository("not-a-purl"); err == nil {
+		t.Fatal("Repository() with an unparseable purl: expected error, got nil")
+	}
+}

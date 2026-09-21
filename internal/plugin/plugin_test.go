@@ -786,6 +786,47 @@ func TestPushFailure(t *testing.T) {
 	}
 }
 
+func TestRemote(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	remote, err := Remote(bin, component, baseDir, testLogger())
+	if err != nil {
+		t.Fatalf("Remote returned error: %v", err)
+	}
+
+	if want := "fake-origin/nginx"; remote != want {
+		t.Errorf("Remote() = %q, want %q", remote, want)
+	}
+}
+
+func TestRemoteFailure(t *testing.T) {
+	bin := buildFakePlugin(t)
+
+	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
+
+	if _, err := Remote(bin, component, t.TempDir(), testLogger()); err == nil {
+		t.Fatal("Remote() with failing plugin: expected error, got nil")
+	}
+}
+
+func TestRemoteRemovesLogFileAfterSuccess(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Remote(bin, component, baseDir, testLogger()); err != nil {
+		t.Fatalf("Remote returned error: %v", err)
+	}
+
+	if _, err := os.Stat(logPath(baseDir, component)); !os.IsNotExist(err) {
+		t.Errorf("log file still exists after Remote: %v", err)
+	}
+}
+
 func TestComponentDir(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "base")
 

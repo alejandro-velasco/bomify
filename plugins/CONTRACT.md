@@ -3,13 +3,13 @@
 This is the authoritative specification for the subprocess contract between
 `bomify` and a `bomify-plugin-<kind>` binary. It's aimed at anyone writing a
 plugin, first- or third-party. The Go types referenced below
-(`plugin.Result`, `plugin.Hash`) live in [`pkg/plugin`](../pkg/plugin) — a
-small library, importable from any Go module, and `plugin.OpenLog`/
-`(*Result).Print` are ready-made helpers a Go-based plugin can use instead
-of re-implementing this spec by hand. See also [`README.md`](README.md)
-for the list of first-party plugins and
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md) for how this contract fits into
-bomify's design as a whole.
+(`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
+[`pkg/plugin`](../pkg/plugin) — a small library, importable from any Go
+module, and `plugin.OpenLog`/`(*Result).Print`/`(*RemoteResult).Print` are
+ready-made helpers a Go-based plugin can use instead of re-implementing
+this spec by hand. See also [`README.md`](README.md) for the list of
+first-party plugins and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for how
+this contract fits into bomify's design as a whole.
 
 A plugin is a standalone executable. It does not link against bomify, share
 memory with it, or receive anything over stdin — every input arrives as a
@@ -30,8 +30,9 @@ on `PATH`) and never invokes a plugin by any other name or location.
 
 ## Commands
 
-A plugin must implement exactly two subcommands, `pull` and `push`. Both
-take the flags below; italicized flags are shared by both subcommands.
+A plugin must implement exactly three subcommands: `pull`, `push`, and
+`remote`. All three take the flags below; italicized flags are shared by
+all of them.
 
 ### `pull`
 
@@ -73,13 +74,38 @@ On success, the plugin must print a single `Result` JSON object to stdout
 and exit `0`. `hash` is meaningless for a push result and should be left
 unset.
 
+### `remote`
+
+```
+bomify-plugin-<kind> remote --purl <purl> --log <path> --log-color <bool>
+```
+
+Reports where the component `--purl` identifies comes from or is
+published under — its registry, repository, or source location — without
+fetching or publishing anything. bomify uses this to match `--purl`
+against a `bomify distribute` rule scoped by origin (`bomify distribution
+create`'s `--match`), not just by plugin kind.
+
+| Flag | Required | Meaning |
+| --- | --- | --- |
+| `--purl` | yes | *The component's package URL. The plugin derives its answer entirely from this string — `remote` never touches the network, a registry, or any local files.* |
+| `--log` | yes | *See [Logging](#logging).* |
+| `--log-color` | yes | *See [Logging](#logging).* |
+
+On success, the plugin must print a single `RemoteResult` JSON object (see
+[RemoteResult](#remoteresult)) to stdout and exit `0`.
+
+`remote` must be a pure function of `--purl`: unlike `pull`/`push`, it
+never touches the data directory, is never skipped or cached by bomify,
+and may be invoked far more often per purl than `pull`/`push` ever are.
+
 ## Standard streams
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one `Result` JSON object, printed only on success. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails the whole operation if it isn't exactly that. |
+| stdout | Exactly one `Result` or `RemoteResult` JSON object (depending on the subcommand), printed only on success. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails the whole operation if it isn't exactly that. |
 | stderr | A single, short, human-readable fatal error message, written only on failure (non-zero exit). bomify captures this and appends it verbatim to the error it reports. Like stdout, this is not a place for routine logging. |
-| exit code | `0` on success (with a valid `Result` on stdout). Any non-zero value on failure. |
+| exit code | `0` on success (with valid JSON on stdout). Any non-zero value on failure. |
 
 A plugin's own routine/diagnostic logging — anything you'd otherwise be
 tempted to write to stdout or stderr — must go to the file named by
@@ -139,11 +165,31 @@ normalize it itself. A plugin unable to compute the requested algorithm
 should not error because of that alone; it should simply omit `hash` from
 its result.
 
+## RemoteResult
+
+The single JSON object a plugin's `remote` subcommand prints to stdout on
+success:
+
+```json
+{ "remote": "docker.io/library/nginx" }
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `remote` | string | yes | Where this component comes from or is published under, in whatever shape is meaningful for this plugin's kind (a registry/repository address, a source URL, etc.) — the same address `pull` itself resolves the purl to, just without a specific tag/digest/version. The only thing bomify relies on structurally is that two components sharing a common origin (e.g. the same registry namespace) report a `remote` sharing a common `/`-separated prefix, since that's what a `bomify distribute` rule's `--match` compares against. |
+
+Go plugins should build this as a `plugin.RemoteResult` (see
+[`pkg/plugin`](../pkg/plugin)) and print it with `(*RemoteResult).Print`,
+rather than hand-rolling the JSON encoding.
+
+A machine-readable version of this schema is published at
+[`remote-result.schema.json`](remote-result.schema.json).
+
 ## Logging
 
 A plugin must never write its own routine logging to stdout (reserved for
-the `Result` JSON) or stderr (reserved for a single fatal message on
-failure). Instead:
+the `Result`/`RemoteResult` JSON) or stderr (reserved for a single fatal
+message on failure). Instead:
 
 - `--log <path>` names a file, created empty by bomify immediately before
   the plugin starts, that the plugin should open (for appending) and write
@@ -171,8 +217,8 @@ rather than constructing one by hand.
 All caching, concurrency control, and state tracking across invocations is
 bomify's responsibility, not the plugin's:
 
-- A plugin is invoked fresh for every `pull`/`push`; it never needs to
-  remember anything between invocations.
+- A plugin is invoked fresh for every `pull`/`push`/`remote`; it never
+  needs to remember anything between invocations.
 - bomify — not the plugin — decides when a `pull` can be skipped because
   an equivalent one already succeeded, and guards against two concurrent
   `pull`s for the same purl racing each other.
@@ -182,4 +228,6 @@ bomify's responsibility, not the plugin's:
 
 A plugin should be a pure function of its flags: given the same `--purl`
 (and, for `push`, the same `--input`), do the same thing, and leave
-anything more stateful than that to bomify.
+anything more stateful than that to bomify. `remote` is the purest of the
+three — given the same `--purl`, it must always report the same `remote`,
+independent of anything on disk, the network, or a prior `pull`/`push`.
