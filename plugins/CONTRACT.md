@@ -1,14 +1,14 @@
-# bomify plugin contract
+# Plugin contract
 
 This is the authoritative specification for the subprocess contract between
 `bomify` and a `bomify-plugin-<kind>` binary. It's aimed at anyone writing a
 plugin, first- or third-party. The Go types referenced below
 (`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
-[`pkg/plugin`](../pkg/plugin) — a small library, importable from any Go
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) — a small library, importable from any Go
 module, and `plugin.OpenLog`/`(*Result).Print`/`(*RemoteResult).Print` are
 ready-made helpers a Go-based plugin can use instead of re-implementing
-this spec by hand. See also [`README.md`](README.md) for the list of
-first-party plugins and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for how
+this spec by hand. See also [`README.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md) for the list of
+first-party plugins and [`ARCHITECTURE.md`](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md) for how
 this contract fits into bomify's design as a whole.
 
 A plugin is a standalone executable. It does not link against bomify, share
@@ -183,13 +183,13 @@ and bomify treats them identically:
 | `hash.value` | string | present only together with `hash.algorithm` | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
 
 Go plugins should build this as a `plugin.Result` (see
-[`pkg/plugin`](../pkg/plugin)) and print it with `(*Result).Print`,
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with `(*Result).Print`,
 rather than hand-rolling the JSON encoding.
 
 A machine-readable version of this schema, suitable for validating a
 plugin's actual stdout output with any off-the-shelf JSON Schema
 validator, is published at
-[`result.schema.json`](result.schema.json).
+[`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json).
 
 ### Hash algorithms
 
@@ -244,11 +244,11 @@ what a `bomify distribute` rule's `--match` compares against, and what
 gets substituted out of it on a match.
 
 Go plugins should build this as a `plugin.RemoteResult` (see
-[`pkg/plugin`](../pkg/plugin)) and print it with `(*RemoteResult).Print`,
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with `(*RemoteResult).Print`,
 rather than hand-rolling the JSON encoding.
 
 A machine-readable version of this schema is published at
-[`remote-result.schema.json`](remote-result.schema.json).
+[`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
 
 ## Logging
 
@@ -273,7 +273,7 @@ message on failure). Instead:
   visibility into what bomify's stdout is ultimately connected to.
 
 Go plugins should call `plugin.OpenLog(logPath, logColor)` (see
-[`pkg/plugin`](../pkg/plugin)) to get a ready-made
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) to get a ready-made
 `*slog.Logger` for this, in the same format bomify's own CLI logging uses,
 rather than constructing one by hand.
 

@@ -3,3 +3,9 @@
 *.exe
 *.test
 .DS_Store
+
+# docsite/docs/usage/reference/ is a copy of docs/reference/, made by
+# `make docs-site`/`docs-site-sync`; docsite/site/ is the built static
+# site. Neither is committed — see the docs-site-sync Makefile target.
+/docsite/docs/usage/reference/
+/docsite/site/

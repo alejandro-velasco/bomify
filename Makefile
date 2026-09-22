@@ -45,7 +45,7 @@ RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/a
 #
 ################################################################################
 
-.PHONY: build build-container push-container plugins dist docs diagrams test run tidy clean
+.PHONY: build build-container push-container plugins dist docs diagrams docs-site-sync docs-site docs-site-serve test run tidy clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -74,6 +74,26 @@ docs:
 # alongside it. See hack/diagrams.sh.
 diagrams:
 	hack/diagrams.sh
+
+# docs-site-sync copies the generated CLI reference into docsite/docs, so
+# there's exactly one source of truth for it, never hand-edited under
+# docsite/. Depends on docs so it's always fresh. (plugins/README.md is
+# included live into docsite/docs/getting-started/installing-plugins.md via
+# a pymdownx.snippets directive instead — no copy needed for that one.)
+docs-site-sync: docs
+	rm -rf docsite/docs/usage/reference
+	mkdir -p docsite/docs/usage/reference
+	cp docs/reference/*.md docsite/docs/usage/reference/
+
+# docs-site builds the docsite/ Zensical site into docsite/site. Requires
+# zensical (`pip install zensical`).
+docs-site: docs-site-sync
+	cd docsite && zensical build --clean
+
+# docs-site-serve is docs-site, but for local preview via zensical's
+# built-in dev server instead of a one-shot build.
+docs-site-serve: docs-site-sync
+	cd docsite && zensical serve
 
 install: build plugins
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))

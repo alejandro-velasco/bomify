@@ -4,6 +4,8 @@
 
 Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time.
 
+**[Docs site](https://alejandro-velasco.github.io/bomify/)** — installation, a guided quickstart, the full CLI reference, and a guide to building a plugin.
+
 ## Status
 
 **Pre-Alpha.** bomify is under active early development. Its CLI flags, data

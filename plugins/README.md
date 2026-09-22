@@ -1,15 +1,16 @@
-# bomify plugins
+# Plugins
 
 Plugins created and supported by the bomify project itself, as opposed to
 third-party plugins a user might install separately. Each subdirectory here
 is a standalone `bomify-plugin-<kind>` binary implementing the
-pull/push/remote contract specified in [`CONTRACT.md`](CONTRACT.md).
+pull/push/remote contract specified in
+[`CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/CONTRACT.md).
 
 | Plugin                                        | Kind     | Backing library                                                                   |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|
-| [`bomify-plugin-oci`](./bomify-plugin-oci)     | `oci`    | [go-containerregistry/pkg/crane](https://github.com/google/go-containerregistry)   |
-| [`bomify-plugin-helm`](./bomify-plugin-helm)   | `helm`   | [helm.sh/helm/v3/pkg/action](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) (Pull/Push, the same code behind the `helm` CLI) |
-| [`bomify-plugin-generic`](./bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push |
+| [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)     | `oci`    | [go-containerregistry/pkg/crane](https://github.com/google/go-containerregistry)   |
+| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [helm.sh/helm/v3/pkg/action](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) (Pull/Push, the same code behind the `helm` CLI) |
+| [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push |
 
 `bomify-plugin-helm`'s `pull` supports both classic HTTP(S) chart
 repositories (`pkg:helm/<name>@<version>?repository_url=https://...`) and
@@ -30,7 +31,7 @@ sending it to `--remote` exactly as given (with a correct
 upload URL, where appending anything to `--remote` would invalidate it.
 
 All three support `pull --check`/`push --check` (see
-[`CONTRACT.md`](CONTRACT.md#check-mode)), with the same per-plugin limits
+[`CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/CONTRACT.md#check-mode)), with the same per-plugin limits
 their real `pull`/`push` have: `bomify-plugin-helm`'s `push --check` is
 OCI-only, same as `push` itself, and `bomify-plugin-generic`'s
 `push --check` is best-effort only (a HEAD, never a real PUT — see its
@@ -38,5 +39,6 @@ own doc comment on `CheckPush`), since a presigned upload URL can't be
 verified without actually writing to it.
 
 To add a new one, create `plugins/bomify-plugin-<kind>`, implement `pull`,
-`push`, and `remote` per [`CONTRACT.md`](CONTRACT.md), and add a row
-above.
+`push`, and `remote` per
+[`CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/CONTRACT.md),
+and add a row above.

@@ -31,6 +31,37 @@ change touches a command's flags, arguments, or `Short`/`Long` description,
 run `make docs` in the same pass and commit the regenerated files — never
 hand-edit anything under `docs/reference/`.
 
+## The docs site (`docsite/`)
+
+[`docsite/`](docsite) is a [Zensical](https://zensical.org) site published to
+GitHub Pages (`.github/workflows/docs-site.yml`). Several of its pages
+source from a doc that lives elsewhere in the repo — never hand-edit any
+of them into a second, separately-worded copy of the same content:
+
+- `usage/reference/` is a copy of [`docs/reference/`](docs/reference),
+  made by `make docs-site`/`docs-site-sync` — regenerate the source with
+  `make docs`, as already documented above, and re-run `docs-site-sync`
+  to pick it up. Never hand-edit files under `usage/reference/` directly.
+- `getting-started/installing-plugins.md` and `development/contract.md`
+  are thin wrapper pages (front matter for a nav icon, plus one line)
+  that include [`plugins/README.md`](plugins/README.md) and
+  [`plugins/CONTRACT.md`](plugins/CONTRACT.md) live via a
+  `pymdownx.snippets` directive (e.g. `--8<-- "plugins/README.md"`,
+  resolved against the `base_path` set in `docsite/zensical.toml`) rather
+  than a copy — edit the source files themselves, never the wrapper
+  pages. Keep their links absolute GitHub URLs, not repo-relative, since
+  the include is rendered from a different directory than the original
+  file (`docsite/docs/development/building-a-plugin.md` is the one place
+  it's correct to link to `contract.md` in-site instead, since that page
+  only exists inside `docsite/`).
+
+The one part of `docsite/` that does need hand-maintenance is the command
+list in [`docsite/zensical.toml`](docsite/zensical.toml)'s `nav` — update it
+when a command is added, removed, or renamed. Everything else under
+`docsite/docs/` is hand-written prose; keep it pointing at (not copying)
+`ARCHITECTURE.md`, `plugins/CONTRACT.md`, etc. the same way it does today,
+rather than restating their content.
+
 ## Keep README.md current
 
 [README.md](README.md) should stay high level: how to run the tool and its
