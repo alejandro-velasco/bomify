@@ -26,7 +26,7 @@ func New(verbose bool) *slog.Logger {
 // true; color enables ANSI color codes in the output.
 //
 // Plugin binaries use this to log to the file named by their --log flag
-// (see plugins/CONTRACT.md), passing --log-color through as color: only
+// (see plugins/COMPONENT-CONTRACT.md), passing --log-color through as color: only
 // bomify, which streams that file to its own stdout, knows whether those
 // bytes will land on a real terminal.
 func NewFile(w io.Writer, color, verbose bool) *slog.Logger {

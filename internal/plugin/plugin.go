@@ -1,7 +1,7 @@
 // Package plugin dispatches SBOM components to external "bomify-plugin-*"
 // helper binaries, letting bomify delegate component types it doesn't know
 // how to build itself (e.g. container images) to a separate executable.
-// See plugins/CONTRACT.md for the full subprocess contract a plugin must
+// See plugins/COMPONENT-CONTRACT.md for the full subprocess contract a plugin must
 // implement, and pkg/plugin for the Go library (Result, Hash, Print,
 // OpenLog) a plugin author — first- or third-party — implements it with;
 // this package is bomify's own caller-side orchestration around that
@@ -552,7 +552,7 @@ func waitForPIDFile(path string, owner int) {
 const logStreamPollInterval = 100 * time.Millisecond
 
 // run invokes the plugin binary at path with "component <verb>" (see
-// plugins/CONTRACT.md), passing purl, logFile (as --log), and the given
+// plugins/COMPONENT-CONTRACT.md), passing purl, logFile (as --log), and the given
 // extra arguments, and returns its stdout parsed as T — pluginlib.Result
 // for pull/push, pluginlib.RemoteResult for remote. It creates logFile
 // fresh before starting the plugin and, if verbose, streams its content

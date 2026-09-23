@@ -8,7 +8,7 @@ bomify doesn't know how to fetch or publish anything itself — every purl
 type is handled by an external `bomify-plugin-<kind>` binary's **component
 plugin** subcommands. This page is a guided walkthrough for writing one;
 it isn't the spec. The
-[**component plugin contract**](contract.md)
+[**component plugin contract**](component-contract.md)
 is the authoritative, normative reference for every flag, JSON shape, and
 edge case — read it before you start, and treat anything here that seems to
 disagree with it as this page being out of date, not the other way around.
@@ -41,7 +41,7 @@ A component plugin implements three subcommands, nested under `component`
 optional `--check` mode on `pull`/`push` for verifying an operation would
 succeed without actually doing it. Each has its own required/optional flags
 and JSON result shape, all specified in
-[`CONTRACT.md`](contract.md#commands):
+[`COMPONENT-CONTRACT.md`](component-contract.md#commands):
 
 - **`component pull`** fetches the component `--purl` identifies into
   `--output`, and reports a content hash for `--hash` if it can compute
@@ -100,15 +100,15 @@ trivial) work, print a `plugin.RemoteResult`.
 
 - [ ] Implement `component pull`, `component push`, and `component remote`
       exactly per
-      [`CONTRACT.md`](contract.md) —
+      [`COMPONENT-CONTRACT.md`](component-contract.md) —
       required/optional flags, the `Result`/`RemoteResult` JSON shapes, exit
       codes.
 - [ ] Nothing but the one JSON result on stdout, ever — no progress output,
       no debug prints.
 - [ ] Route all routine logging through `--log`.
 - [ ] Support `--check` on `pull`/`push` if there's a genuinely inexpensive
-      way to verify the operation would succeed (see `CONTRACT.md`'s
-      [check mode](contract.md#check-mode)
+      way to verify the operation would succeed (see `COMPONENT-CONTRACT.md`'s
+      [check mode](component-contract.md#check-mode)
       section) — and never fall back to the real, mutating operation just
       to implement it.
 - [ ] Validate your plugin's actual JSON output against

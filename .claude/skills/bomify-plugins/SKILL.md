@@ -15,7 +15,7 @@ since they don't share requirements:
   discovery, every subcommand and its flags, stdout/stderr/exit-code
   rules, each JSON result shape, hash algorithm names, logging via
   `--log`, and what a plugin does *not* need to handle — is specified in
-  [`plugins/CONTRACT.md`](../../../plugins/CONTRACT.md).
+  [`plugins/COMPONENT-CONTRACT.md`](../../../plugins/COMPONENT-CONTRACT.md).
 - **SBOM generation plugins** (`sbom generate`, one per deployment
   medium) — a deliberately much lighter contract, standalone-runnable
   and unrelated to the component contract's flags/JSON/logging/caching
@@ -45,8 +45,8 @@ has grown since:
   plugins have no bomify-specific JSON envelope (see
   `SBOM-CONTRACT.md`). Glob for the current set rather than assuming
   these two are the only ones. Update the matching schema file alongside
-  `CONTRACT.md` whenever a result shape changes, and add a new one if
-  `CONTRACT.md` grows a new JSON shape.
+  `COMPONENT-CONTRACT.md` whenever a result shape changes, and add a new one if
+  `COMPONENT-CONTRACT.md` grows a new JSON shape.
 - [`pkg/plugin`](../../../pkg/plugin) — the Go library implementing the
   **component** contract's Go-facing side: importable from any Go
   module, one struct + `Print` method per JSON shape (e.g.
@@ -71,7 +71,7 @@ has grown since:
    shape(s) it must print (component contract only — SBOM generation
    plugins print whatever they like).
 3. If the change is a breaking change or adds a new requirement to a
-   contract itself, update `CONTRACT.md` or `SBOM-CONTRACT.md` (and, for
+   contract itself, update `COMPONENT-CONTRACT.md` or `SBOM-CONTRACT.md` (and, for
    the component contract, any `plugins/*.schema.json` whose shape
    changed, adding a new one if it grew a new JSON shape) in the same
    pass, and verify every existing first-party plugin under `plugins/`

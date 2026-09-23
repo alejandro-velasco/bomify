@@ -1,7 +1,7 @@
 // Command bomify-plugin-generic is bomify's plugin for plain HTTP
 // artifacts — anything reachable by a simple GET/PUT that doesn't fit a
 // more specific plugin. It implements the pull/push contract described in
-// plugins/CONTRACT.md:
+// plugins/COMPONENT-CONTRACT.md:
 //
 //	bomify-plugin-generic pull --purl '<component purl>' --output <dir>
 //	bomify-plugin-generic push --purl '<component purl>' --input <dir> --remote <endpoint>

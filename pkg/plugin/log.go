@@ -9,7 +9,7 @@ import (
 )
 
 // OpenLog opens path — the file named by a plugin invocation's --log flag
-// (see plugins/CONTRACT.md) — for appending, and returns a logger writing
+// (see plugins/COMPONENT-CONTRACT.md) — for appending, and returns a logger writing
 // to it in the same format bomify's own CLI logging uses, plus a close
 // func the caller should defer. color should be whatever value the
 // plugin's --log-color flag was given, and enables ANSI color codes in

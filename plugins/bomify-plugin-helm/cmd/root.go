@@ -24,12 +24,12 @@ func NewRootCmd() *cobra.Command {
 }
 
 // componentCmd groups the component plugin contract's pull/push/remote
-// subcommands (see plugins/CONTRACT.md), kept independent of any other
+// subcommands (see plugins/COMPONENT-CONTRACT.md), kept independent of any other
 // plugin class (e.g. sbom generate) this binary might also implement.
 func componentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "component",
-		Short: "Component plugin subcommands (pull/push/remote) — see plugins/CONTRACT.md",
+		Short: "Component plugin subcommands (pull/push/remote) — see plugins/COMPONENT-CONTRACT.md",
 	}
 
 	cmd.AddCommand(newPullCmd())

@@ -4,7 +4,7 @@ This is the specification for the subprocess contract between `bomify`
 and a `bomify-plugin-<kind>` binary's **SBOM generation** subcommand,
 `sbom generate`, which `bomify sbom generate <kind> [flags]` delegates
 to. It's an entirely independent contract from the [component plugin
-contract](CONTRACT.md) (`component pull`/`component push`/`component
+contract](COMPONENT-CONTRACT.md) (`component pull`/`component push`/`component
 remote`, which `bomify build`/`bomify distribute` use) — a plugin binary
 may implement either, both, or neither, and implementing one owes
 nothing to the other. `<kind>` here names a deployment medium (e.g.
@@ -13,7 +13,7 @@ discovery rules.
 
 ## Naming and discovery
 
-Identical to the [component contract's](CONTRACT.md#naming-and-discovery):
+Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
 a plugin for medium `<kind>` must be named exactly `bomify-plugin-<kind>`
 (`bomify-plugin-<kind>.exe` on Windows) and discoverable on `PATH`.
 `bomify sbom generate <kind> ...` looks up `bomify-plugin-<kind>` the
