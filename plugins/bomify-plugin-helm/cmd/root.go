@@ -6,7 +6,9 @@ import (
 )
 
 // NewRootCmd builds the bomify-plugin-helm root command and wires up its
-// component pull/push/remote subcommands.
+// component pull/push/remote subcommands and its sbom generate
+// subcommand — two entirely independent plugin classes this one binary
+// happens to implement both of.
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "bomify-plugin-helm",
@@ -16,6 +18,7 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	rootCmd.AddCommand(componentCmd())
+	rootCmd.AddCommand(sbomCmd())
 
 	return rootCmd
 }

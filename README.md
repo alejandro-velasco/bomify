@@ -52,6 +52,12 @@ bomify logout registry.example.com
 
 See [`docs/reference`](docs/reference) for the full CLI reference, covering every command and flag (regenerate it with `make docs` after changing a command).
 
+Generate an SBOM for a Helm chart, rather than starting from one:
+
+```sh
+bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6 > postgresql.cdx.json
+```
+
 ## Container
 
 [`Containerfile`](Containerfile) builds an image with `bomify` and its first-party plugins on `PATH`:
