@@ -42,11 +42,11 @@ of them into a second, separately-worded copy of the same content:
   made by `make docs-site`/`docs-site-sync` — regenerate the source with
   `make docs`, as already documented above, and re-run `docs-site-sync`
   to pick it up. Never hand-edit files under `usage/reference/` directly.
-- `getting-started/installing-plugins.md`, `development/contract.md`, and
+- `getting-started/installing-plugins.md`, `development/component-contract.md`, and
   `development/sbom-contract.md` are thin wrapper pages (front matter for
   a nav icon, plus one line) that include
   [`plugins/README.md`](plugins/README.md),
-  [`plugins/CONTRACT.md`](plugins/CONTRACT.md), and
+  [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md), and
   [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) live via a
   `pymdownx.snippets` directive (e.g. `--8<-- "plugins/README.md"`,
   resolved against the `base_path` set in `docsite/zensical.toml`) rather
@@ -54,14 +54,14 @@ of them into a second, separately-worded copy of the same content:
   pages. Keep their links absolute GitHub URLs, not repo-relative, since
   the include is rendered from a different directory than the original
   file (`docsite/docs/development/building-a-plugin.md` is the one place
-  it's correct to link to `contract.md`/`sbom-contract.md` in-site
-  instead, since those pages only exist inside `docsite/`).
+  it's correct to link to `component-contract.md`/`sbom-contract.md`
+  in-site instead, since those pages only exist inside `docsite/`).
 
 The one part of `docsite/` that does need hand-maintenance is the command
 list in [`docsite/zensical.toml`](docsite/zensical.toml)'s `nav` — update it
 when a command is added, removed, or renamed. Everything else under
 `docsite/docs/` is hand-written prose; keep it pointing at (not copying)
-`ARCHITECTURE.md`, `plugins/CONTRACT.md`, etc. the same way it does today,
+`ARCHITECTURE.md`, `plugins/COMPONENT-CONTRACT.md`, etc. the same way it does today,
 rather than restating their content.
 
 ## Keep README.md current
@@ -92,7 +92,7 @@ you're changing current, and never let a change to one imply the other:
 
 - Keep [plugins/README.md](plugins/README.md) current if making any high
   level changes to plugins, affecting their main features.
-- Keep [plugins/CONTRACT.md](plugins/CONTRACT.md) current if making any
+- Keep [plugins/COMPONENT-CONTRACT.md](plugins/COMPONENT-CONTRACT.md) current if making any
   breaking changes or adding new requirements to the component contract.
 - Keep [plugins/SBOM-CONTRACT.md](plugins/SBOM-CONTRACT.md) current if
   making any breaking changes or adding new requirements to the SBOM

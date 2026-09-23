@@ -136,7 +136,7 @@ nothing afterward, since nothing was actually pulled.
 
 See [`plugins/README.md`](plugins/README.md) for the first-party plugins
 bomify ships (`oci`, `helm`, `generic`), and
-[`plugins/CONTRACT.md`](plugins/CONTRACT.md) for the full, authoritative
+[`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) for the full, authoritative
 specification of the component contract above — required/optional flags,
 `--check` mode, the exact `Result` JSON schema, valid hash algorithm
 names, and the logging contract — that a third-party plugin must
@@ -307,7 +307,7 @@ A few things worth keeping in mind when changing any of the above:
   code for talking to any specific package ecosystem — that boundary is
   the component plugin contract's `component pull`/`component push`/
   `component remote` JSON-over-subprocess contract specified in
-  [`plugins/CONTRACT.md`](plugins/CONTRACT.md), which is deliberately
+  [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md), which is deliberately
   minimal so a third-party plugin needs almost nothing bomify-specific to
   implement (its optional Go helper library, `pkg/plugin`, is importable
   from any module for exactly that reason). SBOM generation plugins

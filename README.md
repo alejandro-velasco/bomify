@@ -80,7 +80,7 @@ docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tm
 
 Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch works, and both [`plugins/CONTRACT.md`](plugins/CONTRACT.md) (component plugins) and [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) (SBOM generation plugins) for the two independent contracts a plugin can implement.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch works, and both [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) (component plugins) and [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) (SBOM generation plugins) for the two independent contracts a plugin can implement.
 
 ## License
 
