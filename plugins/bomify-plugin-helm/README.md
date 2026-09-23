@@ -78,6 +78,10 @@ explicitly on the command line always takes precedence over the same key
 in the manifest**; `--values` is all-or-nothing (an explicit `--values`
 replaces the manifest's `values` list, it doesn't merge with it).
 
+The manifest can also have an `extraComponents` list of CycloneDX
+components (any fields `cyclonedx-go`'s `Component` supports), appended
+to the generated SBOM as-is — no flag equivalent, no validation.
+
 With the manifest above, generating the SBOM is just:
 
 ```

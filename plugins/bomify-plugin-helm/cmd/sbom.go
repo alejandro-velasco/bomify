@@ -64,7 +64,9 @@ Every flag above can instead be set in a YAML manifest — --manifest's
 default, "bomify-helm-sbom.yaml", is read if present in the working
 directory (silently skipped if it isn't); a --manifest named explicitly
 must exist. A flag given explicitly on the command line always takes
-precedence over the same key in the manifest.`,
+precedence over the same key in the manifest. The manifest can also
+have an "extraComponents" list of CycloneDX components, appended to the
+generated SBOM as-is.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
@@ -94,6 +96,15 @@ precedence over the same key in the manifest.`,
 			bom, err := chart.Generate(opts, logger)
 			if err != nil {
 				return err
+			}
+
+			if len(m.ExtraComponents) > 0 {
+				existing := []cdx.Component{}
+				if bom.Components != nil {
+					existing = *bom.Components
+				}
+				merged := appendExtraComponents(existing, m.ExtraComponents)
+				bom.Components = &merged
 			}
 
 			w := cmd.OutOrStdout()
