@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +61,59 @@ output: postgresql.cdx.json
 		m.KubeVersion != want.KubeVersion || m.Output != want.Output ||
 		len(m.Values) != len(want.Values) || m.Values[0] != want.Values[0] || m.Values[1] != want.Values[1] {
 		t.Errorf("loadManifest() = %+v, want %+v", m, want)
+	}
+}
+
+func TestLoadManifestParsesExtraComponents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.yaml")
+	writeFile(t, path, `
+chart: postgresql
+repo: oci://registry-1.docker.io/bitnamicharts
+extraComponents:
+  - type: library
+    name: some-lib
+    version: "1.0"
+    purl: "pkg:generic/some-lib@1.0"
+`)
+
+	m, err := loadManifest(path, true)
+	if err != nil {
+		t.Fatalf("loadManifest() error = %v", err)
+	}
+
+	if len(m.ExtraComponents) != 1 {
+		t.Fatalf("ExtraComponents = %+v, want 1 entry", m.ExtraComponents)
+	}
+	got := m.ExtraComponents[0]
+	if got.Type != cdx.ComponentTypeLibrary || got.Name != "some-lib" || got.Version != "1.0" || got.PackageURL != "pkg:generic/some-lib@1.0" {
+		t.Errorf("ExtraComponents[0] = %+v, want type=library name=some-lib version=1.0 purl=pkg:generic/some-lib@1.0", got)
+	}
+}
+
+func TestAppendExtraComponents(t *testing.T) {
+	existing := []cdx.Component{{Name: "chart-component"}}
+	extra := []cdx.Component{{Name: "custom-one"}, {Name: "custom-two"}}
+
+	got := appendExtraComponents(existing, extra)
+
+	want := []string{"chart-component", "custom-one", "custom-two"}
+	if len(got) != len(want) {
+		t.Fatalf("appendExtraComponents() = %+v, want %d entries", got, len(want))
+	}
+	for i, name := range want {
+		if got[i].Name != name {
+			t.Errorf("appendExtraComponents()[%d].Name = %q, want %q", i, got[i].Name, name)
+		}
+	}
+}
+
+func TestAppendExtraComponentsEmpty(t *testing.T) {
+	existing := []cdx.Component{{Name: "chart-component"}}
+
+	got := appendExtraComponents(existing, nil)
+
+	if len(got) != 1 || got[0].Name != "chart-component" {
+		t.Errorf("appendExtraComponents() with no extra = %+v, want unchanged", got)
 	}
 }
 

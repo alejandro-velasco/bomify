@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
@@ -27,6 +28,11 @@ type manifest struct {
 	ReleaseName string   `json:"release-name,omitempty"`
 	KubeVersion string   `json:"kube-version,omitempty"`
 	Output      string   `json:"output,omitempty"`
+	// ExtraComponents are appended to the generated SBOM's components
+	// as-is — no validation or transformation — for anything Generate
+	// itself has no way to discover (e.g. a component not reachable
+	// through a rendered pod spec).
+	ExtraComponents []cdx.Component `json:"extraComponents,omitempty"`
 }
 
 // loadManifest reads and parses the YAML manifest at path. A missing
@@ -74,4 +80,11 @@ func resolveValues(cmd *cobra.Command, flagValues, manifestValues []string) []st
 		return flagValues
 	}
 	return manifestValues
+}
+
+// appendExtraComponents appends extra onto components as-is, unlike
+// resolveValues/resolveString — there's no flag counterpart to take
+// precedence over, so extraComponents is purely additive.
+func appendExtraComponents(components []cdx.Component, extra []cdx.Component) []cdx.Component {
+	return append(components, extra...)
 }
