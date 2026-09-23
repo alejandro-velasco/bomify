@@ -3,8 +3,16 @@
 Plugins created and supported by the bomify project itself, as opposed to
 third-party plugins a user might install separately. Each subdirectory here
 is a standalone `bomify-plugin-<kind>` binary implementing the
-pull/push/remote contract specified in
+**component plugin** contract's `component pull`/`component push`/
+`component remote` subcommands, specified in
 [`CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/CONTRACT.md).
+
+Component plugins are one of two entirely independent plugin classes a
+`bomify-plugin-<kind>` binary can implement. The other, **SBOM generation
+plugins** (`sbom generate`, specified in
+[`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)),
+inspect a deployment medium and build a fresh SBOM for it — none of the
+plugins below implement it yet.
 
 | Plugin                                        | Kind     | Backing library                                                                   |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|
@@ -38,7 +46,7 @@ OCI-only, same as `push` itself, and `bomify-plugin-generic`'s
 own doc comment on `CheckPush`), since a presigned upload URL can't be
 verified without actually writing to it.
 
-To add a new one, create `plugins/bomify-plugin-<kind>`, implement `pull`,
-`push`, and `remote` per
+To add a new component plugin, create `plugins/bomify-plugin-<kind>`,
+implement `component pull`, `component push`, and `component remote` per
 [`CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/CONTRACT.md),
 and add a row above.

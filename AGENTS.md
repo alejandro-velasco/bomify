@@ -42,18 +42,20 @@ of them into a second, separately-worded copy of the same content:
   made by `make docs-site`/`docs-site-sync` — regenerate the source with
   `make docs`, as already documented above, and re-run `docs-site-sync`
   to pick it up. Never hand-edit files under `usage/reference/` directly.
-- `getting-started/installing-plugins.md` and `development/contract.md`
-  are thin wrapper pages (front matter for a nav icon, plus one line)
-  that include [`plugins/README.md`](plugins/README.md) and
-  [`plugins/CONTRACT.md`](plugins/CONTRACT.md) live via a
+- `getting-started/installing-plugins.md`, `development/contract.md`, and
+  `development/sbom-contract.md` are thin wrapper pages (front matter for
+  a nav icon, plus one line) that include
+  [`plugins/README.md`](plugins/README.md),
+  [`plugins/CONTRACT.md`](plugins/CONTRACT.md), and
+  [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) live via a
   `pymdownx.snippets` directive (e.g. `--8<-- "plugins/README.md"`,
   resolved against the `base_path` set in `docsite/zensical.toml`) rather
   than a copy — edit the source files themselves, never the wrapper
   pages. Keep their links absolute GitHub URLs, not repo-relative, since
   the include is rendered from a different directory than the original
   file (`docsite/docs/development/building-a-plugin.md` is the one place
-  it's correct to link to `contract.md` in-site instead, since that page
-  only exists inside `docsite/`).
+  it's correct to link to `contract.md`/`sbom-contract.md` in-site
+  instead, since those pages only exist inside `docsite/`).
 
 The one part of `docsite/` that does need hand-maintenance is the command
 list in [`docsite/zensical.toml`](docsite/zensical.toml)'s `nav` — update it
@@ -82,11 +84,21 @@ When a PR needs to be written for this repo:
 
 ## Keep plugin docs current
 
+bomify's plugin contract is actually two entirely independent contracts a
+`bomify-plugin-<kind>` binary can implement — the **component plugin**
+contract (`component pull`/`component push`/`component remote`) and the
+**SBOM generation plugin** contract (`sbom generate`). Keep whichever
+you're changing current, and never let a change to one imply the other:
+
 - Keep [plugins/README.md](plugins/README.md) current if making any high
   level changes to plugins, affecting their main features.
 - Keep [plugins/CONTRACT.md](plugins/CONTRACT.md) current if making any
-  breaking changes or adding new requirements to the contract.
+  breaking changes or adding new requirements to the component contract.
+- Keep [plugins/SBOM-CONTRACT.md](plugins/SBOM-CONTRACT.md) current if
+  making any breaking changes or adding new requirements to the SBOM
+  generation contract.
 - Always update [plugins/result.schema.json](plugins/result.schema.json) if
-  updating the plugin result schema.
+  updating the component plugin result schema (SBOM generation plugins
+  have no bomify-specific result schema — see SBOM-CONTRACT.md).
 - If breaking changes or updates are made to the plugins, ensure the
-  plugins still abide by the plugin contract.
+  plugins still abide by whichever plugin contract(s) they implement.

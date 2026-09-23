@@ -551,13 +551,14 @@ func waitForPIDFile(path string, owner int) {
 // for new content while the plugin is still running.
 const logStreamPollInterval = 100 * time.Millisecond
 
-// run invokes the plugin binary at path with subcommand verb, passing purl,
-// logFile (as --log), and the given extra arguments, and returns its
-// stdout parsed as T — pluginlib.Result for pull/push, pluginlib.RemoteResult
-// for remote. It creates logFile fresh before starting the plugin and, if
-// verbose, streams its content live to stdout for the duration of the
-// run; either way, logFile exists only to make that streaming possible,
-// so run removes it again once the plugin exits.
+// run invokes the plugin binary at path with "component <verb>" (see
+// plugins/CONTRACT.md), passing purl, logFile (as --log), and the given
+// extra arguments, and returns its stdout parsed as T — pluginlib.Result
+// for pull/push, pluginlib.RemoteResult for remote. It creates logFile
+// fresh before starting the plugin and, if verbose, streams its content
+// live to stdout for the duration of the run; either way, logFile exists
+// only to make that streaming possible, so run removes it again once the
+// plugin exits.
 func run[T any](path, verb, purl, logFile string, verbose bool, extraArgs ...string) (*T, error) {
 	if err := prepareLogFile(logFile); err != nil {
 		return nil, err
@@ -569,7 +570,7 @@ func run[T any](path, verb, purl, logFile string, verbose bool, extraArgs ...str
 	// own stdout, and only when verbose (streamLog runs at all).
 	color := verbose && logging.SupportsColor(os.Stdout)
 
-	args := append([]string{verb, "--purl", purl, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
+	args := append([]string{"component", verb, "--purl", purl, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
 	cmd := exec.Command(path, args...)
 
 	var stdout, stderr bytes.Buffer

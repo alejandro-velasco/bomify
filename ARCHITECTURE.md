@@ -72,6 +72,20 @@ layer behind — only ever a missing one, which just triggers a redo.
 
 ## Plugin architecture
 
+A `bomify-plugin-<kind>` binary can implement either, both, or neither of
+two entirely independent plugin classes:
+
+- **Component plugins** — `component pull`/`component push`/`component
+  remote`, described below, which `bomify build`/`bomify distribute` use
+  to fetch and publish the individual components an SBOM describes.
+- **SBOM generation plugins** — `sbom generate`, described in its own
+  subsection [further down](#sbom-generation), which `bomify sbom
+  generate` delegates to in order to build a fresh SBOM for a deployment
+  medium. It shares nothing with the component contract beyond the
+  `bomify-plugin-<kind>` binary-naming/discovery convention.
+
+### Component plugins
+
 Neither `bomify build` nor `bomify distribute` know how to fetch or publish
 anything themselves. For each SBOM component they:
 
@@ -79,16 +93,17 @@ anything themselves. For each SBOM component they:
    `pkg:oci/nginx@1.27` is kind `oci`, `pkg:helm/...` is kind `helm`, and so
    on. A component with no purl, or an unparseable one, fails immediately.
 2. **Find** a `bomify-plugin-<kind>` executable on `PATH` (`plugin.Find`).
-3. **Delegate** to it via a small subprocess contract: `pull`/`push`
-   subcommands taking `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
+3. **Delegate** to it via a small subprocess contract: `component pull`/
+   `component push` subcommands taking
+   `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
    `--purl`/`--input`/`--remote`/`--log`/`--log-color`, the plugin doing the
    real work and reporting a single JSON `{outputPath, message, hash}`
-   object on stdout. `bomify distribute` additionally calls a `remote`
-   subcommand (`--purl`/`--log`/`--log-color`) before `push`, to learn
-   where a component's content currently lives — a pure, stateless query
-   reporting `{remote}` — and resolves the actual destination itself: an
-   explicit `--remote <kind>=<endpoint>` flag first, else the
-   best-matching rule in `conf/distribution.json` (see
+   object on stdout. `bomify distribute` additionally calls a `component
+   remote` subcommand (`--purl`/`--log`/`--log-color`) before `component
+   push`, to learn where a component's content currently lives — a pure,
+   stateless query reporting `{remote}` — and resolves the actual
+   destination itself: an explicit `--remote <kind>=<endpoint>` flag
+   first, else the best-matching rule in `conf/distribution.json` (see
    [`internal/distribution`](internal/distribution)), whose `--match`
    compares against exactly what `remote` reported.
 
@@ -122,13 +137,34 @@ nothing afterward, since nothing was actually pulled.
 See [`plugins/README.md`](plugins/README.md) for the first-party plugins
 bomify ships (`oci`, `helm`, `generic`), and
 [`plugins/CONTRACT.md`](plugins/CONTRACT.md) for the full, authoritative
-specification of the contract above — required/optional flags, `--check`
-mode, the exact `Result` JSON schema, valid hash algorithm names, and the
-logging contract — that a third-party plugin must implement.
+specification of the component contract above — required/optional flags,
+`--check` mode, the exact `Result` JSON schema, valid hash algorithm
+names, and the logging contract — that a third-party plugin must
+implement.
 
 ![Plugin dispatch sequence](docs/diagrams/plugin-dispatch.svg)
 
 *Source: [`docs/diagrams/plugin-dispatch.mmd`](docs/diagrams/plugin-dispatch.mmd)*
+
+### SBOM generation
+
+`bomify sbom generate <kind> [flags]` (`cmd/sbom.go`) is a much thinner
+piece of orchestration than the component dispatch above: it looks up
+`bomify-plugin-<kind>` on `PATH` (the same `plugin.Find` component
+dispatch uses) and execs it as `bomify-plugin-<kind> sbom generate
+[flags]`, wiring the plugin's stdin/stdout/stderr directly to bomify's
+own and propagating its exit code — nothing more. `flags` is passed
+through completely unparsed; bomify imposes no flags, JSON result shape,
+`--log` file, `--check` mode, caching, or concurrency control here, unlike
+the component contract above. This is deliberate: a plugin's `sbom
+generate` must be just as usable run directly
+(`bomify-plugin-<kind> sbom generate [flags]`) as through
+`bomify sbom generate <kind> [flags]`, since bomify contributes nothing
+to the operation beyond locating the binary. See
+[`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) for the full
+(intentionally minimal) contract, and the note at the top of [Plugin
+architecture](#plugin-architecture) above for why this is a wholly
+separate plugin class from component plugins, not a variant of it.
 
 ### Concurrent, idempotent pulls
 
@@ -269,8 +305,12 @@ A few things worth keeping in mind when changing any of the above:
   as "hasn't happened yet."
 - **bomify orchestrates, plugins do the work.** The core binary has no
   code for talking to any specific package ecosystem — that boundary is
-  the pull/push/remote JSON-over-subprocess contract specified in
+  the component plugin contract's `component pull`/`component push`/
+  `component remote` JSON-over-subprocess contract specified in
   [`plugins/CONTRACT.md`](plugins/CONTRACT.md), which is deliberately
   minimal so a third-party plugin needs almost nothing bomify-specific to
   implement (its optional Go helper library, `pkg/plugin`, is importable
-  from any module for exactly that reason).
+  from any module for exactly that reason). SBOM generation plugins
+  ([`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md)) take this even
+  further: bomify doesn't orchestrate them at all beyond locating the
+  binary, so they're independent of this contract entirely.
