@@ -1,7 +1,7 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
 // binary: the Result/Hash/RemoteResult types the subprocess contract's
 // JSON output mirrors, their Print methods to emit it correctly, and (in
-// log.go) OpenLog for the plugin's own --log file. See plugins/CONTRACT.md
+// log.go) OpenLog for the plugin's own --log file. See plugins/COMPONENT-CONTRACT.md
 // for the full contract this package implements one side of; unlike that
 // document, this package is importable from outside this module, so a
 // third-party plugin (in its own separate Go module) can depend on it
@@ -54,7 +54,7 @@ type RemoteResult struct {
 	// It must be in the same shape push's own --remote expects to
 	// receive: without the component's own trailing name if push appends
 	// that itself, or the exact complete destination if push doesn't
-	// append anything at all — see plugins/CONTRACT.md's RemoteResult
+	// append anything at all — see plugins/COMPONENT-CONTRACT.md's RemoteResult
 	// section for why. A distribution rule matched by --match can
 	// substitute part of this value back into --remote for a later push,
 	// preserving whatever came after the matched prefix.

@@ -32,12 +32,12 @@ type remoteResult struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin <pull|push|remote> --purl <purl> ...")
+	if len(os.Args) < 3 || os.Args[1] != "component" {
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin component <pull|push|remote> --purl <purl> ...")
 		os.Exit(1)
 	}
 
-	verb := os.Args[1]
+	verb := os.Args[2]
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
 	purl := fs.String("purl", "", "component purl")
 	output := fs.String("output", "", "output directory (pull)")
@@ -47,7 +47,7 @@ func main() {
 	check := fs.Bool("check", false, "check-only mode: skip --output/--input and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
-	fs.Parse(os.Args[2:])
+	fs.Parse(os.Args[3:])
 
 	// Mirrors the real contract: log to --log, never to stdout, so
 	// bomify-side tests exercising verbose log streaming have something

@@ -5,12 +5,21 @@ icon: lucide/puzzle
 # Building a plugin
 
 bomify doesn't know how to fetch or publish anything itself — every purl
-type is handled by an external `bomify-plugin-<kind>` binary. This page is a
-guided walkthrough for writing one; it isn't the spec. The
-[**plugin contract**](contract.md)
+type is handled by an external `bomify-plugin-<kind>` binary's **component
+plugin** subcommands. This page is a guided walkthrough for writing one;
+it isn't the spec. The
+[**component plugin contract**](component-contract.md)
 is the authoritative, normative reference for every flag, JSON shape, and
 edge case — read it before you start, and treat anything here that seems to
 disagree with it as this page being out of date, not the other way around.
+
+A `bomify-plugin-<kind>` binary can separately implement the entirely
+independent **[SBOM generation plugin contract](sbom-contract.md)**
+(`sbom generate`) — a much lighter, standalone-runnable contract for
+building a fresh SBOM from a deployment medium. This page's walkthrough
+is specific to component plugins; see
+[`SBOM-CONTRACT.md`](sbom-contract.md) directly if that's what you're
+building instead.
 
 ## What a plugin actually is
 
@@ -27,19 +36,21 @@ handle — a component with purl `pkg:oci/nginx@1.27` needs a
 
 ## The subcommands, briefly
 
-A plugin implements three subcommands — `pull`, `push`, and `remote` — plus
-an optional `--check` mode on `pull`/`push` for verifying an operation would
+A component plugin implements three subcommands, nested under `component`
+— `component pull`, `component push`, and `component remote` — plus an
+optional `--check` mode on `pull`/`push` for verifying an operation would
 succeed without actually doing it. Each has its own required/optional flags
 and JSON result shape, all specified in
-[`CONTRACT.md`](contract.md#commands):
+[`COMPONENT-CONTRACT.md`](component-contract.md#commands):
 
-- **`pull`** fetches the component `--purl` identifies into `--output`, and
-  reports a content hash for `--hash` if it can compute one.
-- **`push`** publishes whatever a prior `pull` wrote into `--input` to
-  `--remote`.
-- **`remote`** reports where a component's content currently lives —
-  independent of any specific `--remote` — so `bomify distribute` can match
-  it against a mirroring rule.
+- **`component pull`** fetches the component `--purl` identifies into
+  `--output`, and reports a content hash for `--hash` if it can compute
+  one.
+- **`component push`** publishes whatever a prior `pull` wrote into
+  `--input` to `--remote`.
+- **`component remote`** reports where a component's content currently
+  lives — independent of any specific `--remote` — so `bomify distribute`
+  can match it against a mirroring rule.
 
 Routine logging goes to the file named by `--log`, never to stdout (reserved
 for exactly one JSON result on success) or stderr (reserved for one fatal
@@ -64,10 +75,10 @@ push — and a reasonable template to start from. Its shape:
 bomify-plugin-generic/
 ├─ main.go              # entrypoint, calls cmd.Execute()
 ├─ cmd/
-│  ├─ root.go            # wires up pull/push/remote as cobra subcommands
-│  ├─ pull.go             # the `pull` subcommand's flags + RunE
-│  ├─ push.go             # the `push` subcommand's flags + RunE
-│  └─ remote.go           # the `remote` subcommand's flags + RunE
+│  ├─ root.go            # wires up the "component" subcommand
+│  ├─ pull.go             # the `component pull` subcommand's flags + RunE
+│  ├─ push.go             # the `component push` subcommand's flags + RunE
+│  └─ remote.go           # the `component remote` subcommand's flags + RunE
 └─ internal/artifact/
    ├─ resolve.go          # purl -> Ref (the download URL, name, version)
    └─ transfer.go         # the actual GET/PUT/HEAD logic
@@ -87,16 +98,17 @@ trivial) work, print a `plugin.RemoteResult`.
 
 ## Checklist
 
-- [ ] Implement `pull`, `push`, and `remote` exactly per
-      [`CONTRACT.md`](contract.md) —
+- [ ] Implement `component pull`, `component push`, and `component remote`
+      exactly per
+      [`COMPONENT-CONTRACT.md`](component-contract.md) —
       required/optional flags, the `Result`/`RemoteResult` JSON shapes, exit
       codes.
 - [ ] Nothing but the one JSON result on stdout, ever — no progress output,
       no debug prints.
 - [ ] Route all routine logging through `--log`.
 - [ ] Support `--check` on `pull`/`push` if there's a genuinely inexpensive
-      way to verify the operation would succeed (see `CONTRACT.md`'s
-      [check mode](contract.md#check-mode)
+      way to verify the operation would succeed (see `COMPONENT-CONTRACT.md`'s
+      [check mode](component-contract.md#check-mode)
       section) — and never fall back to the real, mutating operation just
       to implement it.
 - [ ] Validate your plugin's actual JSON output against

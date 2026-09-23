@@ -40,7 +40,7 @@ func Resolve(purlString string) (string, error) {
 // own --remote expects: destinationReference below appends "/<name>:<tag>"
 // onto whatever --remote it's given, so reporting that name back as part
 // of "remote" would double it up. This is what the "remote" subcommand
-// reports (see plugins/CONTRACT.md): where this component's registry
+// reports (see plugins/COMPONENT-CONTRACT.md): where this component's registry
 // lives, not the component's own specific repository within it.
 func Location(purlString string) (string, error) {
 	purl, err := packageurl.FromString(purlString)

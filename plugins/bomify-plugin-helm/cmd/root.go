@@ -6,7 +6,9 @@ import (
 )
 
 // NewRootCmd builds the bomify-plugin-helm root command and wires up its
-// pull/push/remote subcommands.
+// component pull/push/remote subcommands and its sbom generate
+// subcommand — two entirely independent plugin classes this one binary
+// happens to implement both of.
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "bomify-plugin-helm",
@@ -15,11 +17,26 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	rootCmd.AddCommand(newPullCmd())
-	rootCmd.AddCommand(newPushCmd())
-	rootCmd.AddCommand(newRemoteCmd())
+	rootCmd.AddCommand(componentCmd())
+	rootCmd.AddCommand(sbomCmd())
 
 	return rootCmd
+}
+
+// componentCmd groups the component plugin contract's pull/push/remote
+// subcommands (see plugins/COMPONENT-CONTRACT.md), kept independent of any other
+// plugin class (e.g. sbom generate) this binary might also implement.
+func componentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "component",
+		Short: "Component plugin subcommands (pull/push/remote) — see plugins/COMPONENT-CONTRACT.md",
+	}
+
+	cmd.AddCommand(newPullCmd())
+	cmd.AddCommand(newPushCmd())
+	cmd.AddCommand(newRemoteCmd())
+
+	return cmd
 }
 
 // Execute runs the root command and returns any error encountered.

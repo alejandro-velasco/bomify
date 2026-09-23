@@ -1,15 +1,23 @@
-# Plugin contract
+# Component plugin contract
 
 This is the authoritative specification for the subprocess contract between
-`bomify` and a `bomify-plugin-<kind>` binary. It's aimed at anyone writing a
-plugin, first- or third-party. The Go types referenced below
-(`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
+`bomify` and a `bomify-plugin-<kind>` binary's **component plugin**
+subcommands (`component pull`/`component push`/`component remote`),
+which `bomify build` and `bomify distribute` delegate to. It's aimed at
+anyone writing a plugin, first- or third-party. The Go types referenced
+below (`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
 [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) — a small library, importable from any Go
 module, and `plugin.OpenLog`/`(*Result).Print`/`(*RemoteResult).Print` are
 ready-made helpers a Go-based plugin can use instead of re-implementing
 this spec by hand. See also [`README.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md) for the list of
 first-party plugins and [`ARCHITECTURE.md`](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md) for how
 this contract fits into bomify's design as a whole.
+
+A `bomify-plugin-<kind>` binary may separately implement the entirely
+independent [SBOM generation plugin contract](SBOM-CONTRACT.md) (its
+`sbom generate` subcommand) — the two contracts share nothing, and a
+plugin author only needs to read this document to implement component
+support.
 
 A plugin is a standalone executable. It does not link against bomify, share
 memory with it, or receive anything over stdin — every input arrives as a
@@ -30,14 +38,15 @@ on `PATH`) and never invokes a plugin by any other name or location.
 
 ## Commands
 
-A plugin must implement exactly three subcommands: `pull`, `push`, and
-`remote`. All three take the flags below; italicized flags are shared by
-all of them.
+A component plugin must implement exactly three subcommands, nested under
+`component`: `component pull`, `component push`, and `component remote`.
+All three take the flags below; italicized flags are shared by all of
+them.
 
-### `pull`
+### `component pull`
 
 ```
-bomify-plugin-<kind> pull --purl <purl> --output <dir> --hash <algorithm> --log <path> --log-color <bool>
+bomify-plugin-<kind> component pull --purl <purl> --output <dir> --hash <algorithm> --log <path> --log-color <bool>
 ```
 
 Fetches or builds the component `--purl` identifies and writes it into
@@ -55,10 +64,10 @@ Fetches or builds the component `--purl` identifies and writes it into
 On success, the plugin must print a single `Result` JSON object (see
 [Result](#result)) to stdout and exit `0`.
 
-### `push`
+### `component push`
 
 ```
-bomify-plugin-<kind> push --purl <purl> --input <dir> --remote <endpoint> --log <path> --log-color <bool>
+bomify-plugin-<kind> component push --purl <purl> --input <dir> --remote <endpoint> --log <path> --log-color <bool>
 ```
 
 Publishes the artifact a prior `pull` wrote into `--input` to `--remote`.
@@ -76,10 +85,10 @@ On success, the plugin must print a single `Result` JSON object to stdout
 and exit `0`. `hash` is meaningless for a push result and should be left
 unset.
 
-### `remote`
+### `component remote`
 
 ```
-bomify-plugin-<kind> remote --purl <purl> --log <path> --log-color <bool>
+bomify-plugin-<kind> component remote --purl <purl> --log <path> --log-color <bool>
 ```
 
 Reports where the component `--purl` identifies comes from or is

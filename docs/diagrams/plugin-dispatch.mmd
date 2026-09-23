@@ -8,22 +8,22 @@ sequenceDiagram
 
     alt bomify build
         rect rgb(236, 253, 245)
-            CLI->>Plugin: pull, over a subprocess call
+            CLI->>Plugin: component pull, over a subprocess call
             Plugin->>Disk: read or write the component's artifact
             Plugin->>Disk: write its own log output, never to stdout
             Plugin-->>CLI: a single JSON result on stdout
         end
         CLI->>Disk: record the component's manifest
-        Note over CLI,Disk: --check: pull --check instead - no Disk access,<br/>no manifest recorded
+        Note over CLI,Disk: --check: component pull --check instead - no Disk access,<br/>no manifest recorded
     else bomify distribute
-        CLI->>Plugin: remote, over a subprocess call
+        CLI->>Plugin: component remote, over a subprocess call
         Plugin-->>CLI: a single JSON RemoteResult on stdout
         CLI->>CLI: resolve an endpoint - an explicit --remote flag,<br/>else the best-matching conf/distribution.json rule
         rect rgb(236, 253, 245)
-            CLI->>Plugin: push, over a subprocess call
+            CLI->>Plugin: component push, over a subprocess call
             Plugin->>Disk: read the component's artifact
             Plugin->>Disk: write its own log output, never to stdout
             Plugin-->>CLI: a single JSON result on stdout
         end
-        Note over CLI,Disk: --check: push --check instead - no Disk access
+        Note over CLI,Disk: --check: component push --check instead - no Disk access
     end

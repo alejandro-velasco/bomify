@@ -2,7 +2,7 @@
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time.
+Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time. `bomify sbom generate` goes the other direction — inspecting a deployment medium (a Helm chart, an OCI image, ...) through its own plugin to produce a fresh SBOM in the first place.
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)** — installation, a guided quickstart, the full CLI reference, and a guide to building a plugin.
 
@@ -52,6 +52,12 @@ bomify logout registry.example.com
 
 See [`docs/reference`](docs/reference) for the full CLI reference, covering every command and flag (regenerate it with `make docs` after changing a command).
 
+Generate an SBOM for a Helm chart, rather than starting from one:
+
+```sh
+bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6 > postgresql.cdx.json
+```
+
 ## Container
 
 [`Containerfile`](Containerfile) builds an image with `bomify` and its first-party plugins on `PATH`:
@@ -72,9 +78,9 @@ docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tm
 
 ## Plugins
 
-Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
+Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch, the pull/push/remote contract, and result reporting work.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch works, and both [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) (component plugins) and [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) (SBOM generation plugins) for the two independent contracts a plugin can implement.
 
 ## License
 
