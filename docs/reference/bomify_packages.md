@@ -5,7 +5,9 @@ List built packages
 ### Synopsis
 
 Packages lists the packages recorded in
-<data-dir>/package/repositories.json, one row per repository:tag.
+<data-dir>/package/repositories.json, one row per repository:tag. SIZE
+is the total on-disk size of every component the package's SBOM
+describes (0 for any not pulled yet).
 
 ```
 bomify packages [flags]
