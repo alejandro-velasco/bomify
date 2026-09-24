@@ -7,13 +7,21 @@ is a standalone `bomify-plugin-<kind>` binary implementing the
 `component remote` subcommands, specified in
 [`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md).
 
-Component plugins are one of two entirely independent plugin classes a
-`bomify-plugin-<kind>` binary can implement. The other, **SBOM generation
-plugins** (`sbom generate`, specified in
-[`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)),
+Component plugins are one of three entirely independent plugin classes a
+`bomify-plugin-<kind>` binary can implement. **SBOM generation plugins**
+(`sbom generate`, specified in
+[`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md))
 inspect a deployment medium and build a fresh SBOM for it.
-`bomify-plugin-helm` is the one plugin below that implements both classes
-— see its own row and the paragraph following the table.
+`bomify-plugin-helm` is the one plugin below that implements both this
+and the component contract — see its own row and the paragraph
+following the table. **Security scanning plugins** (`security scan
+--purl <purl>`, specified in
+[`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md))
+report the vulnerabilities one component's purl is affected by; `bomify
+security scan` calls the same plugin once per component in an existing
+SBOM (concurrently, like `bomify build`/`bomify distribute`) and merges
+their results into the SBOM's own vulnerabilities — none of the plugins
+below implement it yet.
 
 | Plugin                                        | Kind     | Backing library                                                                   |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|

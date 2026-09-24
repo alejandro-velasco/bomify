@@ -425,6 +425,69 @@ func Remote(path string, component cdx.Component, baseDir string, logger *slog.L
 	return result.Remote, nil
 }
 
+// Scan invokes the plugin binary's "security scan" subcommand for
+// component, asking it to report every vulnerability component's own
+// purl is affected by (see plugins/SECURITY-CONTRACT.md). Unlike
+// Pull/Push/Remote, Scan passes no --log/--log-color — a security
+// scanning plugin logs however it likes, straight to its own stderr —
+// so a failure's stderr is captured and folded into the returned error
+// exactly like a component plugin's single fatal message.
+//
+// Scan never sets any returned Vulnerability's Affects field — that's
+// the caller's job: cmd/security.go fills it in per component and
+// merges results across every component in an SBOM, so a plugin's only
+// responsibility here is answering "what does this purl have", nothing
+// about the SBOM it came from.
+func Scan(path string, component cdx.Component, logger *slog.Logger) (pluginlib.SecurityResult, error) {
+	logger.Info("scanning component", "purl", component.PackageURL)
+
+	cmd := exec.Command(path, "security", "scan", "--purl", component.PackageURL)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("run plugin %s security scan: %w%s", path, err, formatStderr(stderr.String()))
+	}
+
+	var result pluginlib.SecurityResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return nil, fmt.Errorf("parse output of plugin %s security scan: %w", path, err)
+	}
+
+	return result, nil
+}
+
+// SupportedComponents invokes the plugin binary's "security
+// supported-components" subcommand, which reports which component purl
+// types and scan categories it supports (see
+// plugins/SECURITY-CONTRACT.md). Unlike Scan, this is called once per
+// "bomify security scan" invocation, not once per component: bomify
+// uses its Types to decide which components are even worth dispatching
+// to Scan, skipping any whose purl type isn't listed rather than
+// sending it to the plugin at all.
+func SupportedComponents(path string, logger *slog.Logger) (pluginlib.SupportedComponentsResult, error) {
+	logger.Info("querying supported components", "path", path)
+
+	cmd := exec.Command(path, "security", "supported-components")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return pluginlib.SupportedComponentsResult{}, fmt.Errorf("run plugin %s security supported-components: %w%s", path, err, formatStderr(stderr.String()))
+	}
+
+	var result pluginlib.SupportedComponentsResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return pluginlib.SupportedComponentsResult{}, fmt.Errorf("parse output of plugin %s security supported-components: %w", path, err)
+	}
+
+	return result, nil
+}
+
 // PurlHash returns a hex-encoded hash of component's purl, used to derive
 // both componentDir and manifestPath so pull and push independently agree
 // on the same locations. It's exported so callers building on top of a

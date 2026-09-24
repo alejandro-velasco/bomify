@@ -1,11 +1,12 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
-// binary: the Result/Hash/RemoteResult types the subprocess contract's
-// JSON output mirrors, their Print methods to emit it correctly, and (in
-// log.go) OpenLog for the plugin's own --log file. See plugins/COMPONENT-CONTRACT.md
-// for the full contract this package implements one side of; unlike that
-// document, this package is importable from outside this module, so a
-// third-party plugin (in its own separate Go module) can depend on it
-// directly.
+// binary: the Result/Hash/RemoteResult types the component plugin
+// contract's JSON output mirrors, SecurityResult for the security
+// scanning contract's, their Print methods to emit them correctly, and
+// (in log.go) OpenLog for a component plugin's --log file. See
+// plugins/COMPONENT-CONTRACT.md and plugins/SECURITY-CONTRACT.md for the
+// contracts this package implements one side of; unlike those documents,
+// this package is importable from outside this module, so a third-party
+// plugin (in its own separate Go module) can depend on it directly.
 package plugin
 
 import (
@@ -68,6 +69,55 @@ func (r *RemoteResult) Print(w io.Writer) error {
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(r); err != nil {
 		return fmt.Errorf("encode remote result: %w", err)
+	}
+	return nil
+}
+
+// SecurityResult is the JSON array a plugin's "security scan"
+// subcommand prints to stdout on success: every CycloneDX vulnerability
+// the scanned purl is affected by. Leave each entry's Affects unset —
+// bomify fills it in itself, using the component currently being
+// scanned, before merging results across every component in the SBOM
+// (see plugins/SECURITY-CONTRACT.md). An empty (but non-nil) result
+// reports that nothing was found, exactly as meaningfully as a
+// populated one.
+type SecurityResult []cdx.Vulnerability
+
+// Print writes r to w as the single JSON array bomify expects a
+// plugin's "security scan" subcommand to print to stdout on success.
+func (r SecurityResult) Print(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("encode security result: %w", err)
+	}
+	return nil
+}
+
+// SupportedComponentsResult is the JSON object a plugin's "security
+// supported-components" subcommand prints to stdout on success: which
+// component purl types and scan categories it supports. bomify calls
+// this once per "bomify security scan" invocation — never per
+// component — to decide which components in the SBOM are even worth
+// dispatching to "security scan": a component whose purl type isn't
+// listed in Types is skipped instead (see plugins/SECURITY-CONTRACT.md).
+type SupportedComponentsResult struct {
+	// Types lists the component purl types (e.g. "oci", "helm",
+	// "generic") this plugin can scan.
+	Types []string `json:"types"`
+	// Scans lists the categories of scan this plugin performs (e.g.
+	// "sca", "sast").
+	Scans []string `json:"scans"`
+}
+
+// Print writes r to w as the single JSON object bomify expects a
+// plugin's "security supported-components" subcommand to print to
+// stdout on success.
+func (r *SupportedComponentsResult) Print(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("encode supported components result: %w", err)
 	}
 	return nil
 }

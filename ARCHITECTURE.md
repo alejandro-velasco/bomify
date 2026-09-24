@@ -72,8 +72,8 @@ layer behind — only ever a missing one, which just triggers a redo.
 
 ## Plugin architecture
 
-A `bomify-plugin-<kind>` binary can implement either, both, or neither of
-two entirely independent plugin classes:
+A `bomify-plugin-<kind>` binary can implement any, all, or none of three
+entirely independent plugin classes:
 
 - **Component plugins** — `component pull`/`component push`/`component
   remote`, described below, which `bomify build`/`bomify distribute` use
@@ -83,6 +83,13 @@ two entirely independent plugin classes:
   generate` delegates to in order to build a fresh SBOM for a deployment
   medium. It shares nothing with the component contract beyond the
   `bomify-plugin-<kind>` binary-naming/discovery convention.
+- **Security scanning plugins** — `security scan`, described
+  [further down](#security-scanning), which `bomify security scan`
+  calls once per component (concurrently, like `bomify build`/`bomify
+  distribute`) to populate an existing SBOM's vulnerabilities. Here
+  `<kind>` names a scanning tool (e.g. `grype`) rather than a purl type
+  or deployment medium — the same binary scans every component in the
+  SBOM, regardless of its own purl type.
 
 ### Component plugins
 
@@ -165,6 +172,44 @@ to the operation beyond locating the binary. See
 (intentionally minimal) contract, and the note at the top of [Plugin
 architecture](#plugin-architecture) above for why this is a wholly
 separate plugin class from component plugins, not a variant of it.
+
+### Security scanning
+
+Unlike `sbom generate`, `bomify security scan <type> <sbom-file>`
+(`cmd/security.go`) is orchestration much closer in shape to the
+component dispatch above — bomify does real work here, not just
+delegation:
+
+1. **Load** `<sbom-file>` itself (`sbom.Load`) and walk every component
+   it describes.
+2. **Find** a single `bomify-plugin-<type>` executable on `PATH`
+   (`plugin.Find`) — `<type>` names the scanning tool itself (e.g.
+   `grype`, `trivy`), not a purl type or deployment medium, so the same
+   binary scans every component regardless of its own purl type.
+3. **Query** that binary's `security supported-components` once
+   (`plugin.SupportedComponents`) to learn which component purl types it
+   can scan. A component whose purl type (`plugin.Detect`, the same
+   detection component dispatch uses) isn't in that list — or can't be
+   detected at all — is skipped with a log line, never dispatched to
+   `security scan`.
+4. **Delegate**, once per remaining component, up to `--concurrency` at
+   a time (`forEachComponent` — the same concurrent-walk helper `bomify
+   build`/`bomify distribute` use): call `security scan --purl <purl>`
+   (`plugin.Scan`) and parse its JSON array result, a list of CycloneDX
+   `Vulnerability` objects with `affects` left unset.
+5. **Merge** every component's result into the SBOM's own
+   `vulnerabilities`: bomify sets each vulnerability's `affects` to the
+   component that reported it (by `bom-ref`, falling back to its purl),
+   then folds a vulnerability sharing an already-seen, non-empty
+   `bom-ref` into that existing entry — adding its `affects` rather than
+   appending a duplicate — via an in-memory `vulnerabilityMerger` safe
+   for the concurrent per-component calls above to write into directly.
+
+The scanned SBOM is then printed to stdout (or `--output`'s file). A
+plugin never opens `<sbom-file>`, never sees another component's
+result, and has no say in the merge — see
+[`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for the
+full contract this implements one side of.
 
 ### Concurrent, idempotent pulls
 
@@ -310,7 +355,13 @@ A few things worth keeping in mind when changing any of the above:
   [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md), which is deliberately
   minimal so a third-party plugin needs almost nothing bomify-specific to
   implement (its optional Go helper library, `pkg/plugin`, is importable
-  from any module for exactly that reason). SBOM generation plugins
-  ([`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md)) take this even
-  further: bomify doesn't orchestrate them at all beyond locating the
-  binary, so they're independent of this contract entirely.
+  from any module for exactly that reason). SBOM generation
+  ([`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md)) plugins take
+  this even further: bomify doesn't orchestrate them at all beyond
+  locating the binary, so they're independent of this contract entirely.
+  Security scanning
+  ([`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md))
+  plugins land in between: bomify owns the SBOM, the per-component
+  dispatch, concurrency, and merging (much like the component contract),
+  but a plugin's own job — answer "what does this purl have" — is just
+  as minimal as SBOM generation's.

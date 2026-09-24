@@ -13,13 +13,21 @@ is the authoritative, normative reference for every flag, JSON shape, and
 edge case — read it before you start, and treat anything here that seems to
 disagree with it as this page being out of date, not the other way around.
 
-A `bomify-plugin-<kind>` binary can separately implement the entirely
-independent **[SBOM generation plugin contract](sbom-contract.md)**
-(`sbom generate`) — a much lighter, standalone-runnable contract for
-building a fresh SBOM from a deployment medium. This page's walkthrough
-is specific to component plugins; see
-[`SBOM-CONTRACT.md`](sbom-contract.md) directly if that's what you're
-building instead.
+A `bomify-plugin-<kind>` binary can separately implement either or both
+of two other, entirely independent contracts — this page's walkthrough
+is specific to component plugins, so see the contract itself directly if
+you're building one of these instead:
+
+- **[SBOM generation plugin contract](sbom-contract.md)** (`sbom
+  generate`) — a much lighter, standalone-runnable contract for building
+  a fresh SBOM from a deployment medium; bomify contributes nothing
+  beyond locating the binary.
+- **[Security scanning plugin contract](security-contract.md)**
+  (`security scan --purl <purl>`) — a similarly lightweight per-call
+  contract (a plugin just answers "what does this purl have"), but
+  bomify itself owns loading the SBOM, dispatching one call per
+  component, and merging the results — closer to the component contract
+  in that respect.
 
 ## What a plugin actually is
 

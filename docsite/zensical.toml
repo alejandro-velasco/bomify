@@ -36,6 +36,10 @@ nav = [
           { "bomify sbom" = "usage/reference/bomify_sbom.md" },
           { "bomify sbom generate" = "usage/reference/bomify_sbom_generate.md" },
       ] },
+      { "bomify security" = [
+          { "bomify security" = "usage/reference/bomify_security.md" },
+          { "bomify security scan" = "usage/reference/bomify_security_scan.md" },
+      ] },
       { "bomify tag" = "usage/reference/bomify_tag.md" },
       { "bomify save" = "usage/reference/bomify_save.md" },
       { "bomify load" = "usage/reference/bomify_load.md" },
@@ -68,6 +72,7 @@ nav = [
       { "Building a plugin" = "development/building-a-plugin.md" },
       { "Component plugin contract" = "development/component-contract.md" },
       { "SBOM generation contract" = "development/sbom-contract.md" },
+      { "Security scanning contract" = "development/security-contract.md" },
   ] },
 ]
 

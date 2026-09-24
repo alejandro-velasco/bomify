@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/security-result.schema.json",
+  "title": "bomify plugin SecurityResult",
+  "description": "The single JSON array a bomify-plugin-<type> binary must print to stdout on success for its \"security scan\" subcommand, per plugins/SECURITY-CONTRACT.md. Each entry is a regular CycloneDX vulnerability object (see https://cyclonedx.org/docs/ for its full schema, not re-specified here) describing something the scanned --purl is affected by. Validate a plugin's actual stdout output (one line, one array) against this schema to check it for structural conformance; it only constrains the bomify-specific parts (the array wrapper, and that affects is left for bomify to fill in), not every CycloneDX vulnerability field.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id"],
+    "properties": {
+      "bom-ref": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A stable identifier for this vulnerability (the vulnerability's own id is a reasonable choice). bomify merges two components' results that report the same bom-ref into a single entry, combining their affects — a vulnerability with no bom-ref is never merged with another."
+      },
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The vulnerability's own identifier, e.g. a CVE or GHSA id."
+      },
+      "affects": {
+        "not": {},
+        "description": "Must be omitted. bomify sets this itself, to the component currently being scanned, before merging results across every component in the SBOM."
+      }
+    }
+  }
+}
