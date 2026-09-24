@@ -170,11 +170,13 @@ func buildBOM(chrt *helmchart.Chart, repositoryURL string, images []imageRef) (*
 	components := make([]cdx.Component, 0, len(images)+1)
 
 	if chrt.Metadata != nil {
+		purl := chartPurl(chrt.Metadata.Name, chrt.Metadata.Version, repositoryURL)
 		chartComponent := cdx.Component{
+			BOMRef:     purl,
 			Type:       cdx.ComponentTypeApplication,
 			Name:       chrt.Metadata.Name,
 			Version:    chrt.Metadata.Version,
-			PackageURL: chartPurl(chrt.Metadata.Name, chrt.Metadata.Version, repositoryURL),
+			PackageURL: purl,
 		}
 		bom.Metadata = &cdx.Metadata{Component: &chartComponent}
 		components = append(components, chartComponent)
@@ -198,6 +200,8 @@ func buildBOM(chrt *helmchart.Chart, repositoryURL string, images []imageRef) (*
 // plugins/bomify-plugin-oci/internal/image/resolve.go's repositoryFor) —
 // so a component this SBOM describes is, if the user chooses to feed
 // this SBOM into "bomify build", directly usable without translation.
+// BOMRef is set to that same purl, so it also doubles as this
+// component's unique identifier within the BOM.
 func imageComponent(ref string) (cdx.Component, error) {
 	parsed, err := name.ParseReference(ref, name.WeakValidation)
 	if err != nil {
@@ -216,13 +220,14 @@ func imageComponent(ref string) (cdx.Component, error) {
 	}
 
 	qualifiers := packageurl.QualifiersFromMap(map[string]string{"repository_url": repository.Name()})
-	purl := packageurl.NewPackageURL(packageurl.TypeOCI, "", imageName, version, qualifiers, "")
+	purl := packageurl.NewPackageURL(packageurl.TypeOCI, "", imageName, version, qualifiers, "").String()
 
 	return cdx.Component{
+		BOMRef:     purl,
 		Type:       cdx.ComponentTypeContainer,
 		Name:       imageName,
 		Version:    version,
-		PackageURL: purl.String(),
+		PackageURL: purl,
 	}, nil
 }
 

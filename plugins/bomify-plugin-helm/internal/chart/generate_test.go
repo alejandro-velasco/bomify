@@ -23,6 +23,9 @@ func TestImageComponentTag(t *testing.T) {
 	if c.PackageURL != wantPurl {
 		t.Errorf("PackageURL = %q, want %q", c.PackageURL, wantPurl)
 	}
+	if c.BOMRef != wantPurl {
+		t.Errorf("BOMRef = %q, want %q (the same purl)", c.BOMRef, wantPurl)
+	}
 }
 
 func TestImageComponentDigest(t *testing.T) {
@@ -37,6 +40,9 @@ func TestImageComponentDigest(t *testing.T) {
 	}
 	if c.Version != digest {
 		t.Errorf("Version = %q, want %q", c.Version, digest)
+	}
+	if c.BOMRef != c.PackageURL {
+		t.Errorf("BOMRef = %q, want it to equal PackageURL %q", c.BOMRef, c.PackageURL)
 	}
 }
 
@@ -84,11 +90,11 @@ func TestBuildBOMIncludesChartMetadataAndComponents(t *testing.T) {
 		t.Fatalf("buildBOM() Components = %v, want 2 entries (chart + image)", bom.Components)
 	}
 	chartComponent, imageComp := (*bom.Components)[0], (*bom.Components)[1]
-	if chartComponent.Type != cdx.ComponentTypeApplication || chartComponent.PackageURL != wantChartPurl {
-		t.Errorf("components[0] = %+v, want the chart component (type=application, purl=%q)", chartComponent, wantChartPurl)
+	if chartComponent.Type != cdx.ComponentTypeApplication || chartComponent.PackageURL != wantChartPurl || chartComponent.BOMRef != wantChartPurl {
+		t.Errorf("components[0] = %+v, want the chart component (type=application, purl=bom-ref=%q)", chartComponent, wantChartPurl)
 	}
-	if imageComp.Type != cdx.ComponentTypeContainer || imageComp.Name != "postgresql" {
-		t.Errorf("components[1] = %+v, want the discovered image component", imageComp)
+	if imageComp.Type != cdx.ComponentTypeContainer || imageComp.Name != "postgresql" || imageComp.BOMRef != imageComp.PackageURL {
+		t.Errorf("components[1] = %+v, want the discovered image component with BOMRef == PackageURL", imageComp)
 	}
 }
 
