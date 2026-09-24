@@ -29,6 +29,9 @@ for platform in $RELEASE_PLATFORMS; do
 
 	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$out/bomify$ext" .
 	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "$out/" ./plugins/...
+	# bomify-plugin-grype is its own Go module (see the Makefile's
+	# "plugins" target for why) and so needs its own build step here too.
+	(cd plugins/bomify-plugin-grype && GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "$out/" .)
 
 	archive="$dist_dir/bomify-$VERSION-$os-$arch"
 	if [ "$os" = "windows" ]; then
