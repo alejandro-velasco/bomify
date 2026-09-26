@@ -21,9 +21,12 @@ import (
 	"github.com/anchore/grype/grype"
 	v6dist "github.com/anchore/grype/grype/db/v6/distribution"
 	v6inst "github.com/anchore/grype/grype/db/v6/installation"
+	"github.com/anchore/grype/grype/match"
 	"github.com/anchore/grype/grype/matcher"
 	grypePkg "github.com/anchore/grype/grype/pkg"
 	"github.com/anchore/grype/grype/vulnerability"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // id identifies this plugin to grype's DB distribution service (sent as
@@ -74,18 +77,20 @@ func DBDirectory() string {
 	return installCfg.DBDirectoryPath()
 }
 
-// Purl scans the single component purlString identifies, returning every
-// CycloneDX vulnerability it's affected by (see toVulnerability for the
-// grype-match-to-CycloneDX field mapping). Each entry's Affects is left
-// unset, exactly as plugins/SECURITY-CONTRACT.md requires — that's
-// bomify's job, not this plugin's.
+// Purl scans the single component purlString identifies, returning
+// every CycloneDX vulnerability it's affected by (see toVulnerability
+// for the grype-match-to-CycloneDX field mapping). Each vulnerability's
+// Affects references purlString itself back — this plugin's only
+// responsibility here, per plugins/SECURITY-CONTRACT.md, since a purl
+// looked up directly like this names exactly one thing, with nothing
+// smaller to attribute a finding to.
 //
-// An "oci"/"docker" purl is dispatched to scanImage instead of being
-// looked up directly: see image.go.
-func Purl(provider vulnerability.Provider, purlString string) ([]cdx.Vulnerability, error) {
+// An "oci"/"docker" purl is dispatched to scanImage instead, which
+// reports Affects differently: see image.go.
+func Purl(provider vulnerability.Provider, purlString string) (pluginlib.SecurityResult, error) {
 	parsed, err := packageurl.FromString(purlString)
 	if err != nil {
-		return nil, fmt.Errorf("parse purl %q: %w", purlString, err)
+		return pluginlib.SecurityResult{}, fmt.Errorf("parse purl %q: %w", purlString, err)
 	}
 
 	if parsed.Type == packageurl.TypeOCI || parsed.Type == packageurl.TypeDocker {
@@ -94,7 +99,7 @@ func Purl(provider vulnerability.Provider, purlString string) ([]cdx.Vulnerabili
 
 	packages, pkgContext, _, err := grypePkg.Provide(purlString, grypePkg.ProviderConfig{})
 	if err != nil {
-		return nil, fmt.Errorf("resolve purl %q: %w", purlString, err)
+		return pluginlib.SecurityResult{}, fmt.Errorf("resolve purl %q: %w", purlString, err)
 	}
 	if len(packages) == 0 {
 		// A purl grype's provider didn't recognize as belonging to any
@@ -103,17 +108,29 @@ func Purl(provider vulnerability.Provider, purlString string) ([]cdx.Vulnerabili
 		// should already be filtering these out via SupportedTypes
 		// before ever calling Purl, but Purl doesn't rely on that: it
 		// degrades to "no vulnerabilities" either way.
-		return nil, nil
+		return pluginlib.SecurityResult{}, nil
 	}
 
-	return matchPackages(provider, packages, pkgContext, purlString)
+	matches, err := findMatches(provider, packages, pkgContext)
+	if err != nil {
+		return pluginlib.SecurityResult{}, fmt.Errorf("find matches for %q: %w", purlString, err)
+	}
+
+	vulnerabilities := make([]cdx.Vulnerability, 0, matches.Count())
+	for _, m := range matches.Sorted() {
+		v := toVulnerability(m)
+		v.Affects = &[]cdx.Affects{{Ref: purlString}}
+		vulnerabilities = append(vulnerabilities, v)
+	}
+
+	return pluginlib.SecurityResult{Vulnerabilities: vulnerabilities}, nil
 }
 
-// matchPackages runs grype's default matcher set against packages,
-// converting every match into a CycloneDX vulnerability. Shared by Purl
-// and scanImage — the only difference between the two is how packages
-// and pkgContext were obtained.
-func matchPackages(provider vulnerability.Provider, packages []grypePkg.Package, pkgContext grypePkg.Context, subject string) ([]cdx.Vulnerability, error) {
+// findMatches runs grype's default matcher set against packages. Shared
+// by Purl and scanImage — the only difference between the two is how
+// packages and pkgContext were obtained, and how each then turns a match
+// into a vulnerability's Affects.
+func findMatches(provider vulnerability.Provider, packages []grypePkg.Package, pkgContext grypePkg.Context) (*match.Matches, error) {
 	vm := grype.VulnerabilityMatcher{
 		VulnerabilityProvider: provider,
 		Matchers:              matcher.NewDefaultMatchers(matcher.Config{}),
@@ -121,15 +138,9 @@ func matchPackages(provider vulnerability.Provider, packages []grypePkg.Package,
 
 	matches, _, err := vm.FindMatches(packages, pkgContext)
 	if err != nil {
-		return nil, fmt.Errorf("find matches for %q: %w", subject, err)
+		return nil, err
 	}
-
-	vulnerabilities := make([]cdx.Vulnerability, 0, matches.Count())
-	for _, m := range matches.Sorted() {
-		vulnerabilities = append(vulnerabilities, toVulnerability(m))
-	}
-
-	return vulnerabilities, nil
+	return matches, nil
 }
 
 // SupportedTypes returns every purl type (package-url spec naming, e.g.

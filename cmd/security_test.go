@@ -33,10 +33,12 @@ func buildFakeSecurityPluginBinary(t *testing.T, scanType string) string {
 	return dir
 }
 
-// writeResponsesFile writes responses (purl -> raw vulnerability array
-// JSON) to a temp file and points FAKESECURITY_RESPONSES_FILE at it, so
-// the fake security plugin reports exactly what the test expects for
-// each component it's asked to scan.
+// writeResponsesFile writes responses (purl -> raw SecurityResult object
+// JSON, e.g. `{"vulnerabilities":[...],"components":[...]}`) to a temp
+// file and points FAKESECURITY_RESPONSES_FILE at it, so the fake
+// security plugin reports exactly what the test expects for each
+// component it's asked to scan — "affects" included, exactly as a real
+// plugin would set it itself.
 func writeResponsesFile(t *testing.T, responses map[string]string) {
 	t.Helper()
 
@@ -92,21 +94,26 @@ func TestSecurityScanMergesVulnerabilitiesAcrossComponents(t *testing.T) {
 	dir := buildFakeSecurityPluginBinary(t, "grype")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
+	// bomify itself never sets or overwrites "affects" — the plugin does,
+	// and for a plain (non-image) scan the only thing it has to name is
+	// the purl it was given, so that's what each canned response's
+	// "affects" points at here, exactly as a real plugin would.
 	componentA := cdx.Component{BOMRef: "ref-a", Name: "a", PackageURL: "pkg:oci/a@1.0"}
 	componentB := cdx.Component{BOMRef: "ref-b", Name: "b", PackageURL: "pkg:oci/b@1.0"}
-	// componentC has no bom-ref of its own, so its Affects must fall back
-	// to its purl.
-	componentC := cdx.Component{Name: "c", PackageURL: "pkg:oci/c@1.0"}
 
 	writeResponsesFile(t, map[string]string{
 		// The same vulnerability, reported by both A and B, must be
-		// merged into a single entry naming both in "affects".
-		"pkg:oci/a@1.0": `[{"bom-ref":"CVE-SHARED","id":"CVE-SHARED"},{"bom-ref":"CVE-A-ONLY","id":"CVE-A-ONLY"}]`,
-		"pkg:oci/b@1.0": `[{"bom-ref":"CVE-SHARED","id":"CVE-SHARED"}]`,
-		"pkg:oci/c@1.0": `[{"id":"CVE-NO-BOMREF"}]`,
+		// merged into a single entry combining both "affects" entries.
+		"pkg:oci/a@1.0": `{"vulnerabilities":[
+			{"bom-ref":"CVE-SHARED","id":"CVE-SHARED","affects":[{"ref":"pkg:oci/a@1.0"}]},
+			{"bom-ref":"CVE-A-ONLY","id":"CVE-A-ONLY","affects":[{"ref":"pkg:oci/a@1.0"}]}
+		]}`,
+		"pkg:oci/b@1.0": `{"vulnerabilities":[
+			{"bom-ref":"CVE-SHARED","id":"CVE-SHARED","affects":[{"ref":"pkg:oci/b@1.0"}]}
+		]}`,
 	})
 
-	sbomPath := writeSBOMFile(t, componentA, componentB, componentC)
+	sbomPath := writeSBOMFile(t, componentA, componentB)
 
 	root, err := NewRootCmd()
 	if err != nil {
@@ -135,11 +142,10 @@ func TestSecurityScanMergesVulnerabilitiesAcrossComponents(t *testing.T) {
 		byRef[v.BOMRef] = v
 	}
 
-	// Exactly 3 distinct entries: CVE-SHARED (merged), CVE-A-ONLY, and
-	// the no-bom-ref one — never 4, which would mean CVE-SHARED wasn't
-	// deduplicated.
-	if len(*got.Vulnerabilities) != 3 {
-		t.Fatalf("got %d vulnerabilities, want 3: %+v", len(*got.Vulnerabilities), *got.Vulnerabilities)
+	// Exactly 2 distinct entries: CVE-SHARED (merged) and CVE-A-ONLY —
+	// never 3, which would mean CVE-SHARED wasn't deduplicated.
+	if len(*got.Vulnerabilities) != 2 {
+		t.Fatalf("got %d vulnerabilities, want 2: %+v", len(*got.Vulnerabilities), *got.Vulnerabilities)
 	}
 
 	shared, ok := byRef["CVE-SHARED"]
@@ -147,37 +153,91 @@ func TestSecurityScanMergesVulnerabilitiesAcrossComponents(t *testing.T) {
 		t.Fatal("CVE-SHARED missing from output")
 	}
 	if shared.Affects == nil || len(*shared.Affects) != 2 {
-		t.Fatalf("CVE-SHARED.Affects = %+v, want 2 entries (both components)", shared.Affects)
+		t.Fatalf("CVE-SHARED.Affects = %+v, want 2 entries (both components' purls)", shared.Affects)
 	}
 	affectedRefs := map[string]bool{}
 	for _, a := range *shared.Affects {
 		affectedRefs[a.Ref] = true
 	}
-	if !affectedRefs["ref-a"] || !affectedRefs["ref-b"] {
-		t.Errorf("CVE-SHARED.Affects = %+v, want refs ref-a and ref-b", *shared.Affects)
+	if !affectedRefs["pkg:oci/a@1.0"] || !affectedRefs["pkg:oci/b@1.0"] {
+		t.Errorf("CVE-SHARED.Affects = %+v, want refs pkg:oci/a@1.0 and pkg:oci/b@1.0 (bomify must not rewrite what the plugin reported)", *shared.Affects)
 	}
 
 	aOnly, ok := byRef["CVE-A-ONLY"]
 	if !ok {
 		t.Fatal("CVE-A-ONLY missing from output")
 	}
-	if aOnly.Affects == nil || len(*aOnly.Affects) != 1 || (*aOnly.Affects)[0].Ref != "ref-a" {
-		t.Errorf("CVE-A-ONLY.Affects = %+v, want a single entry for ref-a", aOnly.Affects)
+	if aOnly.Affects == nil || len(*aOnly.Affects) != 1 || (*aOnly.Affects)[0].Ref != "pkg:oci/a@1.0" {
+		t.Errorf("CVE-A-ONLY.Affects = %+v, want a single entry for pkg:oci/a@1.0", aOnly.Affects)
+	}
+}
+
+// TestSecurityScanEmbedsNestedComponentsFromImageScan covers a plugin
+// that had to unpack a component (e.g. cataloging a container image) to
+// scan it: bomify must embed the pieces it reported as that component's
+// own nested components, and every vulnerability's "affects" — set by
+// the plugin, exactly as reported — must reference the specific nested
+// piece, never the top-level image component itself.
+func TestSecurityScanEmbedsNestedComponentsFromImageScan(t *testing.T) {
+	dir := buildFakeSecurityPluginBinary(t, "grype")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	image := cdx.Component{BOMRef: "image-ref", Name: "myimage", PackageURL: "pkg:oci/myimage@1.0"}
+
+	writeResponsesFile(t, map[string]string{
+		"pkg:oci/myimage@1.0": `{
+			"vulnerabilities": [
+				{"bom-ref":"CVE-NESTED","id":"CVE-NESTED","affects":[{"ref":"pkg:npm/lodash@4.17.15"}]}
+			],
+			"components": [
+				{"bom-ref":"pkg:npm/lodash@4.17.15","type":"library","name":"lodash","version":"4.17.15","purl":"pkg:npm/lodash@4.17.15"},
+				{"bom-ref":"pkg:apk/musl@1.2.3","type":"library","name":"musl","version":"1.2.3","purl":"pkg:apk/musl@1.2.3"}
+			]
+		}`,
+	})
+
+	sbomPath := writeSBOMFile(t, image)
+
+	root, err := NewRootCmd()
+	if err != nil {
+		t.Fatalf("NewRootCmd: %v", err)
 	}
 
-	// componentC has no bom-ref, so its vulnerability's Affects must name
-	// it by purl instead.
-	found := false
-	for _, v := range *got.Vulnerabilities {
-		if v.ID == "CVE-NO-BOMREF" {
-			found = true
-			if v.Affects == nil || len(*v.Affects) != 1 || (*v.Affects)[0].Ref != "pkg:oci/c@1.0" {
-				t.Errorf("CVE-NO-BOMREF.Affects = %+v, want a single entry for pkg:oci/c@1.0 (componentC's purl, since it has no bom-ref)", v.Affects)
-			}
-		}
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"security", "scan", "grype", sbomPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if !found {
-		t.Error("CVE-NO-BOMREF missing from output")
+
+	var got cdx.BOM
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, stdout.String())
+	}
+
+	if got.Components == nil || len(*got.Components) != 1 {
+		t.Fatalf("got.Components = %+v, want exactly the one top-level image component", got.Components)
+	}
+	imageComponent := (*got.Components)[0]
+	if imageComponent.Components == nil || len(*imageComponent.Components) != 2 {
+		t.Fatalf("image component's nested Components = %+v, want 2 (lodash and musl)", imageComponent.Components)
+	}
+	nestedRefs := map[string]bool{}
+	for _, c := range *imageComponent.Components {
+		nestedRefs[c.BOMRef] = true
+	}
+	if !nestedRefs["pkg:npm/lodash@4.17.15"] || !nestedRefs["pkg:apk/musl@1.2.3"] {
+		t.Errorf("image component's nested Components = %+v, want lodash and musl", *imageComponent.Components)
+	}
+
+	if got.Vulnerabilities == nil || len(*got.Vulnerabilities) != 1 {
+		t.Fatalf("got.Vulnerabilities = %+v, want exactly 1", got.Vulnerabilities)
+	}
+	v := (*got.Vulnerabilities)[0]
+	if v.Affects == nil || len(*v.Affects) != 1 || (*v.Affects)[0].Ref != "pkg:npm/lodash@4.17.15" {
+		t.Errorf("CVE-NESTED.Affects = %+v, want a single entry for the nested lodash component, never the image itself", v.Affects)
 	}
 }
 
@@ -192,8 +252,8 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 	componentNPM := cdx.Component{BOMRef: "ref-npm", Name: "unsupported", PackageURL: "pkg:npm/unsupported@1.0"}
 
 	writeResponsesFile(t, map[string]string{
-		"pkg:oci/supported@1.0":   `[{"bom-ref":"CVE-OCI","id":"CVE-OCI"}]`,
-		"pkg:npm/unsupported@1.0": `[{"bom-ref":"CVE-NPM","id":"CVE-NPM"}]`,
+		"pkg:oci/supported@1.0":   `{"vulnerabilities":[{"bom-ref":"CVE-OCI","id":"CVE-OCI","affects":[{"ref":"pkg:oci/supported@1.0"}]}]}`,
+		"pkg:npm/unsupported@1.0": `{"vulnerabilities":[{"bom-ref":"CVE-NPM","id":"CVE-NPM","affects":[{"ref":"pkg:npm/unsupported@1.0"}]}]}`,
 	})
 
 	sbomPath := writeSBOMFile(t, componentOCI, componentNPM)

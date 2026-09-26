@@ -73,17 +73,37 @@ func (r *RemoteResult) Print(w io.Writer) error {
 	return nil
 }
 
-// SecurityResult is the JSON array a plugin's "security scan"
-// subcommand prints to stdout on success: every CycloneDX vulnerability
-// the scanned purl is affected by. Leave each entry's Affects unset —
-// bomify fills it in itself, using the component currently being
-// scanned, before merging results across every component in the SBOM
-// (see plugins/SECURITY-CONTRACT.md). An empty (but non-nil) result
-// reports that nothing was found, exactly as meaningfully as a
-// populated one.
-type SecurityResult []cdx.Vulnerability
+// SecurityResult is the JSON object a plugin's "security scan"
+// subcommand prints to stdout on success.
+//
+// Vulnerabilities lists every CycloneDX vulnerability the scanned purl
+// is affected by. The plugin — not bomify — sets each one's Affects:
+// for a purl scanned directly, Affects should reference that same purl
+// string back; for a purl the plugin had to unpack into smaller pieces
+// to scan at all (e.g. cataloging the packages inside a container
+// image), Affects should instead reference the specific piece(s) —
+// reported via Components below — actually affected, by their own
+// BOMRef, never the purl that was scanned. bomify never sets or
+// overwrites Affects itself; it only merges: two separate scans
+// reporting a vulnerability with the same (non-empty) BOMRef are folded
+// into one entry, combining their Affects, across every component in
+// the SBOM (see plugins/SECURITY-CONTRACT.md).
+//
+// Components is optional: it lists the pieces a plugin had to unpack
+// the scanned purl into to scan it at all (e.g. the packages found by
+// cataloging a container image), each as a CycloneDX component with its
+// own stable BOMRef. bomify embeds them as nested components under the
+// one it scanned. A plugin that scans the purl directly, with nothing
+// to unpack, leaves this nil.
+//
+// An empty (but non-nil) Vulnerabilities reports that nothing was
+// found, exactly as meaningfully as a populated one.
+type SecurityResult struct {
+	Vulnerabilities []cdx.Vulnerability `json:"vulnerabilities"`
+	Components      []cdx.Component     `json:"components,omitempty"`
+}
 
-// Print writes r to w as the single JSON array bomify expects a
+// Print writes r to w as the single JSON object bomify expects a
 // plugin's "security scan" subcommand to print to stdout on success.
 func (r SecurityResult) Print(w io.Writer) error {
 	enc := json.NewEncoder(w)

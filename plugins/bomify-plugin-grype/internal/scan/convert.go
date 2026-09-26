@@ -26,9 +26,18 @@ import (
 // Affects is deliberately left unset: bomify fills that in itself.
 func toVulnerability(m match.Match) cdx.Vulnerability {
 	v := cdx.Vulnerability{
-		BOMRef:  m.Vulnerability.ID,
-		ID:      m.Vulnerability.ID,
-		Affects: &[]cdx.Affects{{Ref: m.Package.PURL}},
+		BOMRef: m.Vulnerability.ID,
+		ID:     m.Vulnerability.ID,
+		Affects: &[]cdx.Affects{
+			{
+				Ref: m.Package.PURL,
+				Range: &[]cdx.AffectedVersions{
+					{
+						Version: m.Package.Version,
+					},
+				},
+			},
+		},
 	}
 
 	if rec := recommendation(m.Vulnerability.Fix); rec != "" {

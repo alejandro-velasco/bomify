@@ -50,9 +50,12 @@ func supportedComponents() {
 	fmt.Println(resp)
 }
 
-// scan prints the vulnerability array FAKESECURITY_RESPONSES_FILE maps
-// --purl to (see writeResponsesFile), or "[]" if that purl has no entry
-// — or no responses file was given at all.
+// scan prints the SecurityResult object FAKESECURITY_RESPONSES_FILE maps
+// --purl to (see writeResponsesFile), or "{}" (no vulnerabilities, no
+// components) if that purl has no entry — or no responses file was
+// given at all. Like a real plugin, whatever "affects" the canned
+// response sets is printed verbatim: this fake never adds or rewrites
+// it itself.
 func scan() {
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 	purl := fs.String("purl", "", "component purl")
@@ -74,7 +77,7 @@ func scan() {
 
 	result, ok := responses[*purl]
 	if !ok {
-		result = json.RawMessage("[]")
+		result = json.RawMessage("{}")
 	}
 
 	fmt.Println(string(result))

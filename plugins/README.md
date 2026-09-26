@@ -89,7 +89,11 @@ way, matches are checked against grype's own vulnerability database
 `grype` CLI uses, so an existing local grype install's DB is reused
 rather than downloaded twice), and converted into CycloneDX
 `vulnerability` objects by hand — this plugin never uses grype's own
-(deprecated) CycloneDX presenter.
+(deprecated) CycloneDX presenter. For an `oci`/`docker` scan, every
+cataloged package is also reported back as a `SecurityResult` component
+— which `bomify security scan` embeds as that image's own nested
+components in the SBOM — with each vulnerability's `affects` pointing at
+the specific package(s) actually affected, never the image itself.
 
 `security supported-components` reports exactly the purl types grype has
 a dedicated, ecosystem-specific matcher for (`apk`, `deb`, `rpm`, `alpm`,

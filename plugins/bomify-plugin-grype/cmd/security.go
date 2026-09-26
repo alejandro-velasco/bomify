@@ -36,12 +36,11 @@ func newSecurityScanCmd() *cobra.Command {
 			}
 			defer provider.Close()
 
-			vulnerabilities, err := scan.Purl(provider, purl)
+			result, err := scan.Purl(provider, purl)
 			if err != nil {
 				return err
 			}
 
-			result := pluginlib.SecurityResult(vulnerabilities)
 			return result.Print(cmd.OutOrStdout())
 		},
 	}

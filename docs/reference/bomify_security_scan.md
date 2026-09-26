@@ -16,11 +16,15 @@ via "security scan --purl <purl>", once per component, up to
 pulling/pushing.
 
 Each scan call reports the vulnerabilities that component's purl is
-affected by; bomify itself sets each one's "affects" to that component
-before merging results across every component — two components
-separately reporting a vulnerability with the same "bom-ref" are merged
-into one entry naming both components in "affects", rather than
-duplicated. See plugins/SECURITY-CONTRACT.md for the full contract.
+affected by, and sets each one's "affects" itself — to the purl it was
+given, or, if it had to unpack that purl into smaller pieces to scan it
+at all (e.g. cataloging a container image's contents), to the specific
+piece(s) actually affected. bomify only merges results across every
+component: two separate scans reporting a vulnerability with the same
+"bom-ref" are folded into one entry combining both "affects", rather
+than duplicated; any pieces a plugin reports unpacking a component into
+are embedded as that component's own nested components. See
+plugins/SECURITY-CONTRACT.md for the full contract.
 
 The scanned SBOM, with its "vulnerabilities" populated, is printed to
 stdout by default; --output redirects it to a file instead.

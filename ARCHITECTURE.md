@@ -195,21 +195,28 @@ delegation:
 4. **Delegate**, once per remaining component, up to `--concurrency` at
    a time (`forEachComponent` — the same concurrent-walk helper `bomify
    build`/`bomify distribute` use): call `security scan --purl <purl>`
-   (`plugin.Scan`) and parse its JSON array result, a list of CycloneDX
-   `Vulnerability` objects with `affects` left unset.
+   (`plugin.Scan`) and parse its JSON result, a `pluginlib.SecurityResult`
+   object: a list of CycloneDX `Vulnerability` objects (the plugin sets
+   each one's `affects` itself — to the purl it was given, or, if it had
+   to unpack that purl into smaller pieces to scan it at all, to the
+   specific piece(s) affected) plus, optionally, the pieces themselves as
+   CycloneDX `Component` objects.
 5. **Merge** every component's result into the SBOM's own
-   `vulnerabilities`: bomify sets each vulnerability's `affects` to the
-   component that reported it (by `bom-ref`, falling back to its purl),
-   then folds a vulnerability sharing an already-seen, non-empty
-   `bom-ref` into that existing entry — adding its `affects` rather than
-   appending a duplicate — via an in-memory `vulnerabilityMerger` safe
-   for the concurrent per-component calls above to write into directly.
+   `vulnerabilities`: a vulnerability sharing an already-seen, non-empty
+   `bom-ref` is folded into that existing entry — combining `affects`
+   rather than appending a duplicate — via an in-memory
+   `vulnerabilityMerger` safe for the concurrent per-component calls
+   above to write into directly. bomify never sets or overwrites
+   `affects` itself. Once every component has been scanned, any
+   `Component` objects a scan reported are embedded as that component's
+   own nested `Components` (`vulnerabilityMerger.applyNestedComponents`,
+   run single-threaded after `forEachComponent` returns, since it mutates
+   the SBOM's own component list directly).
 
 The scanned SBOM is then printed to stdout (or `--output`'s file). A
-plugin never opens `<sbom-file>`, never sees another component's
-result, and has no say in the merge — see
-[`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for the
-full contract this implements one side of.
+plugin never opens `<sbom-file>` or sees another component's result —
+see [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for
+the full contract this implements one side of.
 
 ### Concurrent, idempotent pulls
 

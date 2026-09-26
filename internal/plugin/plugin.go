@@ -433,10 +433,12 @@ func Remote(path string, component cdx.Component, baseDir string, logger *slog.L
 // so a failure's stderr is captured and folded into the returned error
 // exactly like a component plugin's single fatal message.
 //
-// Scan never sets any returned Vulnerability's Affects field — that's
-// the caller's job: cmd/security.go fills it in per component and
-// merges results across every component in an SBOM, so a plugin's only
-// responsibility here is answering "what does this purl have", nothing
+// The plugin itself — not cmd/security.go — sets every returned
+// Vulnerability's Affects field; cmd/security.go only merges results
+// across every component in an SBOM, deduplicating by BOMRef and
+// combining Affects, it never sets or overwrites Affects itself. A
+// plugin's responsibility here is answering "what does this purl have,
+// and what specifically does each finding affect", nothing
 // about the SBOM it came from.
 func Scan(path string, component cdx.Component, logger *slog.Logger) (pluginlib.SecurityResult, error) {
 	logger.Info("scanning component", "purl", component.PackageURL)
@@ -448,12 +450,12 @@ func Scan(path string, component cdx.Component, logger *slog.Logger) (pluginlib.
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("run plugin %s security scan: %w%s", path, err, formatStderr(stderr.String()))
+		return pluginlib.SecurityResult{}, fmt.Errorf("run plugin %s security scan: %w%s", path, err, formatStderr(stderr.String()))
 	}
 
 	var result pluginlib.SecurityResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		return nil, fmt.Errorf("parse output of plugin %s security scan: %w", path, err)
+		return pluginlib.SecurityResult{}, fmt.Errorf("parse output of plugin %s security scan: %w", path, err)
 	}
 
 	return result, nil

@@ -7,9 +7,12 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
 
+	"github.com/anchore/grype/grype/match"
 	grypePkg "github.com/anchore/grype/grype/pkg"
 	"github.com/anchore/grype/grype/vulnerability"
 	"github.com/anchore/syft/syft"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // imageReference derives a reference syft's own source resolution (see
@@ -57,7 +60,7 @@ func imageReference(purl packageurl.PackageURL) string {
 // auth login` populate) — the same defaults the standalone `grype`/
 // `syft` CLIs use, not bomify's own `bomify login` credential store,
 // which only `bomify-plugin-oci` reads.
-func scanImage(provider vulnerability.Provider, purl packageurl.PackageURL) ([]cdx.Vulnerability, error) {
+func scanImage(provider vulnerability.Provider, purl packageurl.PackageURL) (pluginlib.SecurityResult, error) {
 	ref := imageReference(purl)
 
 	cfg := grypePkg.ProviderConfig{
@@ -68,8 +71,89 @@ func scanImage(provider vulnerability.Provider, purl packageurl.PackageURL) ([]c
 
 	packages, pkgContext, _, err := grypePkg.Provide(ref, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("catalog image %q: %w", ref, err)
+		return pluginlib.SecurityResult{}, fmt.Errorf("catalog image %q: %w", ref, err)
 	}
 
-	return matchPackages(provider, packages, pkgContext, ref)
+	matches, err := findMatches(provider, packages, pkgContext)
+	if err != nil {
+		return pluginlib.SecurityResult{}, fmt.Errorf("find matches for %q: %w", ref, err)
+	}
+
+	return buildImageResult(packages, matches), nil
+}
+
+// buildImageResult reports every package syft found while cataloging the
+// image as a nested CycloneDX component (see toComponent), and every
+// match as a vulnerability whose Affects references the specific
+// package(s) it was matched against — never the image itself, since only
+// this plugin knows which package inside it is actually affected. The
+// same vulnerability matched against more than one package (common: the
+// same CVE often affects several packages in one image) is folded into a
+// single entry naming every affected package, rather than duplicated.
+func buildImageResult(packages []grypePkg.Package, matches *match.Matches) pluginlib.SecurityResult {
+	components := make([]cdx.Component, 0, len(packages))
+	for _, p := range packages {
+		components = append(components, toComponent(p))
+	}
+
+	vulnerabilities := make([]cdx.Vulnerability, 0, matches.Count())
+	byRef := map[string]int{}
+
+	for _, m := range matches.Sorted() {
+		v := toVulnerability(m)
+		affectedRef := packageRef(m.Package)
+
+		if v.BOMRef != "" {
+			if i, ok := byRef[v.BOMRef]; ok {
+				vulnerabilities[i].Affects = appendAffectedRef(vulnerabilities[i].Affects, affectedRef)
+				continue
+			}
+			byRef[v.BOMRef] = len(vulnerabilities)
+		}
+
+		v.Affects = appendAffectedRef(nil, affectedRef)
+		vulnerabilities = append(vulnerabilities, v)
+	}
+
+	return pluginlib.SecurityResult{Vulnerabilities: vulnerabilities, Components: components}
+}
+
+// toComponent converts a package grype/syft found while cataloging an
+// image into the CycloneDX component bomify embeds under the image's own
+// component.
+func toComponent(p grypePkg.Package) cdx.Component {
+	return cdx.Component{
+		BOMRef:     packageRef(p),
+		Type:       cdx.ComponentTypeLibrary,
+		Name:       p.Name,
+		Version:    p.Version,
+		PackageURL: p.PURL,
+	}
+}
+
+// packageRef returns the reference toComponent and buildImageResult's
+// Affects entries should name p by: its purl if it has one (true for
+// nearly every package grype matches), falling back to grype's own
+// internally-assigned package ID otherwise.
+func packageRef(p grypePkg.Package) string {
+	if p.PURL != "" {
+		return p.PURL
+	}
+	return string(p.ID)
+}
+
+// appendAffectedRef returns affects with ref appended, unless it's
+// already present.
+func appendAffectedRef(affects *[]cdx.Affects, ref string) *[]cdx.Affects {
+	var list []cdx.Affects
+	if affects != nil {
+		list = *affects
+	}
+	for _, a := range list {
+		if a.Ref == ref {
+			return &list
+		}
+	}
+	list = append(list, cdx.Affects{Ref: ref})
+	return &list
 }

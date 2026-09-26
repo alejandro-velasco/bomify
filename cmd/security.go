@@ -12,6 +12,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const securityShort = "Security scanning commands"
@@ -41,11 +42,15 @@ via "security scan --purl <purl>", once per component, up to
 pulling/pushing.
 
 Each scan call reports the vulnerabilities that component's purl is
-affected by; bomify itself sets each one's "affects" to that component
-before merging results across every component — two components
-separately reporting a vulnerability with the same "bom-ref" are merged
-into one entry naming both components in "affects", rather than
-duplicated. See plugins/SECURITY-CONTRACT.md for the full contract.
+affected by, and sets each one's "affects" itself — to the purl it was
+given, or, if it had to unpack that purl into smaller pieces to scan it
+at all (e.g. cataloging a container image's contents), to the specific
+piece(s) actually affected. bomify only merges results across every
+component: two separate scans reporting a vulnerability with the same
+"bom-ref" are folded into one entry combining both "affects", rather
+than duplicated; any pieces a plugin reports unpacking a component into
+are embedded as that component's own nested components. See
+plugins/SECURITY-CONTRACT.md for the full contract.
 
 The scanned SBOM, with its "vulnerabilities" populated, is printed to
 stdout by default; --output redirects it to a file instead.`
@@ -125,12 +130,14 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		if err != nil {
 			return err
 		}
-		log.Info("scan complete", "vulnerabilities", len(result))
+		log.Info("scan complete", "vulnerabilities", len(result.Vulnerabilities), "components", len(result.Components))
 		merger.add(component, result)
 		return nil
 	}); err != nil {
 		return err
 	}
+
+	merger.applyNestedComponents(bom.Components)
 
 	vulns := merger.result()
 	bom.Vulnerabilities = &vulns
@@ -155,36 +162,41 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 // deduplicated vulnerability list, safe for concurrent use by
 // forEachComponent's per-component goroutines.
 type vulnerabilityMerger struct {
-	mu    sync.Mutex
-	vulns []cdx.Vulnerability
-	byRef map[string]int // non-empty Vulnerability.BOMRef -> index into vulns
+	mu                 sync.Mutex
+	vulns              []cdx.Vulnerability
+	byRef              map[string]int // non-empty Vulnerability.BOMRef -> index into vulns
+	componentsByParent map[string][]cdx.Component
 }
 
 func newVulnerabilityMerger() *vulnerabilityMerger {
-	return &vulnerabilityMerger{vulns: []cdx.Vulnerability{}, byRef: map[string]int{}}
+	return &vulnerabilityMerger{
+		vulns:              []cdx.Vulnerability{},
+		byRef:              map[string]int{},
+		componentsByParent: map[string][]cdx.Component{},
+	}
 }
 
-// add folds component's scan result into m: each vulnerability's Affects
-// is set to component's own reference (its bom-ref, or its purl if it
-// has none), then merged into an already-collected entry sharing the
-// same, non-empty Vulnerability.BOMRef instead of being appended as a
-// duplicate — per plugins/SECURITY-CONTRACT.md's dedup rule. A
-// vulnerability with no bom-ref of its own is never deduplicated: two
-// unrelated findings that both happen to omit one would otherwise be
-// silently merged under a shared empty key, hiding a real result.
-func (m *vulnerabilityMerger) add(component cdx.Component, result []cdx.Vulnerability) {
-	ref := componentRef(component)
-
+// add folds component's scan result into m. Every vulnerability's
+// Affects is left exactly as the plugin reported it — bomify no longer
+// sets or overwrites it — merged into an already-collected entry
+// sharing the same, non-empty Vulnerability.BOMRef instead of being
+// appended as a duplicate — per plugins/SECURITY-CONTRACT.md's dedup
+// rule. A vulnerability with no bom-ref of its own is never
+// deduplicated: two unrelated findings that both happen to omit one
+// would otherwise be silently merged under a shared empty key, hiding a
+// real result. result.Components (if any) are recorded to be embedded
+// under component itself once every component has been scanned — see
+// applyNestedComponents.
+func (m *vulnerabilityMerger) add(component cdx.Component, result pluginlib.SecurityResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, v := range result {
-		affects := []cdx.Affects{{Ref: ref}}
-		if v.Affects != nil {
-			affects = append(affects, *v.Affects...)
-		}
-		v.Affects = &affects
+	if len(result.Components) > 0 {
+		ref := componentRef(component)
+		m.componentsByParent[ref] = append(m.componentsByParent[ref], result.Components...)
+	}
 
+	for _, v := range result.Vulnerabilities {
 		if v.BOMRef == "" {
 			m.vulns = append(m.vulns, v)
 			continue
@@ -205,6 +217,25 @@ func (m *vulnerabilityMerger) result() []cdx.Vulnerability {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.vulns
+}
+
+// applyNestedComponents embeds every component discovered while
+// unpacking a top-level component to scan it (see add) as that
+// component's own nested Components, in place within components. Called
+// once forEachComponent has finished, after every concurrent scan has
+// already returned, so it doesn't need m's mutex.
+func (m *vulnerabilityMerger) applyNestedComponents(components *[]cdx.Component) {
+	if components == nil {
+		return
+	}
+
+	for i := range *components {
+		nested, ok := m.componentsByParent[componentRef((*components)[i])]
+		if !ok {
+			continue
+		}
+		(*components)[i].Components = &nested
+	}
 }
 
 // componentRef returns the reference a vulnerability's Affects should

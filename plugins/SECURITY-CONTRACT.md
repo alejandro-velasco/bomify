@@ -46,9 +46,10 @@ dispatch:
    a time (mirroring `bomify build`/`bomify distribute`'s own flag):
    call `security scan --purl <purl>` and parse its JSON result.
 5. **Merge** every component's result into one deduplicated
-   vulnerability list — see [Merging](#merging) — and write it back
-   into the SBOM's `vulnerabilities`, printing the result to stdout (or
-   `--output`'s file).
+   vulnerability list — see [Merging](#merging) — write it back into
+   the SBOM's `vulnerabilities`, embed any reported `components` as that
+   component's own nested components, and print the result to stdout
+   (or `--output`'s file).
 
 A plugin never opens `<sbom-file>` itself, and `security scan` never
 sees any component but the one named by the `--purl` it was given for
@@ -71,7 +72,7 @@ bomify-plugin-<type> security supported-components
 | --- | --- | --- |
 | `--purl` | yes | *The component's package URL. The plugin derives everything it needs to know about what to scan from this string.* |
 
-On success, the plugin must print a single `SecurityResult` JSON array
+On success, the plugin must print a single `SecurityResult` JSON object
 (see [SecurityResult](#securityresult)) to stdout and exit `0`.
 
 ### `security supported-components`
@@ -97,39 +98,69 @@ business; write it straight to stderr if you want it, there's no
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one JSON value, printed only on success — a `SecurityResult` array for `scan`, a `SupportedComponentsResult` object for `supported-components`. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails accordingly (that component's scan, or the whole invocation for `supported-components`) if it isn't exactly that. |
+| stdout | Exactly one JSON value, printed only on success — a `SecurityResult` object for `scan`, a `SupportedComponentsResult` object for `supported-components`. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails accordingly (that component's scan, or the whole invocation for `supported-components`) if it isn't exactly that. |
 | stderr | A single, short, human-readable fatal error message, written only on failure (non-zero exit). bomify captures this and appends it verbatim to the error it reports; a single component's `scan` failure fails the whole `bomify security scan`, exactly like a failed `pull` fails the whole `bomify build` — and a failing `supported-components` call fails it before any component is even scanned. Like stdout, this is not a place for routine logging — though unlike the component contract, there's no `--log` file to route logging through instead, so a plugin may write its own diagnostics to stderr directly as long as nothing but the one fatal message appears there on failure. |
 | exit code | `0` on success (with valid JSON on stdout). Any non-zero value on failure. |
 
 ## SecurityResult
 
-The single JSON array a plugin prints to stdout on success: every
-CycloneDX vulnerability the scanned `--purl` is affected by.
+The single JSON object a plugin prints to stdout on success:
 
 ```json
-[
-  {
-    "bom-ref": "CVE-2024-12345",
-    "id": "CVE-2024-12345",
-    "description": "...",
-    "ratings": [{ "severity": "high" }]
-  }
-]
+{
+  "vulnerabilities": [
+    {
+      "bom-ref": "CVE-2024-12345",
+      "id": "CVE-2024-12345",
+      "description": "...",
+      "ratings": [{ "severity": "high" }],
+      "affects": [{ "ref": "pkg:npm/left-pad@1.3.0" }]
+    }
+  ],
+  "components": []
+}
 ```
 
-An empty array (`[]`) reports that nothing was found — just as
-meaningful a result as a populated one, and not an error.
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` the scanned `--purl` is affected by. |
+| `components` | array | no | Every CycloneDX `component` the plugin found while unpacking the scanned `--purl` into smaller pieces to scan it at all — see below. Omit entirely (or leave empty) if the plugin scanned the purl directly, with nothing to unpack. |
 
-Each entry is a regular [CycloneDX `vulnerability`](https://cyclonedx.org/docs/)
-object; there is no bomify-specific field beyond the array wrapper
-itself. **Leave `affects` unset.** bomify sets it itself, to the
-component currently being scanned, before merging — see
-[Merging](#merging) below for exactly why and how. Setting a stable
+An empty `vulnerabilities` array reports that nothing was found — just
+as meaningful a result as a populated one, and not an error.
+
+Each vulnerability is a regular
+[CycloneDX `vulnerability`](https://cyclonedx.org/docs/) object; there
+is no bomify-specific field beyond the two top-level keys themselves.
+**The plugin — not bomify — sets `affects`.** Two cases:
+
+- **Scanning the purl directly** (`components` is empty/omitted): set
+  `affects` to a single entry referencing that same purl string back
+  (`{"ref": "<the --purl you were given>"}`). There's nothing smaller
+  to attribute the finding to.
+- **Unpacking the purl into pieces** (`components` is non-empty, e.g.
+  cataloging a container image's contents): set `affects` to reference
+  the specific piece(s) — by their own `bom-ref`, from `components` —
+  actually affected, never the top-level purl itself. The same
+  vulnerability affecting more than one piece gets multiple `affects`
+  entries in one vulnerability object, not a duplicated one.
+
+bomify never sets or overwrites `affects` itself; see
+[Merging](#merging) below for what it does instead. Setting a stable
 `bom-ref` per vulnerability (the vulnerability's own ID is a reasonable
 choice) is what makes that merge meaningful: without one, the same
 vulnerability reported by two different components can't be recognized
 as the same finding, and ends up duplicated in the output instead of
 merged.
+
+Each entry in `components` is a regular
+[CycloneDX `component`](https://cyclonedx.org/docs/) object, with a
+stable `bom-ref` of the plugin's own choosing (a purl, if the piece has
+one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above).
+bomify embeds the entire list as the scanned component's own nested
+`components` in the SBOM — a real, if partial, bill of materials for
+whatever the plugin unpacked, not just a lookup table for `affects` to
+point into.
 
 A machine-readable version of this schema is published at
 [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
@@ -166,19 +197,24 @@ encoding.
 ## Merging
 
 Once every component has been scanned, bomify combines their results
-into the SBOM's own `vulnerabilities` array:
+into the SBOM's own `vulnerabilities` array and `components`:
 
-1. For each vulnerability a component's scan reported, bomify sets its
-   `affects` to that one component — by `bom-ref` if the component has
-   one, falling back to its purl if it doesn't.
-2. If a vulnerability with the same (non-empty) `bom-ref` has already
-   been collected from a different component, the two are merged: the
-   new one's `affects` entry is added to the existing entry's `affects`
-   instead of appending a whole second, duplicate vulnerability.
-3. A vulnerability with no `bom-ref` at all is never merged with
+1. If a vulnerability with the same (non-empty) `bom-ref` has already
+   been collected from a different component's scan, the two are
+   merged: the new one's `affects` entries are added to the existing
+   entry's `affects` (deduplicated by `ref`) instead of appending a
+   whole second, duplicate vulnerability. bomify never sets, rewrites,
+   or reorders `affects` beyond this — whatever a plugin reported is
+   what ends up in the output.
+2. A vulnerability with no `bom-ref` at all is never merged with
    anything — it's kept as its own distinct entry, since there'd be no
    reliable way to tell it apart from an unrelated finding that also
    happened to omit one.
+3. Every `components` entry a scan reported is embedded as that one
+   scanned component's own nested `components` in the SBOM — a plugin's
+   `components` are never merged with another component's, or with
+   anything already in the SBOM; they're additive, under the component
+   that produced them.
 
 This is entirely bomify's responsibility; a plugin never sees another
 component's result and has no say in how (or whether) its own findings
@@ -195,8 +231,11 @@ get merged with theirs.
   `security scan`; a plugin doesn't need to validate or reject a purl
   type it doesn't support, since it will simply never be asked about
   one.
-- No knowledge of the SBOM it came from, `affects`, or any other
-  component's result — bomify assembles all of that afterward.
+- No knowledge of the SBOM it came from, or any other component's
+  result — bomify assembles the final `vulnerabilities`/`components`
+  from every component's scan afterward. A plugin does still set its
+  own findings' `affects`, since only it knows what its own result is
+  actually about — see [SecurityResult](#securityresult).
 - No coordination with this binary's own component or SBOM generation
   subcommands (if it has any) — the three contracts must not depend on
   each other's behavior or state.
