@@ -23,21 +23,13 @@ import (
 // plugins/SECURITY-CONTRACT.md's recommended convention — this is what
 // lets bomify recognize the same vulnerability reported by two
 // different components and merge them, rather than duplicating it.
-// Affects is deliberately left unset: bomify fills that in itself.
+// Affects is deliberately left unset: Purl and buildImageResult each set
+// it themselves afterward, since only they know what this vulnerability
+// should actually be attributed to (see plugins/SECURITY-CONTRACT.md).
 func toVulnerability(m match.Match) cdx.Vulnerability {
 	v := cdx.Vulnerability{
 		BOMRef: m.Vulnerability.ID,
 		ID:     m.Vulnerability.ID,
-		Affects: &[]cdx.Affects{
-			{
-				Ref: m.Package.PURL,
-				Range: &[]cdx.AffectedVersions{
-					{
-						Version: m.Package.Version,
-					},
-				},
-			},
-		},
 	}
 
 	if rec := recommendation(m.Vulnerability.Fix); rec != "" {
@@ -64,7 +56,8 @@ func toVulnerability(m match.Match) cdx.Vulnerability {
 // reports, falling back to a single rating carrying just the overall
 // severity when there's no CVSS data at all (grype still assigns a
 // severity — e.g. from a distro's own advisory — even for sources that
-// don't publish CVSS).
+// don't publish CVSS), plus an EPSS rating and a CISA KEV rating when
+// grype's metadata carries them (see epssRating/kevRating).
 func ratings(meta *vulnerability.Metadata) *[]cdx.VulnerabilityRating {
 	var out []cdx.VulnerabilityRating
 
@@ -87,10 +80,55 @@ func ratings(meta *vulnerability.Metadata) *[]cdx.VulnerabilityRating {
 		out = append(out, cdx.VulnerabilityRating{Severity: sev})
 	}
 
+	if r := epssRating(meta.EPSS); r != nil {
+		out = append(out, *r)
+	}
+	if r := kevRating(meta.KnownExploited); r != nil {
+		out = append(out, *r)
+	}
+
 	if len(out) == 0 {
 		return nil
 	}
 	return &out
+}
+
+// epssRating reports FIRST's EPSS score — the probability, from 0 to 1,
+// that this vulnerability will be exploited in the wild in the next 30
+// days — as an extra rating, using the first (most recent; grype's DB
+// keeps EPSS records date-sorted) entry grype's metadata carries. nil if
+// it carries none. CycloneDX has no dedicated EPSS field, so this
+// hijacks Method as a free-text label, the same way grype's own
+// (deprecated) CycloneDX presenter already does.
+func epssRating(epss []vulnerability.EPSS) *cdx.VulnerabilityRating {
+	if len(epss) == 0 {
+		return nil
+	}
+
+	score := epss[0].EPSS
+	return &cdx.VulnerabilityRating{
+		Method: cdx.ScoringMethod("EPSS"),
+		Score:  &score,
+		Source: &cdx.Source{Name: "FIRST", URL: "https://www.first.org/epss/"},
+	}
+}
+
+// kevRating flags this vulnerability as listed in CISA's Known Exploited
+// Vulnerabilities catalog, as an extra rating with a fixed score of 1 —
+// nil if grype's metadata reports no KEV entry. Like epssRating, KEV has
+// no dedicated CycloneDX field of its own either.
+func kevRating(kev []vulnerability.KnownExploited) *cdx.VulnerabilityRating {
+	if len(kev) == 0 {
+		return nil
+	}
+
+	score := 1.0
+	return &cdx.VulnerabilityRating{
+		Method:        cdx.ScoringMethodOther,
+		Score:         &score,
+		Source:        &cdx.Source{Name: "CISA KEV Catalog", URL: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"},
+		Justification: "Listed in CISA KEV",
+	}
 }
 
 // severity maps grype's own severity string through its own

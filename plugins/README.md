@@ -99,6 +99,16 @@ location syft found it at inside the image (an apk/dpkg database entry,
 a `package.json`, a jar on disk, ...), so its origin stays traceable
 back to the image's own filesystem.
 
+Every vulnerability's `ratings` also include, when grype's database
+carries them for that CVE, [FIRST's EPSS score](https://www.first.org/epss/)
+(the probability it's exploited in the wild in the next 30 days) and a
+flag for [CISA's Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+— both already part of grype's own vulnerability database (no separate
+download or dependency), reported the same way grype's own (deprecated)
+CycloneDX presenter does, as extra `ratings` entries with a free-text
+`method` (`"EPSS"`/`"other"`) rather than a dedicated CycloneDX field,
+since neither has one.
+
 `security supported-components` reports exactly the purl types grype has
 a dedicated, ecosystem-specific matcher for (`apk`, `deb`, `rpm`, `alpm`,
 `bitnami`, `npm`, `golang`, `maven`, `pypi`, `gem`, `cargo`, `nuget`,

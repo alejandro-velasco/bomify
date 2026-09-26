@@ -186,6 +186,87 @@ func TestScoringMethodMapping(t *testing.T) {
 	}
 }
 
+func TestEPSSRatingUsesMostRecentEntry(t *testing.T) {
+	if got := epssRating(nil); got != nil {
+		t.Errorf("epssRating(nil) = %+v, want nil", got)
+	}
+
+	got := epssRating([]vulnerability.EPSS{{CVE: "CVE-2024-0001", EPSS: 0.42}})
+	if got == nil {
+		t.Fatal("epssRating() = nil, want a rating")
+	}
+	if got.Method != cdx.ScoringMethod("EPSS") {
+		t.Errorf("Method = %q, want EPSS", got.Method)
+	}
+	if got.Score == nil || *got.Score != 0.42 {
+		t.Errorf("Score = %v, want 0.42", got.Score)
+	}
+	if got.Source == nil || got.Source.Name != "FIRST" {
+		t.Errorf("Source = %+v, want FIRST", got.Source)
+	}
+}
+
+func TestKEVRatingFlagsListedVulnerabilities(t *testing.T) {
+	if got := kevRating(nil); got != nil {
+		t.Errorf("kevRating(nil) = %+v, want nil", got)
+	}
+
+	got := kevRating([]vulnerability.KnownExploited{{CVE: "CVE-2024-0001"}})
+	if got == nil {
+		t.Fatal("kevRating() = nil, want a rating")
+	}
+	if got.Score == nil || *got.Score != 1.0 {
+		t.Errorf("Score = %v, want 1.0", got.Score)
+	}
+	if got.Justification != "Listed in CISA KEV" {
+		t.Errorf("Justification = %q", got.Justification)
+	}
+	if got.Source == nil || got.Source.Name != "CISA KEV Catalog" {
+		t.Errorf("Source = %+v, want CISA KEV Catalog", got.Source)
+	}
+}
+
+func TestToVulnerabilityIncludesEPSSAndKEVRatings(t *testing.T) {
+	m := match.Match{
+		Vulnerability: vulnerability.Vulnerability{
+			Reference: vulnerability.Reference{ID: "CVE-2021-44228"},
+			Metadata: &vulnerability.Metadata{
+				Severity:       "Critical",
+				EPSS:           []vulnerability.EPSS{{CVE: "CVE-2021-44228", EPSS: 0.97}},
+				KnownExploited: []vulnerability.KnownExploited{{CVE: "CVE-2021-44228"}},
+			},
+		},
+	}
+
+	got := toVulnerability(m)
+
+	// The base severity-only rating, plus EPSS and KEV: 3 entries.
+	if got.Ratings == nil || len(*got.Ratings) != 3 {
+		t.Fatalf("Ratings = %+v, want 3 entries (severity, EPSS, KEV)", got.Ratings)
+	}
+
+	var sawEPSS, sawKEV bool
+	for _, r := range *got.Ratings {
+		switch r.Method {
+		case cdx.ScoringMethod("EPSS"):
+			sawEPSS = true
+			if r.Score == nil || *r.Score != 0.97 {
+				t.Errorf("EPSS rating score = %v, want 0.97", r.Score)
+			}
+		case cdx.ScoringMethodOther:
+			if r.Justification == "Listed in CISA KEV" {
+				sawKEV = true
+			}
+		}
+	}
+	if !sawEPSS {
+		t.Error("no EPSS rating found")
+	}
+	if !sawKEV {
+		t.Error("no KEV rating found")
+	}
+}
+
 func TestRecommendation(t *testing.T) {
 	tests := []struct {
 		name string
