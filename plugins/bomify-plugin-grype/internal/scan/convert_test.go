@@ -55,9 +55,6 @@ func TestToVulnerabilityFullMetadata(t *testing.T) {
 	if got.Recommendation != "Upgrade to version(s) 2.15.0." {
 		t.Errorf("Recommendation = %q", got.Recommendation)
 	}
-	if got.Affects != nil {
-		t.Errorf("Affects = %+v, want nil (bomify sets this, not the plugin)", got.Affects)
-	}
 
 	if got.CWEs == nil || len(*got.CWEs) != 2 {
 		t.Fatalf("CWEs = %+v, want exactly 2 deduplicated entries", got.CWEs)

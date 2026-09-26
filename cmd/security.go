@@ -179,7 +179,11 @@ func (m *vulnerabilityMerger) add(component cdx.Component, result []cdx.Vulnerab
 	defer m.mu.Unlock()
 
 	for _, v := range result {
-		v.Affects = &[]cdx.Affects{{Ref: ref}}
+		affects := []cdx.Affects{{Ref: ref}}
+		if v.Affects != nil {
+			affects = append(affects, *v.Affects...)
+		}
+		v.Affects = &affects
 
 		if v.BOMRef == "" {
 			m.vulns = append(m.vulns, v)
