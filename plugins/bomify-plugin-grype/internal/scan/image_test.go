@@ -9,6 +9,7 @@ import (
 	"github.com/anchore/grype/grype/match"
 	grypePkg "github.com/anchore/grype/grype/pkg"
 	"github.com/anchore/grype/grype/vulnerability"
+	"github.com/anchore/syft/syft/file"
 )
 
 func TestImageReference(t *testing.T) {
@@ -73,6 +74,34 @@ func TestToComponent(t *testing.T) {
 	}
 	if got.PackageURL != "pkg:apk/openssl@1.1.1" {
 		t.Errorf("PackageURL = %q", got.PackageURL)
+	}
+	if got.Evidence != nil {
+		t.Errorf("Evidence = %+v, want nil since the package has no locations", got.Evidence)
+	}
+}
+
+func TestToComponentRecordsEvidenceOccurrencesFromLocations(t *testing.T) {
+	locations := file.NewLocationSet(
+		file.NewLocation("/lib/apk/db/installed"),
+		file.NewLocation("/usr/lib/apk/db/installed"),
+	)
+	p := grypePkg.Package{ID: "grype-id-1", Name: "openssl", Version: "1.1.1", PURL: "pkg:apk/openssl@1.1.1", Locations: locations}
+
+	got := toComponent(p)
+
+	if got.Evidence == nil || got.Evidence.Occurrences == nil {
+		t.Fatalf("Evidence.Occurrences = %+v, want one entry per location", got.Evidence)
+	}
+	occurrences := *got.Evidence.Occurrences
+	if len(occurrences) != 2 {
+		t.Fatalf("got %d occurrences, want 2: %+v", len(occurrences), occurrences)
+	}
+	paths := map[string]bool{}
+	for _, occ := range occurrences {
+		paths[occ.Location] = true
+	}
+	if !paths["/lib/apk/db/installed"] || !paths["/usr/lib/apk/db/installed"] {
+		t.Errorf("occurrences = %+v, want both installed-db paths", occurrences)
 	}
 }
 

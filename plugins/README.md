@@ -93,7 +93,11 @@ rather than downloaded twice), and converted into CycloneDX
 cataloged package is also reported back as a `SecurityResult` component
 — which `bomify security scan` embeds as that image's own nested
 components in the SBOM — with each vulnerability's `affects` pointing at
-the specific package(s) actually affected, never the image itself.
+the specific package(s) actually affected, never the image itself. Each
+nested component also carries `evidence.occurrences`, one per file
+location syft found it at inside the image (an apk/dpkg database entry,
+a `package.json`, a jar on disk, ...), so its origin stays traceable
+back to the image's own filesystem.
 
 `security supported-components` reports exactly the purl types grype has
 a dedicated, ecosystem-specific matcher for (`apk`, `deb`, `rpm`, `alpm`,

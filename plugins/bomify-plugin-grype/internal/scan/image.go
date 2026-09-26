@@ -11,6 +11,7 @@ import (
 	grypePkg "github.com/anchore/grype/grype/pkg"
 	"github.com/anchore/grype/grype/vulnerability"
 	"github.com/anchore/syft/syft"
+	"github.com/anchore/syft/syft/file"
 
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
@@ -120,15 +121,41 @@ func buildImageResult(packages []grypePkg.Package, matches *match.Matches) plugi
 
 // toComponent converts a package grype/syft found while cataloging an
 // image into the CycloneDX component bomify embeds under the image's own
-// component.
+// component. Its Evidence.Occurrences record every file location that
+// led syft to discover it (e.g. an apk database entry, a package.json,
+// a jar on disk) — the paths inside the image, not on this machine's own
+// filesystem, that back the finding.
 func toComponent(p grypePkg.Package) cdx.Component {
-	return cdx.Component{
+	c := cdx.Component{
 		BOMRef:     packageRef(p),
 		Type:       cdx.ComponentTypeLibrary,
 		Name:       p.Name,
 		Version:    p.Version,
 		PackageURL: p.PURL,
 	}
+
+	if occurrences := evidenceOccurrences(p.Locations); occurrences != nil {
+		c.Evidence = &cdx.Evidence{Occurrences: occurrences}
+	}
+
+	return c
+}
+
+// evidenceOccurrences converts locations into CycloneDX evidence
+// occurrences, in the stable order LocationSet.ToSlice already
+// guarantees. Returns nil if there are none, so toComponent can leave
+// Evidence unset rather than pointing at an empty occurrences list.
+func evidenceOccurrences(locations file.LocationSet) *[]cdx.EvidenceOccurrence {
+	paths := locations.ToSlice()
+	if len(paths) == 0 {
+		return nil
+	}
+
+	occurrences := make([]cdx.EvidenceOccurrence, 0, len(paths))
+	for _, loc := range paths {
+		occurrences = append(occurrences, cdx.EvidenceOccurrence{Location: loc.Path()})
+	}
+	return &occurrences
 }
 
 // packageRef returns the reference toComponent and buildImageResult's
