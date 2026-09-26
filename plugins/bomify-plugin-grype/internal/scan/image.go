@@ -12,12 +12,6 @@ import (
 	"github.com/anchore/syft/syft"
 )
 
-// imageTypes are the purl types Purl dispatches to scanImage rather than
-// looking up directly against grype's vulnerability database — an
-// "oci"/"docker" purl names a whole container image, which has no
-// packages of its own until something catalogs what's inside it.
-var imageTypes = map[string]bool{"oci": true, "docker": true}
-
 // imageReference derives a reference syft's own source resolution (see
 // getSource in grype/pkg/syft_provider.go) can pull or open from purl,
 // preferring the "tag" qualifier, then a digest-shaped version, then a

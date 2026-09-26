@@ -88,7 +88,7 @@ func Purl(provider vulnerability.Provider, purlString string) ([]cdx.Vulnerabili
 		return nil, fmt.Errorf("parse purl %q: %w", purlString, err)
 	}
 
-	if imageTypes[parsed.Type] {
+	if parsed.Type == packageurl.TypeOCI || parsed.Type == packageurl.TypeDocker {
 		return scanImage(provider, parsed)
 	}
 
@@ -154,20 +154,20 @@ func matchPackages(provider vulnerability.Provider, packages []grypePkg.Package,
 // — there's no image or package to catalog or look up for it.
 func SupportedTypes() []string {
 	return []string{
-		"apk",     // Alpine (grype/matcher/apk)
-		"deb",     // Debian/Ubuntu (grype/matcher/dpkg)
-		"rpm",     // Fedora/RHEL/etc. (grype/matcher/rpm)
-		"alpm",    // Arch Linux (grype/matcher/pacman)
-		"bitnami", // Bitnami packages (grype/matcher/bitnami)
-		"npm",     // Node.js (grype/matcher/javascript)
-		"golang",  // Go modules (grype/matcher/golang)
-		"maven",   // Java (grype/matcher/java)
-		"pypi",    // Python (grype/matcher/python)
-		"gem",     // Ruby (grype/matcher/ruby)
-		"cargo",   // Rust (grype/matcher/rust)
-		"nuget",   // .NET (grype/matcher/dotnet)
-		"hex",     // Erlang/Elixir (grype/matcher/hex)
-		"oci",     // container images, cataloged with syft first (image.go)
-		"docker",  // same as "oci" — see plugins/README.md on the alias
+		packageurl.TypeApk,     // Alpine (grype/matcher/apk)
+		packageurl.TypeDebian,  // Debian/Ubuntu (grype/matcher/dpkg)
+		packageurl.TypeRPM,     // Fedora/RHEL/etc. (grype/matcher/rpm)
+		packageurl.TypeAlpm,    // Arch Linux (grype/matcher/pacman)
+		packageurl.TypeBitnami, // Bitnami packages (grype/matcher/bitnami)
+		packageurl.TypeNPM,     // Node.js (grype/matcher/javascript)
+		packageurl.TypeGolang,  // Go modules (grype/matcher/golang)
+		packageurl.TypeMaven,   // Java (grype/matcher/java)
+		packageurl.TypePyPi,    // Python (grype/matcher/python)
+		packageurl.TypeGem,     // Ruby (grype/matcher/ruby)
+		packageurl.TypeCargo,   // Rust (grype/matcher/rust)
+		packageurl.TypeNuget,   // .NET (grype/matcher/dotnet)
+		packageurl.TypeHex,     // Erlang/Elixir (grype/matcher/hex)
+		packageurl.TypeDocker,  // container images, cataloged with syft first (image.go)
+		packageurl.TypeOCI,     // same as "oci" — see plugins/README.md on the alias
 	}
 }

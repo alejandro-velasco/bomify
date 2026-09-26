@@ -37,16 +37,3 @@ func TestImageReference(t *testing.T) {
 		})
 	}
 }
-
-func TestSupportedTypesIncludesImageTypes(t *testing.T) {
-	types := make(map[string]bool)
-	for _, t := range SupportedTypes() {
-		types[t] = true
-	}
-
-	for imageType := range imageTypes {
-		if !types[imageType] {
-			t.Errorf("SupportedTypes() missing image type %q", imageType)
-		}
-	}
-}
