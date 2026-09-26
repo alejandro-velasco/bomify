@@ -52,7 +52,7 @@ func TestToVulnerabilityFullMetadata(t *testing.T) {
 	if got.Source == nil || got.Source.Name != "github:language:java" || got.Source.URL != "https://github.com/advisories/GHSA-jfh8-c2jp-5v3q" {
 		t.Errorf("Source = %+v", got.Source)
 	}
-	if got.Recommendation != "Upgrade to version 2.15.0." {
+	if got.Recommendation != "Upgrade to version(s) 2.15.0." {
 		t.Errorf("Recommendation = %q", got.Recommendation)
 	}
 	if got.Affects != nil {
@@ -195,8 +195,8 @@ func TestRecommendation(t *testing.T) {
 		fix  vulnerability.Fix
 		want string
 	}{
-		{"fixed with version", vulnerability.Fix{State: vulnerability.FixStateFixed, Versions: []string{"1.2.3"}}, "Upgrade to version 1.2.3."},
-		{"fixed with multiple versions", vulnerability.Fix{State: vulnerability.FixStateFixed, Versions: []string{"1.2.3", "2.0.0"}}, "Upgrade to version 1.2.3 or 2.0.0."},
+		{"fixed with version", vulnerability.Fix{State: vulnerability.FixStateFixed, Versions: []string{"1.2.3"}}, "Upgrade to version(s) 1.2.3."},
+		{"fixed with multiple versions", vulnerability.Fix{State: vulnerability.FixStateFixed, Versions: []string{"1.2.3", "2.0.0"}}, "Upgrade to version(s) 1.2.3 | 2.0.0."},
 		{"fixed, no version", vulnerability.Fix{State: vulnerability.FixStateFixed}, "Fixed; no specific version reported."},
 		{"wont fix", vulnerability.Fix{State: vulnerability.FixStateWontFix}, "The vendor has stated this will not be fixed."},
 		{"not fixed", vulnerability.Fix{State: vulnerability.FixStateNotFixed}, ""},

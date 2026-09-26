@@ -174,7 +174,7 @@ func recommendation(fix vulnerability.Fix) string {
 		if len(fix.Versions) == 0 {
 			return "Fixed; no specific version reported."
 		}
-		return fmt.Sprintf("Upgrade to version %s.", strings.Join(fix.Versions, " or "))
+		return fmt.Sprintf("Upgrade to version(s) %s.", strings.Join(fix.Versions, " | "))
 	case vulnerability.FixStateWontFix:
 		return "The vendor has stated this will not be fixed."
 	default:
