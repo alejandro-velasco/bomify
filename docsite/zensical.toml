@@ -17,6 +17,14 @@ nav = [
       "getting-started/installing-plugins.md",
       "getting-started/quickstart.md",
   ] },
+  { "How-to guides" = [
+      "how-to/index.md",
+      { "Building a package" = "how-to/building-a-package.md" },
+      { "Distributing a package" = "how-to/distributing-a-package.md" },
+      { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
+      { "Scanning with grype" = "how-to/scanning-with-grype.md" },
+      { "Saving packages for airgapped environments" = "how-to/saving-packages-for-airgapped-environments.md" },
+  ] },
   { "Usage" = [
       "usage/index.md",
       { "bomify" = "usage/reference/bomify.md" },
@@ -82,7 +90,8 @@ nav = [
 [project.theme]
 # variant = "classic"
 # custom_dir = "overrides"
-# favicon = "images/favicon.png"
+logo = "assets/logo-mark.svg"
+favicon = "assets/images/favicon.png"
 language = "en"
 features = [
   "announce.dismiss",

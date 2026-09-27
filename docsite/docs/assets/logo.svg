@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 215" role="img" aria-label="bomify logo: a file containing the letter B, flush against a shipping container reading omify">
+  <g fill="none" stroke="#5865F2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <!-- file, containing "B" -->
+    <path d="M10,60 L88,60 L110,82 L110,200 L10,200 Z" />
+    <path d="M88,60 L88,82 L110,82" />
+
+    <!-- shipping container: front (long) face, flush against the file, no gap -->
+    <path d="M110,80 L290,80 L290,200 L110,200" />
+
+
+    <path d="M305,100 L305,170" />
+    <path d="M320,110 L320,155" />
+
+
+
+    <!-- end face: only the side is shown, no top or bottom cap -->
+    <path d="M290,80 L335,100 L335,157 L290,200" />
+  </g>
+
+  <text x="60" y="180" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-weight="700" font-size="75" fill="#5865F2">B</text>
+
+  <text x="190" y="180" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-weight="700" font-size="40" letter-spacing="8" fill="#5865F2">omify</text>
+
+</svg>
