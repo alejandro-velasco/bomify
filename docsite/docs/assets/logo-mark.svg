@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="bomify: a file containing the letter B">
+  <g fill="none" stroke="#5865F2" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15,10 L85,10 L105,30 L105,110 L15,110 Z" />
+    <path d="M85,10 L85,30 L105,30" />
+  </g>
+  <text x="60" y="95" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-weight="700" font-size="70" fill="#5865F2">B</text>
+</svg>

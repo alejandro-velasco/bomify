@@ -3,6 +3,10 @@ icon: lucide/package
 title: bomify
 ---
 
+<p align="center">
+  <img src="assets/logo.svg" alt="bomify logo" width="360">
+</p>
+
 # Overview
 
 ## What is Bomify?
