@@ -14,6 +14,8 @@ uses; it doesn't repeat it.
   an SBOM describes into a locally tagged package.
 - [Distributing a package](distributing-a-package.md) — publish a
   built package's components to one or more remote endpoints.
+- [Publishing and pulling packages](publishing-and-pulling-packages.md) —
+  push a whole package to an OCI registry and pull it back elsewhere.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md) —
   generate a CycloneDX SBOM from a chart's rendered templates, no
   cluster required.
