@@ -90,7 +90,8 @@ nav = [
 [project.theme]
 # variant = "classic"
 # custom_dir = "overrides"
-# favicon = "images/favicon.png"
+logo = "assets/logo.svg"
+favicon = "assets/images/favicon.png"
 language = "en"
 features = [
   "announce.dismiss",
