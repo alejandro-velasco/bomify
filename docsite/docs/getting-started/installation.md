@@ -20,21 +20,24 @@ root, ready to drop onto `PATH`.
 
 ### Linux / macOS
 
-Pick a `VERSION` from the [Releases](https://github.com/alejandro-velasco/bomify/releases)
-page (e.g. `v1.11.0`), then, matching your OS/architecture:
-
 ```sh
-VERSION=v1.11.0
-OS=linux      # or: darwin
-ARCH=amd64    # or: arm64
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')  # linux or darwin
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+esac
 
-curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/bomify-${VERSION}-${OS}-${ARCH}.tar.gz"
+VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/alejandro-velasco/bomify/releases/latest | grep -oE '[^/]+$')
+ARCHIVE_VERSION=${VERSION#v}  # release tags are v-prefixed (e.g. v1.11.0), archive filenames aren't (bomify-1.11.0-...)
+
+curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz"
 curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/checksums.txt"
 
 # Verify the download against the published checksum before running anything.
-grep " bomify-${VERSION}-${OS}-${ARCH}.tar.gz\$" checksums.txt | sha256sum -c -
+grep " bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz\$" checksums.txt | sha256sum -c -
 
-tar -xzf "bomify-${VERSION}-${OS}-${ARCH}.tar.gz"
+tar -xzf "bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz"
 chmod +x bomify bomify-plugin-*
 sudo mv bomify bomify-plugin-* /usr/local/bin/
 ```

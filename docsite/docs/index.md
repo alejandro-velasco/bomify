@@ -3,22 +3,23 @@ icon: lucide/package
 title: bomify
 ---
 
-# bomify
+# Overview
 
-`bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/)
+## What is Bomify?
+
+`bomify` is a CLI that builds OCI packages from [CycloneDX](https://cyclonedx.org/)
 Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build` walks its components, delegating each one
-to an external plugin binary that knows how to pull it. `bomify distribute`
-later republishes an already-built package the same way, one component at a
-time — to a different registry, a mirror, or wherever the component's own
-plugin knows how to send it.
+Bomify works as an orchestrator, by delegating component specific actions
+to an external plugin binary (i.e. `bomify-plugin-<component-type>`) that knows how to interect with
+that component type's api.
 
-bomify's design deliberately mirrors Docker's: a **package** is built from a
-CycloneDX SBOM the way an image is built from a Dockerfile, a **tag** points a
-human-readable name at one, and `packages`/`tag`/`package rm`/`save`/`load`
-all have a direct Docker analogue. What Docker calls "layers" are here the
-individual **components** an SBOM describes — each pulled independently,
+bomify's design deliberately mirrors many OCI container management tools (i.e. Docker, Podman, etc.): 
+
+- A **package** is built from a CycloneDX SBOM the way an **image** is built from a Dockerfile, 
+- A **tag** is a human readable reference to an SBOM Package
+- The `package` subcommand subcommand works fairly similarly to the docker `image` subcommand
+- What Docker/Podman calls **layers** are here the individual **components** an SBOM describes — each pulled independently,
 cached independently, and reused across builds by content hash.
 
 !!! warning "Pre-alpha"
@@ -43,8 +44,7 @@ cached independently, and reused across builds by content hash.
 
     ---
 
-    Full reference for every command, generated straight from the CLI
-    itself.
+    Full reference for every command
 
     [:octicons-arrow-right-24: Usage](usage/index.md)
 
@@ -52,8 +52,7 @@ cached independently, and reused across builds by content hash.
 
     ---
 
-    bomify doesn't know how to fetch anything itself — every purl type is
-    handled by an external plugin binary.
+    Build a plugin to extend bomify's functionality.
 
     [:octicons-arrow-right-24: Building a plugin](development/building-a-plugin.md)
 

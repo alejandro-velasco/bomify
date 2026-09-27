@@ -5,7 +5,7 @@ icon: lucide/rocket
 # Getting started
 
 This section walks through installing bomify and its first-party plugins,
-and building your first package. If you just want the flags for a specific
+as well as building your first package. If you just want the flags for a specific
 command, skip ahead to [Usage](../usage/index.md).
 
 bomify itself never fetches or publishes anything — it only reads a

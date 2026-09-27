@@ -1,46 +1,64 @@
 # Plugins
 
-Plugins created and supported by the bomify project itself, as opposed to
+The following are plugins created and supported by the bomify project itself, as opposed to
 third-party plugins a user might install separately. Each subdirectory here
-is a standalone `bomify-plugin-<kind>` binary implementing the
-**component plugin** contract's `component pull`/`component push`/
-`component remote` subcommands, specified in
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md).
+is a standalone `bomify-plugin-<kind>` binary implementing at least one of the following plugin classes:
 
-Component plugins are one of three entirely independent plugin classes a
-`bomify-plugin-<kind>` binary can implement. **SBOM generation plugins**
+- **Component plugins**
+(`component push|pull|remote`, specified in
+[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md))
+- **SBOM generation plugins**
 (`sbom generate`, specified in
 [`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md))
-inspect a deployment medium and build a fresh SBOM for it.
-`bomify-plugin-helm` is the one plugin below that implements both this
-and the component contract — see its own row and the paragraph
-following the table. **Security scanning plugins** (`security scan
---purl <purl>`, specified in
+inspect a deployment medium and build a fresh SBOM for it. 
+- **Security scanning plugins** (`security scan|supported-components`, specified in
 [`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md))
 report the vulnerabilities one component's purl is affected by; `bomify
 security scan` calls the same plugin once per component in an existing
 SBOM (concurrently, like `bomify build`/`bomify distribute`) and merges
 their results into the SBOM's own vulnerabilities.
-[`bomify-plugin-grype`](#bomify-plugin-grype-security-scanning) below
-implements this contract, independently of the three component plugins.
 
-| Plugin                                        | Kind     | Backing library                                                                   |
-|------------------------------------------------|----------|-------------------------------------------------------------------------------------|
-| [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)     | `oci`    | [go-containerregistry/pkg/crane](https://github.com/google/go-containerregistry)   |
-| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [helm.sh/helm/v3/pkg/action](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) (Pull/Push, the same code behind the `helm` CLI) |
-| [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push |
+| Plugin                                        | Kind     | Backing library                                                                   | Contracts Implemented |
+|------------------------------------------------|----------|-------------------------------------------------------------------------------------|-------------------------|
+| [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)     | `oci`    | [Crane Golang SDK](https://github.com/google/go-containerregistry)   | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
+| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [Helm Golang SDK](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) (Pull/Push, the same code behind the `helm` CLI) | <ul><li>COMPONENT-CONTRACT.md</li><li>SBOM-CONTRACT</li></ul> |
+| [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
+| [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
 
-`bomify-plugin-helm`'s `component pull` supports both classic HTTP(S)
+## bomify-plugin-oci
+
+[`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)
+implements the component contract's `component pull`/`push`/`remote` for
+`pkg:oci/...`/`pkg:docker/...` purls, using the
+[Crane Golang SDK](https://github.com/google/go-containerregistry) to talk
+to OCI registries. It resolves a purl's reference by preferring its `tag`
+qualifier, then a digest-shaped version, then a plain tag, and finally the
+bare repository when there's no version at all; `repository_url` (if
+present) overrides the purl's own namespace/name as the registry address.
+
+## bomify-plugin-helm
+
+[`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)
+implements both the component contract and the independent SBOM
+generation contract.
+
+### Component Pull/Push
+
+`component pull` supports both classic HTTP(S)
 chart repositories (`pkg:helm/<name>@<version>?repository_url=https://...`)
 and OCI registries (`repository_url=oci://...`). Its `component push`
 only supports OCI — Helm's SDK has no upload path for a classic chart
 repository, since those are just static, read-only `index.yaml` listings.
+Its `component push --check` is OCI-only for the same reason, same as
+`push` itself (see
+[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#check-mode)).
 
-`bomify-plugin-helm` also implements the independent SBOM generation
-contract's `sbom generate`, rendering a chart's templates locally via the
-Helm SDK (the same code path as `helm template`, never touching a real
-cluster) and reporting every container image it references — plus the
-chart itself — as a CycloneDX SBOM. See
+### SBOM Generation
+
+`sbom generate` renders a chart's templates locally via the Helm SDK
+(the same code path as `helm template`, never touching a real cluster)
+and reports every container image it references — plus the chart
+itself — as a CycloneDX SBOM. See
 [its own README](bomify-plugin-helm/README.md) for its flags, manifest
 file, and worked examples, and
 [`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)
@@ -50,87 +68,69 @@ Note `helm.sh/helm/v3` is a very large dependency (it pulls in most of
 `k8s.io/client-go` transitively), so this plugin's binary is
 correspondingly larger than the others.
 
-`bomify-plugin-generic` handles the package-url spec's own catch-all
+## bomify-plugin-generic
+
+[`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic)
+handles the package-url spec's own catch-all
 `generic` type: `pkg:generic/<name>@<version>?download_url=<url>`. `pull`
 GETs `download_url` as-is; `push` PUTs the file a prior pull wrote,
 sending it to `--remote` exactly as given (with a correct
 `Content-Length`, not chunked) — useful for destinations like a presigned
 upload URL, where appending anything to `--remote` would invalidate it.
+Its `component push --check` is best-effort only (a HEAD, never a real
+PUT — see its own doc comment on `CheckPush`), since a presigned upload
+URL can't be verified without actually writing to it (see
+[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#check-mode)).
 
-All three support `component pull --check`/`component push --check` (see
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#check-mode)), with the same per-plugin limits
-their real `pull`/`push` have: `bomify-plugin-helm`'s `push --check` is
-OCI-only, same as `push` itself, and `bomify-plugin-generic`'s
-`push --check` is best-effort only (a HEAD, never a real PUT — see its
-own doc comment on `CheckPush`), since a presigned upload URL can't be
-verified without actually writing to it.
-
-To add a new component plugin, create `plugins/bomify-plugin-<kind>`,
-implement `component pull`, `component push`, and `component remote` per
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
-and add a row above.
-
-## `bomify-plugin-grype`: security scanning
+## bomify-plugin-grype
 
 [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype)
 implements the [security scanning contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)
 (`security scan --purl <purl>` / `security supported-components`) using
 [Anchore's grype](https://github.com/anchore/grype) as a Go library. Most
-purl types (`npm`, `maven`, `apk`, ...) already name one specific
-package, so `grype/pkg.Provide` resolves the purl directly into a
-package with no cataloging involved. An `oci`/`docker` purl names a
-whole container image instead, which has no packages of its own until
-something looks inside it — for those two types only, the plugin pulls
-in [Anchore's syft](https://github.com/anchore/syft) (via grype's own
-syft-backed provider, the same code path `grype <image>` itself uses)
-to catalog the image first, then matches every package it finds. Either
-way, matches are checked against grype's own vulnerability database
-(downloaded and cached the same way, and to the same location, the real
-`grype` CLI uses, so an existing local grype install's DB is reused
-rather than downloaded twice), and converted into CycloneDX
-`vulnerability` objects by hand — this plugin never uses grype's own
-(deprecated) CycloneDX presenter. For an `oci`/`docker` scan, every
-cataloged package is also reported back as a `SecurityResult` component
-— which `bomify security scan` embeds as that image's own nested
-components in the SBOM — with each vulnerability's `affects` pointing at
-the specific package(s) actually affected, never the image itself. Each
-nested component also carries `evidence.occurrences`, one per file
-location syft found it at inside the image (an apk/dpkg database entry,
-a `package.json`, a jar on disk, ...), so its origin stays traceable
-back to the image's own filesystem.
+purl types (`npm`, `maven`, `apk`, ...) name one specific package, so
+`grype/pkg.Provide` resolves it directly with no cataloging. An
+`oci`/`docker` purl names a whole image instead, so for those two types
+only, the plugin first catalogs it via [Anchore's syft](https://github.com/anchore/syft)
+(the same code path `grype <image>` itself uses), then matches every
+package found.
 
-Every vulnerability's `ratings` also include, when grype's database
-carries them for that CVE, [FIRST's EPSS score](https://www.first.org/epss/)
-(the probability it's exploited in the wild in the next 30 days) and a
-flag for [CISA's Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
-— both already part of grype's own vulnerability database (no separate
-download or dependency), reported the same way grype's own (deprecated)
-CycloneDX presenter does, as extra `ratings` entries with a free-text
-`method` (`"EPSS"`/`"other"`) rather than a dedicated CycloneDX field,
-since neither has one.
+### Vulnerability Matching/Conversion
 
-`security supported-components` reports exactly the purl types grype has
-a dedicated, ecosystem-specific matcher for (`apk`, `deb`, `rpm`, `alpm`,
-`bitnami`, `npm`, `golang`, `maven`, `pypi`, `gem`, `cargo`, `nuget`,
-`hex`), plus `oci`/`docker` (scanned via syft cataloging, as above) —
-notably **not** `generic`: there's no image or package to catalog or
-look up for it. `bomify security scan` skips components of unsupported
-types before ever calling this plugin. Image pulling for `oci`/`docker`
-purls uses syft's own default source resolution (the local Docker/Podman
-daemon if present, otherwise the registry directly via the credentials
-`docker login`/`crane auth login` populate) — not bomify's own `bomify
-login` credential store, which only `bomify-plugin-oci` reads.
+Matches are checked against grype's own vulnerability database (cached
+the same way and location the `grype` CLI uses) and hand-converted into
+CycloneDX `vulnerability` objects — never via grype's own deprecated
+CycloneDX presenter. Each vulnerability's `ratings` also include, when
+grype's database has them, [FIRST's EPSS score](https://www.first.org/epss/)
+and a [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+flag, as extra `ratings` entries with a free-text `method`
+(`"EPSS"`/`"other"`), the same way grype's own presenter reports them.
+
+### Nested Component Reporting
+
+For `oci`/`docker` scans, each cataloged package is also reported as a
+nested `SecurityResult` component, embedded by `bomify security scan`
+under the image, with `affects` pointing at the specific package and
+`evidence.occurrences` tracing back to where syft found it — an
+apk/dpkg entry, a `package.json`, a jar on disk, ...
+
+### Supported Components
+
+`security supported-components` lists the purl types grype has a
+dedicated matcher for (`apk`, `deb`, `rpm`, `alpm`, `bitnami`, `npm`,
+`golang`, `maven`, `pypi`, `gem`, `cargo`, `nuget`, `hex`) plus
+`oci`/`docker` — notably not `generic`. 
+
+### Standalone Go Module
 
 Unlike every other plugin here, `bomify-plugin-grype` is **its own Go
-module** ([`plugins/bomify-plugin-grype/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-grype/go.mod)),
-not part of this repository's root module — the grype SDK's transitive
-dependency tree (syft, stereoscope, several cloud SDKs, ...) is large
-enough that folding it into the root `go.mod`/`go.sum` would bloat every
-other build in this repo. It depends on this module's own
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)
-via a `replace` directive pointing at the local checkout. `make
-build`/`test`/`tidy`/`plugins` all already know to step into this
-directory separately; see the `plugins` target in the
-[`Makefile`](https://github.com/alejandro-velasco/bomify/blob/main/Makefile)
-for why. A future plugin with a similarly heavy dependency should
-consider the same pattern.
+module** ([`plugins/bomify-plugin-grype/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-grype/go.mod)) —
+grype's transitive dependency tree (syft, stereoscope, several cloud
+SDKs, ...) is large enough that folding it into the root `go.mod`/`go.sum`
+would bloat every other build in this repo. It depends on this module's
+own [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)
+via a `replace` directive. `make build`/`test`/`tidy`/`plugins` already
+know to step into this directory separately; see the `plugins` target in
+the [`Makefile`](https://github.com/alejandro-velasco/bomify/blob/main/Makefile).
+A future plugin with a similarly heavy dependency should consider the
+same pattern.
