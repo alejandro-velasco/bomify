@@ -5,11 +5,12 @@ and a `bomify-plugin-<kind>` binary's **SBOM generation** subcommand,
 `sbom generate`, which `bomify sbom generate <kind> [flags]` delegates
 to. It's an entirely independent contract from the [component plugin
 contract](COMPONENT-CONTRACT.md) (`component pull`/`component push`/`component
-remote`, which `bomify build`/`bomify distribute` use) — a plugin binary
-may implement either, both, or neither, and implementing one owes
-nothing to the other. `<kind>` here names a deployment medium (e.g.
-`helm`, `oci`) rather than a purl type, but follows the same naming and
-discovery rules.
+remote`, which `bomify build`/`bomify distribute` use) and the
+[security scanning plugin contract](SECURITY-CONTRACT.md) (`security
+scan`) — a plugin binary may implement any, all, or none of the three,
+and implementing one owes nothing to the others. `<kind>` here names a
+deployment medium (e.g. `helm`, `oci`) rather than a purl type, but
+follows the same naming and discovery rules.
 
 ## Naming and discovery
 

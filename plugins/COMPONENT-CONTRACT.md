@@ -15,7 +15,9 @@ this contract fits into bomify's design as a whole.
 
 A `bomify-plugin-<kind>` binary may separately implement the entirely
 independent [SBOM generation plugin contract](SBOM-CONTRACT.md) (its
-`sbom generate` subcommand) — the two contracts share nothing, and a
+`sbom generate` subcommand) and/or
+[security scanning plugin contract](SECURITY-CONTRACT.md) (its
+`security scan` subcommand) — the three contracts share nothing, and a
 plugin author only needs to read this document to implement component
 support.
 
