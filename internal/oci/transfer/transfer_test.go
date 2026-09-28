@@ -3,9 +3,11 @@ package transfer
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func buildTar(t *testing.T, entries map[string]string) []byte {
@@ -97,5 +99,92 @@ func TestWriteTarThenExtractTarRoundTrips(t *testing.T) {
 	}
 	if string(gotB) != "bbb" {
 		t.Errorf("sub/b.txt = %q, want %q", gotB, "bbb")
+	}
+}
+
+// TestWriteTarNormalizesHeaderMetadata covers normalizeHeader directly:
+// a file's mtime and uid/gid — incidental local filesystem state, not
+// part of its actual content — never make it into the tar WriteTar
+// produces.
+func TestWriteTarNormalizesHeaderMetadata(t *testing.T) {
+	srcDir := t.TempDir()
+	path := filepath.Join(srcDir, "a.txt")
+	if err := os.WriteFile(path, []byte("aaa"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	oldTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := WriteTar(srcDir, &buf); err != nil {
+		t.Fatalf("WriteTar() error = %v", err)
+	}
+
+	hdr, err := tar.NewReader(&buf).Next()
+	if err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+	if got := hdr.ModTime.Unix(); got != 0 {
+		t.Errorf("ModTime = %v (unix %d), want the Unix epoch", hdr.ModTime, got)
+	}
+	if hdr.Uid != 0 || hdr.Gid != 0 {
+		t.Errorf("Uid/Gid = %d/%d, want 0/0", hdr.Uid, hdr.Gid)
+	}
+}
+
+// TestWriteTarIsStableAcrossExtractRoundTrip covers the actual bug this
+// normalization fixes: re-tarring a layer bomify itself just pulled
+// must reproduce the exact same bytes — and so the same digest "bomify
+// push" computes over them — as the original tar, even though
+// ExtractTar (deliberately) gives every file it writes a fresh mtime
+// rather than restoring whatever mtime the source tar's header carried.
+// Without normalization, an unrelated "bomify rmp" + "bomify pull" in
+// between two pushes of the same unchanged component would make the
+// second push re-upload it under a brand new digest.
+func TestWriteTarIsStableAcrossExtractRoundTrip(t *testing.T) {
+	srcDir := t.TempDir()
+	path := filepath.Join(srcDir, "a.txt")
+	if err := os.WriteFile(path, []byte("aaa"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	// A deliberately unusual mtime, standing in for whatever a component
+	// plugin happened to leave on a freshly built/pulled file.
+	oldTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	var firstTar bytes.Buffer
+	if err := WriteTar(srcDir, &firstTar); err != nil {
+		t.Fatalf("WriteTar() (first) error = %v", err)
+	}
+
+	destDir := t.TempDir()
+	if err := ExtractTar(tar.NewReader(bytes.NewReader(firstTar.Bytes())), destDir); err != nil {
+		t.Fatalf("ExtractTar() error = %v", err)
+	}
+
+	// Confirm the test actually exercises the scenario it claims to:
+	// the extracted file must NOT have kept the original mtime, or this
+	// test would pass for the wrong reason.
+	info, err := os.Stat(filepath.Join(destDir, "a.txt"))
+	if err != nil {
+		t.Fatalf("stat extracted file: %v", err)
+	}
+	if info.ModTime().Equal(oldTime) {
+		t.Fatal("test setup invalid: extracted file kept the original mtime instead of getting a fresh one")
+	}
+
+	var secondTar bytes.Buffer
+	if err := WriteTar(destDir, &secondTar); err != nil {
+		t.Fatalf("WriteTar() (second) error = %v", err)
+	}
+
+	first := sha256.Sum256(firstTar.Bytes())
+	second := sha256.Sum256(secondTar.Bytes())
+	if first != second {
+		t.Errorf("tar digest changed across an extract round trip for identical content: %x != %x", first, second)
 	}
 }
