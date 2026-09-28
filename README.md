@@ -58,11 +58,12 @@ Generate an SBOM for a Helm chart, rather than starting from one:
 bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6 > postgresql.cdx.json
 ```
 
-Build it, then scan the package's components for known vulnerabilities with [grype](https://github.com/anchore/grype) — each component's report lands under `<data-dir>/vulnerabilities/`:
+Build it, then scan the package's components for known vulnerabilities with [grype](https://github.com/anchore/grype) — each component's report lands under `<data-dir>/vulnerabilities/`, and `bomify package vulnerabilities` prints them back out:
 
 ```sh
 bomify build postgresql.cdx.json --tag postgresql:18.11.6
 bomify security scan grype postgresql:18.11.6
+bomify package vulnerabilities postgresql:18.11.6
 ```
 
 ## Container

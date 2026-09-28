@@ -236,6 +236,24 @@ opens the package's SBOM or sees another component's result — see
 [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for the
 full contract this implements one side of.
 
+`bomify package vulnerabilities <tag>` (`cmd/package.go`) is the read
+side: it resolves `<tag>` the same way `security scan` does, then
+writes a single JSON array to stdout — parsable straight through `jq`,
+unlike `package manifest`'s bare single document — with one element
+per matching component: its report, read straight off disk as a
+`json.RawMessage` (so its field values are never re-parsed, reordered,
+or round-tripped through the CycloneDX library) and re-indented, along
+with the rest of the array, so the root brackets sit at column 0 and
+everything else nests two spaces per level under it regardless of how
+it was formatted on disk. Elements follow the SBOM's own component
+order; a component with no report (never scanned, or unsupported by
+whatever scanned it) is silently skipped, and a purl the SBOM lists
+more than once contributes only one element.
+`--purl` (repeatable) narrows this to specific components instead of
+the whole package. Nothing but that array ever reaches stdout — no log
+line, not even for a `--purl` matching nothing, which goes to stderr
+as a warning instead.
+
 ### Concurrent, idempotent pulls
 
 `plugin.Pull` is safe to call concurrently — even from separate bomify

@@ -36,7 +36,26 @@ Each scanned component gets its own CycloneDX vulnerability report at
 hash as its pulled layer — so a component two packages share also
 shares one report, and scanning either package refreshes it.
 
-## 2. Scan container images, not just named packages
+## 2. Read the reports back out
+
+```sh
+bomify package vulnerabilities myapp:1.0
+```
+
+Prints a single JSON array to stdout — one element per scanned
+component's report, content unchanged, in the SBOM's own order —
+parsable directly with `jq`. A component never scanned (or unsupported
+by whatever scanned it) is silently skipped. Narrow it down to
+specific components with `--purl`, repeatable:
+
+```sh
+bomify package vulnerabilities myapp:1.0 --purl pkg:oci/myapp@1.0
+
+# Pipe straight into jq, e.g. to list every reported vulnerability ID
+bomify package vulnerabilities myapp:1.0 | jq '.[].vulnerabilities[].id'
+```
+
+## 3. Scan container images, not just named packages
 
 Most purl types (`npm`, `pypi`, `maven`, `apk`, ...) already name one
 specific package, so grype matches it directly: the report's metadata
@@ -58,13 +77,13 @@ local Docker/Podman daemon if present, otherwise the registry directly
 via whatever credentials `docker login`/`crane auth login` populated —
 not bomify's own `bomify login` store.
 
-## 3. Scan several components concurrently
+## 4. Scan several components concurrently
 
 ```sh
 bomify security scan grype myapp:1.0 --concurrency 4
 ```
 
-## 4. Skip unsupported components
+## 5. Skip unsupported components
 
 Any component whose purl type isn't in grype's own
 `security supported-components` list (roughly: the OS/language
