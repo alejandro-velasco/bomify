@@ -221,19 +221,18 @@ delegation:
    - its `metadata.component` is the scanned component itself, its
      `bom-ref` set to its purl — for a directly scanned purl (`npm`,
      `pypi`, ...), that's exactly what every `affects` names;
-   - its top-level `components` are the pieces the plugin unpacked the
-     component into — for an `oci`/`docker` image, the packages
-     cataloged inside it, with the image itself remaining the metadata
-     component — and empty otherwise;
+   - its top-level `components` are whichever of the pieces the plugin
+     unpacked the component into some `affects` actually names — for an
+     `oci`/`docker` image, the affected packages cataloged inside it
+     (never the full inventory the plugin reported), with the image
+     itself remaining the metadata component — and empty otherwise;
    - its `vulnerabilities` are exactly what the plugin reported. bomify
      never merges, sets, or overwrites them, `affects` included.
 
 Nothing in a report is specific to the package it was scanned through
 (not even the SBOM's own `bom-ref` for the component), which is what
-lets every package describing the same purl share it. A summary of every
-scanned component — its vulnerability count and report ID (the short
-purl hash) — is printed to stdout. A plugin never opens the package's
-SBOM or sees another component's result — see
+lets every package describing the same purl share it. A plugin never
+opens the package's SBOM or sees another component's result — see
 [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for the
 full contract this implements one side of.
 
