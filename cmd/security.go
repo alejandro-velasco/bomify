@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
-	"sort"
 	"sync"
-	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -54,11 +52,7 @@ scanned component itself; for a component the plugin had to unpack to
 scan at all (e.g. cataloging an OCI image's contents), the pieces it
 found are the report's top-level components, and each vulnerability's
 "affects" names the specific piece(s) affected. See
-plugins/SECURITY-CONTRACT.md for the full contract.
-
-A summary of every scanned component — its vulnerability count and
-report ID (the first 12 characters of its purl hash) — is printed to
-stdout.`
+plugins/SECURITY-CONTRACT.md for the full contract.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
   bomify security scan grype myapp:latest
@@ -83,7 +77,7 @@ func securityScanCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.scanType, opts.tag = args[0], args[1]
-			if err := runSecurityScan(cmd, opts, logging.FromContext(cmd.Context())); err != nil {
+			if err := runSecurityScan(opts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("security scan: %w", err)
 			}
 			return nil
@@ -101,15 +95,7 @@ func securityScanCmd() *cobra.Command {
 	return cmd
 }
 
-// scanRow is one scanned component's summary line.
-type scanRow struct {
-	Name            string
-	Version         string
-	PurlHash        string
-	Vulnerabilities int
-}
-
-func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog.Logger) error {
+func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
 	sbomHash, err := build.ResolveTag(dataDir, opts.tag)
 	if err != nil {
 		return err
@@ -133,9 +119,6 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	// The same purl listed twice in one SBOM maps to the same report, so
 	// only its first occurrence is scanned.
 	var claimed sync.Map
-
-	var mu sync.Mutex
-	var rows []scanRow
 
 	if err := forEachComponent(build.ManifestPath(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		kind, err := plugin.Detect(component)
@@ -164,32 +147,10 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 			return err
 		}
 		log.Info("scan complete", "vulnerabilities", len(result.Vulnerabilities), "components", len(result.Components), "report", reportPath)
-
-		mu.Lock()
-		rows = append(rows, scanRow{
-			Name:            component.Name,
-			Version:         component.Version,
-			PurlHash:        purlHash,
-			Vulnerabilities: len(result.Vulnerabilities),
-		})
-		mu.Unlock()
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].Name != rows[j].Name {
-			return rows[i].Name < rows[j].Name
-		}
-		return rows[i].Version < rows[j].Version
-	})
-
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "COMPONENT\tVERSION\tREPORT ID\tVULNERABILITIES")
-	for _, row := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", row.Name, row.Version, shortID(row.PurlHash), row.Vulnerabilities)
-	}
-
-	return w.Flush()
+	return nil
 }

@@ -29,10 +29,6 @@ found are the report's top-level components, and each vulnerability's
 "affects" names the specific piece(s) affected. See
 plugins/SECURITY-CONTRACT.md for the full contract.
 
-A summary of every scanned component — its vulnerability count and
-report ID (the first 12 characters of its purl hash) — is printed to
-stdout.
-
 ```
 bomify security scan <type> <tag> [flags]
 ```
