@@ -82,7 +82,14 @@ type Result struct {
 // security scan` itself would have written it. Layers download
 // concurrently, bounded by concurrency (values less than 1 are treated
 // as 1).
-func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc) (Result, error) {
+//
+// A non-nil verify is called with the manifest ref resolves to before
+// anything else is fetched (see transfer.Verifier): if it fails, Pull
+// writes nothing to dataDir at all. Everything fetched afterward is
+// fetched by that same verified descriptor — and each blob checked
+// against the digest it pins — so ref being re-tagged mid-pull can't
+// substitute unverified content.
+func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
 	}
@@ -93,6 +100,12 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve %s: %w", ref, err)
+	}
+
+	if verify != nil {
+		if err := verify(ctx, target, ref, desc); err != nil {
+			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
+		}
 	}
 
 	manifest, err := fetchManifest(ctx, target, desc)

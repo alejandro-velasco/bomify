@@ -17,6 +17,12 @@ report the vulnerabilities one component's purl is affected by; `bomify
 security scan` calls the same plugin once per component in a built
 package (concurrently, like `bomify build`/`bomify distribute`) and
 records each result as that component's own vulnerability report.
+- **Signing plugins** (`signature sign|verify|supported-types`, specified in
+[`SIGNING-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md))
+sign a whole package on `bomify push --sign`/`bomify save --sign`, and
+verify it on `bomify pull --verify`/`bomify load --verify` (or when a
+`bomify trust` rule requires it); bomify stores each signature as an OCI
+referrer of the package, so the plugin never touches a registry.
 
 | Plugin                                        | Kind     | Backing library                                                                   | Contracts Implemented |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|-------------------------|
@@ -24,6 +30,7 @@ records each result as that component's own vulnerability report.
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [Helm Golang SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) (Pull/Push, the same code behind the `helm` CLI) | <ul><li>COMPONENT-CONTRACT.md</li><li>SBOM-CONTRACT</li></ul> |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
+| [`bomify-plugin-cosign`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-cosign) | `cosign` | [sigstore-go](https://github.com/sigstore/sigstore-go) (Sigstore bundle v0.3, as cosign produces) | <ul><li>SIGNING-CONTRACT.md</li></ul> |
 
 ## bomify-plugin-oci
 
@@ -126,7 +133,7 @@ dedicated matcher for (`apk`, `deb`, `rpm`, `alpm`, `bitnami`, `npm`,
 
 ### Standalone Go Module
 
-Unlike every other plugin here, `bomify-plugin-grype` is **its own Go
+Unlike most other plugins here, `bomify-plugin-grype` is **its own Go
 module** ([`plugins/bomify-plugin-grype/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-grype/go.mod)) —
 grype's transitive dependency tree (syft, stereoscope, several cloud
 SDKs, ...) is large enough that folding it into the root `go.mod`/`go.sum`
@@ -137,3 +144,34 @@ know to step into this directory separately; see the `plugins` target in
 the [`Makefile`](https://github.com/alejandro-velasco/bomify/blob/main/Makefile).
 A future plugin with a similarly heavy dependency should consider the
 same pattern.
+
+## bomify-plugin-cosign
+
+[`bomify-plugin-cosign`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-cosign)
+implements the [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+using [sigstore-go](https://github.com/sigstore/sigstore-go), producing
+the same v0.3 Sigstore bundles cosign does (artifact type
+`application/vnd.dev.sigstore.bundle.v0.3+json`). Two modes, chosen by
+whether a `key` option is given:
+
+- **Key-based** — `--sign-option key=cosign.key` /
+  `--verify-option key=cosign.pub`. Any key `cosign generate-key-pair`
+  writes works as-is (decrypted with `COSIGN_PASSWORD`, exactly like
+  cosign), as does a plain PEM key. Nothing is uploaded to a
+  transparency log and no network access is needed, which suits private
+  registries and air-gapped `save`/`load` transfers.
+- **Keyless** — no `key` option. Signing exchanges the OIDC identity
+  token in `SIGSTORE_ID_TOKEN` for a short-lived
+  [Fulcio](https://github.com/sigstore/fulcio) certificate and records
+  the signature in [Rekor](https://github.com/sigstore/rekor), both
+  resolved from the public-good Sigstore instance's TUF-distributed
+  config. Verifying requires `certificate-identity` (or
+  `certificate-identity-regexp`) and `certificate-oidc-issuer` (or
+  `certificate-oidc-issuer-regexp`), checked against the public-good
+  trusted root.
+
+Any other option is rejected rather than ignored. Like
+`bomify-plugin-grype`, it's its own Go module
+([`plugins/bomify-plugin-cosign/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-cosign/go.mod)),
+since sigstore-go's dependency tree (TUF, protobuf specs, cloud
+credential providers, ...) is too heavy for the root module.

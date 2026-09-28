@@ -13,6 +13,12 @@ Any component with a local vulnerability report from a prior "bomify
 security scan" is pushed an extra layer carrying it; a component never
 scanned carries none.
 
+--sign signs the pushed package with a signing plugin before <tag> is
+updated to point at it, attaching the signature to it as an OCI
+referrer. One signature covers the whole package: the SBOM, every
+component, and every vulnerability report. See "bomify pull --verify"
+and "bomify trust" for checking it.
+
 ```
 bomify push <tag> [flags]
 ```
@@ -28,13 +34,18 @@ bomify push <tag> [flags]
 
   # Upload up to 6 layers concurrently
   bomify push myapp:latest --concurrency 6
+
+  # Sign the package with a cosign key while pushing it
+  bomify push registry.example.com/myapp:latest --sign cosign --sign-option key=cosign.key
 ```
 
 ### Options
 
 ```
-  -c, --concurrency int   number of layers to upload concurrently (default 3)
-  -h, --help              help for push
+  -c, --concurrency int           number of layers to upload concurrently (default 3)
+  -h, --help                      help for push
+      --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. cosign), attaching the signature as an OCI referrer
+      --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
 ```
 
 ### Options inherited from parent commands

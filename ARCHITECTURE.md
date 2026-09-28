@@ -41,6 +41,13 @@ rules (see [`internal/distribution`](internal/distribution) and `bomify
 distribution create`) — a fallback for any component not given a matching
 `--remote` on the command line.
 
+`conf/trust.json` records signature verification rules (see
+[Signing & verification](#signing--verification) and `bomify trust
+create`) — which packages `bomify pull`/`bomify load` must verify, and
+with which signing plugin, whenever `--verify` isn't given. Its `match`
+is ranked most-specific-first on `/` segment boundaries, exactly like a
+distribution rule's (both share [`internal/prefix`](internal/prefix)).
+
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
 keyed on:
@@ -81,7 +88,7 @@ layer behind — only ever a missing one, which just triggers a redo.
 
 ## Plugin architecture
 
-A `bomify-plugin-<kind>` binary can implement any, all, or none of three
+A `bomify-plugin-<kind>` binary can implement any, all, or none of four
 entirely independent plugin classes:
 
 - **Component plugins** — `component pull`/`component push`/`component
@@ -100,6 +107,11 @@ entirely independent plugin classes:
   `<kind>` names a scanning tool (e.g. `grype`) rather than a purl type
   or deployment medium — the same binary scans every component in the
   SBOM, regardless of its own purl type.
+- **Signing plugins** — `signature sign`/`signature verify`, described
+  [further down](#signing--verification), which `bomify push --sign`/
+  `bomify save --sign` and `bomify pull`/`bomify load` use to sign a
+  whole package and verify it before restoring it. Here `<kind>` names a
+  signing scheme (e.g. `cosign`).
 
 ### Component plugins
 
@@ -254,6 +266,54 @@ the whole package. Nothing but that array ever reaches stdout — no log
 line, not even for a `--purl` matching nothing, which goes to stderr
 as a warning instead.
 
+### Signing & verification
+
+A package is signed as a whole, never component by component: what's
+signed is its OCI manifest (see [Push & pull](#push--pull-oci-registry)),
+which already pins the SBOM config, every component layer, and every
+vulnerability-report layer by digest — so one signature transitively
+covers all of them, and verifying it plus the per-blob digest checks
+`pull` already does is enough to trust everything restored. Signatures
+are never embedded in the SBOM itself: its content hash is the build's
+identity (see [Build & tagging](#build--tagging)), so it stays
+byte-for-byte what `bomify build` recorded.
+
+[`internal/signature`](internal/signature) holds bomify's side of this,
+wired into `push.Push` and `pull.Pull` as two optional hooks
+(`transfer.Signer`/`transfer.Verifier`), so `save`/`load` inherit them
+unchanged:
+
+- **Signing** (`push --sign <kind>`, `save --sign <kind>`): once the
+  package manifest is packed, but **before** the tag is updated,
+  bomify writes a small payload — the manifest's `mediaType`, `digest`,
+  and `size` as JSON (`signature.Payload`) — to a file, calls the
+  plugin's `signature sign` on it (`plugin.Sign`), and pushes the
+  envelope it returns as an **OCI 1.1 referrer**: a manifest of the
+  plugin's own artifact type whose `subject` is the package manifest
+  and whose one layer is the envelope. A failed sign therefore never
+  leaves a tag pointing at an unsigned package. The payload deliberately
+  omits `artifactType`, which a registry doesn't report when resolving
+  a tag, so the payload computed at pull time is byte-identical.
+- **Verifying** (`pull`, `load`): right after resolving the reference,
+  **before anything is fetched or written**, `signature.Policy` decides
+  which plugin (if any) must verify it — `--verify <kind>` first, else
+  the most specific `conf/trust.json` rule matching the reference's
+  repository, else none (and `--insecure-skip-verify` overrides a
+  matching rule, with a warning). If one must, bomify lists the
+  manifest's referrers (`registry.Referrers` — the Referrers API or its
+  tag-schema fallback against a registry, the layout's own graph for a
+  tarball), keeps those whose artifact type the plugin's `signature
+  supported-types` lists, and asks the plugin's `signature verify`
+  about each envelope in turn until one passes. None passing fails the
+  pull with nothing written to the data directory; everything fetched
+  afterward is fetched by that same verified descriptor.
+
+The plugin never talks to a registry: bomify pushes and fetches every
+envelope itself, which is what lets the same plugin work for a registry
+and for a `save` tarball alike. See
+[`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md) for the
+full contract.
+
 ### Concurrent, idempotent pulls
 
 `plugin.Pull` is safe to call concurrently — even from separate bomify
@@ -356,6 +416,13 @@ image with generic tooling:
   verbatim-copying it like a component layer.
 - The whole thing is tagged with the OCI artifact type
   `application/vnd.bomify.package.v1+json`.
+- A package pushed with `--sign` also gets one **signature referrer**
+  per signing: a separate manifest whose `subject` is the package
+  manifest, carrying the signing plugin's envelope as its only layer
+  (see [Signing & verification](#signing--verification)). It's
+  untagged and never part of the package manifest itself, so signing
+  doesn't change the package's digest, and a package can accumulate
+  any number of signatures.
 
 Uploads/downloads are concurrent per layer (bounded by `--concurrency`),
 each verified against its declared digest and size as it streams
@@ -383,7 +450,10 @@ A component shared by more than one saved tag is stored once in the
 tarball, same as a registry push would dedupe it. Since `save`/`load`
 are Push/Pull underneath, a component's local vulnerability report
 travels along with it exactly as it does through a registry push/pull —
-see the vulnerability-report layer bullet above.
+see the vulnerability-report layer bullet above. The same goes for
+signatures: a `save --sign` tarball carries each signature referrer as
+an untagged manifest in the layout's `index.json`, and `load` verifies
+against it exactly as `pull` would against a registry.
 
 ## Credentials
 
@@ -429,4 +499,7 @@ A few things worth keeping in mind when changing any of the above:
   plugins land in between: bomify owns the package, the per-component
   dispatch, concurrency, and reports (much like the component contract),
   but a plugin's own job — answer "what does this purl have" — is just
-  as minimal as SBOM generation's.
+  as minimal as SBOM generation's. Signing
+  ([`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md)) plugins
+  follow the same split: bomify owns the payload, the referrers, and the
+  trust policy; a plugin only turns bytes into an envelope and back.

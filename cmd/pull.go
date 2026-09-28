@@ -22,7 +22,14 @@ concurrently, each with its own progress bar.
 
 Any component the package carries a vulnerability report for is
 restored to "<data-dir>/vulnerabilities/<purl-hash>.json", the same
-path "bomify security scan" itself would have written it to.`
+path "bomify security scan" itself would have written it to.
+
+--verify requires the package to carry a signature the named signing
+plugin verifies (see "bomify push --sign"); without it, any "bomify
+trust" rule matching <reference> applies instead. Either way, the
+signature is checked before anything is written to the data
+directory, so a package that fails verification leaves no trace.
+--insecure-skip-verify bypasses a matching trust rule.`
 
 const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp:latest
@@ -31,10 +38,14 @@ const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp@sha256:abcdef...
 
   # Download up to 6 layers concurrently
-  bomify pull registry.example.com/myapp:latest --concurrency 6`
+  bomify pull registry.example.com/myapp:latest --concurrency 6
+
+  # Require a signature made with a specific cosign key
+  bomify pull registry.example.com/myapp:latest --verify cosign --verify-option key=cosign.pub`
 
 type pullOptions struct {
 	concurrency int
+	verify      verifyFlags
 }
 
 func pullCmd() *cobra.Command {
@@ -55,12 +66,18 @@ func pullCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to download concurrently")
+	opts.verify.register(cmd)
 
 	return cmd
 }
 
 func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	logger := logging.FromContext(cmd.Context())
+
+	verifier, err := opts.verify.verifier(dataDir, logger)
+	if err != nil {
+		return err
+	}
 
 	repo, err := newRepository(ref)
 	if err != nil {
@@ -70,7 +87,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	mb := newMultiBar(cmd.OutOrStderr())
 	progress := newProgressFunc(mb)
 
-	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress)
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, verifier)
 	mb.Wait()
 	if err != nil {
 		return err

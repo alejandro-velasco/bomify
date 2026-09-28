@@ -1,12 +1,12 @@
 ---
 name: bomify-plugins
-description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom generate), or the security scanning contract (security scan/security supported-components). Points to the authoritative spec rather than restating it.
+description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/verify/supported-types). Points to the authoritative spec rather than restating it.
 ---
 
 # bomify plugins
 
 A `bomify-plugin-<kind>` is a standalone executable bomify shells out to.
-It can implement any, all, or none of three entirely independent
+It can implement any, all, or none of four entirely independent
 contracts — determine which one your task concerns before reading further,
 since they don't share requirements:
 
@@ -31,6 +31,13 @@ since they don't share requirements:
   distribute`), and writes each call's JSON result as that component's
   own vulnerability report — specified in
   [`plugins/SECURITY-CONTRACT.md`](../../../plugins/SECURITY-CONTRACT.md).
+- **Signing plugins** (`signature sign`/`signature verify`/`signature
+  supported-types`, one per signing scheme — e.g. `cosign`) — a plugin
+  only turns a payload file into a signature envelope and back; bomify
+  owns the payload, stores each envelope as an OCI referrer of the
+  package itself, and decides which packages must be verified —
+  specified in
+  [`plugins/SIGNING-CONTRACT.md`](../../../plugins/SIGNING-CONTRACT.md).
 
 Treat whichever applies as authoritative; do not re-derive or paraphrase
 any contract here or in code comments — read it directly, in full,
@@ -51,13 +58,16 @@ has grown since:
   [`result.schema.json`](../../../plugins/result.schema.json),
   [`remote-result.schema.json`](../../../plugins/remote-result.schema.json),
   [`security-result.schema.json`](../../../plugins/security-result.schema.json),
+  [`supported-components-result.schema.json`](../../../plugins/supported-components-result.schema.json),
+  [`sign-result.schema.json`](../../../plugins/sign-result.schema.json),
+  [`verify-result.schema.json`](../../../plugins/verify-result.schema.json),
   and
-  [`supported-components-result.schema.json`](../../../plugins/supported-components-result.schema.json))
+  [`supported-signature-types-result.schema.json`](../../../plugins/supported-signature-types-result.schema.json))
   — one machine-readable JSON Schema per bomify-parsed JSON shape a
   contract defines. SBOM generation is the one class with no schema
   here at all, since bomify never parses its output (a regular
   CycloneDX document, validated against CycloneDX's own schema
-  instead). Glob for the current set rather than assuming these four
+  instead). Glob for the current set rather than assuming these seven
   are the only ones. Update the matching schema file whenever a result
   shape changes, and add a new one if a contract grows a new JSON
   shape.
@@ -66,12 +76,13 @@ has grown since:
   importable from any Go module, one struct/type + `Print` method per
   JSON shape (`Result`/`Hash`/`RemoteResult` for the component contract,
   `SecurityResult`/`SupportedComponentsResult` for the security scanning
-  contract), plus `OpenLog` for a component plugin's `--log`. Check the
+  contract, `SignResult`/`VerifyResult`/`SupportedSignatureTypesResult`
+  for the signing contract), plus `OpenLog` for a component plugin's `--log`. Check the
   package itself for its current exported symbols rather than trusting a
   memorized list — a Go-based plugin, first- or third-party, should use
   these instead of hand-rolling JSON encoding or log setup. Nothing
   comparable exists for SBOM generation plugins, by design.
-- [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) — how all three plugin
+- [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) — how all four plugin
   contracts fit into bomify's design as a whole.
 
 ## Workflow
@@ -85,12 +96,14 @@ has grown since:
 2. Implement/update the plugin to match it exactly: every subcommand the
    contract currently defines, its flags and modes, and the JSON result
    shape(s) it must print — an exact structured shape for the component
-   and security scanning contracts (`Result`/`RemoteResult`, or
-   `SecurityResult`/`SupportedComponentsResult` respectively), free-form
+   security scanning, and signing contracts (`Result`/`RemoteResult`,
+   `SecurityResult`/`SupportedComponentsResult`, or
+   `SignResult`/`VerifyResult`/`SupportedSignatureTypesResult`
+   respectively), free-form
    (by convention a CycloneDX document) for SBOM generation only.
 3. If the change is a breaking change or adds a new requirement to a
    contract itself, update `COMPONENT-CONTRACT.md`, `SBOM-CONTRACT.md`,
-   or `SECURITY-CONTRACT.md` (and any `plugins/*.schema.json` whose
+   `SECURITY-CONTRACT.md`, or `SIGNING-CONTRACT.md` (and any `plugins/*.schema.json` whose
    shape changed, adding a new one if it grew a new JSON shape) in the
    same pass, and verify every existing first-party plugin under
    `plugins/` still conforms.

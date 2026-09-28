@@ -24,3 +24,6 @@ uses; it doesn't repeat it.
   `bomify-plugin-grype`.
 - [Saving packages for airgapped environments](saving-packages-for-airgapped-environments.md) —
   move packages to a machine with no registry access via a tarball.
+- [Signing and verifying packages](signing-and-verifying-packages.md) —
+  sign a package on push/save and require a trusted signature on
+  pull/load, using `bomify-plugin-cosign`.

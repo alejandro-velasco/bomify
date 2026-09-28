@@ -43,13 +43,15 @@ of them into a second, separately-worded copy of the same content:
   `make docs`, as already documented above, and re-run `docs-site-sync`
   to pick it up. Never hand-edit files under `usage/reference/` directly.
 - `getting-started/installing-plugins.md`, `development/component-contract.md`,
-  `development/sbom-contract.md`, and `development/security-contract.md`
+  `development/sbom-contract.md`, `development/security-contract.md`, and
+  `development/signing-contract.md`
   are thin wrapper pages (front matter for a nav icon, plus one line)
   that include
   [`plugins/README.md`](plugins/README.md),
   [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md),
-  [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md), and
-  [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) live via
+  [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md),
+  [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md), and
+  [`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md) live via
   a `pymdownx.snippets` directive (e.g. `--8<-- "plugins/README.md"`,
   resolved against the `base_path` set in `docsite/zensical.toml`) rather
   than a copy — edit the source files themselves, never the wrapper
@@ -57,8 +59,8 @@ of them into a second, separately-worded copy of the same content:
   the include is rendered from a different directory than the original
   file (`docsite/docs/development/building-a-plugin.md` is the one place
   it's correct to link to `component-contract.md`/`sbom-contract.md`/
-  `security-contract.md` in-site instead, since those pages only exist
-  inside `docsite/`).
+  `security-contract.md`/`signing-contract.md` in-site instead, since
+  those pages only exist inside `docsite/`).
 
 The one part of `docsite/` that does need hand-maintenance is the command
 list in [`docsite/zensical.toml`](docsite/zensical.toml)'s `nav` — update it
@@ -87,13 +89,14 @@ When a PR needs to be written for this repo:
 
 ## Keep plugin docs current
 
-bomify's plugin contract is actually three entirely independent
+bomify's plugin contract is actually four entirely independent
 contracts a `bomify-plugin-<kind>` binary can implement — the
 **component plugin** contract (`component pull`/`component push`/
 `component remote`), the **SBOM generation plugin** contract (`sbom
-generate`), and the **security scanning plugin** contract (`security
-scan`). Keep whichever you're changing current, and never let a change
-to one imply the others:
+generate`), the **security scanning plugin** contract (`security
+scan`), and the **signing plugin** contract (`signature sign`/
+`signature verify`). Keep whichever you're changing current, and never
+let a change to one imply the others:
 
 - Keep [plugins/README.md](plugins/README.md) current if making any high
   level changes to plugins, affecting their main features.
@@ -105,11 +108,18 @@ to one imply the others:
 - Keep [plugins/SECURITY-CONTRACT.md](plugins/SECURITY-CONTRACT.md)
   current if making any breaking changes or adding new requirements to
   the security scanning contract.
+- Keep [plugins/SIGNING-CONTRACT.md](plugins/SIGNING-CONTRACT.md)
+  current if making any breaking changes or adding new requirements to
+  the signing contract.
 - Always update [plugins/result.schema.json](plugins/result.schema.json)
   if updating the component plugin result schema, or
   [plugins/security-result.schema.json](plugins/security-result.schema.json)/
   [plugins/supported-components-result.schema.json](plugins/supported-components-result.schema.json)
-  if updating either security scanning result schema (SBOM generation
+  if updating either security scanning result schema, or
+  [plugins/sign-result.schema.json](plugins/sign-result.schema.json)/
+  [plugins/verify-result.schema.json](plugins/verify-result.schema.json)/
+  [plugins/supported-signature-types-result.schema.json](plugins/supported-signature-types-result.schema.json)
+  if updating a signing result schema (SBOM generation
   plugins have no bomify-specific result schema at all — see
   SBOM-CONTRACT.md — since bomify never parses their output).
 - If breaking changes or updates are made to the plugins, ensure the

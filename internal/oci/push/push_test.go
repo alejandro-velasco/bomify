@@ -71,7 +71,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil)
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil)
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -184,7 +184,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil)
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -199,7 +199,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil)
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -252,7 +252,7 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 
-	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, 1, nil); err == nil {
+	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, 1, nil, nil); err == nil {
 		t.Fatal("Push() error = nil, want error for a component never built locally")
 	}
 }

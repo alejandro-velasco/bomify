@@ -36,7 +36,8 @@ jobs:
 
       # Covers bomify itself and every plugin under plugins/. Most share
       # this repo's one go.mod, reached by a single build; bomify-plugin-grype
-      # is its own Go module (see the Makefile's "plugins" target for why),
+      # and bomify-plugin-cosign are each their own Go module (see the
+      # Makefile's "plugins" target for why),
       # but CodeQL's Go autobuilder scans the whole checkout for go.mod
       # files and builds each one it finds, so it's still covered.
       - name: Autobuild

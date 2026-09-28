@@ -7,7 +7,6 @@
 package push
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -54,8 +53,10 @@ type Result struct {
 // vulnerability report (see internal/security) is pushed an extra layer
 // carrying it too (see pushVulnerabilityReport). Layers upload
 // concurrently, bounded by concurrency (values less than 1 are treated
-// as 1).
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc) (Result, error) {
+// as 1). A non-nil sign is called with the packed manifest before ref is
+// tagged (see transfer.Signer), so a signing failure never leaves ref
+// pointing at an unsigned package.
+func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, sign transfer.Signer) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
 	}
@@ -74,7 +75,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
 	}
 
-	configDesc, err := pushBytes(ctx, target, data, configMediaType(data), "sbom manifest", progress)
+	configDesc, err := transfer.PushBytes(ctx, target, data, configMediaType(data), "sbom manifest", progress)
 	if err != nil {
 		return Result{}, fmt.Errorf("push config: %w", err)
 	}
@@ -128,6 +129,12 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("pack manifest: %w", err)
 	}
 
+	if sign != nil {
+		if err := sign(ctx, target, ref, manifestDesc); err != nil {
+			return Result{}, fmt.Errorf("sign %s: %w", ref, err)
+		}
+	}
+
 	if err := target.Tag(ctx, manifestDesc, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
@@ -143,38 +150,6 @@ func configMediaType(data []byte) string {
 		return "application/vnd.cyclonedx+xml"
 	}
 	return "application/vnd.cyclonedx+json"
-}
-
-// pushBytes pushes data as a single blob, reporting its progress through
-// progress, and returns its descriptor.
-func pushBytes(ctx context.Context, target oras.Target, data []byte, mediaType, label string, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
-	sum := sha256.Sum256(data)
-	desc := ocispec.Descriptor{
-		MediaType: mediaType,
-		Digest:    digest.NewDigestFromBytes(digest.SHA256, sum[:]),
-		Size:      int64(len(data)),
-	}
-
-	// A remote registry tolerates re-pushing a blob whose digest it
-	// already has, but a local content/oci.Store — as used when Save
-	// packages more than one tag sharing a component into the same
-	// store — rejects it outright. Checking first makes either target
-	// happy, and avoids re-uploading identical content to a registry
-	// that already has it.
-	if exists, err := target.Exists(ctx, desc); err != nil {
-		return ocispec.Descriptor{}, fmt.Errorf("check %s: %w", desc.Digest, err)
-	} else if exists {
-		return desc, nil
-	}
-
-	pw := progress(label, desc.Size)
-	defer pw.Close()
-
-	if err := target.Push(ctx, desc, io.TeeReader(bytes.NewReader(data), pw)); err != nil {
-		return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", desc.Digest, err)
-	}
-
-	return desc, nil
 }
 
 // pushComponentLayer archives "<baseDir>/layers/<purl-hash>/" — whatever
@@ -204,7 +179,7 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 		},
 	}
 
-	// See pushBytes for why this check matters beyond just efficiency:
+	// See transfer.PushBytes for why this check matters beyond just efficiency:
 	// content/oci.Store (unlike a remote registry) rejects a re-push of a
 	// digest it already has, which a shared component across more than
 	// one tag in the same Save call would otherwise trigger.
@@ -258,7 +233,7 @@ func pushVulnerabilityReport(ctx context.Context, target oras.Target, baseDir st
 	if label == "" {
 		label = purlHash
 	}
-	desc, err = pushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
+	desc, err = transfer.PushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
 	if err != nil {
 		return ocispec.Descriptor{}, Layer{}, false, fmt.Errorf("push vulnerability report: %w", err)
 	}

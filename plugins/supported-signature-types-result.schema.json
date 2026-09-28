@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/supported-signature-types-result.schema.json",
+  "title": "bomify plugin SupportedSignatureTypesResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"signature supported-types\" subcommand, per plugins/SIGNING-CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactTypes"
+  ],
+  "properties": {
+    "artifactTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "The referrer artifact types this plugin's \"signature verify\" understands. bomify never passes \"signature verify\" an envelope from a referrer of any other type."
+    }
+  }
+}

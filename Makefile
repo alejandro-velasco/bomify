@@ -56,16 +56,20 @@ build-container:
 push-container:
 	$(CONTAINER_TOOL) push $(CONTAINER_REF)
 
-# bomify-plugin-grype is built separately: unlike the other first-party
-# plugins, it's its own Go module (see plugins/bomify-plugin-grype/go.mod)
-# rather than part of this one, since the grype SDK's transitive
-# dependency tree (syft, stereoscope, cloud SDKs, ...) is large enough
-# that pulling it into the root module's go.mod/go.sum would bloat every
-# other build in this repo. "./plugins/..." from the root module can't
-# see across that module boundary, so it needs its own build step.
+# bomify-plugin-grype and bomify-plugin-cosign are built separately:
+# unlike the other first-party plugins, each is its own Go module (see
+# plugins/bomify-plugin-grype/go.mod, plugins/bomify-plugin-cosign/go.mod)
+# rather than part of this one, since the grype SDK's and sigstore-go's
+# transitive dependency trees (syft, stereoscope, TUF, cloud SDKs, ...)
+# are large enough that pulling them into the root module's go.mod/go.sum
+# would bloat every other build in this repo. "./plugins/..." from the
+# root module can't see across that module boundary, so each needs its
+# own build step.
+SEPARATE_MODULE_PLUGINS := plugins/bomify-plugin-grype plugins/bomify-plugin-cosign
+
 plugins:
 	go build -o bin/ ./plugins/...
-	cd plugins/bomify-plugin-grype && go build -o ../../bin/ .
+	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go build -o ../../bin/ .) || exit 1; done
 
 # dist cross-compiles bomify and its plugins for each of RELEASE_PLATFORMS and
 # packages them into per-platform archives under $(DIST_DIR), alongside a
@@ -111,14 +115,14 @@ install: build plugins
 
 test:
 	go test ./...
-	cd plugins/bomify-plugin-grype && go test ./...
+	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go test ./...) || exit 1; done
 
 run: build
 	./$(BINARY)
 
 tidy:
 	go mod tidy
-	cd plugins/bomify-plugin-grype && go mod tidy
+	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go mod tidy) || exit 1; done
 
 clean:
 	rm -rf bin dist
