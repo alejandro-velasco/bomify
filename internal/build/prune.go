@@ -8,11 +8,12 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 // PrunedItem describes one manifest or layer Prune removed.
 type PrunedItem struct {
-	// Kind is "manifest" or "layer".
+	// Kind is "manifest", "layer", or "vulnerabilities".
 	Kind string
 	Path string
 }
@@ -34,22 +35,25 @@ type PruneResult struct {
 	Unprotected []string
 }
 
-// Prune removes every manifest and layer under baseDir that isn't
-// reachable from a tag currently recorded in repositories.json.
+// Prune removes every manifest, layer, and vulnerability report under
+// baseDir that isn't reachable from a tag currently recorded in
+// repositories.json.
 //
-// "Reachable" means: a tagged SBOM's own manifest, plus the manifest and
-// layer directory of every component that SBOM describes. Both kinds of
+// "Reachable" means: a tagged SBOM's own manifest, plus the manifest,
+// layer directory, and vulnerability report (see internal/security) of
+// every component that SBOM describes. Both kinds of
 // manifest share the same "manifests/<hash>.json" naming with no way to
 // tell them apart by content alone, so Prune walks outward from
 // repositories.json instead of guessing — the one place that says what's
 // still in use.
 //
-// Candidates are gathered from both manifests/ and layers/, not just
-// manifests/: `bomify build` writes a manifest for every component, but
-// `bomify pull` writes only the SBOM-level manifest — a pulled
-// component's layer directory has no manifest of its own. Relying on
-// manifests/ alone would leave such a directory permanently
-// undiscovered, however unreachable it becomes.
+// Candidates are gathered from manifests/, layers/, and
+// vulnerabilities/, not just manifests/: `bomify build` writes a
+// manifest for every component, but `bomify pull` writes only the
+// SBOM-level manifest — a pulled component's layer directory has no
+// manifest of its own — and a vulnerability report can outlive both.
+// Relying on manifests/ alone would leave those permanently
+// undiscovered, however unreachable they become.
 func Prune(baseDir string) (PruneResult, error) {
 	kept, unprotected, err := reachableHashes(baseDir)
 	if err != nil {
@@ -58,8 +62,9 @@ func Prune(baseDir string) (PruneResult, error) {
 
 	manifestsDir := filepath.Join(baseDir, "manifests")
 	layersDir := filepath.Join(baseDir, "layers")
+	reportsDir := security.ReportsDir(baseDir)
 
-	hashes, err := candidateHashes(manifestsDir, layersDir)
+	hashes, err := candidateHashes(manifestsDir, layersDir, reportsDir)
 	if err != nil {
 		return PruneResult{}, err
 	}
@@ -94,17 +99,25 @@ func Prune(baseDir string) (PruneResult, error) {
 			}
 			result.Removed = append(result.Removed, PrunedItem{Kind: "layer", Path: layerDir})
 		}
+
+		reportPath := security.ReportPath(baseDir, hash)
+		if _, err := os.Stat(reportPath); err == nil {
+			if err := os.Remove(reportPath); err != nil {
+				return PruneResult{}, fmt.Errorf("remove %s: %w", reportPath, err)
+			}
+			result.Removed = append(result.Removed, PrunedItem{Kind: "vulnerabilities", Path: reportPath})
+		}
 	}
 
 	return result, nil
 }
 
-// candidateHashes returns every hash with either a manifest file under
-// manifestsDir or a layer directory under layersDir (or both) — i.e.
-// every hash Prune might need to reclaim. A missing directory
+// candidateHashes returns every hash with a manifest file under
+// manifestsDir, a layer directory under layersDir, or a vulnerability
+// report under reportsDir — i.e. every hash Prune might need to reclaim. A missing directory
 // contributes no candidates rather than erroring, since a fresh baseDir
 // (or one with nothing pulled yet) simply has nothing to prune there.
-func candidateHashes(manifestsDir, layersDir string) ([]string, error) {
+func candidateHashes(manifestsDir, layersDir, reportsDir string) ([]string, error) {
 	seen := map[string]bool{}
 	var hashes []string
 
@@ -135,6 +148,19 @@ func candidateHashes(manifestsDir, layersDir string) ([]string, error) {
 			continue
 		}
 		add(entry.Name())
+	}
+
+	reportEntries, err := os.ReadDir(reportsDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read %s: %w", reportsDir, err)
+	}
+	for _, entry := range reportEntries {
+		// Skip an in-flight report write's temp file (see
+		// security.WriteReport) — it isn't a report yet.
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		add(strings.TrimSuffix(entry.Name(), ".json"))
 	}
 
 	return hashes, nil

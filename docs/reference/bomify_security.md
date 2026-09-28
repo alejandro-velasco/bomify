@@ -19,5 +19,5 @@ Security scanning commands
 ### SEE ALSO
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
-* [bomify security scan](bomify_security_scan.md)	 - Scan an SBOM's components for vulnerabilities via a security scanning plugin
+* [bomify security scan](bomify_security_scan.md)	 - Scan a built package's components for vulnerabilities via a security scanning plugin
 

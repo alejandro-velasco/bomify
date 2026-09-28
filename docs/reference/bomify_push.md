@@ -9,6 +9,10 @@ Push packages the SBOM manifest a prior "bomify build" recorded for
 publishes it under <tag>. <tag> is both the local bookkeeping key
 (see "bomify tag" / "bomify packages") and the destination reference.
 
+Any component with a local vulnerability report from a prior "bomify
+security scan" is pushed an extra layer carrying it; a component never
+scanned carries none.
+
 ```
 bomify push <tag> [flags]
 ```

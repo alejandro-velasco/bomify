@@ -13,6 +13,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 func writeSBOM(t *testing.T, path string, components ...cdx.Component) {
@@ -191,6 +192,63 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	files := readDir(t, bDir)
 	if files["oci-layout"] != `{"imageLayoutVersion":"1.0.0"}` || files["blobs/sha256/abcd"] != "fake blob content" {
 		t.Errorf("componentB restored content = %v", files)
+	}
+}
+
+// TestSaveThenLoadCarriesVulnerabilityReportOnMatch covers the "if there
+// is a match" half of save/load carrying vulnerability reports along
+// with a package: componentA has a local vulnerability report (as
+// `bomify security scan` would have written); componentB has none. Only
+// componentA's report should reappear in the loaded directory.
+func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
+	componentA := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
+	componentB := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "b", Version: "1.0", PackageURL: "pkg:generic/b@1.0?download_url=https://example.com/b"}
+
+	sourceDir := t.TempDir()
+	writeComponentFixture(t, sourceDir, componentA, map[string]string{"artifact": "single file contents"})
+	writeComponentFixture(t, sourceDir, componentB, map[string]string{"artifact": "other contents"})
+
+	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
+	reportPath := security.ReportPath(sourceDir, plugin.PurlHash(componentA))
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir vulnerabilities dir: %v", err)
+	}
+	if err := os.WriteFile(reportPath, reportBytes, 0o644); err != nil {
+		t.Fatalf("write vulnerability report: %v", err)
+	}
+
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	writeSBOM(t, sbomPath, componentA, componentB)
+	sbomHash, _, err := build.RecordManifest(sourceDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+	if err := build.UpdateRepositories(sourceDir, []string{"myapp:v1.0"}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+
+	ctx := context.Background()
+
+	var archive bytes.Buffer
+	if err := Save(ctx, sourceDir, []string{"myapp:v1.0"}, &archive, 2, nil); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	destDir := t.TempDir()
+	if _, err := Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 2, nil); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got, err := os.ReadFile(security.ReportPath(destDir, plugin.PurlHash(componentA)))
+	if err != nil {
+		t.Fatalf("read restored vulnerability report: %v", err)
+	}
+	if string(got) != string(reportBytes) {
+		t.Errorf("restored vulnerability report = %q, want %q", got, reportBytes)
+	}
+
+	if _, err := os.Stat(security.ReportPath(destDir, plugin.PurlHash(componentB))); !os.IsNotExist(err) {
+		t.Errorf("componentB got a vulnerability report, want none: err = %v", err)
 	}
 }
 

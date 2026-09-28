@@ -11,6 +11,8 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/security"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 func writeSBOM(t *testing.T, path string, components ...cdx.Component) {
@@ -196,6 +198,50 @@ func TestPruneRemovesUnreachablePulledLayerWithNoManifest(t *testing.T) {
 	}
 	if len(result.Removed) != 1 || result.Removed[0].Kind != "layer" {
 		t.Errorf("Removed = %v, want a single layer entry", result.Removed)
+	}
+}
+
+// TestPruneRemovesUnreachableVulnerabilityReports covers the reports
+// "bomify security scan" writes under vulnerabilities/: a report is
+// reachable exactly when its component is, so a scanned component still
+// described by a tagged package keeps its report, while one no tag
+// reaches loses it — even with no manifest or layer of its own left to
+// discover it by.
+func TestPruneRemovesUnreachableVulnerabilityReports(t *testing.T) {
+	baseDir := t.TempDir()
+
+	kept := cdx.Component{Name: "kept", Version: "1.0", PackageURL: "pkg:generic/kept@1.0"}
+	orphan := cdx.Component{Name: "orphan", Version: "1.0", PackageURL: "pkg:generic/orphan@1.0"}
+
+	for _, c := range []cdx.Component{kept, orphan} {
+		if _, err := security.WriteReport(baseDir, c, security.NewReport(c, pluginlib.SecurityResult{})); err != nil {
+			t.Fatalf("WriteReport(%s): %v", c.Name, err)
+		}
+	}
+
+	sbomPath := filepath.Join(t.TempDir(), "kept.cdx.json")
+	writeSBOM(t, sbomPath, kept)
+	sbomHash, _, err := RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+	if err := UpdateRepositories(baseDir, []string{"myapp:latest"}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+
+	result, err := Prune(baseDir)
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if !exists(security.ReportPath(baseDir, plugin.PurlHash(kept))) {
+		t.Error("reachable component's vulnerability report was removed")
+	}
+	if exists(security.ReportPath(baseDir, plugin.PurlHash(orphan))) {
+		t.Error("unreachable component's vulnerability report still exists")
+	}
+	if len(result.Removed) != 1 || result.Removed[0].Kind != "vulnerabilities" {
+		t.Errorf("Removed = %v, want a single vulnerabilities entry", result.Removed)
 	}
 }
 

@@ -6,9 +6,10 @@ icon: lucide/lock
 
 `bomify save`/`bomify load` move one or more built packages between
 machines as a single tarball — an OCI image-layout archive containing
-each package's manifest and components — with no registry involved on
-either end. Useful for an airgapped target, or anywhere a registry
-just isn't reachable. See
+each package's manifest and components, plus any local vulnerability
+report a component has from a prior `bomify security scan` — with no
+registry involved on either end. Useful for an airgapped target, or
+anywhere a registry just isn't reachable. See
 [bomify save](../usage/reference/bomify_save.md) and
 [bomify load](../usage/reference/bomify_load.md) for the full flag
 reference.
@@ -61,10 +62,11 @@ to carry across.
 bomify load --input myapp.tar
 ```
 
-`load` restores every package the tarball contains exactly as
-`bomify pull` would have, and records each of their tags — so
-`bomify packages`, `bomify push`, and `bomify distribute` all work
-immediately on the far side, with no registry ever contacted.
+`load` restores every package the tarball contains — vulnerability
+reports included — exactly as `bomify pull` would have, and records
+each of their tags — so `bomify packages`, `bomify push`, and `bomify
+distribute` all work immediately on the far side, with no registry
+ever contacted.
 
 ```sh
 # Reading from stdin instead of --input works too
@@ -75,7 +77,7 @@ cat myapp.tar | bomify load
 
 - [Distributing a package](distributing-a-package.md) once it's
   loaded, if the airgapped environment has its own internal registry.
-- [Scanning an SBOM's components with grype](scanning-with-grype.md)
-  before you save, if you want vulnerability data to travel with the
-  package rather than needing network access on the far side to fetch
-  it later.
+- [Scanning a package's components with grype](scanning-with-grype.md)
+  before you save — any report a scan already produced travels with
+  the package automatically, so there's no need for network access on
+  the far side to fetch it later.

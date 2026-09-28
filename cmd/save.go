@@ -14,9 +14,10 @@ const saveShort = "Save packages to a tarball"
 
 const saveLong = `Save packages one or more tagged packages into a single tarball — an
 OCI image-layout archive containing each package's manifest and
-components — that "bomify load" can restore on any machine, with no
-registry involved. A component shared by more than one given tag is
-stored once. Writes to stdout if --output isn't given.`
+components, plus any local vulnerability report a component has — that
+"bomify load" can restore on any machine, with no registry involved. A
+component shared by more than one given tag is stored once. Writes to
+stdout if --output isn't given.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar

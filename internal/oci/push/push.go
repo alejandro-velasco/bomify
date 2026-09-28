@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
@@ -26,9 +27,11 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
-// Layer describes one component layer that was pushed.
+// Layer describes one component layer, or one component's vulnerability
+// report, that was pushed.
 type Layer struct {
 	Purl string
 	Hash string
@@ -38,13 +41,20 @@ type Layer struct {
 type Result struct {
 	ManifestDigest string
 	Layers         []Layer
+	// VulnerabilityReports lists the components whose local vulnerability
+	// report (see internal/security) was attached alongside their layer —
+	// only ever a subset of Layers, since most components carry none.
+	VulnerabilityReports []Layer
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
 // build.RecordManifest) as an OCI artifact — the manifest itself as the
 // config, and each component it describes as a layer — and pushes it to
-// target, tagging the result ref. Layers upload concurrently, bounded by
-// concurrency (values less than 1 are treated as 1).
+// target, tagging the result ref. Any component with a local
+// vulnerability report (see internal/security) is pushed an extra layer
+// carrying it too (see pushVulnerabilityReport). Layers upload
+// concurrently, bounded by concurrency (values less than 1 are treated
+// as 1).
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
@@ -76,6 +86,11 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 
 	layerDescs := make([]ocispec.Descriptor, len(components))
 	layers := make([]Layer, len(components))
+
+	var mu sync.Mutex
+	var reportDescs []ocispec.Descriptor
+	var reports []Layer
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 	for i, component := range components {
@@ -87,6 +102,17 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 			}
 			layerDescs[i] = desc
 			layers[i] = layer
+
+			reportDesc, report, attached, err := pushVulnerabilityReport(gctx, target, baseDir, component, progress)
+			if err != nil {
+				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
+			}
+			if attached {
+				mu.Lock()
+				reportDescs = append(reportDescs, reportDesc)
+				reports = append(reports, report)
+				mu.Unlock()
+			}
 			return nil
 		})
 	}
@@ -96,7 +122,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 
 	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
 		ConfigDescriptor: &configDesc,
-		Layers:           layerDescs,
+		Layers:           append(layerDescs, reportDescs...),
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("pack manifest: %w", err)
@@ -106,7 +132,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
 
-	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers}, nil
+	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers, VulnerabilityReports: reports}, nil
 }
 
 // configMediaType picks the OCI config media type matching data's sniffed
@@ -206,6 +232,42 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	}
 
 	return desc, Layer{Purl: purl, Hash: hash}, nil
+}
+
+// pushVulnerabilityReport pushes component's local vulnerability report
+// (see internal/security), if one exists at
+// "<baseDir>/vulnerabilities/<purl-hash>.json", as an extra layer
+// annotated with component's purl, so a later pull can restore it to
+// that same path. attached is false, with no error and no blob pushed,
+// when component simply has no local report — never scanned, or scanned
+// by a plugin that doesn't support its purl type.
+func pushVulnerabilityReport(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress transfer.ProgressFunc) (desc ocispec.Descriptor, layer Layer, attached bool, err error) {
+	purl := component.PackageURL
+	purlHash := plugin.PurlHash(component)
+	reportPath := security.ReportPath(baseDir, purlHash)
+
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ocispec.Descriptor{}, Layer{}, false, nil
+		}
+		return ocispec.Descriptor{}, Layer{}, false, fmt.Errorf("read vulnerability report %s: %w", reportPath, err)
+	}
+
+	label := purl
+	if label == "" {
+		label = purlHash
+	}
+	desc, err = pushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
+	if err != nil {
+		return ocispec.Descriptor{}, Layer{}, false, fmt.Errorf("push vulnerability report: %w", err)
+	}
+	desc.Annotations = map[string]string{
+		ocispec.AnnotationTitle: purlHash + ".json",
+		transfer.AnnotationPurl: purl,
+	}
+
+	return desc, Layer{Purl: purl, Hash: desc.Digest.Encoded()}, true, nil
 }
 
 // tarDir archives dir's contents (see transfer.WriteTar) into a new

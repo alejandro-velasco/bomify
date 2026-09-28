@@ -13,6 +13,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 var (
@@ -131,6 +132,102 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 				t.Errorf("multi-file layer content = %v", files)
 			}
 		}
+	}
+}
+
+// TestPushAttachesVulnerabilityReportOnMatch covers the "if there is a
+// match" half of push/pull carrying vulnerability reports along with a
+// package: a component with a local vulnerability report (as `bomify
+// security scan` would have written) gets it pushed as an extra layer
+// and restored by pull to that same path, while a component with no
+// report carries none — Push/Pull don't invent one.
+func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
+	baseDir := t.TempDir()
+
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{
+		"artifact": "single file contents",
+	})
+	writeLayer(t, baseDir, multiFileComponent, map[string]string{
+		"oci-layout": `{"imageLayoutVersion":"1.0.0"}`,
+	})
+
+	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
+	reportPath := security.ReportPath(baseDir, plugin.PurlHash(singleFileComponent))
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir vulnerabilities dir: %v", err)
+	}
+	if err := os.WriteFile(reportPath, reportBytes, 0o644); err != nil {
+		t.Fatalf("write vulnerability report: %v", err)
+	}
+	// multiFileComponent deliberately gets no report, to prove it's
+	// skipped rather than erroring or attaching something empty.
+
+	sbomBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[` +
+		`{"type":"container","name":"single-file","version":"1.0","purl":"pkg:generic/single-file@1.0?download_url=https://example.com/single-file"},` +
+		`{"type":"container","name":"multi-file","version":"2.0","purl":"pkg:oci/multi-file@2.0?repository_url=example.com/multi-file"}` +
+		`]}`)
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	if err := os.WriteFile(sbomPath, sbomBytes, 0o644); err != nil {
+		t.Fatalf("write sbom fixture: %v", err)
+	}
+
+	sbomHash, _, err := build.RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+
+	ctx := context.Background()
+	const tag = "test"
+
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil)
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+	if len(result.Layers) != 2 {
+		t.Fatalf("got %d component layers, want 2", len(result.Layers))
+	}
+	if len(result.VulnerabilityReports) != 1 {
+		t.Fatalf("got %d vulnerability reports, want 1", len(result.VulnerabilityReports))
+	}
+	if got := result.VulnerabilityReports[0].Purl; got != singleFileComponent.PackageURL {
+		t.Errorf("attached vulnerability report purl = %q, want %q", got, singleFileComponent.PackageURL)
+	}
+
+	pulledDir := t.TempDir()
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil)
+	if err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+	if len(pullResult.Layers) != 2 {
+		t.Fatalf("pulled %d component layers, want 2", len(pullResult.Layers))
+	}
+	if len(pullResult.VulnerabilityReports) != 1 {
+		t.Fatalf("pulled %d vulnerability reports, want 1", len(pullResult.VulnerabilityReports))
+	}
+
+	report := pullResult.VulnerabilityReports[0]
+	if report.Purl != singleFileComponent.PackageURL {
+		t.Errorf("pulled vulnerability report purl = %q, want %q", report.Purl, singleFileComponent.PackageURL)
+	}
+	wantPath := security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent))
+	if report.Path != wantPath {
+		t.Errorf("pulled vulnerability report path = %s, want %s", report.Path, wantPath)
+	}
+	got, err := os.ReadFile(report.Path)
+	if err != nil {
+		t.Fatalf("read pulled vulnerability report: %v", err)
+	}
+	if string(got) != string(reportBytes) {
+		t.Errorf("pulled vulnerability report content = %q, want %q", got, reportBytes)
+	}
+
+	if _, err := os.Stat(security.ReportPath(pulledDir, plugin.PurlHash(multiFileComponent))); !os.IsNotExist(err) {
+		t.Errorf("multi-file component got a vulnerability report, want none: err = %v", err)
 	}
 }
 

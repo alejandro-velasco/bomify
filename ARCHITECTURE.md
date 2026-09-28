@@ -58,6 +58,15 @@ keyed on:
   manifest for a component restored from a registry, so a later `bomify
   build` needing the same purl reuses it too.
 
+`vulnerabilities/<purlHash>.json` is one component's vulnerability
+report, written by `bomify security scan` (see
+[Security scanning](#security-scanning) and
+[`internal/security`](internal/security)) and keyed by the same purl
+hash as that component's pull manifest and layers directory — so a
+component shared by two packages shares one report, just as it shares
+one pulled layer. It lives in its own directory rather than
+`manifests/`, since unlike a pull manifest it's replaced on every scan.
+
 `logs/<purlHash>.log` is a plugin's own log output for one pull/push/remote
 invocation for that component, named after the same purl hash as its
 manifest and layers directory — but unlike everything else here, it's
@@ -85,8 +94,9 @@ entirely independent plugin classes:
   `bomify-plugin-<kind>` binary-naming/discovery convention.
 - **Security scanning plugins** — `security scan`, described
   [further down](#security-scanning), which `bomify security scan`
-  calls once per component (concurrently, like `bomify build`/`bomify
-  distribute`) to populate an existing SBOM's vulnerabilities. Here
+  calls once per component of a built package (concurrently, like
+  `bomify build`/`bomify distribute`) to write each component's own
+  vulnerability report. Here
   `<kind>` names a scanning tool (e.g. `grype`) rather than a purl type
   or deployment medium — the same binary scans every component in the
   SBOM, regardless of its own purl type.
@@ -175,13 +185,15 @@ separate plugin class from component plugins, not a variant of it.
 
 ### Security scanning
 
-Unlike `sbom generate`, `bomify security scan <type> <sbom-file>`
+Unlike `sbom generate`, `bomify security scan <type> <tag>`
 (`cmd/security.go`) is orchestration much closer in shape to the
 component dispatch above — bomify does real work here, not just
 delegation:
 
-1. **Load** `<sbom-file>` itself (`sbom.Load`) and walk every component
-   it describes.
+1. **Resolve** `<tag>` to a locally recorded package
+   (`build.ResolveTag`) and walk every component its SBOM manifest
+   describes — the same manifest `bomify build`/`bomify pull`/`bomify
+   load` record.
 2. **Find** a single `bomify-plugin-<type>` executable on `PATH`
    (`plugin.Find`) — `<type>` names the scanning tool itself (e.g.
    `grype`, `trivy`), not a purl type or deployment medium, so the same
@@ -191,7 +203,8 @@ delegation:
    can scan. A component whose purl type (`plugin.Detect`, the same
    detection component dispatch uses) isn't in that list — or can't be
    detected at all — is skipped with a log line, never dispatched to
-   `security scan`.
+   `security scan`. A purl the SBOM lists more than once is only
+   scanned once.
 4. **Delegate**, once per remaining component, up to `--concurrency` at
    a time (`forEachComponent` — the same concurrent-walk helper `bomify
    build`/`bomify distribute` use): call `security scan --purl <purl>`
@@ -201,22 +214,45 @@ delegation:
    to unpack that purl into smaller pieces to scan it at all, to the
    specific piece(s) affected) plus, optionally, the pieces themselves as
    CycloneDX `Component` objects.
-5. **Merge** every component's result into the SBOM's own
-   `vulnerabilities`: a vulnerability sharing an already-seen, non-empty
-   `bom-ref` is folded into that existing entry — combining `affects`
-   rather than appending a duplicate — via an in-memory
-   `vulnerabilityMerger` safe for the concurrent per-component calls
-   above to write into directly. bomify never sets or overwrites
-   `affects` itself. Once every component has been scanned, any
-   `Component` objects a scan reported are embedded as that component's
-   own nested `Components` (`vulnerabilityMerger.applyNestedComponents`,
-   run single-threaded after `forEachComponent` returns, since it mutates
-   the SBOM's own component list directly).
+5. **Record** each component's result as its own CycloneDX document
+   (`security.NewReport`), written atomically to
+   `vulnerabilities/<purlHash>.json` (`security.WriteReport`),
+   replacing whatever an earlier scan left there:
+   - its `metadata.component` is the scanned component itself, its
+     `bom-ref` set to its purl — for a directly scanned purl (`npm`,
+     `pypi`, ...), that's exactly what every `affects` names;
+   - its top-level `components` are whichever of the pieces the plugin
+     unpacked the component into some `affects` actually names — for an
+     `oci`/`docker` image, the affected packages cataloged inside it
+     (never the full inventory the plugin reported), with the image
+     itself remaining the metadata component — and empty otherwise;
+   - its `vulnerabilities` are exactly what the plugin reported. bomify
+     never merges, sets, or overwrites them, `affects` included.
 
-The scanned SBOM is then printed to stdout (or `--output`'s file). A
-plugin never opens `<sbom-file>` or sees another component's result —
-see [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for
-the full contract this implements one side of.
+Nothing in a report is specific to the package it was scanned through
+(not even the SBOM's own `bom-ref` for the component), which is what
+lets every package describing the same purl share it. A plugin never
+opens the package's SBOM or sees another component's result — see
+[`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) for the
+full contract this implements one side of.
+
+`bomify package vulnerabilities <tag>` (`cmd/package.go`) is the read
+side: it resolves `<tag>` the same way `security scan` does, then
+writes a single JSON array to stdout — parsable straight through `jq`,
+unlike `package manifest`'s bare single document — with one element
+per matching component: its report, read straight off disk as a
+`json.RawMessage` (so its field values are never re-parsed, reordered,
+or round-tripped through the CycloneDX library) and re-indented, along
+with the rest of the array, so the root brackets sit at column 0 and
+everything else nests two spaces per level under it regardless of how
+it was formatted on disk. Elements follow the SBOM's own component
+order; a component with no report (never scanned, or unsupported by
+whatever scanned it) is silently skipped, and a purl the SBOM lists
+more than once contributes only one element.
+`--purl` (repeatable) narrows this to specific components instead of
+the whole package. Nothing but that array ever reaches stdout — no log
+line, not even for a `--purl` matching nothing, which goes to stderr
+as a warning instead.
 
 ### Concurrent, idempotent pulls
 
@@ -260,11 +296,11 @@ argument has no `:version` suffix.
 after untagging) reclaims anything unreachable — mirroring `docker image
 prune`. For each tag in `repositories.json` it marks two things "kept": the
 tagged SBOM's own manifest (by its content hash), and the purl hash of every
-component that SBOM's manifest describes. Everything under `manifests/` and
-`layers/` that walk never reaches is removed, except anything with a live
+component that SBOM's manifest describes. Everything under `manifests/`,
+`layers/`, and `vulnerabilities/` that walk never reaches is removed, except anything with a live
 `.pid` file (a pull might be in progress for it), which is left alone and
-reported as **Skipped** instead. A component shared by two tags survives as
-long as either tag does.
+reported as **Skipped** instead. A component shared by two tags — its
+vulnerability report included — survives as long as either tag does.
 
 The one subtlety is a tagged manifest that exists but fails to parse — e.g.
 on-disk corruption or a truncated write. That's different from a manifest
@@ -299,6 +335,16 @@ image with generic tooling:
   directory tree, depending on the plugin), annotated with
   `land.bomify.purl` so `pull` knows which purl hash to unpack it back
   under.
+- Any component with a local vulnerability report at
+  `vulnerabilities/<purlHash>.json` (see [Security
+  scanning](#security-scanning)) gets an **extra layer** carrying it —
+  media type `application/vnd.bomify.component.vulnerabilities.v1+json`,
+  annotated with the same purl — alongside its own; a component never
+  scanned, or scanned by a plugin that doesn't support its purl type,
+  simply gets none. `pull` writes a layer with this media type straight
+  back to that same `vulnerabilities/<purlHash>.json` path, replacing
+  whatever report (if any) was already there, rather than unpacking or
+  verbatim-copying it like a component layer.
 - The whole thing is tagged with the OCI artifact type
   `application/vnd.bomify.package.v1+json`.
 
@@ -325,7 +371,10 @@ duplicating here.
 *Source: [`docs/diagrams/save-load.mmd`](docs/diagrams/save-load.mmd)*
 
 A component shared by more than one saved tag is stored once in the
-tarball, same as a registry push would dedupe it.
+tarball, same as a registry push would dedupe it. Since `save`/`load`
+are Push/Pull underneath, a component's local vulnerability report
+travels along with it exactly as it does through a registry push/pull —
+see the vulnerability-report layer bullet above.
 
 ## Credentials
 
@@ -347,7 +396,7 @@ helper is available — matching `docker login`'s own fallback).
 A few things worth keeping in mind when changing any of the above:
 
 - **Content-addressing everywhere.** Manifests are keyed by SBOM hash or
-  purl hash, layers by purl hash, OCI blobs by digest. This is what makes
+  purl hash, layers and vulnerability reports by purl hash, OCI blobs by digest. This is what makes
   builds, pulls, and pushes all idempotent and safely reusable/concurrent
   without bomify needing a lock file or database — the filesystem (or
   registry) path itself *is* the cache key.
@@ -368,7 +417,7 @@ A few things worth keeping in mind when changing any of the above:
   locating the binary, so they're independent of this contract entirely.
   Security scanning
   ([`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md))
-  plugins land in between: bomify owns the SBOM, the per-component
-  dispatch, concurrency, and merging (much like the component contract),
+  plugins land in between: bomify owns the package, the per-component
+  dispatch, concurrency, and reports (much like the component contract),
   but a plugin's own job — answer "what does this purl have" — is just
   as minimal as SBOM generation's.
