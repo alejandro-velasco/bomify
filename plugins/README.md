@@ -108,10 +108,12 @@ flag, as extra `ratings` entries with a free-text `method`
 
 ### Nested Component Reporting
 
-For `oci`/`docker` scans, each cataloged package is also reported as a
-`SecurityResult` component, which `bomify security scan` writes as a
-top-level component of the image's vulnerability report (the image
-itself being the report's metadata component), with `affects` pointing at the specific package and
+For `oci`/`docker` scans, every cataloged package is reported as a
+`SecurityResult` component — `bomify security scan` only keeps the ones
+some `affects` actually names as top-level components of the image's
+vulnerability report (the image itself being the report's metadata
+component); a cataloged package nothing was found in doesn't make it
+into the report — with `affects` pointing at the specific package and
 `evidence.occurrences` tracing back to where syft found it — an
 apk/dpkg entry, a `package.json`, a jar on disk, ...
 

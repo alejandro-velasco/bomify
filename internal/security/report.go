@@ -33,11 +33,12 @@ func ReportPath(baseDir, purlHash string) string {
 
 // NewReport builds component's vulnerability report from its scan
 // result: a CycloneDX document whose metadata component is component
-// itself, whose top-level components are whatever pieces the plugin
-// unpacked component into to scan it (e.g. the packages cataloged inside
-// an OCI image — none, for a component scanned directly), and whose
-// vulnerabilities are exactly what the plugin reported, "affects"
-// included.
+// itself, whose top-level components are whichever of the pieces the
+// plugin unpacked component into (e.g. the packages cataloged inside an
+// OCI image) some vulnerability's "affects" actually names — none, for a
+// component scanned directly, or for one where nothing unpacked from it
+// was affected — and whose vulnerabilities are exactly what the plugin
+// reported, "affects" included.
 //
 // The report is shared by every package describing the same purl, so it
 // must not carry anything specific to the one SBOM it happened to be
@@ -54,9 +55,21 @@ func NewReport(component cdx.Component, result pluginlib.SecurityResult) *cdx.BO
 	bom := cdx.NewBOM()
 	bom.Metadata = &cdx.Metadata{Component: &subject}
 
-	components := result.Components
-	if components == nil {
-		components = []cdx.Component{}
+	affected := make(map[string]bool)
+	for _, vuln := range result.Vulnerabilities {
+		if vuln.Affects == nil {
+			continue
+		}
+		for _, affects := range *vuln.Affects {
+			affected[affects.Ref] = true
+		}
+	}
+
+	components := make([]cdx.Component, 0, len(result.Components))
+	for _, c := range result.Components {
+		if affected[c.BOMRef] {
+			components = append(components, c)
+		}
 	}
 	bom.Components = &components
 

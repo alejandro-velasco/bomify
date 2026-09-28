@@ -34,9 +34,7 @@ bomify security scan grype myapp:1.0
 Each scanned component gets its own CycloneDX vulnerability report at
 `<data-dir>/vulnerabilities/<purl-hash>.json`, keyed by the same purl
 hash as its pulled layer — so a component two packages share also
-shares one report, and scanning either package refreshes it. A summary
-of every scanned component, with its vulnerability count and report ID
-(the first 12 characters of that hash), is printed to stdout.
+shares one report, and scanning either package refreshes it.
 
 ## 2. Scan container images, not just named packages
 
@@ -48,9 +46,11 @@ for those, the plugin catalogs the image with
 [Anchore's syft](https://github.com/anchore/syft) first (the same code
 path `grype <image>` itself uses), then matches every package it finds
 inside. The image stays the report's metadata component, and each
-cataloged package becomes one of the report's top-level components,
-with its own `evidence.occurrences` tracing back to where syft found it
-(an apk/dpkg entry, a `package.json`, a jar on disk, ...) and each
+cataloged package grype actually found a vulnerability in becomes one
+of the report's top-level components — packages syft found nothing
+wrong with aren't carried into the report — with its own
+`evidence.occurrences` tracing back to where syft found it (an
+apk/dpkg entry, a `package.json`, a jar on disk, ...) and each
 vulnerability's `affects` pointing at the specific package(s) affected.
 
 Image pulling for these uses syft's own default source resolution: the

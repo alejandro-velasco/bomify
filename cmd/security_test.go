@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -171,8 +170,7 @@ func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
 
 	writePackage(t, baseDir, "myapp:latest", componentA, componentB)
 
-	out, err := runSecurityScanCmd(t, baseDir, "grype", "myapp:latest")
-	if err != nil {
+	if _, err := runSecurityScanCmd(t, baseDir, "grype", "myapp:latest"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
@@ -213,20 +211,15 @@ func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
 			}
 		}
 	}
-
-	for _, want := range []string{"COMPONENT", "REPORT ID", shortID(plugin.PurlHash(componentA)), shortID(plugin.PurlHash(componentB))} {
-		if !strings.Contains(out, want) {
-			t.Errorf("summary missing %q:\n%s", want, out)
-		}
-	}
 }
 
 // TestSecurityScanImageReportNestsUnpackedComponents covers a plugin
 // that had to unpack a component (e.g. cataloging a container image) to
-// scan it: the image is the report's metadata component, the pieces the
-// plugin found are the report's top-level components, and every
-// vulnerability's "affects" — exactly as the plugin reported it —
-// references the specific piece, never the image itself.
+// scan it: the image is the report's metadata component, the affected
+// pieces the plugin found are the report's top-level components (an
+// unpacked piece nothing was found in, like musl here, is left out),
+// and every vulnerability's "affects" — exactly as the plugin reported
+// it — references the specific piece, never the image itself.
 func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
 	usePlugin(t, "grype")
 	baseDir := t.TempDir()
@@ -260,15 +253,11 @@ func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
 		t.Errorf("report metadata component has nested components %+v, want them at the report's top level instead", *report.Metadata.Component.Components)
 	}
 
-	if report.Components == nil || len(*report.Components) != 2 {
-		t.Fatalf("report components = %+v, want 2 (lodash and musl)", report.Components)
+	if report.Components == nil || len(*report.Components) != 1 {
+		t.Fatalf("report components = %+v, want 1 (lodash only; musl is unaffected)", report.Components)
 	}
-	refs := map[string]bool{}
-	for _, c := range *report.Components {
-		refs[c.BOMRef] = true
-	}
-	if !refs["pkg:npm/lodash@4.17.15"] || !refs["pkg:apk/musl@1.2.3"] {
-		t.Errorf("report components = %+v, want lodash and musl", *report.Components)
+	if (*report.Components)[0].BOMRef != "pkg:npm/lodash@4.17.15" {
+		t.Errorf("report components = %+v, want lodash", *report.Components)
 	}
 
 	if report.Vulnerabilities == nil || len(*report.Vulnerabilities) != 1 {

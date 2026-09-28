@@ -154,11 +154,12 @@ finding unambiguously.
 Each entry in `components` is a regular
 [CycloneDX `component`](https://cyclonedx.org/docs/) object, with a
 stable `bom-ref` of the plugin's own choosing (a purl, if the piece has
-one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above).
-bomify writes the entire list as the top-level `components` of the
-scanned component's vulnerability report — a real, if partial, bill of
-materials for whatever the plugin unpacked, not just a lookup table for
-`affects` to point into.
+one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above). A
+plugin should still report every piece it unpacked, not just the
+affected ones — bomify itself is the one that narrows the list down to
+just what's affected when it writes the report (see
+[Reports](#reports) below), and it can only do that filtering starting
+from the full list.
 
 A machine-readable version of this schema is published at
 [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
@@ -202,11 +203,13 @@ the component's purl as its pull manifest and layer directory:
 - The report's `metadata.component` is the scanned component itself,
   with its `bom-ref` set to its purl (so a directly-scanned component's
   `affects`, which name that purl, resolve within the report).
-- The report's top-level `components` are exactly the `components` the
-  plugin reported — empty for a component scanned directly (e.g. an
-  `npm` or `pypi` purl), and the unpacked pieces for one that wasn't
-  (e.g. the packages cataloged inside an `oci`/`docker` image, which
-  stays the report's metadata component).
+- The report's top-level `components` are whichever of the plugin's
+  reported `components` some vulnerability's `affects` actually names —
+  empty for a component scanned directly (e.g. an `npm` or `pypi`
+  purl), and, for one that wasn't (e.g. the packages cataloged inside
+  an `oci`/`docker` image, which stays the report's metadata
+  component), only the unpacked pieces something was actually found
+  in, not the full inventory the plugin reported.
 - The report's `vulnerabilities` are exactly the `vulnerabilities` the
   plugin reported. bomify never sets, rewrites, merges, or reorders
   them, `affects` included.
