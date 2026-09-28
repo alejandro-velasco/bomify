@@ -55,10 +55,12 @@ written there; routine progress is logged to stderr.
 
 Rendering happens locally, without a Kubernetes cluster, so
 .Capabilities.KubeVersion and a chart's own Chart.yaml "kubeVersion"
-constraint are checked against a fixed, and rather old, default unless
---kube-version overrides it — a chart requiring a recent Kubernetes
-version will otherwise fail to render with an "incompatible with
-Kubernetes" error.
+constraint are checked against a fixed default — the Kubernetes version
+matching the client libraries this plugin was built with — unless
+--kube-version overrides it. Set it to the version you actually deploy
+to, so templates render as they would there and a chart whose
+"kubeVersion" constraint excludes that version fails with an
+"incompatible with Kubernetes" error instead of rendering anyway.
 
 Every flag above can instead be set in a YAML manifest — --manifest's
 default, "bomify-helm-sbom.yaml", is read if present in the working
@@ -127,7 +129,7 @@ generated SBOM as-is.`,
 	cmd.Flags().StringArrayVarP(&valuesFiles, "values", "f", nil, "values file to merge into the chart's defaults (repeatable)")
 	cmd.Flags().StringVar(&namespace, "namespace", "default", "namespace templates are rendered as if installed into")
 	cmd.Flags().StringVar(&releaseName, "release-name", "release-name", "release name templates are rendered as if installed under")
-	cmd.Flags().StringVar(&kubeVersion, "kube-version", "", "Kubernetes version to render templates and check Chart.yaml's kubeVersion constraint against, e.g. 1.31.0 (defaults to the Helm SDK's own, older built-in default)")
+	cmd.Flags().StringVar(&kubeVersion, "kube-version", "", "Kubernetes version to render templates and check Chart.yaml's kubeVersion constraint against, e.g. 1.31.0 (defaults to the Helm SDK's own built-in default)")
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "file to write the generated SBOM to (defaults to stdout)")
 	cmd.Flags().StringVar(&manifestPath, "manifest", defaultManifestPath, "YAML manifest of default flag values; flags always take precedence, and a manifest at the default path is optional")
 

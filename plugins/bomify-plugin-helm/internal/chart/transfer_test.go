@@ -15,9 +15,9 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	fakeregistry "github.com/google/go-containerregistry/pkg/registry"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	helmregistry "helm.sh/helm/v3/pkg/registry"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
+	helmregistry "helm.sh/helm/v4/pkg/registry"
 )
 
 func TestRegistryHost(t *testing.T) {

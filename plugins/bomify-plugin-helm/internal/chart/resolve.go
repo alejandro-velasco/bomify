@@ -1,12 +1,12 @@
 // Package chart resolves component purls to Helm chart references and
-// pulls/pushes them using the Helm SDK (helm.sh/helm/v3).
+// pulls/pushes them using the Helm SDK (helm.sh/helm/v4).
 package chart
 
 import (
 	"fmt"
 
 	"github.com/package-url/packageurl-go"
-	"helm.sh/helm/v3/pkg/registry"
+	"helm.sh/helm/v4/pkg/registry"
 )
 
 // Ref identifies a chart and where its purl says to find it.

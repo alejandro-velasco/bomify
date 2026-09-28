@@ -21,7 +21,7 @@ records each result as that component's own vulnerability report.
 | Plugin                                        | Kind     | Backing library                                                                   | Contracts Implemented |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|-------------------------|
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)     | `oci`    | [Crane Golang SDK](https://github.com/google/go-containerregistry)   | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
-| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [Helm Golang SDK](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) (Pull/Push, the same code behind the `helm` CLI) | <ul><li>COMPONENT-CONTRACT.md</li><li>SBOM-CONTRACT</li></ul> |
+| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [Helm Golang SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) (Pull/Push, the same code behind the `helm` CLI) | <ul><li>COMPONENT-CONTRACT.md</li><li>SBOM-CONTRACT</li></ul> |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
 
@@ -64,7 +64,7 @@ file, and worked examples, and
 [`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)
 for the contract this and any other SBOM generation plugin must follow.
 
-Note `helm.sh/helm/v3` is a very large dependency (it pulls in most of
+Note `helm.sh/helm/v4` is a very large dependency (it pulls in most of
 `k8s.io/client-go` transitively), so this plugin's binary is
 correspondingly larger than the others.
 
