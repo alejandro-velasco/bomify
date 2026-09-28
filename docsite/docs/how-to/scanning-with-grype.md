@@ -77,6 +77,10 @@ filter the SBOM yourself first.
 
 - [Distributing a package](distributing-a-package.md) once you're
   satisfied with what the scan turned up.
+- [Publishing and pulling packages with an OCI registry](publishing-and-pulling-packages.md)
+  or [saving them for an airgapped environment](saving-packages-for-airgapped-environments.md)
+  — either one carries a component's scan report along with the rest
+  of the package automatically.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md)
   as one way to produce an SBOM worth building and scanning in the first
   place.

@@ -1,10 +1,12 @@
 // Package pull restores a bomify package from an OCI artifact: a
 // manifest whose config blob is the aggregate SBOM manifest (see
 // internal/build) and whose layers are the components that SBOM describes,
-// each annotated with the purl it was pulled for. Pull downloads that
-// manifest's config and layers concurrently, laying them out in a data
-// directory exactly as `bomify build` would have, so packages and tag work
-// against either source.
+// plus, for any component whose local vulnerability report (see
+// internal/security) was attached at push time, an extra layer carrying
+// it — each annotated with the purl it was pulled for. Pull downloads
+// that manifest's config and layers concurrently, laying them out in a
+// data directory exactly as `bomify build`/`bomify security scan` would
+// have, so packages and tag work against either source.
 package pull
 
 import (
@@ -27,6 +29,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/security"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -38,13 +41,17 @@ const AnnotationPurl = transfer.AnnotationPurl
 // import this package.
 type ProgressFunc = transfer.ProgressFunc
 
-// Layer describes one component layer that was pulled. Path is a
-// directory — "<dataDir>/layers/<purl-hash>/", exactly matching what
-// `bomify build` would have produced for this component — when the layer
-// was one bomify itself pushed (see transfer.LayerMediaType), since
-// Pull unpacks that tar automatically. For any other layer format, Path is
-// the single file Pull wrote the blob to verbatim, since Pull has no way
-// to know how a foreign format ought to be laid out on disk.
+// Layer describes one component layer, or one component's vulnerability
+// report, that was pulled. Path is a directory —
+// "<dataDir>/layers/<purl-hash>/", exactly matching what `bomify build`
+// would have produced for this component — when the layer was one
+// bomify itself pushed (see transfer.LayerMediaType), since Pull unpacks
+// that tar automatically. For a vulnerability report (see
+// transfer.VulnerabilityReportMediaType), Path is
+// "<dataDir>/vulnerabilities/<purl-hash>.json". For any other layer
+// format, Path is the single file Pull wrote the blob to verbatim, since
+// Pull has no way to know how a foreign format ought to be laid out on
+// disk.
 type Layer struct {
 	Purl string
 	Hash string
@@ -55,17 +62,26 @@ type Layer struct {
 type Result struct {
 	SBOMHash string
 	Layers   []Layer
+	// VulnerabilityReports lists the components whose vulnerability
+	// report (see internal/security) the package carried and Pull
+	// restored to "<dataDir>/vulnerabilities/<purl-hash>.json" — only
+	// ever a subset of Layers, since most components carry none.
+	VulnerabilityReports []Layer
 }
 
 // Pull resolves ref against target — a manifest whose config is the
-// aggregate SBOM manifest and whose layers are pulled components — and
-// writes it into dataDir the same way `bomify build` does: the config as
-// "<dataDir>/manifests/<hash>.json" and each layer as
-// "<dataDir>/layers/<hash>/<name>", plus (see fetchLayer) that
-// component's own manifest for a layer bomify itself pushed, so a later
-// `bomify build` can reuse it instead of re-invoking a plugin. Layers
-// download concurrently, bounded by concurrency (values less than 1 are
-// treated as 1).
+// aggregate SBOM manifest and whose layers are pulled components, plus
+// (see fetchVulnerabilityReport) any component vulnerability reports the
+// package carries — and writes it into dataDir the same way `bomify
+// build` does: the config as "<dataDir>/manifests/<hash>.json", each
+// component layer as "<dataDir>/layers/<hash>/<name>" (plus, see
+// fetchLayer, that component's own manifest for a layer bomify itself
+// pushed, so a later `bomify build` can reuse it instead of re-invoking
+// a plugin), and each vulnerability report as
+// "<dataDir>/vulnerabilities/<purl-hash>.json", exactly as `bomify
+// security scan` itself would have written it. Layers download
+// concurrently, bounded by concurrency (values less than 1 are treated
+// as 1).
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
@@ -90,10 +106,21 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 	}
 	componentsByPurl := indexComponentsByPurl(bom)
 
-	layers := make([]Layer, len(manifest.Layers))
+	var componentLayerDescs, reportDescs []ocispec.Descriptor
+	for _, layerDesc := range manifest.Layers {
+		if layerDesc.MediaType == transfer.VulnerabilityReportMediaType {
+			reportDescs = append(reportDescs, layerDesc)
+		} else {
+			componentLayerDescs = append(componentLayerDescs, layerDesc)
+		}
+	}
+
+	layers := make([]Layer, len(componentLayerDescs))
+	reports := make([]Layer, len(reportDescs))
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
-	for i, layerDesc := range manifest.Layers {
+	for i, layerDesc := range componentLayerDescs {
 		i, layerDesc := i, layerDesc
 		g.Go(func() error {
 			layer, err := fetchLayer(gctx, target, layerDesc, dataDir, componentsByPurl, progress)
@@ -104,11 +131,22 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 			return nil
 		})
 	}
+	for i, layerDesc := range reportDescs {
+		i, layerDesc := i, layerDesc
+		g.Go(func() error {
+			report, err := fetchVulnerabilityReport(gctx, target, layerDesc, dataDir, progress)
+			if err != nil {
+				return fmt.Errorf("fetch vulnerability report %s: %w", layerDesc.Digest, err)
+			}
+			reports[i] = report
+			return nil
+		})
+	}
 	if err := g.Wait(); err != nil {
 		return Result{}, err
 	}
 
-	return Result{SBOMHash: sbomHash, Layers: layers}, nil
+	return Result{SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
 }
 
 // indexComponentsByPurl indexes bom's components by purl, so fetchLayer
@@ -238,6 +276,30 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 
 	destPath := filepath.Join(dataDir, "layers", hash, layerFilename(desc))
 	if err := downloadBlob(ctx, target, desc, destPath, label, progress); err != nil {
+		return Layer{}, err
+	}
+
+	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
+}
+
+// fetchVulnerabilityReport downloads desc — a component's vulnerability
+// report (see transfer.VulnerabilityReportMediaType) — straight to
+// "<dataDir>/vulnerabilities/<purl-hash>.json", the same path `bomify
+// security scan` itself would have written it to, replacing whatever
+// report (if any) was already there for that purl.
+func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress ProgressFunc) (Layer, error) {
+	hash, err := blobHash(desc)
+	if err != nil {
+		return Layer{}, err
+	}
+
+	purl := desc.Annotations[AnnotationPurl]
+	if purl == "" {
+		return Layer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, AnnotationPurl)
+	}
+
+	destPath := security.ReportPath(dataDir, plugin.PurlHash(cdx.Component{PackageURL: purl}))
+	if err := downloadBlob(ctx, target, desc, destPath, purl, progress); err != nil {
 		return Layer{}, err
 	}
 

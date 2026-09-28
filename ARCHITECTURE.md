@@ -317,6 +317,16 @@ image with generic tooling:
   directory tree, depending on the plugin), annotated with
   `land.bomify.purl` so `pull` knows which purl hash to unpack it back
   under.
+- Any component with a local vulnerability report at
+  `vulnerabilities/<purlHash>.json` (see [Security
+  scanning](#security-scanning)) gets an **extra layer** carrying it —
+  media type `application/vnd.bomify.component.vulnerabilities.v1+json`,
+  annotated with the same purl — alongside its own; a component never
+  scanned, or scanned by a plugin that doesn't support its purl type,
+  simply gets none. `pull` writes a layer with this media type straight
+  back to that same `vulnerabilities/<purlHash>.json` path, replacing
+  whatever report (if any) was already there, rather than unpacking or
+  verbatim-copying it like a component layer.
 - The whole thing is tagged with the OCI artifact type
   `application/vnd.bomify.package.v1+json`.
 
@@ -343,7 +353,10 @@ duplicating here.
 *Source: [`docs/diagrams/save-load.mmd`](docs/diagrams/save-load.mmd)*
 
 A component shared by more than one saved tag is stored once in the
-tarball, same as a registry push would dedupe it.
+tarball, same as a registry push would dedupe it. Since `save`/`load`
+are Push/Pull underneath, a component's local vulnerability report
+travels along with it exactly as it does through a registry push/pull —
+see the vulnerability-report layer bullet above.
 
 ## Credentials
 

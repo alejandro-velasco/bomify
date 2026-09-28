@@ -10,6 +10,10 @@ components that SBOM describes), laying them out in the data
 directory exactly as "bomify build" would have. Layers download
 concurrently, each with its own progress bar.
 
+Any component the package carries a vulnerability report for is
+restored to "<data-dir>/vulnerabilities/<purl-hash>.json", the same
+path "bomify security scan" itself would have written it to.
+
 ```
 bomify package pull <reference> [flags]
 ```
