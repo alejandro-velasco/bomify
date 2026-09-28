@@ -9,14 +9,15 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/package-url/packageurl-go"
-	"helm.sh/helm/v3/pkg/action"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/cli/values"
-	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/registry"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
+	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/cli/values"
+	"helm.sh/helm/v4/pkg/getter"
+	"helm.sh/helm/v4/pkg/registry"
+	"helm.sh/helm/v4/pkg/release"
 
 	"github.com/alejandro-velasco/bomify/pkg/auth"
 )
@@ -49,9 +50,9 @@ type GenerateOptions struct {
 	// "kubeVersion" constraint is checked against, e.g. "1.31.0". Empty
 	// leaves the Helm SDK's own built-in default in place — the same
 	// "helm template" falls back to with no "--kube-version" of its
-	// own — which is old enough that a chart requiring a recent
-	// Kubernetes version will otherwise fail to render with an
-	// "incompatible with Kubernetes" error.
+	// own — which Helm v4 derives from the version of the Kubernetes
+	// client libraries it was built against, so it only tracks the
+	// cluster you actually deploy to by coincidence.
 	KubeVersion string
 }
 
@@ -78,15 +79,14 @@ func Generate(opts GenerateOptions, logger *slog.Logger) (*cdx.BOM, error) {
 		return nil, err
 	}
 
-	install := action.NewInstall(&action.Configuration{RegistryClient: registryClient})
-	install.ClientOnly = true
-	install.DryRun = true
+	install := action.NewInstall(newActionConfig(registryClient, logger))
+	install.DryRunStrategy = action.DryRunClient
 	install.Namespace = namespace
 	install.ReleaseName = releaseName
 	install.Version = opts.Version
 
 	if opts.KubeVersion != "" {
-		kubeVersion, err := chartutil.ParseKubeVersion(opts.KubeVersion)
+		kubeVersion, err := common.ParseKubeVersion(opts.KubeVersion)
 		if err != nil {
 			return nil, fmt.Errorf("parse kube version %q: %w", opts.KubeVersion, err)
 		}
@@ -137,7 +137,15 @@ func Generate(opts GenerateOptions, logger *slog.Logger) (*cdx.BOM, error) {
 		return nil, fmt.Errorf("render chart templates: %w", err)
 	}
 
-	images, err := discoverImages(rel.Manifest)
+	// In Helm v4, Install.Run returns an untyped release.Releaser (it may
+	// be any of the SDK's release API versions); an Accessor reads its
+	// rendered manifest regardless of which one it is.
+	accessor, err := release.NewAccessor(rel)
+	if err != nil {
+		return nil, fmt.Errorf("read rendered release: %w", err)
+	}
+
+	images, err := discoverImages(accessor.Manifest())
 	if err != nil {
 		return nil, fmt.Errorf("discover images: %w", err)
 	}

@@ -51,7 +51,7 @@ into `bomify build` to pull both.
 | `--values`, `-f` | no | Values file to merge into the chart's defaults. Repeatable. |
 | `--namespace` | no | Namespace templates are rendered as if installed into (`.Release.Namespace`). Defaults to `default`. |
 | `--release-name` | no | Release name templates are rendered as if installed under (`.Release.Name`). Defaults to `release-name`, same as `helm template`. |
-| `--kube-version` | no | Kubernetes version to render against and check a chart's own `kubeVersion` constraint in `Chart.yaml` against, e.g. `1.31.0`. Rendering never touches a real cluster, so this otherwise falls back to the Helm SDK's own, rather old, built-in default — a chart requiring a recent Kubernetes version will fail to render with an "incompatible with Kubernetes" error unless this is set high enough. |
+| `--kube-version` | no | Kubernetes version to render against and check a chart's own `kubeVersion` constraint in `Chart.yaml` against, e.g. `1.31.0`. Rendering never touches a real cluster, so this otherwise falls back to the Helm SDK's own built-in default (the Kubernetes version matching the client libraries the plugin was built with) — set it to the version you actually deploy to, so templates render as they would there and a chart whose `kubeVersion` constraint excludes it fails with an "incompatible with Kubernetes" error. |
 | `--output`, `-o` | no | File to write the generated SBOM to. Defaults to stdout. |
 | `--manifest` | no | YAML manifest of default flag values (see below). Defaults to `bomify-helm-sbom.yaml`, read only if present. |
 

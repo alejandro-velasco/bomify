@@ -54,10 +54,12 @@ bomify sbom generate helm \
 ```
 
 `--kube-version` also matters here: with no real cluster to check
-against, rendering otherwise falls back to the Helm SDK's own, rather
-old, built-in default, so a chart requiring a recent Kubernetes
-version will fail to render with an "incompatible with Kubernetes"
-error unless this is set high enough.
+against, rendering otherwise falls back to the Helm SDK's own
+built-in default — the Kubernetes version matching the client
+libraries the plugin was built with, not necessarily the one you
+deploy to. Set it to your cluster's version so templates render as
+they would there, and a chart that doesn't support it fails with an
+"incompatible with Kubernetes" error instead of rendering anyway.
 
 ## 3. Reuse a manifest instead of retyping flags
 

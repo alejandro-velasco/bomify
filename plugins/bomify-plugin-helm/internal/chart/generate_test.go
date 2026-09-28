@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	helmchart "helm.sh/helm/v3/pkg/chart"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 func TestImageComponentTag(t *testing.T) {

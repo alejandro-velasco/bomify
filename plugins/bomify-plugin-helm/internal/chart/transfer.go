@@ -17,10 +17,10 @@ import (
 	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/registry"
-	"helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/registry"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 	"sigs.k8s.io/yaml"
 
 	"github.com/alejandro-velasco/bomify/pkg/auth"
@@ -67,6 +67,17 @@ func defaultRegistryClient(host string) (*registry.Client, error) {
 	return client, nil
 }
 
+// newActionConfig builds the Helm SDK action configuration Pull, Push and
+// Generate run their actions with. Helm v4's Configuration carries its
+// own internal logger, set up by NewConfiguration (a bare struct literal
+// leaves it unset); it's pointed at logger so anything the SDK itself
+// logs lands in the same place as this plugin's own logging.
+func newActionConfig(registryClient *registry.Client, logger *slog.Logger) *action.Configuration {
+	cfg := action.NewConfiguration(action.ConfigurationSetLogger(logger.Handler()))
+	cfg.RegistryClient = registryClient
+	return cfg
+}
+
 // registryHost extracts the hostname to look up credentials for from a
 // repository URL, which is either a classic "https://host/path" chart
 // repo or an "oci://host/path" registry reference — both are ordinary
@@ -91,7 +102,7 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 		return nil, err
 	}
 
-	pull := action.NewPullWithOpts(action.WithConfig(&action.Configuration{RegistryClient: registryClient}))
+	pull := action.NewPull(action.WithConfig(newActionConfig(registryClient, logger)))
 	pull.Settings = cli.New()
 	pull.DestDir = outputDir
 	pull.Version = ref.Version
@@ -285,7 +296,7 @@ func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin
 		return nil, err
 	}
 
-	push := action.NewPushWithOpts(action.WithPushConfig(&action.Configuration{RegistryClient: registryClient}))
+	push := action.NewPushWithOpts(action.WithPushConfig(newActionConfig(registryClient, logger)))
 	push.Settings = cli.New()
 
 	logger.Info("pushing chart", "path", path, "remote", remote)
