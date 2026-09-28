@@ -20,9 +20,10 @@ import (
 // metadata included").
 //
 // BOMRef is set to the vulnerability's own ID, per
-// plugins/SECURITY-CONTRACT.md's recommended convention — this is what
-// lets bomify recognize the same vulnerability reported by two
-// different components and merge them, rather than duplicating it.
+// plugins/SECURITY-CONTRACT.md's recommended convention, so a consumer
+// of the resulting vulnerability report can refer to it unambiguously —
+// and so buildImageResult can fold the same vulnerability matched
+// against several packages into one entry.
 // Affects is deliberately left unset: Purl and buildImageResult each set
 // it themselves afterward, since only they know what this vulnerability
 // should actually be attributed to (see plugins/SECURITY-CONTRACT.md).

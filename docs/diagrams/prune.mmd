@@ -17,7 +17,7 @@ flowchart TD
 
     NothingToMark --> Sweep
     MarkComponents --> Sweep
-    Unprotected --> Sweep["sweep every entry under<br/>manifests/ and layers/"]
+    Unprotected --> Sweep["sweep every entry under<br/>manifests/, layers/, and vulnerabilities/"]
 
     Sweep --> Reachable{"hash in the<br/>kept set?"}
     Reachable -->|"yes"| Keep["left alone"]

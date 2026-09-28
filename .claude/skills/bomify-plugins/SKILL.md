@@ -25,10 +25,11 @@ since they don't share requirements:
   `security supported-components`, one per scanning tool — e.g. `grype`,
   not a purl type or deployment medium) — closer in shape to the
   component contract than to SBOM generation: bomify itself loads the
-  SBOM, queries `supported-components` once to decide which components
-  are even worth scanning, dispatches one `scan` call per remaining
-  component (concurrently, like `bomify build`/`bomify distribute`), and
-  merges the JSON array each call returns — specified in
+  built package's SBOM, queries `supported-components` once to decide
+  which components are even worth scanning, dispatches one `scan` call
+  per remaining component (concurrently, like `bomify build`/`bomify
+  distribute`), and writes each call's JSON result as that component's
+  own vulnerability report — specified in
   [`plugins/SECURITY-CONTRACT.md`](../../../plugins/SECURITY-CONTRACT.md).
 
 Treat whichever applies as authoritative; do not re-derive or paraphrase

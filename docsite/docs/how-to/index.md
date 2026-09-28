@@ -19,7 +19,8 @@ uses; it doesn't repeat it.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md) —
   generate a CycloneDX SBOM from a chart's rendered templates, no
   cluster required.
-- [Scanning an SBOM's components with grype](scanning-with-grype.md) —
-  populate an SBOM's `vulnerabilities` using `bomify-plugin-grype`.
+- [Scanning a package's components with grype](scanning-with-grype.md) —
+  write per-component vulnerability reports for a built package using
+  `bomify-plugin-grype`.
 - [Saving packages for airgapped environments](saving-packages-for-airgapped-environments.md) —
   move packages to a machine with no registry access via a tarball.

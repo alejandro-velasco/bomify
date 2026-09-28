@@ -434,12 +434,12 @@ func Remote(path string, component cdx.Component, baseDir string, logger *slog.L
 // exactly like a component plugin's single fatal message.
 //
 // The plugin itself — not cmd/security.go — sets every returned
-// Vulnerability's Affects field; cmd/security.go only merges results
-// across every component in an SBOM, deduplicating by BOMRef and
-// combining Affects, it never sets or overwrites Affects itself. A
-// plugin's responsibility here is answering "what does this purl have,
-// and what specifically does each finding affect", nothing
-// about the SBOM it came from.
+// Vulnerability's Affects field; cmd/security.go only writes each
+// component's result, unmodified, as that component's own vulnerability
+// report (see internal/security), it never sets or overwrites Affects
+// itself. A plugin's responsibility here is answering "what does this
+// purl have, and what specifically does each finding affect", nothing
+// about the package it came from.
 func Scan(path string, component cdx.Component, logger *slog.Logger) (pluginlib.SecurityResult, error) {
 	logger.Info("scanning component", "purl", component.PackageURL)
 

@@ -2,7 +2,7 @@
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 
-Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time. `bomify sbom generate` goes the other direction — inspecting a deployment medium (a Helm chart, an OCI image, ...) through its own plugin to produce a fresh SBOM in the first place. `bomify security scan` scans an existing SBOM for vulnerabilities, calling a scanning-tool plugin (e.g. grype) once per component — concurrently, the same way `build`/`distribute` do — and merging the results into the SBOM's own vulnerability data rather than producing a separate report.
+Give it an SBOM and `bomify build` walks its components, delegating each one to an external plugin binary that knows how to pull it; `bomify distribute` later republishes an already-built package the same way, one component at a time. `bomify sbom generate` goes the other direction — inspecting a deployment medium (a Helm chart, an OCI image, ...) through its own plugin to produce a fresh SBOM in the first place. `bomify security scan` scans a built package for vulnerabilities, calling a scanning-tool plugin (e.g. grype) once per component — concurrently, the same way `build`/`distribute` do — and storing one vulnerability report per component, shared by every package that includes it.
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)** — installation, a guided quickstart, the full CLI reference, and a guide to building a plugin.
 
@@ -58,10 +58,11 @@ Generate an SBOM for a Helm chart, rather than starting from one:
 bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6 > postgresql.cdx.json
 ```
 
-Scan that SBOM's components for known vulnerabilities with [grype](https://github.com/anchore/grype):
+Build it, then scan the package's components for known vulnerabilities with [grype](https://github.com/anchore/grype) — each component's report lands under `<data-dir>/vulnerabilities/`:
 
 ```sh
-bomify security scan grype postgresql.cdx.json > postgresql-scanned.cdx.json
+bomify build postgresql.cdx.json --tag postgresql:18.11.6
+bomify security scan grype postgresql:18.11.6
 ```
 
 ## Container
@@ -84,7 +85,7 @@ docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tm
 
 ## Plugins
 
-Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand; `bomify security scan <type>` does too, but per component — the same plugin, called once per component in the SBOM, concurrently. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
+Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand; `bomify security scan <type>` does too, but per component — the same plugin, called once per component in a built package, concurrently. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch works, and [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) (component plugins), [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) (SBOM generation plugins), and [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) (security scanning plugins) for the three independent contracts a plugin can implement.
 

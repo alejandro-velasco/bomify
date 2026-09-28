@@ -75,6 +75,6 @@ bomify distribute myapp:latest --concurrency 4
 
 - [Building a package](building-a-package.md) if you haven't got one
   tagged locally yet.
-- [Scanning an SBOM's components with grype](scanning-with-grype.md)
+- [Scanning a package's components with grype](scanning-with-grype.md)
   before you distribute, if you want vulnerability data recorded
   alongside it.

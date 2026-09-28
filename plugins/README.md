@@ -14,9 +14,9 @@ inspect a deployment medium and build a fresh SBOM for it.
 - **Security scanning plugins** (`security scan|supported-components`, specified in
 [`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md))
 report the vulnerabilities one component's purl is affected by; `bomify
-security scan` calls the same plugin once per component in an existing
-SBOM (concurrently, like `bomify build`/`bomify distribute`) and merges
-their results into the SBOM's own vulnerabilities.
+security scan` calls the same plugin once per component in a built
+package (concurrently, like `bomify build`/`bomify distribute`) and
+records each result as that component's own vulnerability report.
 
 | Plugin                                        | Kind     | Backing library                                                                   | Contracts Implemented |
 |------------------------------------------------|----------|-------------------------------------------------------------------------------------|-------------------------|
@@ -109,8 +109,9 @@ flag, as extra `ratings` entries with a free-text `method`
 ### Nested Component Reporting
 
 For `oci`/`docker` scans, each cataloged package is also reported as a
-nested `SecurityResult` component, embedded by `bomify security scan`
-under the image, with `affects` pointing at the specific package and
+`SecurityResult` component, which `bomify security scan` writes as a
+top-level component of the image's vulnerability report (the image
+itself being the report's metadata component), with `affects` pointing at the specific package and
 `evidence.occurrences` tracing back to where syft found it — an
 apk/dpkg entry, a `package.json`, a jar on disk, ...
 

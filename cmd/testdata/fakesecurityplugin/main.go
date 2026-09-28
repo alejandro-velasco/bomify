@@ -1,6 +1,6 @@
 // Command fakesecurityplugin is a synthetic bomify-plugin-* used only by
 // cmd's tests, to exercise "bomify security scan"'s per-component
-// dispatch, capability filtering, and merge logic without depending on
+// dispatch, capability filtering, and per-component reports without depending on
 // a real plugin.
 package main
 

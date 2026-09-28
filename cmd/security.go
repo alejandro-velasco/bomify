@@ -3,16 +3,17 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
-	"os"
+	"sort"
 	"sync"
+	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
-	"github.com/alejandro-velasco/bomify/internal/sbom"
-	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const securityShort = "Security scanning commands"
@@ -28,71 +29,92 @@ func securityCmd() *cobra.Command {
 	return cmd
 }
 
-const securityScanShort = "Scan an SBOM's components for vulnerabilities via a security scanning plugin"
+const securityScanShort = "Scan a built package's components for vulnerabilities via a security scanning plugin"
 
-const securityScanLong = `Scan resolves a single "bomify-plugin-<type>" binary — <type> names the
-scanning tool itself (e.g. "grype"), not a purl type or deployment
-medium, since any scanner can in principle scan any component — and
-first asks it, once, which component purl types and scan categories it
-supports ("security supported-components"). Any component whose purl
-type isn't in that list is skipped; every other component is scanned
-via "security scan --purl <purl>", once per component, up to
+const securityScanLong = `Scan resolves <tag> to a package a prior "bomify build" (or "bomify
+pull"/"bomify load") recorded locally, then scans every component that
+package's SBOM describes through a single "bomify-plugin-<type>" binary —
+<type> names the scanning tool itself (e.g. "grype"), not a purl type or
+deployment medium, since any scanner can in principle scan any component.
+
+bomify first asks the plugin, once, which component purl types and scan
+categories it supports ("security supported-components"). Any component
+whose purl type isn't in that list is skipped; every other component is
+scanned via "security scan --purl <purl>", once per component, up to
 --concurrency at a time: the same per-component, concurrent dispatch
 "bomify build"/"bomify distribute" use, just for scanning instead of
 pulling/pushing.
 
-Each scan call reports the vulnerabilities that component's purl is
-affected by, and sets each one's "affects" itself — to the purl it was
-given, or, if it had to unpack that purl into smaller pieces to scan it
-at all (e.g. cataloging a container image's contents), to the specific
-piece(s) actually affected. bomify only merges results across every
-component: two separate scans reporting a vulnerability with the same
-"bom-ref" are folded into one entry combining both "affects", rather
-than duplicated; any pieces a plugin reports unpacking a component into
-are embedded as that component's own nested components. See
+Each component's result is written as its own CycloneDX vulnerability
+report, <data-dir>/vulnerabilities/<purl-hash>.json — keyed by the same
+purl hash as that component's pull manifest and layer, so a component
+shared by two packages shares one report too, and scanning either
+package refreshes it for both. A report's metadata component is the
+scanned component itself; for a component the plugin had to unpack to
+scan at all (e.g. cataloging an OCI image's contents), the pieces it
+found are the report's top-level components, and each vulnerability's
+"affects" names the specific piece(s) affected. See
 plugins/SECURITY-CONTRACT.md for the full contract.
 
-The scanned SBOM, with its "vulnerabilities" populated, is printed to
-stdout by default; --output redirects it to a file instead.`
+A summary of every scanned component — its vulnerability count and
+report ID (the first 12 characters of its purl hash) — is printed to
+stdout.`
 
-const securityScanExample = `  # Scan an SBOM for vulnerabilities with grype
-  bomify security scan grype sbom.cdx.json
+const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
+  bomify security scan grype myapp:latest
 
-  # Scan up to 4 components concurrently, writing the result to a file
-  bomify security scan grype sbom.cdx.json --concurrency 4 --output scanned.cdx.json`
+  # Scan up to 4 components concurrently
+  bomify security scan grype myapp:latest --concurrency 4`
 
 type securityScanOptions struct {
 	scanType    string
-	sbomFile    string
+	tag         string
 	concurrency int
-	output      string
 }
 
 func securityScanCmd() *cobra.Command {
 	opts := &securityScanOptions{}
 
 	cmd := &cobra.Command{
-		Use:     "scan <type> <sbom-file>",
+		Use:     "scan <type> <tag>",
 		Short:   securityScanShort,
 		Long:    securityScanLong,
 		Example: securityScanExample,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.scanType, opts.sbomFile = args[0], args[1]
+			opts.scanType, opts.tag = args[0], args[1]
 			if err := runSecurityScan(cmd, opts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("security scan: %w", err)
 			}
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) != 1 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return completeLocalTags(cmd, args, toComplete)
+		},
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 1, "number of components to scan concurrently")
-	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "file to write the scanned SBOM to (defaults to stdout)")
 
 	return cmd
 }
 
+// scanRow is one scanned component's summary line.
+type scanRow struct {
+	Name            string
+	Version         string
+	PurlHash        string
+	Vulnerabilities int
+}
+
 func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog.Logger) error {
+	sbomHash, err := build.ResolveTag(dataDir, opts.tag)
+	if err != nil {
+		return err
+	}
+
 	path, err := plugin.Find(opts.scanType)
 	if err != nil {
 		return err
@@ -108,14 +130,14 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		supportedTypes[t] = true
 	}
 
-	bom, err := sbom.Load(opts.sbomFile)
-	if err != nil {
-		return err
-	}
+	// The same purl listed twice in one SBOM maps to the same report, so
+	// only its first occurrence is scanned.
+	var claimed sync.Map
 
-	merger := newVulnerabilityMerger()
+	var mu sync.Mutex
+	var rows []scanRow
 
-	if err := forEachComponent(opts.sbomFile, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+	if err := forEachComponent(build.ManifestPath(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		kind, err := plugin.Detect(component)
 		if err != nil {
 			log.Warn("skipping component: cannot determine its kind", "error", err)
@@ -126,148 +148,48 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 			return nil
 		}
 
+		purlHash := plugin.PurlHash(component)
+		if _, dup := claimed.LoadOrStore(purlHash, true); dup {
+			log.Debug("skipping component: purl already scanned", "purl", component.PackageURL)
+			return nil
+		}
+
 		result, err := plugin.Scan(path, component, log)
 		if err != nil {
 			return err
 		}
-		log.Info("scan complete", "vulnerabilities", len(result.Vulnerabilities), "components", len(result.Components))
-		merger.add(component, result)
+
+		reportPath, err := security.WriteReport(dataDir, component, security.NewReport(component, result))
+		if err != nil {
+			return err
+		}
+		log.Info("scan complete", "vulnerabilities", len(result.Vulnerabilities), "components", len(result.Components), "report", reportPath)
+
+		mu.Lock()
+		rows = append(rows, scanRow{
+			Name:            component.Name,
+			Version:         component.Version,
+			PurlHash:        purlHash,
+			Vulnerabilities: len(result.Vulnerabilities),
+		})
+		mu.Unlock()
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	merger.applyNestedComponents(bom.Components)
-
-	vulns := merger.result()
-	bom.Vulnerabilities = &vulns
-
-	w := cmd.OutOrStdout()
-	if opts.output != "" {
-		f, err := os.Create(opts.output)
-		if err != nil {
-			return fmt.Errorf("create output file %s: %w", opts.output, err)
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Name != rows[j].Name {
+			return rows[i].Name < rows[j].Name
 		}
-		defer f.Close()
-		w = f
+		return rows[i].Version < rows[j].Version
+	})
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "COMPONENT\tVERSION\tREPORT ID\tVULNERABILITIES")
+	for _, row := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", row.Name, row.Version, shortID(row.PurlHash), row.Vulnerabilities)
 	}
 
-	enc := cdx.NewBOMEncoder(w, cdx.BOMFileFormatJSON)
-	enc.SetEscapeHTML(false)
-	enc.SetPretty(true)
-	return enc.Encode(bom)
-}
-
-// vulnerabilityMerger accumulates every component's scan result into one
-// deduplicated vulnerability list, safe for concurrent use by
-// forEachComponent's per-component goroutines.
-type vulnerabilityMerger struct {
-	mu                 sync.Mutex
-	vulns              []cdx.Vulnerability
-	byRef              map[string]int // non-empty Vulnerability.BOMRef -> index into vulns
-	componentsByParent map[string][]cdx.Component
-}
-
-func newVulnerabilityMerger() *vulnerabilityMerger {
-	return &vulnerabilityMerger{
-		vulns:              []cdx.Vulnerability{},
-		byRef:              map[string]int{},
-		componentsByParent: map[string][]cdx.Component{},
-	}
-}
-
-// add folds component's scan result into m. Every vulnerability's
-// Affects is left exactly as the plugin reported it — bomify no longer
-// sets or overwrites it — merged into an already-collected entry
-// sharing the same, non-empty Vulnerability.BOMRef instead of being
-// appended as a duplicate — per plugins/SECURITY-CONTRACT.md's dedup
-// rule. A vulnerability with no bom-ref of its own is never
-// deduplicated: two unrelated findings that both happen to omit one
-// would otherwise be silently merged under a shared empty key, hiding a
-// real result. result.Components (if any) are recorded to be embedded
-// under component itself once every component has been scanned — see
-// applyNestedComponents.
-func (m *vulnerabilityMerger) add(component cdx.Component, result pluginlib.SecurityResult) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if len(result.Components) > 0 {
-		ref := componentRef(component)
-		m.componentsByParent[ref] = append(m.componentsByParent[ref], result.Components...)
-	}
-
-	for _, v := range result.Vulnerabilities {
-		if v.BOMRef == "" {
-			m.vulns = append(m.vulns, v)
-			continue
-		}
-
-		if i, ok := m.byRef[v.BOMRef]; ok {
-			m.vulns[i].Affects = mergeAffects(m.vulns[i].Affects, v.Affects)
-			continue
-		}
-
-		m.byRef[v.BOMRef] = len(m.vulns)
-		m.vulns = append(m.vulns, v)
-	}
-}
-
-// result returns every vulnerability m has collected so far.
-func (m *vulnerabilityMerger) result() []cdx.Vulnerability {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.vulns
-}
-
-// applyNestedComponents embeds every component discovered while
-// unpacking a top-level component to scan it (see add) as that
-// component's own nested Components, in place within components. Called
-// once forEachComponent has finished, after every concurrent scan has
-// already returned, so it doesn't need m's mutex.
-func (m *vulnerabilityMerger) applyNestedComponents(components *[]cdx.Component) {
-	if components == nil {
-		return
-	}
-
-	for i := range *components {
-		nested, ok := m.componentsByParent[componentRef((*components)[i])]
-		if !ok {
-			continue
-		}
-		(*components)[i].Components = &nested
-	}
-}
-
-// componentRef returns the reference a vulnerability's Affects should
-// name component by: its own bom-ref if it has one, falling back to its
-// purl for an SBOM whose components were never assigned one.
-func componentRef(component cdx.Component) string {
-	if component.BOMRef != "" {
-		return component.BOMRef
-	}
-	return component.PackageURL
-}
-
-// mergeAffects returns existing with incoming's entries appended,
-// deduplicated by Ref — the same component reported twice (e.g. a
-// plugin returning the same vulnerability more than once) still only
-// appears once in the merged result.
-func mergeAffects(existing, incoming *[]cdx.Affects) *[]cdx.Affects {
-	seen := map[string]bool{}
-	merged := []cdx.Affects{}
-
-	for _, list := range []*[]cdx.Affects{existing, incoming} {
-		if list == nil {
-			continue
-		}
-		for _, a := range *list {
-			if seen[a.Ref] {
-				continue
-			}
-			seen[a.Ref] = true
-			merged = append(merged, a)
-		}
-	}
-
-	return &merged
+	return w.Flush()
 }

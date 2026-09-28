@@ -75,7 +75,7 @@ cat myapp.tar | bomify load
 
 - [Distributing a package](distributing-a-package.md) once it's
   loaded, if the airgapped environment has its own internal registry.
-- [Scanning an SBOM's components with grype](scanning-with-grype.md)
+- [Scanning a package's components with grype](scanning-with-grype.md)
   before you save, if you want vulnerability data to travel with the
   package rather than needing network access on the far side to fetch
   it later.

@@ -38,12 +38,12 @@ func packageCmd() *cobra.Command {
 
 const packagePruneShort = "Remove packages not associated with any tag"
 
-const packagePruneLong = `Prune removes every manifest and layer in the data directory that
-isn't reachable from a tag currently recorded in repositories.json. A
-component still used by any tagged package, even one also used by an
-otherwise-unreferenced package, is left alone.`
+const packagePruneLong = `Prune removes every manifest, layer, and vulnerability report in the
+data directory that isn't reachable from a tag currently recorded in
+repositories.json. A component still used by any tagged package, even
+one also used by an otherwise-unreferenced package, is left alone.`
 
-const packagePruneExample = `  # Remove every untagged manifest and layer
+const packagePruneExample = `  # Remove every untagged manifest, layer, and vulnerability report
   bomify package prune`
 
 func packagePruneCmd() *cobra.Command {
