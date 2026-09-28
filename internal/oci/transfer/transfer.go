@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ArtifactType identifies a bomify package: an OCI artifact whose config is
@@ -80,6 +81,17 @@ func IsSafeFilename(name string) bool {
 // with paths relative to dir. It never writes explicit directory entries:
 // a tar reader reconstructs a file's parent directories from its path
 // alone, so those would be redundant.
+//
+// Every header is normalized (see normalizeHeader) before it's written,
+// so the resulting tar — and so the digest Push computes over it —
+// depends only on the archived files' names, modes, and content, never
+// on incidental local filesystem metadata. This matters because
+// ExtractTar (deliberately, see its own doc comment) doesn't restore a
+// file's original mtime/uid/gid on unpack: without normalizing here,
+// re-tarring a layer bomify itself just pulled would reproduce a
+// different tar — and so a different digest — than the one originally
+// pushed, even though the content is byte-for-byte identical, making
+// Push treat it as new and re-upload it every time.
 func WriteTar(dir string, w io.Writer) error {
 	tw := tar.NewWriter(w)
 
@@ -106,6 +118,7 @@ func WriteTar(dir string, w io.Writer) error {
 			return err
 		}
 		hdr.Name = filepath.ToSlash(rel)
+		normalizeHeader(hdr)
 
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
@@ -125,6 +138,24 @@ func WriteTar(dir string, w io.Writer) error {
 	}
 
 	return tw.Close()
+}
+
+// normalizeHeader clears every field of hdr that reflects incidental
+// local filesystem state rather than a file's actual content — its
+// modification/access/change times and owning uid/gid/user/group —
+// so two tars of the same file content and names come out
+// byte-identical regardless of when or where those files happened to
+// sit on disk. Leaving the timestamps at their zero time.Time value is
+// enough: archive/tar substitutes the Unix epoch for a zero ModTime on
+// its own, and simply omits a zero AccessTime/ChangeTime.
+func normalizeHeader(hdr *tar.Header) {
+	hdr.ModTime = time.Time{}
+	hdr.AccessTime = time.Time{}
+	hdr.ChangeTime = time.Time{}
+	hdr.Uid = 0
+	hdr.Gid = 0
+	hdr.Uname = ""
+	hdr.Gname = ""
 }
 
 // ExtractTar extracts every entry from tr into destDir.

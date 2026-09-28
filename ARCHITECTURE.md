@@ -334,7 +334,16 @@ image with generic tooling:
   `layers/<purlHash>/` for that component (a single file or a whole
   directory tree, depending on the plugin), annotated with
   `land.bomify.purl` so `pull` knows which purl hash to unpack it back
-  under.
+  under. `transfer.WriteTar` normalizes every entry's mtime and uid/gid
+  (zeroed, rather than whatever the local filesystem happens to report)
+  before archiving, so the tar — and so the digest `push` computes over
+  it — depends only on file names, modes, and content. This matters
+  because `pull` doesn't restore a layer's original mtime/uid/gid on
+  unpack (see `transfer.ExtractTar`); without normalizing, re-tarring a
+  layer bomify itself just pulled would produce different bytes than
+  the original push even though the content never changed, making a
+  later `push` of the same unchanged component re-upload it under a new
+  digest every time.
 - Any component with a local vulnerability report at
   `vulnerabilities/<purlHash>.json` (see [Security
   scanning](#security-scanning)) gets an **extra layer** carrying it —
