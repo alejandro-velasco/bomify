@@ -84,16 +84,16 @@ func (r *RemoteResult) Print(w io.Writer) error {
 // image), Affects should instead reference the specific piece(s) —
 // reported via Components below — actually affected, by their own
 // BOMRef, never the purl that was scanned. bomify never sets or
-// overwrites Affects itself; it only merges: two separate scans
-// reporting a vulnerability with the same (non-empty) BOMRef are folded
-// into one entry, combining their Affects, across every component in
-// the SBOM (see plugins/SECURITY-CONTRACT.md).
+// overwrites Affects itself: it writes Vulnerabilities, unmodified, into
+// the scanned component's own vulnerability report (see
+// plugins/SECURITY-CONTRACT.md).
 //
 // Components is optional: it lists the pieces a plugin had to unpack
 // the scanned purl into to scan it at all (e.g. the packages found by
 // cataloging a container image), each as a CycloneDX component with its
-// own stable BOMRef. bomify embeds them as nested components under the
-// one it scanned. A plugin that scans the purl directly, with nothing
+// own stable BOMRef. bomify writes them as the top-level components of
+// the scanned component's vulnerability report, whose metadata component
+// is the scanned component itself. A plugin that scans the purl directly, with nothing
 // to unpack, leaves this nil.
 //
 // An empty (but non-nil) Vulnerabilities reports that nothing was

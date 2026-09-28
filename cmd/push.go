@@ -16,7 +16,11 @@ const pushShort = "Publish a bomify package to an OCI registry"
 const pushLong = `Push packages the SBOM manifest a prior "bomify build" recorded for
 <tag> (and each component it describes) as an OCI artifact, and
 publishes it under <tag>. <tag> is both the local bookkeeping key
-(see "bomify tag" / "bomify packages") and the destination reference.`
+(see "bomify tag" / "bomify packages") and the destination reference.
+
+Any component with a local vulnerability report from a prior "bomify
+security scan" is pushed an extra layer carrying it; a component never
+scanned carries none.`
 
 const pushExample = `  # Push the package tagged myapp:latest to its own registry reference
   bomify push myapp:latest
@@ -85,5 +89,8 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	logger.Info("manifest pushed", "digest", result.ManifestDigest)
 	for _, layer := range result.Layers {
 		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
+	}
+	for _, report := range result.VulnerabilityReports {
+		logger.Info("vulnerability report attached", "purl", report.Purl, "hash", report.Hash)
 	}
 }

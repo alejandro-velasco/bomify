@@ -18,7 +18,11 @@ const pullLong = `Pull downloads a bomify package artifact from an OCI registry:
 config (the aggregate SBOM manifest) and each of its layers (the
 components that SBOM describes), laying them out in the data
 directory exactly as "bomify build" would have. Layers download
-concurrently, each with its own progress bar.`
+concurrently, each with its own progress bar.
+
+Any component the package carries a vulnerability report for is
+restored to "<data-dir>/vulnerabilities/<purl-hash>.json", the same
+path "bomify security scan" itself would have written it to.`
 
 const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp:latest
@@ -92,5 +96,8 @@ func logPulledLayers(logger *slog.Logger, result pull.Result) {
 	logger.Info("sbom manifest restored", "hash", result.SBOMHash)
 	for _, layer := range result.Layers {
 		logger.Info("layer restored", "purl", layer.Purl, "hash", layer.Hash, "path", layer.Path)
+	}
+	for _, report := range result.VulnerabilityReports {
+		logger.Info("vulnerability report restored", "purl", report.Purl, "hash", report.Hash, "path", report.Path)
 	}
 }

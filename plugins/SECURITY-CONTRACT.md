@@ -3,8 +3,9 @@
 This is the specification for the subprocess contract between `bomify`
 and a `bomify-plugin-<type>` binary's **security scanning** subcommands,
 `security scan` and `security supported-components`, which `bomify
-security scan <type> <sbom-file>` delegates to — the latter once, the
-former once per (supported) component in the SBOM, concurrently. It's an
+security scan <type> <tag>` delegates to — the latter once, the former
+once per (supported) component in that built package's SBOM,
+concurrently. It's an
 entirely independent contract from the
 [component plugin contract](COMPONENT-CONTRACT.md) and the
 [SBOM generation plugin contract](SBOM-CONTRACT.md) — a plugin binary
@@ -34,7 +35,8 @@ Unlike the SBOM generation contract, bomify does real orchestration
 work here, much closer to the component contract's `pull`/`push`
 dispatch:
 
-1. **Load** `<sbom-file>` itself and walk every component it describes.
+1. **Resolve** `<tag>` to a package already built (or pulled/loaded)
+   locally, and walk every component its SBOM describes.
 2. **Find** `bomify-plugin-<type>` on `PATH` once — the same binary
    scans every component, regardless of purl type.
 3. **Query** that binary's `security supported-components` once, to
@@ -45,16 +47,14 @@ dispatch:
 4. **Delegate**, once per remaining component, up to `--concurrency` at
    a time (mirroring `bomify build`/`bomify distribute`'s own flag):
    call `security scan --purl <purl>` and parse its JSON result.
-5. **Merge** every component's result into one deduplicated
-   vulnerability list — see [Merging](#merging) — write it back into
-   the SBOM's `vulnerabilities`, embed any reported `components` as that
-   component's own nested components, and print the result to stdout
-   (or `--output`'s file).
+5. **Record** each component's result as that component's own
+   vulnerability report — see [Reports](#reports) — shared by every
+   package describing the same purl.
 
-A plugin never opens `<sbom-file>` itself, and `security scan` never
-sees any component but the one named by the `--purl` it was given for
-that invocation — bomify owns the SBOM, the dispatch, the concurrency,
-and the merge.
+A plugin never opens the package's SBOM itself, and `security scan`
+never sees any component but the one named by the `--purl` it was given
+for that invocation — bomify owns the SBOM, the dispatch, the
+concurrency, and the reports.
 
 ## Commands
 
@@ -146,21 +146,20 @@ is no bomify-specific field beyond the two top-level keys themselves.
   entries in one vulnerability object, not a duplicated one.
 
 bomify never sets or overwrites `affects` itself; see
-[Merging](#merging) below for what it does instead. Setting a stable
+[Reports](#reports) below for what it does instead. Setting a stable
 `bom-ref` per vulnerability (the vulnerability's own ID is a reasonable
-choice) is what makes that merge meaningful: without one, the same
-vulnerability reported by two different components can't be recognized
-as the same finding, and ends up duplicated in the output instead of
-merged.
+choice) is still recommended, so a consumer of the report can refer to a
+finding unambiguously.
 
 Each entry in `components` is a regular
 [CycloneDX `component`](https://cyclonedx.org/docs/) object, with a
 stable `bom-ref` of the plugin's own choosing (a purl, if the piece has
-one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above).
-bomify embeds the entire list as the scanned component's own nested
-`components` in the SBOM — a real, if partial, bill of materials for
-whatever the plugin unpacked, not just a lookup table for `affects` to
-point into.
+one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above). A
+plugin should still report every piece it unpacked, not just the
+affected ones — bomify itself is the one that narrows the list down to
+just what's affected when it writes the report (see
+[Reports](#reports) below), and it can only do that filtering starting
+from the full list.
 
 A machine-readable version of this schema is published at
 [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
@@ -194,31 +193,34 @@ Go plugins should build this as a `plugin.SupportedComponentsResult`
 `(*SupportedComponentsResult).Print`, rather than hand-rolling the JSON
 encoding.
 
-## Merging
+## Reports
 
-Once every component has been scanned, bomify combines their results
-into the SBOM's own `vulnerabilities` array and `components`:
+bomify writes every scanned component's result, unmodified, as its own
+CycloneDX document — a vulnerability report — at
+`<data-dir>/vulnerabilities/<purl-hash>.json`, keyed by the same hash of
+the component's purl as its pull manifest and layer directory:
 
-1. If a vulnerability with the same (non-empty) `bom-ref` has already
-   been collected from a different component's scan, the two are
-   merged: the new one's `affects` entries are added to the existing
-   entry's `affects` (deduplicated by `ref`) instead of appending a
-   whole second, duplicate vulnerability. bomify never sets, rewrites,
-   or reorders `affects` beyond this — whatever a plugin reported is
-   what ends up in the output.
-2. A vulnerability with no `bom-ref` at all is never merged with
-   anything — it's kept as its own distinct entry, since there'd be no
-   reliable way to tell it apart from an unrelated finding that also
-   happened to omit one.
-3. Every `components` entry a scan reported is embedded as that one
-   scanned component's own nested `components` in the SBOM — a plugin's
-   `components` are never merged with another component's, or with
-   anything already in the SBOM; they're additive, under the component
-   that produced them.
+- The report's `metadata.component` is the scanned component itself,
+  with its `bom-ref` set to its purl (so a directly-scanned component's
+  `affects`, which name that purl, resolve within the report).
+- The report's top-level `components` are whichever of the plugin's
+  reported `components` some vulnerability's `affects` actually names —
+  empty for a component scanned directly (e.g. an `npm` or `pypi`
+  purl), and, for one that wasn't (e.g. the packages cataloged inside
+  an `oci`/`docker` image, which stays the report's metadata
+  component), only the unpacked pieces something was actually found
+  in, not the full inventory the plugin reported.
+- The report's `vulnerabilities` are exactly the `vulnerabilities` the
+  plugin reported. bomify never sets, rewrites, merges, or reorders
+  them, `affects` included.
+
+Because a report is keyed by purl alone, a component shared by two
+packages shares one report: scanning either package replaces it with
+that newest scan's result. Nothing in a report depends on which
+package's SBOM the component was scanned from.
 
 This is entirely bomify's responsibility; a plugin never sees another
-component's result and has no say in how (or whether) its own findings
-get merged with theirs.
+component's result, or where (or whether) its own gets stored.
 
 ## What a plugin does *not* need to handle
 
@@ -231,9 +233,8 @@ get merged with theirs.
   `security scan`; a plugin doesn't need to validate or reject a purl
   type it doesn't support, since it will simply never be asked about
   one.
-- No knowledge of the SBOM it came from, or any other component's
-  result — bomify assembles the final `vulnerabilities`/`components`
-  from every component's scan afterward. A plugin does still set its
+- No knowledge of the package it came from, or any other component's
+  result — bomify writes each component's report itself. A plugin does still set its
   own findings' `affects`, since only it knows what its own result is
   actually about — see [SecurityResult](#securityresult).
 - No coordination with this binary's own component or SBOM generation

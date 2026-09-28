@@ -18,9 +18,12 @@ flowchart TD
     Root -->|"pulled components"| Layers["layers/"]
     Layers -->|"one component's artifact, keyed by purl hash"| LayerDir[("&lt;purl-hash&gt;/")]
 
+    Root -->|"security scan results"| Vulns["vulnerabilities/"]
+    Vulns -->|"one component's vulnerability report, keyed by purl hash"| ReportFile[("&lt;purl-hash&gt;.json")]
+
     Root -->|"plugin logs"| Logs["logs/"]
     Logs -->|"transient: exists only during that pull/push"| LogFile("&lt;purl-hash&gt;.log")
 
-    class Root,Package,Conf,Manifests,Layers,Logs dir
-    class Repos,DistConfig,ManifestFile,LayerDir store
+    class Root,Package,Conf,Manifests,Layers,Vulns,Logs dir
+    class Repos,DistConfig,ManifestFile,LayerDir,ReportFile store
     class PidFile,LogFile transient

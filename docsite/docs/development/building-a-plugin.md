@@ -25,9 +25,9 @@ you're building one of these instead:
 - **[Security scanning plugin contract](security-contract.md)**
   (`security scan --purl <purl>`) — a similarly lightweight per-call
   contract (a plugin just answers "what does this purl have"), but
-  bomify itself owns loading the SBOM, dispatching one call per
-  component, and merging the results — closer to the component contract
-  in that respect.
+  bomify itself owns resolving the package, dispatching one call per
+  component, and storing each result as that component's vulnerability
+  report — closer to the component contract in that respect.
 
 ## What a plugin actually is
 

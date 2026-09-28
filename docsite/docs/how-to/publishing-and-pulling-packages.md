@@ -6,10 +6,12 @@ icon: lucide/cloud-upload
 
 `bomify push` publishes a whole built package as a single OCI artifact:
 its SBOM manifest as the artifact's config and each component as a
-layer. `bomify pull` downloads it back into another machine's data
-directory exactly as `bomify build` would have laid it out. Any
-OCI-compliant registry works (Docker Hub, GHCR, Harbor, ECR, a
-self-hosted `registry:3`, …). See
+layer, plus, for any component `bomify security scan` already produced
+a local vulnerability report for, an extra layer carrying that report.
+`bomify pull` downloads it all back into another machine's data
+directory exactly as `bomify build`/`bomify security scan` would have
+laid it out. Any OCI-compliant registry works (Docker Hub, GHCR, Harbor,
+ECR, a self-hosted `registry:3`, …). See
 [bomify push](../usage/reference/bomify_push.md),
 [bomify pull](../usage/reference/bomify_pull.md), and
 [bomify login](../usage/reference/bomify_login.md) for the full flag
@@ -116,13 +118,13 @@ then:
 bomify pull registry.example.com/myapp:1.0
 ```
 
-This restores the manifest and every component into the data
-directory and records `registry.example.com/myapp:1.0` as a local tag.
-The package is then ready for `bomify distribute`, `bomify save`, or
-a later `bomify push` elsewhere, exactly as if
-it had been built there. Components the data directory already
-holds (from an earlier build or pull) are reused when a later
-`bomify build` needs them.
+This restores the manifest, every component, and any vulnerability
+reports the package carried into the data directory, and records
+`registry.example.com/myapp:1.0` as a local tag. The package is then
+ready for `bomify distribute`, `bomify save`, or a later `bomify push`
+elsewhere, exactly as if it had been built (and scanned) there.
+Components the data directory already holds (from an earlier build or
+pull) are reused when a later `bomify build` needs them.
 
 Pull by digest to get exactly the content you inspected, even if the
 tag has since moved:

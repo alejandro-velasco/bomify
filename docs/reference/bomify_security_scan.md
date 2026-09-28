@@ -1,46 +1,46 @@
 ## bomify security scan
 
-Scan an SBOM's components for vulnerabilities via a security scanning plugin
+Scan a built package's components for vulnerabilities via a security scanning plugin
 
 ### Synopsis
 
-Scan resolves a single "bomify-plugin-<type>" binary — <type> names the
-scanning tool itself (e.g. "grype"), not a purl type or deployment
-medium, since any scanner can in principle scan any component — and
-first asks it, once, which component purl types and scan categories it
-supports ("security supported-components"). Any component whose purl
-type isn't in that list is skipped; every other component is scanned
-via "security scan --purl <purl>", once per component, up to
+Scan resolves <tag> to a package a prior "bomify build" (or "bomify
+pull"/"bomify load") recorded locally, then scans every component that
+package's SBOM describes through a single "bomify-plugin-<type>" binary —
+<type> names the scanning tool itself (e.g. "grype"), not a purl type or
+deployment medium, since any scanner can in principle scan any component.
+
+bomify first asks the plugin, once, which component purl types and scan
+categories it supports ("security supported-components"). Any component
+whose purl type isn't in that list is skipped; every other component is
+scanned via "security scan --purl <purl>", once per component, up to
 --concurrency at a time: the same per-component, concurrent dispatch
 "bomify build"/"bomify distribute" use, just for scanning instead of
 pulling/pushing.
 
-Each scan call reports the vulnerabilities that component's purl is
-affected by, and sets each one's "affects" itself — to the purl it was
-given, or, if it had to unpack that purl into smaller pieces to scan it
-at all (e.g. cataloging a container image's contents), to the specific
-piece(s) actually affected. bomify only merges results across every
-component: two separate scans reporting a vulnerability with the same
-"bom-ref" are folded into one entry combining both "affects", rather
-than duplicated; any pieces a plugin reports unpacking a component into
-are embedded as that component's own nested components. See
+Each component's result is written as its own CycloneDX vulnerability
+report, <data-dir>/vulnerabilities/<purl-hash>.json — keyed by the same
+purl hash as that component's pull manifest and layer, so a component
+shared by two packages shares one report too, and scanning either
+package refreshes it for both. A report's metadata component is the
+scanned component itself; for a component the plugin had to unpack to
+scan at all (e.g. cataloging an OCI image's contents), the pieces it
+found are the report's top-level components, and each vulnerability's
+"affects" names the specific piece(s) affected. See
 plugins/SECURITY-CONTRACT.md for the full contract.
 
-The scanned SBOM, with its "vulnerabilities" populated, is printed to
-stdout by default; --output redirects it to a file instead.
-
 ```
-bomify security scan <type> <sbom-file> [flags]
+bomify security scan <type> <tag> [flags]
 ```
 
 ### Examples
 
 ```
-  # Scan an SBOM for vulnerabilities with grype
-  bomify security scan grype sbom.cdx.json
+  # Scan the package tagged myapp:latest for vulnerabilities with grype
+  bomify security scan grype myapp:latest
 
-  # Scan up to 4 components concurrently, writing the result to a file
-  bomify security scan grype sbom.cdx.json --concurrency 4 --output scanned.cdx.json
+  # Scan up to 4 components concurrently
+  bomify security scan grype myapp:latest --concurrency 4
 ```
 
 ### Options
@@ -48,7 +48,6 @@ bomify security scan <type> <sbom-file> [flags]
 ```
   -c, --concurrency int   number of components to scan concurrently (default 1)
   -h, --help              help for scan
-  -o, --output string     file to write the scanned SBOM to (defaults to stdout)
 ```
 
 ### Options inherited from parent commands

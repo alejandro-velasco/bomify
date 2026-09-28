@@ -93,6 +93,6 @@ bomify build postgresql.cdx.json --tag postgresql:18.11.6
 
 ## Next steps
 
-- [Scanning an SBOM's components with grype](scanning-with-grype.md)
+- [Scanning a package's components with grype](scanning-with-grype.md)
   to check the images this SBOM references for known vulnerabilities.
 - [Distributing a package](distributing-a-package.md) once it's built.

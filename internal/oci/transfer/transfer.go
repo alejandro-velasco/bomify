@@ -34,6 +34,18 @@ const AnnotationPurl = "land.bomify.purl"
 // know how to unpack an arbitrary foreign format.
 const LayerMediaType = "application/vnd.bomify.component.layer.v1.tar"
 
+// VulnerabilityReportMediaType identifies a component's vulnerability
+// report blob: the CycloneDX document `bomify security scan` wrote for
+// it (see internal/security), attached as an extra layer, annotated
+// with the same AnnotationPurl as the component's own layer, whenever
+// one exists locally for that purl at push time — a component never
+// scanned, or one no installed scanner supports, simply carries none.
+// Pull writes a layer with this media type straight to
+// "<baseDir>/vulnerabilities/<purl-hash>.json" — the same path a scan
+// itself would have written it to — rather than unpacking or
+// verbatim-copying it like a component layer.
+const VulnerabilityReportMediaType = "application/vnd.bomify.component.vulnerabilities.v1+json"
+
 // ProgressFunc is called once per blob (the config, then each layer) before
 // it starts transferring, naming it and giving its total size in bytes. The
 // returned writer receives the raw bytes as they're transferred, for

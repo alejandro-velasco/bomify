@@ -66,6 +66,7 @@ nav = [
           { "bomify package remove" = "usage/reference/bomify_package_remove.md" },
           { "bomify package save" = "usage/reference/bomify_package_save.md" },
           { "bomify package tag" = "usage/reference/bomify_package_tag.md" },
+          { "bomify package vulnerabilities" = "usage/reference/bomify_package_vulnerabilities.md" },
       ] },
       { "bomify completion" = [
           { "bomify completion" = "usage/reference/bomify_completion.md" },

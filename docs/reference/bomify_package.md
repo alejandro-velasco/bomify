@@ -29,4 +29,5 @@ Manage individual bomify packages
 * [bomify package remove](bomify_package_remove.md)	 - Remove packages by tag
 * [bomify package save](bomify_package_save.md)	 - Save packages to a tarball
 * [bomify package tag](bomify_package_tag.md)	 - Create a new tag pointing at an existing package
+* [bomify package vulnerabilities](bomify_package_vulnerabilities.md)	 - Print a package's component vulnerability reports
 
