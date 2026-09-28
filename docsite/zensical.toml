@@ -21,6 +21,7 @@ nav = [
       "how-to/index.md",
       { "Building a package" = "how-to/building-a-package.md" },
       { "Distributing a package" = "how-to/distributing-a-package.md" },
+      { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Scanning with grype" = "how-to/scanning-with-grype.md" },
       { "Saving packages for airgapped environments" = "how-to/saving-packages-for-airgapped-environments.md" },
