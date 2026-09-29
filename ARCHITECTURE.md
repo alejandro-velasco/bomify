@@ -308,6 +308,11 @@ unchanged:
   payload deliberately omits `artifactType`, which a registry doesn't
   report when resolving a tag, so the payload computed at pull time is
   byte-identical.
+  Against a registry without the Referrers API (e.g. ghcr.io), oras
+  falls back to the referrers tag schema and retags the
+  `sha256-<digest>` index; bomify sets `SkipReferrersGC` so the
+  superseded index is left untagged rather than `DELETE`d, which such
+  registries often refuse (ghcr.io answers 405).
 - **Verifying** (`pull`, `load`): right after resolving the reference,
   **before anything is fetched or written**, `signature.Policy` decides
   which plugin (if any) must verify it — `--verify <kind>` first, else
