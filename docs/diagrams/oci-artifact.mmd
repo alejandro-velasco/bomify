@@ -2,29 +2,43 @@ flowchart LR
     classDef local fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
     classDef oci fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
     classDef ociFinal fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
+    classDef sig fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#78350f
 
     subgraph Local["bomify data directory"]
         SBOM[("SBOM manifest file")]
         C1[("Component A files")]
         C2[("Component B files")]
+        V1[("Component A<br/>vulnerability report")]
     end
 
     subgraph OCI["OCI artifact"]
         Config("config blob")
         Layer1("layer blob A")
         Layer2("layer blob B")
+        Vuln1("vulnerability report<br/>layer blob A")
         Manifest{{"OCI manifest"}}
+    end
+
+    subgraph Referrer["signature referrer (push --sign only)"]
+        Envelope("envelope blob")
+        SigManifest{{"referrer manifest"}}
     end
 
     SBOM -- "pushed verbatim" --> Config
     C1 -- "tarred, annotated with purl, pushed" --> Layer1
     C2 -- "tarred, annotated with purl, pushed" --> Layer2
+    V1 -- "pushed verbatim, annotated with purl<br/>(only components that were scanned)" --> Vuln1
     Config --> Manifest
     Layer1 --> Manifest
     Layer2 --> Manifest
+    Vuln1 --> Manifest
+    Envelope --> SigManifest
+    SigManifest -- "subject: signs manifest digest" --> Manifest
 
-    class SBOM,C1,C2 local
-    class Config,Layer1,Layer2 oci
+    class SBOM,C1,C2,V1 local
+    class Config,Layer1,Layer2,Vuln1 oci
     class Manifest ociFinal
+    class Envelope,SigManifest sig
     style Local fill:#F8FAFF,stroke:#C7D2FE,stroke-width:1px,color:#334155
     style OCI fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
+    style Referrer fill:#FFFDF5,stroke:#FDE68A,stroke-width:1px,color:#334155

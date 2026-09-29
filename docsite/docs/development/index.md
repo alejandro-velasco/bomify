@@ -27,4 +27,8 @@ and [Usage](../usage/index.md) for that).
   (`sbom generate`), entirely independent of the component contract above.
 - [**`plugins/SECURITY-CONTRACT.md`**](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md) —
   the authoritative **security scanning plugin** subprocess contract
-  (`security scan`), entirely independent of the other two.
+  (`security scan`), entirely independent of the others.
+- [**`plugins/SIGNING-CONTRACT.md`**](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md) —
+  the authoritative **signing plugin** subprocess contract
+  (`signature sign`/`signature verify`), entirely independent of the
+  other three.

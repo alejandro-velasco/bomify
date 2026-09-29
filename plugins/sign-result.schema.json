@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/sign-result.schema.json",
+  "title": "bomify plugin SignResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"signature sign\" subcommand, per plugins/SIGNING-CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "mediaType",
+    "envelope"
+  ],
+  "properties": {
+    "artifactType": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The artifact type of the referrer manifest bomify pushes to carry the envelope — ideally the signing ecosystem's own standard type (e.g. \"application/vnd.dev.sigstore.bundle.v0.3+json\"). Must also be listed by \"signature supported-types\"."
+    },
+    "mediaType": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The media type of the envelope blob itself, passed back to \"signature verify\" as --media-type."
+    },
+    "envelope": {
+      "type": "string",
+      "minLength": 1,
+      "contentEncoding": "base64",
+      "description": "The signature envelope, standard base64-encoded. bomify stores the decoded bytes verbatim and hands exactly those bytes back to \"signature verify\"."
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Optional extra annotations for the referrer manifest."
+    }
+  }
+}

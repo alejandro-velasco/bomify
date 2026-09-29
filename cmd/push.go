@@ -20,7 +20,13 @@ publishes it under <tag>. <tag> is both the local bookkeeping key
 
 Any component with a local vulnerability report from a prior "bomify
 security scan" is pushed an extra layer carrying it; a component never
-scanned carries none.`
+scanned carries none.
+
+--sign signs the pushed package with a signing plugin before <tag> is
+updated to point at it, attaching the signature to it as an OCI
+referrer. One signature covers the whole package: the SBOM, every
+component, and every vulnerability report. See "bomify pull --verify"
+and "bomify trust" for checking it.`
 
 const pushExample = `  # Push the package tagged myapp:latest to its own registry reference
   bomify push myapp:latest
@@ -29,10 +35,14 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
   bomify push registry.example.com/myapp:latest
 
   # Upload up to 6 layers concurrently
-  bomify push myapp:latest --concurrency 6`
+  bomify push myapp:latest --concurrency 6
+
+  # Sign the package with a cosign key while pushing it
+  bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key`
 
 type pushOptions struct {
 	concurrency int
+	sign        signFlags
 }
 
 func pushCmd() *cobra.Command {
@@ -54,6 +64,7 @@ func pushCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to upload concurrently")
+	opts.sign.register(cmd)
 
 	return cmd
 }
@@ -66,6 +77,11 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
+	signer, err := opts.sign.signer(logger)
+	if err != nil {
+		return err
+	}
+
 	repo, err := newRepository(tag)
 	if err != nil {
 		return err
@@ -74,7 +90,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	mb := newMultiBar(cmd.OutOrStderr())
 	progress := newProgressFunc(mb)
 
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress)
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, signer)
 	mb.Wait()
 	if err != nil {
 		return err

@@ -1,10 +1,12 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
 // binary: the Result/Hash/RemoteResult types the component plugin
 // contract's JSON output mirrors, SecurityResult for the security
-// scanning contract's, their Print methods to emit them correctly, and
-// (in log.go) OpenLog for a component plugin's --log file. See
-// plugins/COMPONENT-CONTRACT.md and plugins/SECURITY-CONTRACT.md for the
-// contracts this package implements one side of; unlike those documents,
+// scanning contract's, SignResult/VerifyResult for the signing
+// contract's, their Print methods to emit them correctly, and (in
+// log.go) OpenLog for a component plugin's --log file. See
+// plugins/COMPONENT-CONTRACT.md, plugins/SECURITY-CONTRACT.md, and
+// plugins/SIGNING-CONTRACT.md for the contracts this package implements
+// one side of; unlike those documents,
 // this package is importable from outside this module, so a third-party
 // plugin (in its own separate Go module) can depend on it directly.
 package plugin
@@ -138,6 +140,86 @@ func (r *SupportedComponentsResult) Print(w io.Writer) error {
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(r); err != nil {
 		return fmt.Errorf("encode supported components result: %w", err)
+	}
+	return nil
+}
+
+// SignResult is the JSON object a plugin's "signature sign" subcommand
+// prints to stdout on success: the signature envelope it produced over
+// the payload it was given, plus what bomify needs to store that
+// envelope as an OCI referrer of the signed package (see
+// plugins/SIGNING-CONTRACT.md). bomify never parses Envelope itself — it
+// stores it verbatim, and hands the exact same bytes back to "signature
+// verify" later.
+type SignResult struct {
+	// ArtifactType is the OCI artifact type of the referrer manifest
+	// bomify pushes to carry Envelope. A plugin should use its signing
+	// ecosystem's own standard type (e.g.
+	// "application/vnd.dev.sigstore.bundle.v0.3+json" or
+	// "application/vnd.cncf.notary.signature"), not a bomify-specific
+	// one, so that ecosystem's own tooling can discover it too.
+	ArtifactType string `json:"artifactType"`
+	// MediaType is the media type of the Envelope blob itself.
+	MediaType string `json:"mediaType"`
+	// Envelope is the signature envelope, base64-encoded (encoding/json's
+	// standard encoding of a []byte).
+	Envelope []byte `json:"envelope"`
+	// Annotations are optional annotations bomify sets on the referrer
+	// manifest, alongside its own.
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// Print writes r to w as the single JSON object bomify expects a
+// plugin's "signature sign" subcommand to print to stdout on success.
+func (r *SignResult) Print(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("encode sign result: %w", err)
+	}
+	return nil
+}
+
+// VerifyResult is the JSON object a plugin's "signature verify"
+// subcommand prints to stdout when the envelope it was given is a valid
+// signature over the payload, by a signer its own trust configuration
+// accepts. A plugin reports a failed verification by exiting non-zero
+// instead, never by printing a VerifyResult.
+type VerifyResult struct {
+	// Signer is a human-readable identity of whoever produced the
+	// signature (a key fingerprint, a certificate subject, an email
+	// address, ...), which bomify only logs.
+	Signer string `json:"signer"`
+}
+
+// Print writes r to w as the single JSON object bomify expects a
+// plugin's "signature verify" subcommand to print to stdout on success.
+func (r *VerifyResult) Print(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("encode verify result: %w", err)
+	}
+	return nil
+}
+
+// SupportedSignatureTypesResult is the JSON object a plugin's "signature
+// supported-types" subcommand prints to stdout on success: which
+// referrer artifact types it can verify. bomify only hands a plugin's
+// "signature verify" the envelopes of referrers whose artifact type is
+// listed here (see plugins/SIGNING-CONTRACT.md).
+type SupportedSignatureTypesResult struct {
+	ArtifactTypes []string `json:"artifactTypes"`
+}
+
+// Print writes r to w as the single JSON object bomify expects a
+// plugin's "signature supported-types" subcommand to print to stdout on
+// success.
+func (r *SupportedSignatureTypesResult) Print(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("encode supported signature types result: %w", err)
 	}
 	return nil
 }

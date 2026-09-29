@@ -49,5 +49,6 @@ bomify [flags]
 * [bomify sbom](bomify_sbom.md)	 - Generate SBOMs for a deployment medium
 * [bomify security](bomify_security.md)	 - Security scanning commands
 * [bomify tag](bomify_tag.md)	 - Create a new tag pointing at an existing package
+* [bomify trust](bomify_trust.md)	 - Manage signature verification rules for bomify pull and load
 * [bomify version](bomify_version.md)	 - Print version, commit, and build date information
 

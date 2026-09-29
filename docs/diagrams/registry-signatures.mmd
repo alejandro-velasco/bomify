@@ -1,0 +1,35 @@
+flowchart LR
+    classDef ref fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef manifest fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
+    classDef sig fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#78350f
+    classDef lookup fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+
+    subgraph Repo["registry repository (e.g. registry.example.com/team/myapp)"]
+        Tag["tag: 1.0"]
+        Package{{"package manifest<br/>sha256:ae88…<br/>(config + layers, unchanged by signing)"}}
+
+        subgraph Signature["signature referrer — untagged"]
+            SigManifest{{"referrer manifest<br/>artifactType: plugin's own<br/>(e.g. application/vnd.dev.sigstore.bundle.v0.3+json)<br/>annotation land.bomify.signature.plugin: &lt;kind&gt;"}}
+            Envelope[("envelope blob<br/>layers[0], e.g. a Sigstore bundle")]
+        end
+    end
+
+    subgraph Discovery["how pull --verify finds it"]
+        API["Referrers API<br/>GET /v2/&lt;repo&gt;/referrers/sha256:ae88…"]
+        Fallback["fallback when the registry has no Referrers API:<br/>an image index stored under tag sha256-ae88…,<br/>listing every referrer"]
+    end
+
+    Tag --> Package
+    SigManifest -- "subject" --> Package
+    SigManifest -- "layers[0]" --> Envelope
+
+    API -. "lists" .-> SigManifest
+    Fallback -. "lists" .-> SigManifest
+
+    class Tag ref
+    class Package manifest
+    class SigManifest,Envelope sig
+    class API,Fallback lookup
+    style Repo fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
+    style Signature fill:#FFFDF5,stroke:#FDE68A,stroke-width:1px,color:#334155
+    style Discovery fill:#F8FAFF,stroke:#C7D2FE,stroke-width:1px,color:#334155
