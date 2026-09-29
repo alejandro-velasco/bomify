@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
@@ -28,7 +29,7 @@ func writeVulnerabilityReportFixture(t *testing.T, baseDir string, component cdx
 			{ID: vulnID, Affects: &[]cdx.Affects{{Ref: component.PackageURL}}},
 		},
 	}
-	report := security.NewReport(component, result)
+	report := security.NewReport(component, result, "", time.Time{})
 
 	path, err := security.WriteReport(baseDir, component, report)
 	if err != nil {

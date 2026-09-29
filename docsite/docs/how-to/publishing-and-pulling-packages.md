@@ -6,8 +6,9 @@ icon: lucide/cloud-upload
 
 `bomify push` publishes a whole built package as a single OCI artifact:
 its SBOM manifest as the artifact's config and each component as a
-layer, plus, for any component `bomify security scan` already produced
-a local vulnerability report for, an extra layer carrying that report.
+layer. Any local vulnerability reports `bomify security scan` already
+produced are attached to it as a separate OCI referrer, so they can be
+refreshed later without changing the package itself.
 `bomify pull` downloads it all back into another machine's data
 directory exactly as `bomify build`/`bomify security scan` would have
 laid it out. Any OCI-compliant registry works (Docker Hub, GHCR, Harbor,
@@ -118,8 +119,8 @@ then:
 bomify pull registry.example.com/myapp:1.0
 ```
 
-This restores the manifest, every component, and any vulnerability
-reports the package carried into the data directory, and records
+This restores the manifest, every component, and the package's newest
+vulnerability reports into the data directory, and records
 `registry.example.com/myapp:1.0` as a local tag. The package is then
 ready for `bomify distribute`, `bomify save`, or a later `bomify push`
 elsewhere, exactly as if it had been built (and scanned) there.
@@ -142,6 +143,25 @@ works the same way as for `push`.
 ```sh
 bomify logout registry.example.com
 ```
+
+## Refreshing a published package's vulnerability reports
+
+Vulnerability data goes stale on its own, so re-scan and push again
+whenever you want the registry copy's reports brought up to date:
+
+```sh
+bomify security scan grype registry.example.com/myapp:1.0
+bomify push registry.example.com/myapp:1.0
+```
+
+The package's digest doesn't change — so neither does any signature
+over it — and only the new reports are uploaded. The older report
+referrer is deleted from the registry (`--keep-reports` controls how
+many to keep). Registries that don't allow deletes, such as GHCR, just
+keep the old ones; `bomify pull` always restores the newest, and
+`bomify security prune` can retry the cleanup later. See
+[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#reports-in-a-registry)
+for how reports are stored.
 
 ## Next steps
 

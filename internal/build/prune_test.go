@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
@@ -214,7 +215,7 @@ func TestPruneRemovesUnreachableVulnerabilityReports(t *testing.T) {
 	orphan := cdx.Component{Name: "orphan", Version: "1.0", PackageURL: "pkg:generic/orphan@1.0"}
 
 	for _, c := range []cdx.Component{kept, orphan} {
-		if _, err := security.WriteReport(baseDir, c, security.NewReport(c, pluginlib.SecurityResult{})); err != nil {
+		if _, err := security.WriteReport(baseDir, c, security.NewReport(c, pluginlib.SecurityResult{}, "", time.Time{})); err != nil {
 			t.Fatalf("WriteReport(%s): %v", c.Name, err)
 		}
 	}

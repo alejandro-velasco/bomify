@@ -110,6 +110,9 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	tags := make([]string, 0, len(loaded))
 	for _, l := range loaded {
 		tags = append(tags, l.Tag)
+		if l.ReportsSkipped != nil {
+			logger.Warn("vulnerability reports not restored", "tag", l.Tag, "error", l.ReportsSkipped)
+		}
 		if opts.quiet {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(l.Tag), l.ManifestDigest)
 		} else {

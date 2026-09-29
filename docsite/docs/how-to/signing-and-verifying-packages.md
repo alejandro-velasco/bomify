@@ -6,9 +6,11 @@ icon: lucide/badge-check
 
 A package can be signed as a whole when it's pushed or saved, and
 verified before it's pulled or loaded. One signature covers everything
-in the package — the SBOM, every component, and every vulnerability
-report — and is stored next to it as an OCI referrer, never inside the
-SBOM. Signing is done by a signing plugin; `bomify-plugin-sigstore` is
+in the package — the SBOM and every component — and is stored next to
+it as an OCI referrer, never inside the SBOM. The package's
+vulnerability reports live in a referrer of their own, which is signed
+and verified the same way; a report that fails verification is skipped
+with a warning rather than failing the pull. Signing is done by a signing plugin; `bomify-plugin-sigstore` is
 bomify's first-party one, producing standard Sigstore bundles. See
 [ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#signing--verification)
 for how it works, and

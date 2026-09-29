@@ -37,15 +37,21 @@ const LayerMediaType = "application/vnd.bomify.component.layer.v1.tar"
 
 // VulnerabilityReportMediaType identifies a component's vulnerability
 // report blob: the CycloneDX document `bomify security scan` wrote for
-// it (see internal/security), attached as an extra layer, annotated
-// with the same AnnotationPurl as the component's own layer, whenever
-// one exists locally for that purl at push time — a component never
-// scanned, or one no installed scanner supports, simply carries none.
-// Pull writes a layer with this media type straight to
-// "<baseDir>/vulnerabilities/<purl-hash>.json" — the same path a scan
-// itself would have written it to — rather than unpacking or
+// it (see internal/security), annotated with the same AnnotationPurl as
+// the component's own layer. Push attaches every report that exists
+// locally at push time as a layer of one VulnerabilityReportsArtifactType
+// referrer of the package — a component never scanned, or one no
+// installed scanner supports, simply carries none. Pull writes each
+// straight to "<baseDir>/vulnerabilities/<purl-hash>.json" — the same
+// path a scan itself would have written it to — rather than unpacking or
 // verbatim-copying it like a component layer.
 const VulnerabilityReportMediaType = "application/vnd.bomify.component.vulnerabilities.v1+json"
+
+// VulnerabilityReportsArtifactType identifies an OCI referrer of a
+// bomify package carrying the vulnerability reports of one scan (see
+// internal/security). Keeping reports out of the package manifest keeps
+// its digest — and so every signature over it — unchanged by a re-scan.
+const VulnerabilityReportsArtifactType = "application/vnd.bomify.vulnerabilities.v1+json"
 
 // ProgressFunc is called once per blob (the config, then each layer) before
 // it starts transferring, naming it and giving its total size in bytes. The

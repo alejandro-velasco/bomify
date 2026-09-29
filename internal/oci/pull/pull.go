@@ -1,12 +1,12 @@
 // Package pull restores a bomify package from an OCI artifact: a
 // manifest whose config blob is the aggregate SBOM manifest (see
 // internal/build) and whose layers are the components that SBOM describes,
-// plus, for any component whose local vulnerability report (see
-// internal/security) was attached at push time, an extra layer carrying
-// it — each annotated with the purl it was pulled for. Pull downloads
-// that manifest's config and layers concurrently, laying them out in a
-// data directory exactly as `bomify build`/`bomify security scan` would
-// have, so packages and tag work against either source.
+// each annotated with the purl it was pulled for, plus whatever
+// vulnerability reports (see internal/security) were attached to it as an
+// OCI referrer. Pull downloads that manifest's config and layers
+// concurrently, and the newest report referrer's reports, laying them out
+// in a data directory exactly as `bomify build`/`bomify security scan`
+// would have, so packages and tag work against either source.
 package pull
 
 import (
@@ -66,16 +66,22 @@ type Result struct {
 	SBOMHash       string
 	Layers         []Layer
 	// VulnerabilityReports lists the components whose vulnerability
-	// report (see internal/security) the package carried and Pull
-	// restored to "<dataDir>/vulnerabilities/<purl-hash>.json" — only
-	// ever a subset of Layers, since most components carry none.
+	// report (see internal/security) the package's newest report
+	// referrer carried and Pull restored to
+	// "<dataDir>/vulnerabilities/<purl-hash>.json" — only ever a subset
+	// of Layers, since most components carry none.
 	VulnerabilityReports []Layer
+	// ReportsSkipped, if non-nil, is why Pull restored no vulnerability
+	// reports even though the package itself was restored: reports are
+	// advisory, so failing to list, verify, or fetch them never fails a
+	// pull.
+	ReportsSkipped error
 }
 
 // Pull resolves ref against target — a manifest whose config is the
 // aggregate SBOM manifest and whose layers are pulled components, plus
-// (see fetchVulnerabilityReport) any component vulnerability reports the
-// package carries — and writes it into dataDir the same way `bomify
+// (see restoreReports) any vulnerability reports attached to it — and
+// writes it into dataDir the same way `bomify
 // build` does: the config as "<dataDir>/manifests/<hash>.json", each
 // component layer as "<dataDir>/layers/<hash>/<name>" (plus, see
 // fetchLayer, that component's own manifest for a layer bomify itself
@@ -84,11 +90,13 @@ type Result struct {
 // "<dataDir>/vulnerabilities/<purl-hash>.json", exactly as `bomify
 // security scan` itself would have written it. Layers download
 // concurrently, bounded by concurrency (values less than 1 are treated
-// as 1).
+// as 1). Reports are restored only after every component layer is.
 //
 // A non-nil verify is called with the manifest ref resolves to before
 // anything else is fetched (see transfer.Verifier): if it fails, Pull
-// writes nothing to dataDir at all. Everything fetched afterward is
+// writes nothing to dataDir at all. It's called again with the report
+// referrer, whose reports are skipped (see Result.ReportsSkipped), rather
+// than the pull failed, if that doesn't pass. Everything fetched afterward is
 // fetched by that same verified descriptor — and each blob checked
 // against the digest it pins — so ref being re-tagged mid-pull can't
 // substitute unverified content.
@@ -132,20 +140,8 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 	}
 	componentsByPurl := indexComponentsByPurl(bom)
 
-	var componentLayerDescs, reportDescs []ocispec.Descriptor
-	for _, layerDesc := range manifest.Layers {
-		if purl := layerDesc.Annotations[AnnotationPurl]; keep != nil && purl != "" && !keep(purl) {
-			continue
-		}
-		if layerDesc.MediaType == transfer.VulnerabilityReportMediaType {
-			reportDescs = append(reportDescs, layerDesc)
-		} else {
-			componentLayerDescs = append(componentLayerDescs, layerDesc)
-		}
-	}
-
+	componentLayerDescs := filterLayers(manifest.Layers, keep)
 	layers := make([]Layer, len(componentLayerDescs))
-	reports := make([]Layer, len(reportDescs))
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
@@ -160,8 +156,63 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 			return nil
 		})
 	}
+	if err := g.Wait(); err != nil {
+		return Result{}, err
+	}
+
+	result := Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers}
+	result.VulnerabilityReports, result.ReportsSkipped = restoreReports(ctx, target, ref, desc, dataDir, concurrency, progress, verify, keep)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+
+	return result, nil
+}
+
+// filterLayers returns the layers whose purl annotation keep accepts; a
+// nil keep, or a layer with no purl annotation, is always kept.
+func filterLayers(descs []ocispec.Descriptor, keep func(purl string) bool) []ocispec.Descriptor {
+	var kept []ocispec.Descriptor
+	for _, d := range descs {
+		if purl := d.Annotations[AnnotationPurl]; keep != nil && purl != "" && !keep(purl) {
+			continue
+		}
+		kept = append(kept, d)
+	}
+	return kept
+}
+
+// restoreReports restores the reports carried by the newest vulnerability
+// report referrer of manifest (see security.Referrers) — the one most
+// recently scanned — into dataDir, once a non-nil verify accepts that
+// referrer. A package with no report referrer restores none, and no
+// error; any error is why none were restored.
+func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) ([]Layer, error) {
+	referrers, err := security.Referrers(ctx, target, manifest)
+	if err != nil {
+		return nil, err
+	}
+	if len(referrers) == 0 {
+		return nil, nil
+	}
+	newest := referrers[0]
+
+	if verify != nil {
+		if err := verify(ctx, target, ref, newest); err != nil {
+			return nil, fmt.Errorf("verify vulnerability reports %s: %w", newest.Digest, err)
+		}
+	}
+
+	reportDescs, err := security.FetchReports(ctx, target, newest)
+	if err != nil {
+		return nil, err
+	}
+	reportDescs = filterLayers(reportDescs, keep)
+
+	reports := make([]Layer, len(reportDescs))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency)
 	for i, layerDesc := range reportDescs {
-		i, layerDesc := i, layerDesc
 		g.Go(func() error {
 			report, err := fetchVulnerabilityReport(gctx, target, layerDesc, dataDir, progress)
 			if err != nil {
@@ -172,10 +223,10 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 
-	return Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
+	return reports, nil
 }
 
 // indexComponentsByPurl indexes bom's components by purl, so fetchLayer

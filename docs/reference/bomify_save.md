@@ -6,7 +6,8 @@ Save packages to a tarball
 
 Save packages one or more tagged packages into a single tarball — an
 OCI image-layout archive containing each package's manifest and
-components, plus any local vulnerability report a component has — that
+components, plus a referrer carrying any local vulnerability reports of
+its components (see "bomify push") — that
 "bomify load" can restore on any machine, with no registry involved. A
 component shared by more than one given tag is stored once. Writes to
 stdout if --output isn't given.

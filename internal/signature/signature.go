@@ -1,8 +1,10 @@
 // Package signature signs and verifies bomify packages through a
 // signing plugin (see plugins/SIGNING-CONTRACT.md). What's signed is a
 // package's OCI manifest descriptor (see Payload): since that manifest
-// pins the SBOM config, every component layer, and every vulnerability
-// report by digest, one signature over it covers the whole package. The
+// pins the SBOM config and every component layer by digest, one
+// signature over it covers the whole package. A package's vulnerability
+// reports live in a referrer of their own (see internal/security), which
+// is signed the same way, separately. The
 // plugin only turns that payload into a signature envelope and back;
 // bomify itself stores each envelope as an OCI referrer of the package's
 // manifest, in whatever target the package lives in — a registry or a

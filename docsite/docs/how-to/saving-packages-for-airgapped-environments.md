@@ -6,8 +6,8 @@ icon: lucide/lock
 
 `bomify save`/`bomify load` move one or more built packages between
 machines as a single tarball — an OCI image-layout archive containing
-each package's manifest and components, plus any local vulnerability
-report a component has from a prior `bomify security scan` — with no
+each package's manifest and components, plus the local vulnerability
+reports from a prior `bomify security scan` — with no
 registry involved on either end. Useful for an airgapped target, or
 anywhere a registry just isn't reachable. See
 [bomify save](../usage/reference/bomify_save.md) and

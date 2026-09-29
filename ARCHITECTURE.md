@@ -252,7 +252,10 @@ delegation:
      (never the full inventory the plugin reported), with the image
      itself remaining the metadata component — and empty otherwise;
    - its `vulnerabilities` are exactly what the plugin reported. bomify
-     never merges, sets, or overwrites them, `affects` included.
+     never merges, sets, or overwrites them, `affects` included;
+   - its `metadata.timestamp` is when the scan ran and its
+     `metadata.tools` names the scanning plugin — the scan time is what
+     dates the package's report referrer when it's pushed (see below).
 
 Nothing in a report is specific to the package it was scanned through
 (not even the SBOM's own `bom-ref` for the component), which is what
@@ -279,14 +282,65 @@ the whole package. Nothing but that array ever reaches stdout — no log
 line, not even for a `--purl` matching nothing, which goes to stderr
 as a warning instead.
 
+#### Reports in a registry
+
+Reports travel with a package as an **OCI referrer** of its manifest,
+never as part of the manifest itself (`security.Attach`, called by
+`push.Push` — and so by `save` — right after the package is packed and
+signed, before it's tagged). A scan is a snapshot of vulnerability data
+that goes stale on its own, so it's the one part of a package expected
+to change after the package is published; keeping it out of the
+manifest means re-scanning never changes the package's digest, and so
+never orphans a signature over it.
+
+- **Attach**: every component's local report becomes one layer (media
+  type `application/vnd.bomify.component.vulnerabilities.v1+json`,
+  annotated with its purl, in SBOM order) of a single referrer of
+  artifact type `application/vnd.bomify.vulnerabilities.v1+json`,
+  annotated `land.bomify.scan.plugin` and dated
+  (`org.opencontainers.image.created`) by the newest report's own scan
+  time — never the push time. The referrer is built from nothing but
+  the reports, so pushing again without re-scanning reproduces it
+  byte-for-byte and attaches nothing new; re-scanning and pushing
+  again attaches a newer one alongside. With `--sign`, the referrer is
+  signed exactly like the package (its own signature referrer, whose
+  subject is the report referrer).
+- **Restore** (`pull`, `load`): after the package itself is restored,
+  `pull` lists its report referrers (`security.Referrers`, newest
+  first) and restores only the newest one's reports to
+  `vulnerabilities/<purlHash>.json`, replacing whatever was there — once
+  the same `transfer.Verifier` the package passed accepts the referrer.
+  Reports are advisory, so failing to list, verify, or fetch them never
+  fails the pull: the reason surfaces as `Result.ReportsSkipped` and a
+  warning, and nothing of those reports is written.
+- **Prune**: once it has attached a referrer, `push` deletes all but the
+  newest `--keep-reports` (default 1; 0 disables it) report referrers
+  from the registry (`security.PruneReferrers`), each after anything
+  referring to it in turn — its signature — so no signature is ever
+  orphaned; a report whose signature couldn't be deleted is left in
+  place too. Only report referrers are ever candidates: the package's
+  own signatures and anything another tool attached are left alone.
+  Deletion goes through `remote.Repository.Delete`, which also updates
+  the referrers tag-schema index on a registry without the Referrers
+  API. It's best-effort: a registry that refuses manifest `DELETE`
+  (ghcr.io answers 405) or credentials without delete permission only
+  log a warning, since a stale referrer is harmless — `pull` always
+  takes the newest. `bomify security prune <ref> [--keep n]` runs the
+  same pruning on its own, failing instead of warning. A `save` tarball
+  needs none of this: it's built from a fresh layout every time, so it
+  only ever holds the current reports.
+
 ### Signing & verification
 
 A package is signed as a whole, never component by component: what's
 signed is its OCI manifest (see [Push & pull](#push--pull-oci-registry)),
-which already pins the SBOM config, every component layer, and every
-vulnerability-report layer by digest — so one signature transitively
-covers all of them, and verifying it plus the per-blob digest checks
-`pull` already does is enough to trust everything restored. Signatures
+which already pins the SBOM config and every component layer by
+digest — so one signature transitively covers all of them, and
+verifying it plus the per-blob digest checks `pull` already does is
+enough to trust everything restored. Vulnerability reports live in a
+referrer of their own (see [Reports in a
+registry](#reports-in-a-registry)), which is signed and verified the
+same way, separately, through the same two hooks. Signatures
 are never embedded in the SBOM itself: its content hash is the build's
 identity (see [Build & tagging](#build--tagging)), so it stays
 byte-for-byte what `bomify build` recorded.
@@ -305,7 +359,8 @@ unchanged:
   manifest of the plugin's own artifact type whose `subject` is the
   package manifest and whose one layer is the envelope. A failed sign
   therefore never leaves a tag pointing at an unsigned package. The
-  payload deliberately omits `artifactType`, which a registry doesn't
+  report referrer, if any, is signed the same way before tagging too.
+  The payload deliberately omits `artifactType`, which a registry doesn't
   report when resolving a tag, so the payload computed at pull time is
   byte-identical.
   Against a registry without the Referrers API (e.g. ghcr.io), oras
@@ -328,7 +383,10 @@ unchanged:
   supported-types` lists, and asks the plugin's `signature verify`
   about each envelope in turn until one passes. None passing fails the
   pull with nothing written to the data directory; everything fetched
-  afterward is fetched by that same verified descriptor.
+  afterward is fetched by that same verified descriptor. The newest
+  report referrer goes through the same policy before its reports are
+  restored, but failing it only skips the reports (see [Reports in a
+  registry](#reports-in-a-registry)).
 
 ![Signing flow](docs/diagrams/signing.svg)
 
@@ -534,16 +592,6 @@ image with generic tooling:
   the original push even though the content never changed, making a
   later `push` of the same unchanged component re-upload it under a new
   digest every time.
-- Any component with a local vulnerability report at
-  `vulnerabilities/<purlHash>.json` (see [Security
-  scanning](#security-scanning)) gets an **extra layer** carrying it —
-  media type `application/vnd.bomify.component.vulnerabilities.v1+json`,
-  annotated with the same purl — alongside its own; a component never
-  scanned, or scanned by a plugin that doesn't support its purl type,
-  simply gets none. `pull` writes a layer with this media type straight
-  back to that same `vulnerabilities/<purlHash>.json` path, replacing
-  whatever report (if any) was already there, rather than unpacking or
-  verbatim-copying it like a component layer.
 - The whole thing is tagged with the OCI artifact type
   `application/vnd.bomify.package.v1+json`.
 - A package pushed with `--sign` also gets one **signature referrer**
@@ -553,6 +601,11 @@ image with generic tooling:
   untagged and never part of the package manifest itself, so signing
   doesn't change the package's digest, and a package can accumulate
   any number of signatures.
+- Local vulnerability reports ride along the same way: one **report
+  referrer** per scan, whose `subject` is the package manifest and whose
+  layers are the reports (see [Reports in a
+  registry](#reports-in-a-registry)). Like a signature, it never changes
+  the package's digest.
 
 How that lands in a registry repository — the package manifest's
 descriptors in order, and the content-addressed blobs they point at:
@@ -561,8 +614,8 @@ descriptors in order, and the content-addressed blobs they point at:
 
 *Source: [`docs/diagrams/registry-layout.mmd`](docs/diagrams/registry-layout.mmd)*
 
-And where a signature sits alongside it, and how `pull --verify`
-finds it:
+And where a signature — or a report referrer, which sits there the
+same way — lives alongside it, and how `pull --verify` finds it:
 
 ![Signature referrers in a registry](docs/diagrams/registry-signatures.svg)
 
@@ -592,12 +645,11 @@ duplicating here.
 
 A component shared by more than one saved tag is stored once in the
 tarball, same as a registry push would dedupe it. Since `save`/`load`
-are Push/Pull underneath, a component's local vulnerability report
-travels along with it exactly as it does through a registry push/pull —
-see the vulnerability-report layer bullet above. The same goes for
-signatures: a `save --sign` tarball carries each signature referrer as
-an untagged manifest in the layout's `index.json`, and `load` verifies
-against it exactly as `pull` would against a registry.
+are Push/Pull underneath, a package's report referrer and any signature
+referrers travel inside the tarball exactly as they do through a
+registry push/pull — each as an untagged manifest in the layout's
+`index.json` — and `load` restores reports and verifies signatures
+against them exactly as `pull` would against a registry.
 
 ## Credentials
 
