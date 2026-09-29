@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -393,5 +394,87 @@ func TestPushOrdersVulnerabilityReportsBySBOM(t *testing.T) {
 				t.Errorf("attempt %d: Result.VulnerabilityReports[%d] = %q, want %q", attempt, i, got, component.PackageURL)
 			}
 		}
+	}
+}
+
+func TestCreatedAnnotation(t *testing.T) {
+	const epoch = "1970-01-01T00:00:00Z"
+
+	tests := []struct {
+		name string
+		bom  *cdx.BOM
+		want string
+	}{
+		{"no metadata", &cdx.BOM{}, epoch},
+		{"no timestamp", &cdx.BOM{Metadata: &cdx.Metadata{}}, epoch},
+		{"unparseable timestamp", &cdx.BOM{Metadata: &cdx.Metadata{Timestamp: "yesterday"}}, epoch},
+		{"UTC timestamp", &cdx.BOM{Metadata: &cdx.Metadata{Timestamp: "2026-09-28T10:00:00Z"}}, "2026-09-28T10:00:00Z"},
+		{"offset normalized to UTC", &cdx.BOM{Metadata: &cdx.Metadata{Timestamp: "2026-09-28T12:00:00+02:00"}}, "2026-09-28T10:00:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := createdAnnotation(tt.bom); got != tt.want {
+				t.Errorf("createdAnnotation() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPushIsDeterministic guards what signing relies on: pushing the
+// same package twice yields the same manifest digest, so a signature
+// made on one push still applies after the next.
+func TestPushIsDeterministic(t *testing.T) {
+	baseDir := t.TempDir()
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{"artifact": "single file contents"})
+
+	sbomBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,` +
+		`"metadata":{"timestamp":"2026-09-28T10:00:00Z"},"components":[` +
+		`{"type":"container","name":"single-file","version":"1.0","purl":"pkg:generic/single-file@1.0?download_url=https://example.com/single-file"}` +
+		`]}`)
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	if err := os.WriteFile(sbomPath, sbomBytes, 0o644); err != nil {
+		t.Fatalf("write sbom fixture: %v", err)
+	}
+	sbomHash, _, err := build.RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	ctx := context.Background()
+	push := func() (string, ocispec.Manifest) {
+		store, err := oci.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("new oci store: %v", err)
+		}
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, nil)
+		if err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+		desc, err := store.Resolve(ctx, "test")
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		data, err := content.FetchAll(ctx, store, desc)
+		if err != nil {
+			t.Fatalf("fetch manifest: %v", err)
+		}
+		var manifest ocispec.Manifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			t.Fatalf("parse manifest: %v", err)
+		}
+		return result.ManifestDigest, manifest
+	}
+
+	first, manifest := push()
+	// Sleep past a second boundary, so a wall-clock timestamp would
+	// certainly differ between the two pushes.
+	time.Sleep(1100 * time.Millisecond)
+	second, _ := push()
+
+	if first != second {
+		t.Errorf("manifest digests differ across pushes: %s vs %s", first, second)
+	}
+	if got := manifest.Annotations[ocispec.AnnotationCreated]; got != "2026-09-28T10:00:00Z" {
+		t.Errorf("created annotation = %q, want the SBOM's timestamp", got)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
@@ -135,6 +136,9 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
 		ConfigDescriptor: &configDesc,
 		Layers:           manifestLayers,
+		ManifestAnnotations: map[string]string{
+			ocispec.AnnotationCreated: createdAnnotation(bom),
+		},
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("pack manifest: %w", err)
@@ -151,6 +155,27 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 	}
 
 	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers, VulnerabilityReports: attachedReportList}, nil
+}
+
+// createdAnnotation returns the value Push pins the package manifest's
+// "org.opencontainers.image.created" annotation to: bom's own
+// metadata.timestamp, normalized to UTC RFC 3339, or the Unix epoch if
+// the SBOM has none or it doesn't parse.
+//
+// Left unset, oras.PackManifest stamps the current time instead, giving
+// every push of an unchanged package a new manifest digest — and so
+// orphaning any signature made on the previous one (see
+// internal/signature). A package is identified by its SBOM's content
+// hash, so deriving the value from the SBOM keeps the digest stable for
+// as long as the package itself is.
+func createdAnnotation(bom *cdx.BOM) string {
+	created := time.Unix(0, 0)
+	if bom.Metadata != nil {
+		if t, err := time.Parse(time.RFC3339, bom.Metadata.Timestamp); err == nil {
+			created = t
+		}
+	}
+	return created.UTC().Format(time.RFC3339)
 }
 
 // configMediaType picks the OCI config media type matching data's sniffed
