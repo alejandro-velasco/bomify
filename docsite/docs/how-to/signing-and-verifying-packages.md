@@ -32,8 +32,8 @@ tool you already have.
     openssl pkey -in signing.key -pubout -out signing.pub
     ```
 
-    OpenSSL prompts for the password. Export it as `SIGSTORE_PASSWORD`
-    whenever you sign.
+    OpenSSL prompts for the password; you'll provide it as
+    `SIGSTORE_PASSWORD` when signing (see step 2).
 
 === "OpenSSL (no password)"
 
@@ -53,19 +53,31 @@ tool you already have.
     ```
 
     Writes `signing.key` (encrypted) and `signing.pub`. cosign prompts
-    for the password; export it as `SIGSTORE_PASSWORD` whenever you
-    sign.
+    for the password; you'll provide it as `SIGSTORE_PASSWORD` when
+    signing (see step 2).
 
 ECDSA P-256 is shown above, but RSA and Ed25519 keys work too. Keep
 `signing.key` private; hand `signing.pub` to whoever will verify.
 
 ## 2. Sign while pushing
 
+For an encrypted key, read its password into `SIGSTORE_PASSWORD` without
+echoing it or leaving it in your shell history (skip this for an
+unencrypted key):
+
 ```sh
-export SIGSTORE_PASSWORD='your-key-password'   # omit for an unencrypted key
+printf 'Key password: '; read -rs SIGSTORE_PASSWORD; echo
+export SIGSTORE_PASSWORD
+```
+
+Then push and sign:
+
+```sh
 bomify push registry.example.com/team/myapp:1.0 \
   --sign sigstore --sign-option key=signing.key
 ```
+
+Run `unset SIGSTORE_PASSWORD` once you're done signing.
 
 The signature is attached before the tag is updated, so the tag never
 points at an unsigned package. Pushing again with another key adds a
