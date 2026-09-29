@@ -20,7 +20,7 @@ owes nothing to the others.
 Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
 a plugin for signing scheme `<kind>` must be named exactly
 `bomify-plugin-<kind>` (`bomify-plugin-<kind>.exe` on Windows) and
-discoverable on `PATH`.
+installed in `<data-dir>/plugins`.
 
 ## What bomify does
 
@@ -115,7 +115,8 @@ all.
 
 `--option key=value` carries everything scheme-specific — a key path, a
 KMS URI, a certificate identity, a trust store name. bomify validates
-only that each is `key=value`, and never interprets one. A plugin should
+only that each is `key=value` with neither side empty, and never
+interprets one — so a plugin never receives an empty value. A plugin should
 reject a key it doesn't recognize rather than ignore it, since a
 mistyped verification option silently ignored could weaken what gets
 checked.

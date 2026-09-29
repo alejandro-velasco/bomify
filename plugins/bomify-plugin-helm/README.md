@@ -20,7 +20,8 @@ bomify sbom generate helm --chart <name> --repo <repository> [flags]
 ```
 
 `bomify sbom generate helm ...` is how you'd normally run this — the
-`bomify` orchestrator just locates `bomify-plugin-helm` on `PATH` and
+`bomify` orchestrator just locates `bomify-plugin-helm` in its plugins
+directory (`<data-dir>/plugins`) and
 execs `bomify-plugin-helm sbom generate ...` with every flag after
 `helm` passed through unchanged (see
 [`plugins/SBOM-CONTRACT.md`](../SBOM-CONTRACT.md)). Running the plugin

@@ -63,7 +63,7 @@ func newSignatureSignCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&payloadPath, "payload", "", "file holding the payload to sign (required)")
 	cmd.Flags().StringVar(&reference, "reference", "", "reference of the package being signed (required)")
-	cmd.Flags().StringArrayVar(&options, "option", nil, "a key=value option (repeatable)")
+	cmd.Flags().StringArrayVar(&options, "option", nil, "a key=value option (repeatable): key, or for keyless identity-token, certificate-identity[-regexp], certificate-oidc-issuer[-regexp]")
 	_ = cmd.MarkFlagRequired("payload")
 	_ = cmd.MarkFlagRequired("reference")
 
@@ -114,7 +114,7 @@ func newSignatureVerifyCmd() *cobra.Command {
 	cmd.Flags().StringVar(&envelopePath, "envelope", "", "file holding the signature envelope (required)")
 	cmd.Flags().StringVar(&mediaType, "media-type", "", "the envelope's media type (required)")
 	cmd.Flags().StringVar(&reference, "reference", "", "reference of the package being verified (required)")
-	cmd.Flags().StringArrayVar(&options, "option", nil, "a key=value option (repeatable)")
+	cmd.Flags().StringArrayVar(&options, "option", nil, "a key=value option (repeatable): key, or for keyless identity-token, certificate-identity[-regexp], certificate-oidc-issuer[-regexp]")
 	for _, name := range []string{"payload", "envelope", "media-type", "reference"} {
 		_ = cmd.MarkFlagRequired(name)
 	}

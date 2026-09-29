@@ -31,12 +31,21 @@ exit code, or the files it's told to write to.
 A plugin for purl type `<kind>` (e.g. `oci`, `helm`, `npm`) must be:
 
 - named exactly `bomify-plugin-<kind>` (`bomify-plugin-<kind>.exe` on
-  Windows, handled automatically by Go's `exec.LookPath`)
-- discoverable on `PATH`
+  Windows)
+- installed in bomify's plugins directory, `<data-dir>/plugins`
+  (`~/.bomify/plugins` by default) — normally by `bomify plugin install`
+  (see [plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#installing-plugins)),
+  though any executable placed there by that name works. bomify never
+  looks for a plugin on `PATH`.
 
 bomify determines `<kind>` directly from the SBOM component's purl type
 (e.g. a component with purl `pkg:oci/nginx@1.27` needs `bomify-plugin-oci`
-on `PATH`) and never invokes a plugin by any other name or location.
+installed) and never invokes a plugin by any other name or location. The
+one purl type bomify never dispatches to a plugin is `bomify-plugin`
+itself: a `pkg:bomify-plugin/...` component *is* a plugin binary, which
+bomify handles on its own (see
+[plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#publishing-a-plugin)),
+so no `bomify-plugin-bomify-plugin` is ever needed.
 
 ## Commands
 

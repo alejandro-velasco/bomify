@@ -33,7 +33,7 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 		t.Fatalf("UpdateRepositories: %v", err)
 	}
 
-	signer, err := NewSigner(Plugin{Kind: fakeKind, Options: []string{"key=secret"}}, discardLogger())
+	signer, err := NewSigner(pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=secret"}}, discardLogger())
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 
 	load := func(key string) (string, error) {
 		destDir := t.TempDir()
-		verifier := NewVerifier(Policy{Verifier: Plugin{Kind: fakeKind, Options: []string{"key=" + key}}}, discardLogger())
+		verifier := NewVerifier(pluginDir, Policy{Verifier: Plugin{Kind: fakeKind, Options: []string{"key=" + key}}}, discardLogger())
 		_, err := save.Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 1, nil, verifier)
 		return destDir, err
 	}

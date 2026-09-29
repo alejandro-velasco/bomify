@@ -1,0 +1,151 @@
+name: Release
+
+# Releases run in their own workflow, after Build has passed on main,
+# rather than as a job inside it: plugin packages are signed keyless as
+# this workflow, so the signer identity users trust for bomify's own
+# plugins names the release specifically —
+#
+#   https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
+#
+# — not the workflow that builds every push and pull request (see
+# plugins/README.md#installing-plugins). Renaming this file, or releasing
+# from anywhere but main, changes that identity.
+#
+# The work is split so only one job can sign, and that job runs no
+# third-party npm code:
+#
+#   release          semantic-release: version, tag, GitHub release, and
+#                    container image. No id-token permission.
+#   sign-plugins     builds, signs (keyless), and pushes the plugin
+#                    packages. The only job with id-token: write.
+#   publish-digests  attaches every plugin package's pinned reference to
+#                    the GitHub release, so users can bootstrap
+#                    bomify-plugin-sigstore by digest.
+#
+# Every action is pinned to a commit SHA and every npm package to an
+# exact version, so nothing here changes without a commit to this file.
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+
+# One release at a time: a second run waits rather than racing the first
+# to tag the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag and publish the GitHub release
+      packages: write # push the container image
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    env:
+      CONTAINER_TOOL: podman
+      CONTAINER_REGISTRY: ghcr.io
+    steps:
+      # The exact commit Build just passed, not whatever main points at by
+      # now. If main has moved on since, semantic-release sees this commit
+      # is behind and skips; the newer commit's own Build run releases it.
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Compute container repo
+        id: repo
+        run: echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Writes version=<next version> to this step's outputs (see
+      # verifyReleaseCmd in .releaserc.json) only when it cuts a release.
+      - name: Release
+        id: release
+        env:
+          CONTAINER_REPO: ${{ steps.repo.outputs.repo }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes \
+            --package=semantic-release@25.0.9 \
+            --package=@semantic-release/commit-analyzer@13.0.1 \
+            --package=@semantic-release/release-notes-generator@14.1.1 \
+            --package=@semantic-release/changelog@7.0.0 \
+            --package=@semantic-release/exec@7.1.0 \
+            --package=@semantic-release/github@12.0.10 \
+            semantic-release
+
+  sign-plugins:
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # push the plugin packages
+      # Lets hack/push-plugin-packages.sh request this workflow's OIDC
+      # token to sign plugin packages keyless — the identity at the top of
+      # this file. Nothing else in this repository's release gets it.
+      id-token: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Compute plugin registry
+        id: repo
+        run: echo "registry=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/plugins" >> "$GITHUB_OUTPUT"
+
+      # bomify shares Docker's credential store (~/.docker/config.json).
+      - name: Log in to GHCR for bomify
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | go run . login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build plugin packages
+        run: make plugin-packages VERSION="$VERSION"
+
+      - name: Sign and push plugin packages
+        run: make push-plugin-packages VERSION="$VERSION" PLUGIN_REGISTRY="${{ steps.repo.outputs.registry }}" PLUGIN_SIGN_KEYLESS=true PLUGIN_DIGESTS_FILE="$RUNNER_TEMP/plugin-digests.txt"
+
+      - name: Keep pinned references
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugin-digests
+          path: ${{ runner.temp }}/plugin-digests.txt
+          if-no-files-found: error
+
+  publish-digests:
+    needs: [release, sign-plugins]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach an asset to the GitHub release
+    steps:
+      - name: Fetch pinned references
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plugin-digests
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "v${{ needs.release.outputs.version }}" plugin-digests.txt --clobber

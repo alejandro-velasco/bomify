@@ -25,8 +25,12 @@ import (
 // is installed as.
 const fakeKind = "fakesign"
 
+// pluginDir is the plugins directory installFakeSigner installed the fake
+// signer into, for NewSigner/NewVerifier/Verify to find it in.
+var pluginDir string
+
 // installFakeSigner builds testdata/fakesigner as bomify-plugin-fakesign
-// and puts it first on PATH for plugin.Find to discover.
+// into a fresh plugins directory and points pluginDir at it.
 func installFakeSigner(t *testing.T) {
 	t.Helper()
 
@@ -41,7 +45,7 @@ func installFakeSigner(t *testing.T) {
 		t.Fatalf("build fake signer: %v\n%s", err, out)
 	}
 
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	pluginDir = dir
 }
 
 func discardLogger() *slog.Logger {
@@ -88,7 +92,7 @@ func newStore(t *testing.T) *oci.Store {
 
 func sign(t *testing.T, store *oci.Store, ref string, manifest ocispec.Descriptor, key string) {
 	t.Helper()
-	signer, err := NewSigner(Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
+	signer, err := NewSigner(pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
 	}
@@ -98,7 +102,7 @@ func sign(t *testing.T, store *oci.Store, ref string, manifest ocispec.Descripto
 }
 
 func verify(store *oci.Store, ref string, manifest ocispec.Descriptor, key string) (string, error) {
-	return Verify(context.Background(), store, ref, manifest, Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
+	return Verify(context.Background(), store, ref, manifest, pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
 }
 
 func TestSignThenVerify(t *testing.T) {
@@ -234,9 +238,8 @@ func TestVerifyRejectsReplayedEnvelope(t *testing.T) {
 }
 
 func TestNewSignerMissingPlugin(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	if _, err := NewSigner(Plugin{Kind: "nope"}, discardLogger()); err == nil {
-		t.Fatal("NewSigner error = nil, want error for a plugin not on PATH")
+	if _, err := NewSigner(t.TempDir(), Plugin{Kind: "nope"}, discardLogger()); err == nil {
+		t.Fatal("NewSigner error = nil, want error for a plugin that isn't installed")
 	}
 }
 
@@ -249,7 +252,7 @@ func TestNewVerifierAppliesPolicy(t *testing.T) {
 	sign(t, store, "registry.example.com/team/app:v1", signed, "secret")
 
 	policy := Policy{Rules: Config{{Match: "registry.example.com/team", Verifier: fakeKind, Options: []string{"key=secret"}}}}
-	verifier := NewVerifier(policy, discardLogger())
+	verifier := NewVerifier(pluginDir, policy, discardLogger())
 
 	if err := verifier(ctx, store, "registry.example.com/team/app:v1", signed); err != nil {
 		t.Errorf("signed package matching a rule: %v", err)
@@ -259,13 +262,13 @@ func TestNewVerifierAppliesPolicy(t *testing.T) {
 	}
 
 	policy.Rules[0].Match = ""
-	verifier = NewVerifier(policy, discardLogger())
+	verifier = NewVerifier(pluginDir, policy, discardLogger())
 	if err := verifier(ctx, store, "registry.example.com/other/app:v1", unsigned); err == nil {
 		t.Error("unsigned package matching a catch-all rule: nil, want error")
 	}
 
 	policy.Skip = true
-	verifier = NewVerifier(policy, discardLogger())
+	verifier = NewVerifier(pluginDir, policy, discardLogger())
 	if err := verifier(ctx, store, "registry.example.com/other/app:v1", unsigned); err != nil {
 		t.Errorf("unsigned package with Skip: %v, want nil", err)
 	}

@@ -42,6 +42,7 @@ bomify [flags]
 * [bomify logout](bomify_logout.md)	 - Log out from an OCI registry
 * [bomify package](bomify_package.md)	 - Manage individual bomify packages
 * [bomify packages](bomify_packages.md)	 - List built packages
+* [bomify plugin](bomify_plugin.md)	 - Install and list bomify plugins
 * [bomify pull](bomify_pull.md)	 - Download a bomify package from an OCI registry
 * [bomify push](bomify_push.md)	 - Publish a bomify package to an OCI registry
 * [bomify rmp](bomify_rmp.md)	 - Remove packages by tag (shorthand for "bomify package remove")

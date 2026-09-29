@@ -20,9 +20,12 @@ COPY . .
 # link against libc.so and fail to start there entirely.
 ENV CGO_ENABLED=0
 
+# bomify only looks for plugins in <data-dir>/plugins, so they're installed
+# into the data directory the final stage runs with ($HOME/.bomify, HOME
+# being /tmp there) rather than onto PATH.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    make install
+    make install PLUGIN_DIR=/out/.bomify/plugins
 
 # distroless/static: no shell, no package manager, just the binaries below
 # plus ca-certificates and tzdata (needed for the registry/HTTP(S) pulls
@@ -39,9 +42,13 @@ COPY --from=builder /etc/passwd /etc/group /etc/
 # /home/nobody, but it does ship a world-writable /tmp, so that's HOME here.
 ENV HOME=/tmp
 
-# make install also symlinks bomify-plugin-docker -> bomify-plugin-oci; the
-# wildcard picks that symlink up too.
-COPY --from=builder /usr/local/bin/bomify /usr/local/bin/bomify-plugin-* /usr/local/bin/
+COPY --from=builder /usr/local/bin/bomify /usr/local/bin/
+
+# The whole data directory is owned by nobody, since bomify writes
+# packages alongside the plugins there (and "bomify plugin install" adds
+# more). make install also symlinks bomify-plugin-docker ->
+# bomify-plugin-oci, which the copy carries over as-is.
+COPY --from=builder --chown=65534:65534 /out/.bomify /tmp/.bomify
 
 USER nobody:nogroup
 

@@ -17,14 +17,12 @@ import (
 )
 
 // buildFakeSecurityPluginBinary builds cmd/testdata/fakesecurityplugin as
-// bomify-plugin-<scanType>[.exe] into a fresh temp directory and returns
-// that directory, so the caller can put it on PATH for plugin.Find to
-// discover.
-func buildFakeSecurityPluginBinary(t *testing.T, scanType string) string {
+// bomify-plugin-<scanType>[.exe] into baseDir's plugins directory, for
+// plugin.Find to discover there.
+func buildFakeSecurityPluginBinary(t *testing.T, baseDir, scanType string) {
 	t.Helper()
 
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "bomify-plugin-"+scanType)
+	bin := filepath.Join(plugin.Dir(baseDir), "bomify-plugin-"+scanType)
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
@@ -33,8 +31,6 @@ func buildFakeSecurityPluginBinary(t *testing.T, scanType string) string {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build fake security plugin: %v\n%s", err, out)
 	}
-
-	return dir
 }
 
 // writeResponsesFile writes responses (purl -> raw SecurityResult object
@@ -137,13 +133,12 @@ func readReport(t *testing.T, baseDir string, component cdx.Component) *cdx.BOM 
 	return report
 }
 
-// usePlugin puts a freshly built fake security plugin named
-// bomify-plugin-<scanType> on PATH.
-func usePlugin(t *testing.T, scanType string) {
+// usePlugin installs a freshly built fake security plugin named
+// bomify-plugin-<scanType> into baseDir.
+func usePlugin(t *testing.T, baseDir, scanType string) {
 	t.Helper()
 
-	dir := buildFakeSecurityPluginBinary(t, scanType)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	buildFakeSecurityPluginBinary(t, baseDir, scanType)
 }
 
 // TestSecurityScanWritesOneReportPerComponent covers components scanned
@@ -152,8 +147,8 @@ func usePlugin(t *testing.T, scanType string) {
 // no top-level components of its own. A vulnerability two components
 // share is reported in both, never merged across them.
 func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 
 	componentA := cdx.Component{BOMRef: "ref-a", Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	componentB := cdx.Component{BOMRef: "ref-b", Name: "b", Version: "1.0", PackageURL: "pkg:generic/b@1.0"}
@@ -221,8 +216,8 @@ func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
 // and every vulnerability's "affects" — exactly as the plugin reported
 // it — references the specific piece, never the image itself.
 func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 
 	image := cdx.Component{BOMRef: "image-ref", Type: cdx.ComponentTypeContainer, Name: "myimage", Version: "1.0", PackageURL: "pkg:oci/myimage@1.0"}
 
@@ -273,8 +268,8 @@ func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
 // described by two packages: both resolve to the same report, and
 // scanning either one refreshes it for both.
 func TestSecurityScanSharesReportsAcrossPackages(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 
 	// The same purl, described slightly differently by each package's
 	// SBOM — the report must not depend on which one scanned it.
@@ -318,8 +313,8 @@ func TestSecurityScanSharesReportsAcrossPackages(t *testing.T) {
 }
 
 func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 	// This plugin only supports oci — the npm component below must be
 	// skipped rather than sent to "security scan", and gets no report.
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":["oci"],"scans":["sca"]}`)
@@ -349,8 +344,8 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 }
 
 func TestSecurityScanFailsWhenSupportedComponentsFails(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_FAIL", "1")
 
 	writePackage(t, baseDir, "myapp:latest", cdx.Component{Name: "a", PackageURL: "pkg:oci/a@1.0"})
@@ -361,8 +356,8 @@ func TestSecurityScanFailsWhenSupportedComponentsFails(t *testing.T) {
 }
 
 func TestSecurityScanPropagatesComponentFailure(t *testing.T) {
-	usePlugin(t, "grype")
 	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 
 	writePackage(t, baseDir, "myapp:latest", cdx.Component{Name: "broken", PackageURL: "pkg:generic/fail-me@1.0"})
 
@@ -372,15 +367,15 @@ func TestSecurityScanPropagatesComponentFailure(t *testing.T) {
 }
 
 func TestSecurityScanUnknownPackage(t *testing.T) {
-	usePlugin(t, "grype")
+	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
 
-	if _, err := runSecurityScanCmd(t, t.TempDir(), "grype", "missing:latest"); err == nil {
+	if _, err := runSecurityScanCmd(t, baseDir, "grype", "missing:latest"); err == nil {
 		t.Fatal("Execute() error = nil, want an error for a package that doesn't exist locally")
 	}
 }
 
 func TestSecurityScanMissingPlugin(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
 	baseDir := t.TempDir()
 
 	writePackage(t, baseDir, "myapp:latest", cdx.Component{Name: "a", PackageURL: "pkg:oci/a@1.0"})

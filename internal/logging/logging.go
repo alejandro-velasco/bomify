@@ -62,6 +62,30 @@ func FromContext(ctx context.Context) *slog.Logger {
 	return slog.Default()
 }
 
+// WarningsOnly returns logger, dropping everything below warning level —
+// what a command's --quiet leaves on stderr.
+func WarningsOnly(logger *slog.Logger) *slog.Logger {
+	return slog.New(minLevelHandler{Handler: logger.Handler(), min: slog.LevelWarn})
+}
+
+// minLevelHandler is Handler, disabled below min.
+type minLevelHandler struct {
+	slog.Handler
+	min slog.Level
+}
+
+func (h minLevelHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.min && h.Handler.Enabled(ctx, level)
+}
+
+func (h minLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return minLevelHandler{Handler: h.Handler.WithAttrs(attrs), min: h.min}
+}
+
+func (h minLevelHandler) WithGroup(name string) slog.Handler {
+	return minLevelHandler{Handler: h.Handler.WithGroup(name), min: h.min}
+}
+
 // SupportsColor returns true if f is a terminal and the NO_COLOR
 // environment variable is not set.
 func SupportsColor(f *os.File) bool {

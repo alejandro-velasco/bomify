@@ -4,7 +4,7 @@ sequenceDiagram
     participant Disk as Data directory
 
     CLI->>CLI: detect a kind from the component's purl type
-    CLI->>CLI: find the matching binary on PATH
+    CLI->>CLI: find the matching binary in the data directory's plugins/
 
     alt bomify build
         rect rgb(236, 253, 245)

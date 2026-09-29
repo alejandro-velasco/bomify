@@ -60,8 +60,11 @@ type Layer struct {
 
 // Result is the outcome of a successful Pull.
 type Result struct {
-	SBOMHash string
-	Layers   []Layer
+	// ManifestDigest is the digest of the package manifest ref resolved
+	// to — the one verified and restored — as "sha256:...".
+	ManifestDigest string
+	SBOMHash       string
+	Layers         []Layer
 	// VulnerabilityReports lists the components whose vulnerability
 	// report (see internal/security) the package carried and Pull
 	// restored to "<dataDir>/vulnerabilities/<purl-hash>.json" — only
@@ -90,6 +93,16 @@ type Result struct {
 // against the digest it pins — so ref being re-tagged mid-pull can't
 // substitute unverified content.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier) (Result, error) {
+	return PullLayers(ctx, target, ref, dataDir, concurrency, progress, verify, nil)
+}
+
+// PullLayers is Pull, fetching only the component layers and
+// vulnerability reports whose purl annotation keep accepts — e.g. just
+// the one platform's binary "bomify plugin install" needs out of a
+// package carrying every platform's. A nil keep fetches everything, and a
+// layer with no purl annotation is always fetched. The SBOM config is
+// always fetched in full, whichever layers are skipped.
+func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
 	}
@@ -121,6 +134,9 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 
 	var componentLayerDescs, reportDescs []ocispec.Descriptor
 	for _, layerDesc := range manifest.Layers {
+		if purl := layerDesc.Annotations[AnnotationPurl]; keep != nil && purl != "" && !keep(purl) {
+			continue
+		}
 		if layerDesc.MediaType == transfer.VulnerabilityReportMediaType {
 			reportDescs = append(reportDescs, layerDesc)
 		} else {
@@ -159,7 +175,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 		return Result{}, err
 	}
 
-	return Result{SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
+	return Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
 }
 
 // indexComponentsByPurl indexes bom's components by purl, so fetchLayer

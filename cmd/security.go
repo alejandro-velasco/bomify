@@ -101,7 +101,7 @@ func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
 		return err
 	}
 
-	path, err := plugin.Find(opts.scanType)
+	path, err := plugin.Find(plugin.Dir(dataDir), opts.scanType)
 	if err != nil {
 		return err
 	}

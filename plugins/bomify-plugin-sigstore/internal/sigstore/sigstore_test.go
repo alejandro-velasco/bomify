@@ -11,6 +11,10 @@ import (
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
 
+// githubIssuer is GitHub Actions' OIDC issuer, used here only as a
+// realistic keyless option value.
+const githubIssuer = "https://token.actions.githubusercontent.com"
+
 var payload = []byte(`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","size":123}`)
 
 // writeKeyPair generates an ECDSA P-256 key pair — encrypted with
@@ -111,25 +115,76 @@ func TestVerifyMalformedEnvelopeFails(t *testing.T) {
 	}
 }
 
-func TestParseOptions(t *testing.T) {
-	opts, err := ParseOptions([]string{"key=a.pub"})
-	if err != nil {
-		t.Fatalf("ParseOptions: %v", err)
+func TestKeylessSignNeedsToken(t *testing.T) {
+	t.Setenv(idTokenEnv, "")
+
+	_, err := Sign(context.Background(), payload, Options{})
+	if err == nil || !strings.Contains(err.Error(), idTokenEnv) {
+		t.Fatalf("Sign without a key or token: %v, want an error naming %s", err, idTokenEnv)
 	}
-	if opts[OptionKey] != "a.pub" {
-		t.Errorf("ParseOptions = %v", opts)
+}
+
+func TestKeylessVerifyNeedsIdentity(t *testing.T) {
+	priv, _ := writeKeyPair(t, "")
+	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	for _, opts := range []Options{
+		{},
+		{OptionCertificateIdentity: "https://github.com/o/r/.github/workflows/release.yml@refs/heads/main"},
+		{OptionCertificateOIDCIssuer: githubIssuer},
+	} {
+		if _, err := Verify(payload, envelope, opts); err == nil || !strings.Contains(err.Error(), "certificate identity") {
+			t.Errorf("Verify(%v) = %v, want an error requiring both identity and issuer", opts, err)
+		}
+	}
+}
+
+func TestParseOptions(t *testing.T) {
+	for _, good := range [][]string{
+		nil,           // keyless signing: everything optional
+		{"key=a.pub"}, // key-based
+		{"certificate-identity=https://github.com/o/r/.github/workflows/release.yml@refs/heads/main", "certificate-oidc-issuer=" + githubIssuer},
+		{"certificate-identity-regexp=^https://github.com/o/", "certificate-oidc-issuer-regexp=^https://token"},
+		{"identity-token=abc"},
+	} {
+		if _, err := ParseOptions(good); err != nil {
+			t.Errorf("ParseOptions(%q): %v", good, err)
+		}
+	}
+
+	opts, err := ParseOptions([]string{"key=a.pub"})
+	if err != nil || opts[OptionKey] != "a.pub" {
+		t.Errorf("ParseOptions = %v, %v", opts, err)
 	}
 
 	for _, bad := range [][]string{
-		nil,                         // key is required
-		{"key="},                    // ... and must be non-empty
-		{"novalue"},                 // not key=value
-		{"=a"},                      // empty key
-		{"kye=a.pub"},               // typo
-		{"key=a.pub", "identity=x"}, // anything but key is rejected
+		{"key="},       // empty value
+		{"novalue"},    // not key=value
+		{"=a"},         // empty key
+		{"kye=a.pub"},  // typo
+		{"identity=x"}, // unknown option
+		{"key=a.pub", "certificate-oidc-issuer=" + githubIssuer}, // key and keyless mixed
 	} {
 		if _, err := ParseOptions(bad); err == nil {
 			t.Errorf("ParseOptions(%q): nil, want error", bad)
 		}
+	}
+}
+
+func TestIdentityTokenPrecedence(t *testing.T) {
+	t.Setenv(idTokenEnv, "")
+	if token := (Options{}).identityToken(); token != "" {
+		t.Errorf("identityToken() = %q, want none", token)
+	}
+
+	t.Setenv(idTokenEnv, "env-token")
+	if token := (Options{}).identityToken(); token != "env-token" {
+		t.Errorf("identityToken() = %q, want %s's", token, idTokenEnv)
+	}
+	if token := (Options{OptionIdentityToken: "option-token"}).identityToken(); token != "option-token" {
+		t.Errorf("identityToken() = %q, want the option to win", token)
 	}
 }

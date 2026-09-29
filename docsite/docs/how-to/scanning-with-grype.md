@@ -19,7 +19,7 @@ for how reports are laid out, and
 for how the plugin itself works.
 
 Requires [`bomify-plugin-grype`](../getting-started/installing-plugins.md)
-to be on `PATH`.
+to be installed (`bomify plugin install grype`).
 
 ## 1. Scan a package
 

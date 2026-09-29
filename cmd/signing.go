@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
@@ -34,7 +35,7 @@ func (f *signFlags) signer(logger *slog.Logger) (transfer.Signer, error) {
 	if err := validateOptions("--sign-option", f.options); err != nil {
 		return nil, err
 	}
-	return signature.NewSigner(signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
+	return signature.NewSigner(plugin.Dir(dataDir), signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
 }
 
 // verifyFlags are the --verify/--verify-option/--insecure-skip-verify
@@ -72,14 +73,21 @@ func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Ve
 		Rules:    rules,
 		Skip:     f.skip,
 	}
-	return signature.NewVerifier(policy, logger), nil
+	return signature.NewVerifier(plugin.Dir(baseDir), policy, logger), nil
 }
 
-// validateOptions requires every one of options to be "key=value".
+// validateOptions requires every one of options to be "key=value", with
+// neither side empty: an empty value (e.g. an unset shell variable in
+// "certificate-identity=$ME") would otherwise be saved or passed on, only
+// to fail — or worse, be read as "anything" — much later.
 func validateOptions(flag string, options []string) error {
 	for _, option := range options {
-		if key, _, ok := strings.Cut(option, "="); !ok || key == "" {
+		key, value, ok := strings.Cut(option, "=")
+		if !ok || key == "" {
 			return fmt.Errorf("%s %q: want key=value", flag, option)
+		}
+		if value == "" {
+			return fmt.Errorf("%s %q: empty value", flag, option)
 		}
 	}
 	return nil

@@ -32,6 +32,120 @@ referrer of the package, so the plugin never touches a registry.
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | `sigstore` | [sigstore-go](https://github.com/sigstore/sigstore-go) (Sigstore bundle v0.3) | <ul><li>SIGNING-CONTRACT.md</li></ul> |
 
+## Installing plugins
+
+bomify only ever looks for a plugin in its plugins directory,
+`<data-dir>/plugins` (`~/.bomify/plugins` by default) — never on `PATH`.
+Plugins are distributed as bomify packages in an OCI registry, and
+`bomify plugin install` puts them there — once verification is set up,
+as described below:
+
+```sh
+# Install the latest bomify-plugin-oci
+bomify plugin install oci
+
+# Install a specific version
+bomify plugin install grype:1.12.0
+
+# See what's installed, and where each plugin came from
+bomify plugin list
+```
+
+`bomify plugin install <name>` pulls
+`ghcr.io/alejandro-velasco/bomify/plugins/<name>:latest` (`--registry`
+points it at another repository prefix; `<name>:<version>` or
+`<name>@sha256:...` picks a specific one) and installs the plugin binary
+built for your OS and architecture, replacing any earlier install of the
+same plugin.
+
+`bomify plugin install` only installs a plugin something vouches for,
+checked before anything is downloaded:
+
+- **Its signature**, verified by `bomify-plugin-sigstore` against a
+  signer you trust — from a matching
+  [`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
+  rule, or given directly with `--verify-option`: a public key
+  (`key=<public key>`) or a keyless identity
+  (`certificate-identity=...` and `certificate-oidc-issuer=...`).
+- **Or a digest pin**, `<name>@sha256:<digest>`, which names exactly the
+  content to install: every blob pulled is checked against it.
+
+Anything else — no signer configured and a tag like `oci` or
+`oci:1.12.0` — is refused rather than installed unauthenticated. Each
+binary must also match the SHA-256 the package's SBOM declares for it,
+but that's an integrity check: it proves the binary is the one the
+package describes, not who published the package. `--verify=false`
+installs without any of this.
+
+bomify's own plugins are signed keyless by its release workflow on
+GitHub Actions, and every release lists each plugin package's pinned
+reference in a `plugin-digests.txt` asset. Since `bomify-plugin-sigstore`
+has nothing to verify its own signature yet, install it by its pinned
+reference from the release you trust, then add a trust rule requiring
+that workflow for everything else:
+
+```sh
+# The .../plugins/sigstore@sha256:... line from the release's plugin-digests.txt
+bomify plugin install sigstore@sha256:<digest>
+
+bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
+  --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
+  --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+Every later `bomify plugin install` from that registry — including
+upgrading `sigstore` itself — then fails unless that workflow signed
+it.
+
+## Publishing a plugin
+
+A plugin package is an ordinary bomify package whose SBOM describes
+the plugin's binaries as `pkg:bomify-plugin/<kind>` components — one per
+platform, told apart by `os`/`arch` qualifiers (in `GOOS`/`GOARCH`
+terms). `bomify build` handles these itself rather than through a
+plugin: it copies each binary from the local path (or `file://` URL) in
+the component's `distribution` external reference, resolved against the
+SBOM's own directory. Declare each binary's SHA-256 too — `bomify build`
+checks it, and `bomify plugin install` requires it by default:
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    {
+      "type": "application",
+      "name": "bomify-plugin-mykind",
+      "version": "v1.0.0",
+      "purl": "pkg:bomify-plugin/mykind@v1.0.0?os=linux&arch=amd64",
+      "hashes": [{ "alg": "SHA-256", "content": "<sha256 of the binary>" }],
+      "externalReferences": [{ "type": "distribution", "url": "dist/linux-amd64/bomify-plugin-mykind" }]
+    }
+  ]
+}
+```
+
+Then build, push, and (ideally) sign it like any other package:
+
+```sh
+bomify build plugin.cdx.json --tag registry.example.com/plugins/mykind:v1.0.0
+bomify push registry.example.com/plugins/mykind:v1.0.0 --sign sigstore --sign-option key=signing.key
+```
+
+and install it with
+`bomify plugin install mykind:v1.0.0 --registry registry.example.com/plugins --verify-option key=signing.pub`.
+`install` downloads only the binaries built for the installing
+machine, so one package carrying every platform's build costs nothing
+extra to install.
+
+The first-party plugins are published exactly this way on every
+release, one package per plugin, by `make plugin-packages` (cross-compile
+every plugin and write its SBOM, under `dist/plugin-packages/<kind>/`)
+followed by `make push-plugin-packages` (build and push each, as
+`<version>` and `latest`); see
+[`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages).
+
 ## bomify-plugin-oci
 
 [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)
@@ -151,19 +265,36 @@ same pattern.
 implements the [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
 using [sigstore-go](https://github.com/sigstore/sigstore-go), producing
 standard v0.3 Sigstore bundles (artifact type
-`application/vnd.dev.sigstore.bundle.v0.3+json`), signed with a key
-pair: `--sign-option key=signing.key` to sign,
-`--verify-option key=signing.pub` to verify. Any PEM key pair works —
-one from OpenSSL (plain or password-protected PKCS#8) or from
-`cosign generate-key-pair` — with an encrypted key's password read from
-`SIGSTORE_PASSWORD`. See the
-[signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/)
-for the commands. Nothing is uploaded to a transparency log and no
-network access is needed, which suits private registries and air-gapped
-`save`/`load` transfers.
+`application/vnd.dev.sigstore.bundle.v0.3+json`), in one of two modes:
 
-`key` is the only option, and it's required; any other option is
-rejected rather than ignored. Like
+- **Key pair:** `--sign-option key=signing.key` to sign,
+  `--verify-option key=signing.pub` to verify. Any PEM key pair works —
+  one from OpenSSL (plain or password-protected PKCS#8) or from
+  `cosign generate-key-pair` — with an encrypted key's password read
+  from `SIGSTORE_PASSWORD`. Nothing is uploaded to a transparency log
+  and no network access is needed, which suits private registries and
+  air-gapped `save`/`load` transfers. See the
+  [signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/)
+  for the commands.
+- **Keyless:** with no `key`, signing exchanges an OIDC identity token
+  for a short-lived [Fulcio](https://github.com/sigstore/fulcio)
+  certificate and logs the signature in
+  [Rekor](https://github.com/sigstore/rekor). The token comes from
+  `SIGSTORE_ID_TOKEN` (or `--sign-option identity-token=...`), from
+  wherever you get one — typically a CI system's own OIDC provider, e.g.
+  GitHub Actions' with `permissions: id-token: write`, so a workflow
+  signs as itself with no secrets at all. It must be issued for the
+  `sigstore` audience, and only lasts minutes, so fetch it right before
+  signing.
+  Verifying requires the signer's `certificate-identity` (or
+  `certificate-identity-regexp`) and `certificate-oidc-issuer` (or
+  `-regexp`) — for a GitHub Actions workflow,
+  `https://github.com/<owner>/<repo>/.github/workflows/<file>@<ref>` and
+  `https://token.actions.githubusercontent.com` — and fetches Sigstore's
+  public trusted root, so it needs network access.
+
+`key` can't be combined with the keyless options, and any other option
+is rejected rather than ignored. Like
 `bomify-plugin-grype`, it's its own Go module
 ([`plugins/bomify-plugin-sigstore/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-sigstore/go.mod)),
 since sigstore-go's dependency tree (TUF, protobuf specs, cloud

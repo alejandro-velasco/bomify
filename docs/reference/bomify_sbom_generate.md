@@ -5,10 +5,11 @@ Generate an SBOM for a deployment medium via its plugin
 ### Synopsis
 
 Generate delegates entirely to a "bomify-plugin-<medium>" binary's own
-"sbom generate" subcommand: bomify only locates the plugin on PATH and
-execs it with every flag after <medium> passed through unchanged,
-wiring stdin/stdout/stderr straight through. Unlike the component
-plugin contract ("bomify build"/"bomify distribute"), bomify neither
+"sbom generate" subcommand: bomify only locates the plugin in
+<data-dir>/plugins and execs it with every flag after <medium> passed
+through unchanged, wiring stdin/stdout/stderr straight through. bomify's
+own global flags (e.g. --data-dir) must come before <medium>. Unlike the
+component plugin contract ("bomify build"/"bomify distribute"), bomify neither
 parses the plugin's output nor imposes any flags of its own here — see
 plugins/SBOM-CONTRACT.md for the (deliberately minimal) contract a
 plugin must implement, and the plugin's own --help for what it accepts.

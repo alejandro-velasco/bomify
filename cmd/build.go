@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -19,6 +20,13 @@ component it describes. Each component is resolved to a plugin by its
 kind and pulled through it, and the SBOM is then recorded as this
 build's manifest so later commands (push, distribute, tag, packages)
 can find it.
+
+A component whose purl type is "bomify-plugin" (e.g.
+"pkg:bomify-plugin/oci@v1.2.0?os=linux&arch=amd64") is a plugin binary
+rather than something a plugin fetches: bomify copies it itself from
+the local path (or file:// URL) its "distribution" external reference
+names, resolved against the SBOM's own directory. Packages built this
+way are what "bomify plugin install" installs.
 
 --check verifies every component is pullable and authorized — an
 inexpensive existence/auth check each plugin performs itself, without
@@ -79,6 +87,12 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	}
 
 	if err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+		if _, isBinary, err := plugin.ParseBinary(component); err != nil {
+			return err
+		} else if isBinary {
+			return buildPluginBinary(opts, component, hashAlgorithm, log)
+		}
+
 		kind, path, err := resolvePlugin(component, log)
 		if err != nil {
 			return err
@@ -113,6 +127,30 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	}
 
 	return finalizeBuild(opts, logger)
+}
+
+// buildPluginBinary builds a plugin.PurlType component: bomify copies the
+// plugin binary its "distribution" external reference names itself,
+// rather than delegating to a plugin (see plugin.PullBinary).
+func buildPluginBinary(opts *buildOptions, component cdx.Component, hashAlgorithm cdx.HashAlgorithm, log *slog.Logger) error {
+	sbomDir := filepath.Dir(opts.file)
+
+	if opts.check {
+		result, err := plugin.CheckBinary(component, sbomDir, hashAlgorithm)
+		if err != nil {
+			return err
+		}
+		log.Info("check complete", "message", result.Message, "hash", result.Hash.Value)
+		return nil
+	}
+
+	result, err := plugin.PullBinary(component, sbomDir, dataDir, hashAlgorithm)
+	if err != nil {
+		return err
+	}
+
+	log.Info("plugin binary added", "output", result.OutputPath, "message", result.Message, "hash", result.Hash.Value)
+	return nil
 }
 
 // finalizeBuild records the SBOM as this build's manifest and applies any

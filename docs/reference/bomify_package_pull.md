@@ -21,6 +21,10 @@ signature is checked before anything is written to the data
 directory, so a package that fails verification leaves no trace.
 --insecure-skip-verify bypasses a matching trust rule.
 
+--quiet prints only the restored package's pinned reference,
+<repository>@<digest>, on stdout — no progress bars, and no logging but
+warnings and errors.
+
 ```
 bomify package pull <reference> [flags]
 ```
@@ -39,6 +43,9 @@ bomify package pull <reference> [flags]
 
   # Require a signature made with a specific cosign key
   bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub
+
+  # Print just the pinned reference of what was pulled
+  pinned=$(bomify pull registry.example.com/myapp:latest --quiet)
 ```
 
 ### Options
@@ -47,6 +54,7 @@ bomify package pull <reference> [flags]
   -c, --concurrency int             number of layers to download concurrently (default 3)
   -h, --help                        help for pull
       --insecure-skip-verify        restore the package without verifying its signature, even if a "bomify trust" rule requires it
+  -q, --quiet                       print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --verify string               require a signature this signing plugin (bomify-plugin-<kind>, e.g. sigstore) verifies, overriding any "bomify trust" rule
       --verify-option stringArray   a key=value option passed through to the --verify plugin (repeatable; e.g. key=cosign.pub)
 ```

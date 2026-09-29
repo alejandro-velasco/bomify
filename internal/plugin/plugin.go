@@ -52,6 +52,13 @@ import (
 // binaryPrefix precedes the kind in a plugin's executable name.
 const binaryPrefix = "bomify-plugin-"
 
+// PurlType is the purl type of an SBOM component that is itself a plugin
+// binary — e.g. "pkg:bomify-plugin/oci@v1.2.0?os=linux&arch=amd64" — as
+// opposed to something a plugin fetches. bomify handles these itself (see
+// PullBinary) rather than dispatching them to a bomify-plugin-<kind>, and
+// "bomify plugin install" installs them (see internal/plugin/install).
+const PurlType = "bomify-plugin"
+
 // hashAlgorithms lists the CycloneDX hash algorithms recognized by
 // NormalizeHashAlgorithm.
 var hashAlgorithms = []cdx.HashAlgorithm{
@@ -114,14 +121,36 @@ func BinaryName(kind string) string {
 	return binaryPrefix + kind
 }
 
-// Find resolves the plugin binary for kind by searching PATH. It returns an
-// error if no such plugin is installed.
-func Find(kind string) (string, error) {
-	name := BinaryName(kind)
+// ExecutableName returns the file name BinaryName(kind) is installed
+// under on goos: with an ".exe" suffix on Windows, bare everywhere else.
+func ExecutableName(kind, goos string) string {
+	if goos == "windows" {
+		return BinaryName(kind) + ".exe"
+	}
+	return BinaryName(kind)
+}
 
-	path, err := exec.LookPath(name)
+// Dir returns the directory plugins are installed into and discovered
+// from: "<dataDir>/plugins". See Find.
+func Dir(dataDir string) string {
+	return filepath.Join(dataDir, "plugins")
+}
+
+// Find resolves the plugin binary for kind in dir (see Dir) — the only
+// place bomify looks for one; PATH is never consulted. It returns an
+// error if no such plugin is installed there.
+func Find(dir, kind string) (string, error) {
+	path := filepath.Join(dir, ExecutableName(kind, runtime.GOOS))
+
+	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("plugin %q not found on PATH: %w", name, err)
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("plugin %q is not installed in %s (install it with \"bomify plugin install %s\")", BinaryName(kind), dir, kind)
+		}
+		return "", fmt.Errorf("plugin %q: %w", BinaryName(kind), err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("plugin %q: %s is a directory, not an executable", BinaryName(kind), path)
 	}
 
 	return path, nil
@@ -151,11 +180,21 @@ func Find(kind string) (string, error) {
 // stdout while it runs: it is if logger has debug-level logging enabled
 // (i.e. bomify was run with --verbose), and isn't otherwise.
 func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
+	logFile := logPath(baseDir, component)
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+
+	return pull(component, baseDir, func(dir string) (*pluginlib.Result, error) {
+		return run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--output", dir, "--hash", string(hashAlgorithm))
+	}, hashAlgorithm)
+}
+
+// pull is Pull's pid-file/manifest bookkeeping around fetch, which writes
+// component into the (freshly emptied) directory it's given and reports
+// the result — a plugin subprocess for Pull, a local copy for PullBinary.
+func pull(component cdx.Component, baseDir string, fetch func(dir string) (*pluginlib.Result, error), hashAlgorithm cdx.HashAlgorithm) (*pluginlib.Result, error) {
 	dir := componentDir(baseDir, component)
 	pid := pidPath(baseDir, component)
 	manifest := manifestPath(baseDir, component)
-	logFile := logPath(baseDir, component)
-	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	for {
 		if owner, ok := readPID(pid); ok {
@@ -208,7 +247,7 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 			return nil, fmt.Errorf("create component directory %s: %w", dir, err)
 		}
 
-		result, err := run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--output", dir, "--hash", string(hashAlgorithm))
+		result, err := fetch(dir)
 		if err != nil {
 			os.RemoveAll(dir)
 			return nil, err

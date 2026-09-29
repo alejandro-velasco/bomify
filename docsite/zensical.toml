@@ -40,6 +40,11 @@ nav = [
       ] },
       { "bomify login" = "usage/reference/bomify_login.md" },
       { "bomify logout" = "usage/reference/bomify_logout.md" },
+      { "bomify plugin" = [
+          { "bomify plugin" = "usage/reference/bomify_plugin.md" },
+          { "bomify plugin install" = "usage/reference/bomify_plugin_install.md" },
+          { "bomify plugin list" = "usage/reference/bomify_plugin_list.md" },
+      ] },
       { "bomify pull" = "usage/reference/bomify_pull.md" },
       { "bomify push" = "usage/reference/bomify_push.md" },
       { "bomify sbom" = [

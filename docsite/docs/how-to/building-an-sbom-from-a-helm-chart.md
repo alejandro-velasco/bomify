@@ -16,7 +16,7 @@ the plugin's own
 for the complete flag list.
 
 Requires [`bomify-plugin-helm`](../getting-started/installing-plugins.md)
-to be on `PATH`.
+to be installed (`bomify plugin install helm`).
 
 ## 1. Generate an SBOM for a public chart
 

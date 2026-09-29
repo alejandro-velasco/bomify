@@ -10,6 +10,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 const pullShort = "Download a bomify package from an OCI registry"
@@ -29,7 +30,11 @@ plugin verifies (see "bomify push --sign"); without it, any "bomify
 trust" rule matching <reference> applies instead. Either way, the
 signature is checked before anything is written to the data
 directory, so a package that fails verification leaves no trace.
---insecure-skip-verify bypasses a matching trust rule.`
+--insecure-skip-verify bypasses a matching trust rule.
+
+--quiet prints only the restored package's pinned reference,
+<repository>@<digest>, on stdout — no progress bars, and no logging but
+warnings and errors.`
 
 const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp:latest
@@ -41,11 +46,15 @@ const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp:latest --concurrency 6
 
   # Require a signature made with a specific cosign key
-  bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub`
+  bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub
+
+  # Print just the pinned reference of what was pulled
+  pinned=$(bomify pull registry.example.com/myapp:latest --quiet)`
 
 type pullOptions struct {
 	concurrency int
 	verify      verifyFlags
+	quiet       bool
 }
 
 func pullCmd() *cobra.Command {
@@ -66,6 +75,7 @@ func pullCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to download concurrently")
+	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.verify.register(cmd)
 
 	return cmd
@@ -73,6 +83,9 @@ func pullCmd() *cobra.Command {
 
 func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	logger := logging.FromContext(cmd.Context())
+	if opts.quiet {
+		logger = logging.WarningsOnly(logger)
+	}
 
 	verifier, err := opts.verify.verifier(dataDir, logger)
 	if err != nil {
@@ -84,11 +97,14 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		return err
 	}
 
-	mb := newMultiBar(cmd.OutOrStderr())
-	progress := newProgressFunc(mb)
+	var progress pull.ProgressFunc
+	if !opts.quiet {
+		mb := newMultiBar(cmd.OutOrStderr())
+		defer mb.Wait()
+		progress = newProgressFunc(mb)
+	}
 
 	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, verifier)
-	mb.Wait()
 	if err != nil {
 		return err
 	}
@@ -106,6 +122,9 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		logger.Debug("pulled by digest, not recording a tag", "ref", ref)
 	}
 
+	if opts.quiet {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(ref), result.ManifestDigest)
+	}
 	return nil
 }
 
