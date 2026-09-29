@@ -17,7 +17,11 @@ OCI image-layout archive containing each package's manifest and
 components, plus any local vulnerability report a component has — that
 "bomify load" can restore on any machine, with no registry involved. A
 component shared by more than one given tag is stored once. Writes to
-stdout if --output isn't given.`
+stdout if --output isn't given.
+
+--sign signs each saved package with a signing plugin, exactly as
+"bomify push --sign" would, the signature travelling inside the
+tarball for "bomify load --verify" to check.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar
@@ -26,11 +30,15 @@ const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:v1 myapp:v2 --output packages.tar
 
   # Archive up to 6 layers concurrently
-  bomify save myapp:latest --output packages.tar --concurrency 6`
+  bomify save myapp:latest --output packages.tar --concurrency 6
+
+  # Sign each saved package with a cosign key
+  bomify save myapp:latest --output packages.tar --sign sigstore --sign-option key=cosign.key`
 
 type saveOptions struct {
 	output      string
 	concurrency int
+	sign        signFlags
 }
 
 func saveCmd() *cobra.Command {
@@ -53,12 +61,18 @@ func saveCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the tarball here instead of stdout")
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to archive concurrently")
+	opts.sign.register(cmd)
 
 	return cmd
 }
 
 func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	logger := logging.FromContext(cmd.Context())
+
+	signer, err := opts.sign.signer(logger)
+	if err != nil {
+		return err
+	}
 
 	w := cmd.OutOrStdout()
 	if opts.output != "" {
@@ -73,7 +87,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	err := save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress)
+	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, signer)
 	mb.Wait()
 	if err != nil {
 		return err

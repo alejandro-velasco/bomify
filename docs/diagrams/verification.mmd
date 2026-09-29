@@ -1,0 +1,42 @@
+flowchart TD
+    classDef source fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef plugin fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+    classDef ok fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+    classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
+
+    Start(["bomify pull / load &lt;ref&gt;"]) --> Resolve["resolve &lt;ref&gt; to the<br/>package manifest descriptor"]
+    Resolve --> Skip{"--insecure-skip-verify?"}
+
+    Skip -->|"yes"| Unverified["restore unverified<br/>(warn if a trust rule matched)"]
+    Skip -->|"no"| Flag{"--verify given?"}
+
+    Flag -->|"yes"| UseFlag["use the flag's plugin<br/>and --verify-options<br/>— trust.json not consulted"]
+    Flag -->|"no"| Rule{"a trust.json rule<br/>matches &lt;ref&gt;'s repository?"}
+
+    Rule -->|"no"| Unverified
+    Rule -->|"yes, most specific wins"| UseRule["use the rule's<br/>plugin and options"]
+
+    UseFlag --> Types
+    UseRule --> Types["bomify-plugin-&lt;kind&gt;<br/>signature supported-types"]
+
+    Types --> List["list the manifest's referrers,<br/>keep those of a supported artifactType"]
+    List --> Any{"any candidates?"}
+
+    Any -->|"no"| Fail["pull fails<br/>— nothing written to the data directory"]
+    Any -->|"yes"| Next["next candidate:<br/>fetch referrer manifest (1 layer),<br/>fetch envelope (&lt;= 4 MiB)"]
+
+    Next --> PluginVerify["bomify-plugin-&lt;kind&gt; signature verify<br/>--payload --envelope --media-type<br/>--reference --option..."]
+    PluginVerify --> Passed{"exit 0?"}
+
+    Passed -->|"yes"| Verified["log signer, then fetch config<br/>and layers by the verified descriptor"]
+    Passed -->|"no"| More{"more candidates?"}
+
+    More -->|"yes"| Next
+    More -->|"no"| Fail
+
+    class Start source
+    class Types,PluginVerify plugin
+    class Verified ok
+    class Fail failed
+    class Unverified skipped

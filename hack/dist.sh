@@ -29,9 +29,12 @@ for platform in $RELEASE_PLATFORMS; do
 
 	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$out/bomify$ext" .
 	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "$out/" ./plugins/...
-	# bomify-plugin-grype is its own Go module (see the Makefile's
-	# "plugins" target for why) and so needs its own build step here too.
-	(cd plugins/bomify-plugin-grype && GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "$out/" .)
+	# bomify-plugin-grype and bomify-plugin-sigstore are each their own Go
+	# module (see the Makefile's "plugins" target for why) and so need
+	# their own build step here too.
+	for dir in plugins/bomify-plugin-grype plugins/bomify-plugin-sigstore; do
+		(cd "$dir" && GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "$out/" .)
+	done
 
 	archive="$dist_dir/bomify-$VERSION-$os-$arch"
 	if [ "$os" = "windows" ]; then

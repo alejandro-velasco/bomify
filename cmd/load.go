@@ -14,7 +14,12 @@ const loadShort = "Load packages from a tarball"
 
 const loadLong = `Load restores every package a "bomify save" tarball contains into the
 data directory, exactly as "bomify pull" would have for each, and
-records each of their tags. Reads from stdin if --input isn't given.`
+records each of their tags. Reads from stdin if --input isn't given.
+
+Signature verification works exactly as for "bomify pull": --verify,
+else any "bomify trust" rule matching each tag, checked before
+anything of that package is restored. --insecure-skip-verify bypasses
+a matching trust rule.`
 
 const loadExample = `  # Load a tarball piped in from stdin
   cat packages.tar | bomify load
@@ -23,11 +28,15 @@ const loadExample = `  # Load a tarball piped in from stdin
   bomify load --input packages.tar
 
   # Restore up to 6 layers concurrently
-  bomify load --input packages.tar --concurrency 6`
+  bomify load --input packages.tar --concurrency 6
+
+  # Require every package to carry a signature made with a cosign key
+  bomify load --input packages.tar --verify sigstore --verify-option key=cosign.pub`
 
 type loadOptions struct {
 	input       string
 	concurrency int
+	verify      verifyFlags
 }
 
 func loadCmd() *cobra.Command {
@@ -49,12 +58,18 @@ func loadCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.input, "input", "i", "", "read the tarball from here instead of stdin")
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to restore concurrently")
+	opts.verify.register(cmd)
 
 	return cmd
 }
 
 func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	logger := logging.FromContext(cmd.Context())
+
+	verifier, err := opts.verify.verifier(dataDir, logger)
+	if err != nil {
+		return err
+	}
 
 	r := cmd.InOrStdin()
 	if opts.input != "" {
@@ -69,7 +84,7 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	tags, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress)
+	tags, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, verifier)
 	mb.Wait()
 	if err != nil {
 		return err

@@ -1,0 +1,46 @@
+flowchart LR
+    classDef ref fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef manifest fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
+    classDef component fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef vuln fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+
+    subgraph Repo["registry repository (e.g. registry.example.com/team/myapp)"]
+        Tag["tag: 1.0"]
+
+        Manifest{{"package manifest<br/>artifactType: application/vnd.bomify.package.v1+json"}}
+
+        subgraph Descriptors["manifest descriptors, in this order"]
+            Config["config<br/>mediaType: application/vnd.cyclonedx+json (or +xml)"]
+            L1["layers[0]: component A<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
+            L2["layers[1]: component B<br/>(same shape, SBOM order)"]
+            R1["layers[2]: component A's report<br/>mediaType: application/vnd.bomify.component.vulnerabilities.v1+json<br/>title: &lt;purl-hash&gt;.json · land.bomify.purl: &lt;purl A&gt;"]
+        end
+
+        subgraph Blobs["blob store — content-addressed, shared across every tag and package in the repository"]
+            BConfig[("sha256:… SBOM")]
+            BL1[("sha256:… tar A")]
+            BL2[("sha256:… tar B")]
+            BR1[("sha256:… report A")]
+        end
+    end
+
+    Tag --> Manifest
+    Manifest --> Config
+    Manifest --> L1
+    Manifest --> L2
+    Manifest --> R1
+    Config -- "digest" --> BConfig
+    L1 -- "digest" --> BL1
+    L2 -- "digest" --> BL2
+    R1 -- "digest" --> BR1
+
+    Note["report layers come after every component layer, in SBOM order:<br/>one per scanned component, none for component B (never scanned)"]
+    Note -.- R1
+
+    class Tag ref
+    class Manifest manifest
+    class Config,L1,L2,BConfig,BL1,BL2 component
+    class R1,BR1 vuln
+    style Repo fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
+    style Descriptors fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
+    style Blobs fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1px,color:#334155

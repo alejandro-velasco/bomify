@@ -11,6 +11,10 @@ components, plus any local vulnerability report a component has — that
 component shared by more than one given tag is stored once. Writes to
 stdout if --output isn't given.
 
+--sign signs each saved package with a signing plugin, exactly as
+"bomify push --sign" would, the signature travelling inside the
+tarball for "bomify load --verify" to check.
+
 ```
 bomify save <tag>... [flags]
 ```
@@ -26,14 +30,19 @@ bomify save <tag>... [flags]
 
   # Archive up to 6 layers concurrently
   bomify save myapp:latest --output packages.tar --concurrency 6
+
+  # Sign each saved package with a cosign key
+  bomify save myapp:latest --output packages.tar --sign sigstore --sign-option key=cosign.key
 ```
 
 ### Options
 
 ```
-  -c, --concurrency int   number of layers to archive concurrently (default 3)
-  -h, --help              help for save
-  -o, --output string     write the tarball here instead of stdout
+  -c, --concurrency int           number of layers to archive concurrently (default 3)
+  -h, --help                      help for save
+  -o, --output string             write the tarball here instead of stdout
+      --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
+      --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
 ```
 
 ### Options inherited from parent commands

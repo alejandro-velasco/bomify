@@ -1,0 +1,25 @@
+flowchart TD
+    classDef source fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef plugin fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+    classDef ok fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+
+    Start(["bomify push / save &lt;tag&gt;"]) --> Pack["push.Push packs the package:<br/>config + layers -&gt; OCI manifest<br/>(pushed, not yet tagged)"]
+    Pack --> Sign{"--sign given?"}
+
+    Sign -->|"no"| Tag
+    Sign -->|"yes"| Payload["signature.Payload:<br/>write {mediaType, digest, size}<br/>of the manifest to a temp file"]
+
+    Payload --> PluginSign["bomify-plugin-&lt;kind&gt; signature sign<br/>--payload --reference --option..."]
+    PluginSign --> Result{"exit 0 with artifactType,<br/>mediaType, and envelope?"}
+
+    Result -->|"no"| Fail["push fails<br/>— tag left untouched"]
+    Result -->|"yes"| Envelope["push the envelope blob"]
+
+    Envelope --> Referrer["pack a referrer manifest:<br/>artifactType = plugin's<br/>subject = package manifest<br/>layers = [envelope]"]
+    Referrer --> Tag["tag &lt;tag&gt; -&gt; package manifest"]
+
+    class Start source
+    class PluginSign plugin
+    class Tag ok
+    class Fail failed

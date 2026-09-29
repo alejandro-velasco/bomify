@@ -490,6 +490,79 @@ func SupportedComponents(path string, logger *slog.Logger) (pluginlib.SupportedC
 	return result, nil
 }
 
+// Sign invokes the plugin binary's "signature sign" subcommand over the
+// payload in payloadFile, on behalf of the package being published as ref
+// (see plugins/SIGNING-CONTRACT.md). Each of options ("key=value") is
+// passed through, unparsed, as its own --option flag. Like Scan, a
+// signing plugin gets no --log file: its stderr is captured and folded
+// into the returned error on failure.
+func Sign(path, payloadFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
+	logger.Debug("signing", "path", path, "reference", ref)
+
+	args := append([]string{"signature", "sign", "--payload", payloadFile, "--reference", ref}, optionArgs(options)...)
+	return runSignature[pluginlib.SignResult](path, "signature sign", args)
+}
+
+// VerifySignature invokes the plugin binary's "signature verify"
+// subcommand, asking it whether the envelope in envelopeFile (of media
+// type mediaType) is a trusted signature over the payload in payloadFile
+// for the package being restored as ref. A nil error means it is; the
+// plugin reports anything else — a bad signature, an untrusted signer, a
+// malformed envelope — by failing.
+func VerifySignature(path, payloadFile, envelopeFile, mediaType, ref string, options []string, logger *slog.Logger) (pluginlib.VerifyResult, error) {
+	logger.Debug("verifying signature", "path", path, "reference", ref, "mediaType", mediaType)
+
+	args := append([]string{
+		"signature", "verify",
+		"--payload", payloadFile,
+		"--envelope", envelopeFile,
+		"--media-type", mediaType,
+		"--reference", ref,
+	}, optionArgs(options)...)
+	return runSignature[pluginlib.VerifyResult](path, "signature verify", args)
+}
+
+// SupportedSignatureTypes invokes the plugin binary's "signature
+// supported-types" subcommand, which reports the referrer artifact types
+// its "signature verify" understands.
+func SupportedSignatureTypes(path string, logger *slog.Logger) (pluginlib.SupportedSignatureTypesResult, error) {
+	logger.Debug("querying supported signature types", "path", path)
+
+	return runSignature[pluginlib.SupportedSignatureTypesResult](path, "signature supported-types", []string{"signature", "supported-types"})
+}
+
+// optionArgs expands each "key=value" option into its own --option flag.
+func optionArgs(options []string) []string {
+	args := make([]string, 0, 2*len(options))
+	for _, option := range options {
+		args = append(args, "--option", option)
+	}
+	return args
+}
+
+// runSignature runs the plugin binary at path with args and returns its
+// stdout parsed as T, folding its stderr into the error if it fails.
+// verb only labels errors.
+func runSignature[T any](path, verb string, args []string) (T, error) {
+	var result T
+
+	cmd := exec.Command(path, args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return result, fmt.Errorf("run plugin %s %s: %w%s", path, verb, err, formatStderr(stderr.String()))
+	}
+
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return result, fmt.Errorf("parse output of plugin %s %s: %w", path, verb, err)
+	}
+
+	return result, nil
+}
+
 // PurlHash returns a hex-encoded hash of component's purl, used to derive
 // both componentDir and manifestPath so pull and push independently agree
 // on the same locations. It's exported so callers building on top of a

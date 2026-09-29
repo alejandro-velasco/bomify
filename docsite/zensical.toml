@@ -25,6 +25,7 @@ nav = [
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Scanning with grype" = "how-to/scanning-with-grype.md" },
       { "Saving packages for airgapped environments" = "how-to/saving-packages-for-airgapped-environments.md" },
+      { "Signing and verifying packages" = "how-to/signing-and-verifying-packages.md" },
   ] },
   { "Usage" = [
       "usage/index.md",
@@ -50,6 +51,12 @@ nav = [
           { "bomify security scan" = "usage/reference/bomify_security_scan.md" },
       ] },
       { "bomify tag" = "usage/reference/bomify_tag.md" },
+      { "bomify trust" = [
+          { "bomify trust" = "usage/reference/bomify_trust.md" },
+          { "bomify trust create" = "usage/reference/bomify_trust_create.md" },
+          { "bomify trust list" = "usage/reference/bomify_trust_list.md" },
+          { "bomify trust remove" = "usage/reference/bomify_trust_remove.md" },
+      ] },
       { "bomify save" = "usage/reference/bomify_save.md" },
       { "bomify load" = "usage/reference/bomify_load.md" },
       { "bomify rmp" = "usage/reference/bomify_rmp.md" },
@@ -83,6 +90,7 @@ nav = [
       { "Component plugin contract" = "development/component-contract.md" },
       { "SBOM generation contract" = "development/sbom-contract.md" },
       { "Security scanning contract" = "development/security-contract.md" },
+      { "Signing contract" = "development/signing-contract.md" },
   ] },
 ]
 

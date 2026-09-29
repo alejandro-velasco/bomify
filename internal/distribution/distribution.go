@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
 // Rule is one entry in "<baseDir>/conf/distribution.json": the remote
@@ -133,7 +135,7 @@ func RemoveRule(baseDir, ruleType, match string) error {
 // its Endpoint is returned bare — the plugin's own push logic decides
 // what to publish under it, exactly as if --remote had named it directly.
 func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
-	origin = normalizeAddress(origin)
+	origin = prefix.Normalize(origin)
 
 	var best *Rule
 	bestSegments := -1
@@ -143,11 +145,11 @@ func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
 		if rule.Type != "" && rule.Type != kind {
 			continue
 		}
-		if !matchesOrigin(origin, rule.Match) {
+		if !prefix.Matches(origin, rule.Match) {
 			continue
 		}
 
-		segments := matchSegments(rule.Match)
+		segments := prefix.Segments(rule.Match)
 		typed := rule.Type != ""
 
 		// A rule wins if it's more specific (more Match segments), or it
@@ -172,12 +174,12 @@ func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
 // Match is empty (nothing to preserve), otherwise Endpoint with origin's
 // remainder past the matched prefix appended — see Resolve.
 func mirror(rule Rule, origin string) string {
-	match := normalizeAddress(rule.Match)
+	match := prefix.Normalize(rule.Match)
 	if match == "" {
 		return rule.Endpoint
 	}
 
-	// matchesOrigin already established match is a segment-boundary
+	// prefix.Matches already established match is a segment-boundary
 	// prefix of origin, so this TrimPrefix pair is exact: either origin
 	// == match (remainder == "") or the next character was "/".
 	remainder := strings.TrimPrefix(strings.TrimPrefix(origin, match), "/")
@@ -186,54 +188,6 @@ func mirror(rule Rule, origin string) string {
 	}
 
 	return strings.TrimSuffix(rule.Endpoint, "/") + "/" + remainder
-}
-
-// matchesOrigin reports whether match — a "/"-separated prefix, e.g.
-// "docker.io/myorg" — matches origin at segment boundaries: "docker.io/org"
-// matches "docker.io/org/repo" but not "docker.io/organization". An empty
-// match matches any origin, including an empty one (a component whose
-// purl declared no repository_url/download_url at all).
-func matchesOrigin(origin, match string) bool {
-	match = normalizeAddress(match)
-	if match == "" {
-		return true
-	}
-	if origin == "" {
-		return false
-	}
-
-	originParts := strings.Split(origin, "/")
-	matchParts := strings.Split(match, "/")
-	if len(matchParts) > len(originParts) {
-		return false
-	}
-	for i, part := range matchParts {
-		if originParts[i] != part {
-			return false
-		}
-	}
-	return true
-}
-
-// matchSegments returns how many "/"-separated segments match has, for
-// ranking rules by specificity in Resolve. An empty match — matching any
-// origin — is the least specific, at 0.
-func matchSegments(match string) int {
-	match = normalizeAddress(match)
-	if match == "" {
-		return 0
-	}
-	return len(strings.Split(match, "/"))
-}
-
-// normalizeAddress strips address's URL scheme (e.g. "oci://"), if any,
-// and any leading/trailing "/", so values written by hand (with a scheme
-// or a trailing slash) still compare equal to Origin's own output.
-func normalizeAddress(address string) string {
-	if i := strings.Index(address, "://"); i >= 0 {
-		address = address[i+len("://"):]
-	}
-	return strings.Trim(address, "/")
 }
 
 // writeConfig writes config to baseDir's distribution.json.

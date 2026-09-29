@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -120,7 +121,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress)
+	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress, nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -204,7 +205,7 @@ func TestPullRejectsNonSHA256Digest(t *testing.T) {
 		t.Fatalf("tag manifest: %v", err)
 	}
 
-	_, err = Pull(ctx, store, "test", t.TempDir(), 1, nil)
+	_, err = Pull(ctx, store, "test", t.TempDir(), 1, nil, nil)
 	if err == nil {
 		t.Fatal("Pull() error = nil, want error for non-sha256 digest")
 	}
@@ -281,7 +282,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil); err != nil {
+	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, nil); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -293,7 +294,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result1, err := Pull(ctx, store, tag, dataDir, 1, progress)
+	result1, err := Pull(ctx, store, tag, dataDir, 1, progress, nil)
 	if err != nil {
 		t.Fatalf("first Pull() error = %v", err)
 	}
@@ -311,7 +312,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	atomic.StoreInt32(&progressCalls, 0)
 
-	result2, err := Pull(ctx, store, tag, dataDir, 1, progress)
+	result2, err := Pull(ctx, store, tag, dataDir, 1, progress, nil)
 	if err != nil {
 		t.Fatalf("second Pull() error = %v", err)
 	}
@@ -373,7 +374,7 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	}
 
 	tag = "test"
-	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil); err != nil {
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, nil); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -399,7 +400,7 @@ func TestPullRecordsComponentManifest(t *testing.T) {
 	store, tag := pushComponentFixture(t, component, []byte("image contents"))
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, nil); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
@@ -449,12 +450,51 @@ func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
 		t.Fatalf("write preexisting layer file: %v", err)
 	}
 
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, nil); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
 	manifestPath := filepath.Join(dataDir, "manifests", plugin.PurlHash(component)+".json")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Errorf("component manifest not backfilled for preexisting layer: %v", err)
+	}
+}
+
+// TestPullFailedVerifyWritesNothing guards Pull's ordering promise: a
+// Verifier runs before anything is fetched, so a package that fails
+// verification leaves the data directory exactly as it found it.
+func TestPullFailedVerifyWritesNothing(t *testing.T) {
+	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+	store, tag := pushComponentFixture(t, component, []byte("image contents"))
+
+	var verifiedRef string
+	var verifiedDesc ocispec.Descriptor
+	verify := func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
+		verifiedRef, verifiedDesc = ref, manifest
+		return errors.New("untrusted")
+	}
+
+	dataDir := t.TempDir()
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, verify); err == nil {
+		t.Fatal("Pull() error = nil, want the verifier's error")
+	}
+
+	if verifiedRef != tag {
+		t.Errorf("verifier got ref %q, want %q", verifiedRef, tag)
+	}
+	resolved, err := store.Resolve(context.Background(), tag)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if verifiedDesc.Digest != resolved.Digest {
+		t.Errorf("verifier got manifest %s, want %s", verifiedDesc.Digest, resolved.Digest)
+	}
+
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		t.Fatalf("read data dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("data dir has %d entries after a failed verify, want none", len(entries))
 	}
 }

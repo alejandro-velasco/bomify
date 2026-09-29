@@ -13,8 +13,8 @@ is the authoritative, normative reference for every flag, JSON shape, and
 edge case — read it before you start, and treat anything here that seems to
 disagree with it as this page being out of date, not the other way around.
 
-A `bomify-plugin-<kind>` binary can separately implement either or both
-of two other, entirely independent contracts — this page's walkthrough
+A `bomify-plugin-<kind>` binary can separately implement any of three
+other, entirely independent contracts — this page's walkthrough
 is specific to component plugins, so see the contract itself directly if
 you're building one of these instead:
 
@@ -28,6 +28,11 @@ you're building one of these instead:
   bomify itself owns resolving the package, dispatching one call per
   component, and storing each result as that component's vulnerability
   report — closer to the component contract in that respect.
+- **[Signing contract](signing-contract.md)** (`signature
+  sign`/`signature verify`) — a plugin just turns a payload file into
+  a signature envelope and back; bomify owns the payload, stores each
+  envelope as an OCI referrer of the package, and decides which
+  packages must be verified.
 
 ## What a plugin actually is
 
