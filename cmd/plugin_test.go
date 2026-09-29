@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -61,58 +62,45 @@ func installFakeVerifier(t *testing.T, baseDir string) {
 	}
 }
 
-func TestPluginInstallVerifier(t *testing.T) {
+func TestPluginInstallPolicy(t *testing.T) {
 	const ref = "ghcr.io/alejandro-velasco/bomify/plugins/oci:latest"
 	logger := slog.New(slog.DiscardHandler)
 
 	origDataDir := dataDir
 	t.Cleanup(func() { dataDir = origDataDir })
 
+	trustRule := func(match string) func(t *testing.T, baseDir string) {
+		return func(t *testing.T, baseDir string) {
+			installFakeVerifier(t, baseDir)
+			if err := signature.SetRule(baseDir, match, pluginVerifier, []string{"key=org.pub"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	keyPolicy := &signature.Policy{Verifier: signature.Plugin{Kind: pluginVerifier, Options: []string{"key=cosign.pub"}}}
+
 	tests := []struct {
-		name         string
-		setup        func(t *testing.T, baseDir string)
-		opts         pluginInstallOptions
-		wantVerifier bool
-		wantErr      bool
+		name       string
+		setup      func(t *testing.T, baseDir string)
+		opts       pluginInstallOptions
+		wantPolicy *signature.Policy
+		wantErr    bool
 	}{
 		{name: "nothing configured, sigstore missing", opts: pluginInstallOptions{verify: true}},
+		// Even bomify's own registry gets no built-in signer: a trust rule
+		// or --verify-option must name one.
 		{name: "nothing configured, sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}},
-		{
-			name:         "verify options with sigstore installed",
-			setup:        installFakeVerifier,
-			opts:         pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}},
-			wantVerifier: true,
-		},
+		{name: "verify options with sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
 		{name: "verify options without sigstore", opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
 		{name: "malformed verify option", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"cosign.pub"}}, wantErr: true},
 		{
-			name: "matching trust rule",
-			setup: func(t *testing.T, baseDir string) {
-				if err := signature.SetRule(baseDir, "ghcr.io/alejandro-velasco", pluginVerifier, []string{"key=org.pub"}); err != nil {
-					t.Fatal(err)
-				}
-			},
-			opts:         pluginInstallOptions{verify: true},
-			wantVerifier: true,
+			name: "matching trust rule", setup: trustRule("ghcr.io/alejandro-velasco"),
+			opts:       pluginInstallOptions{verify: true},
+			wantPolicy: &signature.Policy{Rules: signature.Config{{Match: "ghcr.io/alejandro-velasco", Verifier: pluginVerifier, Options: []string{"key=org.pub"}}}},
 		},
-		{
-			name: "trust rule for another registry",
-			setup: func(t *testing.T, baseDir string) {
-				if err := signature.SetRule(baseDir, "registry.example.com", pluginVerifier, []string{"key=org.pub"}); err != nil {
-					t.Fatal(err)
-				}
-			},
-			opts: pluginInstallOptions{verify: true},
-		},
-		{
-			name: "verify=false ignores a matching trust rule",
-			setup: func(t *testing.T, baseDir string) {
-				if err := signature.SetRule(baseDir, "", pluginVerifier, []string{"key=org.pub"}); err != nil {
-					t.Fatal(err)
-				}
-			},
-			opts: pluginInstallOptions{verify: false},
-		},
+		{name: "verify options override a matching trust rule", setup: trustRule("ghcr.io/alejandro-velasco"), opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
+		{name: "trust rule for another registry", setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}},
+		{name: "verify=false ignores a matching trust rule", setup: trustRule(""), opts: pluginInstallOptions{verify: false}},
 		{name: "verify=false with verify options", setup: installFakeVerifier, opts: pluginInstallOptions{verify: false, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
 	}
 
@@ -123,12 +111,12 @@ func TestPluginInstallVerifier(t *testing.T) {
 				tt.setup(t, dataDir)
 			}
 
-			verifier, err := pluginInstallVerifier(ref, &tt.opts, logger)
+			policy, err := pluginInstallPolicy(ref, &tt.opts, logger)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("pluginInstallVerifier() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("pluginInstallPolicy() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if got := verifier != nil; got != tt.wantVerifier {
-				t.Errorf("pluginInstallVerifier() returned a verifier = %v, want %v", got, tt.wantVerifier)
+			if !reflect.DeepEqual(policy, tt.wantPolicy) {
+				t.Errorf("pluginInstallPolicy() = %+v, want %+v", policy, tt.wantPolicy)
 			}
 		})
 	}

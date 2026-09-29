@@ -115,7 +115,8 @@ all.
 
 `--option key=value` carries everything scheme-specific — a key path, a
 KMS URI, a certificate identity, a trust store name. bomify validates
-only that each is `key=value`, and never interprets one. A plugin should
+only that each is `key=value` with neither side empty, and never
+interprets one — so a plugin never receives an empty value. A plugin should
 reject a key it doesn't recognize rather than ignore it, since a
 mistyped verification option silently ignored could weaken what gets
 checked.

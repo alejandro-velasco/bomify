@@ -58,14 +58,31 @@ built for your OS and architecture, replacing any earlier install of the
 same plugin.
 
 By default every install is verified: each binary must match the SHA-256
-the package's SBOM declares for it, and the package's signature is
-checked by `bomify-plugin-sigstore` against a public key you trust —
-from a matching [`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
-rule, or given directly with `--verify-option key=<public key>`. With
-no key configured (and always for the very first install of
-`bomify-plugin-sigstore` itself, which has nothing to verify it yet),
-only checksums are verified, with a warning. `--verify=false` skips
-verification altogether.
+the package's SBOM declares for it, and — once `bomify-plugin-sigstore`
+is installed — the package's signature is checked against a signer you
+trust, from a matching
+[`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
+rule or given directly with `--verify-option`: a public key
+(`key=<public key>`) or a keyless identity (`certificate-identity=...`
+and `certificate-oidc-issuer=...`). With no signer configured, only
+checksums are verified, with a warning — as for
+`bomify-plugin-sigstore`'s own first install, which has nothing to
+verify it yet. `--verify=false` skips verification altogether.
+
+bomify's own plugins are signed keyless by its release workflow on
+GitHub Actions. To require that signer, install `bomify-plugin-sigstore`
+first, then add a trust rule for bomify's plugin registry:
+
+```sh
+bomify plugin install sigstore
+bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
+  --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
+  --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+Every later `bomify plugin install` from that registry — including
+reinstalling `sigstore` itself — then fails unless that workflow signed
+it.
 
 ## Publishing a plugin
 
@@ -235,19 +252,36 @@ same pattern.
 implements the [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
 using [sigstore-go](https://github.com/sigstore/sigstore-go), producing
 standard v0.3 Sigstore bundles (artifact type
-`application/vnd.dev.sigstore.bundle.v0.3+json`), signed with a key
-pair: `--sign-option key=signing.key` to sign,
-`--verify-option key=signing.pub` to verify. Any PEM key pair works —
-one from OpenSSL (plain or password-protected PKCS#8) or from
-`cosign generate-key-pair` — with an encrypted key's password read from
-`SIGSTORE_PASSWORD`. See the
-[signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/)
-for the commands. Nothing is uploaded to a transparency log and no
-network access is needed, which suits private registries and air-gapped
-`save`/`load` transfers.
+`application/vnd.dev.sigstore.bundle.v0.3+json`), in one of two modes:
 
-`key` is the only option, and it's required; any other option is
-rejected rather than ignored. Like
+- **Key pair:** `--sign-option key=signing.key` to sign,
+  `--verify-option key=signing.pub` to verify. Any PEM key pair works —
+  one from OpenSSL (plain or password-protected PKCS#8) or from
+  `cosign generate-key-pair` — with an encrypted key's password read
+  from `SIGSTORE_PASSWORD`. Nothing is uploaded to a transparency log
+  and no network access is needed, which suits private registries and
+  air-gapped `save`/`load` transfers. See the
+  [signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/)
+  for the commands.
+- **Keyless:** with no `key`, signing exchanges an OIDC identity token
+  for a short-lived [Fulcio](https://github.com/sigstore/fulcio)
+  certificate and logs the signature in
+  [Rekor](https://github.com/sigstore/rekor). The token comes from
+  `SIGSTORE_ID_TOKEN` (or `--sign-option identity-token=...`), from
+  wherever you get one — typically a CI system's own OIDC provider, e.g.
+  GitHub Actions' with `permissions: id-token: write`, so a workflow
+  signs as itself with no secrets at all. It must be issued for the
+  `sigstore` audience, and only lasts minutes, so fetch it right before
+  signing.
+  Verifying requires the signer's `certificate-identity` (or
+  `certificate-identity-regexp`) and `certificate-oidc-issuer` (or
+  `-regexp`) — for a GitHub Actions workflow,
+  `https://github.com/<owner>/<repo>/.github/workflows/<file>@<ref>` and
+  `https://token.actions.githubusercontent.com` — and fetches Sigstore's
+  public trusted root, so it needs network access.
+
+`key` can't be combined with the keyless options, and any other option
+is rejected rather than ignored. Like
 `bomify-plugin-grype`, it's its own Go module
 ([`plugins/bomify-plugin-sigstore/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-sigstore/go.mod)),
 since sigstore-go's dependency tree (TUF, protobuf specs, cloud

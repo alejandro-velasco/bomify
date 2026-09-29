@@ -55,13 +55,14 @@ would keep it.
 
 By default (--verify), every plugin binary must match the SHA-256 its
 component declares in the package's SBOM, on top of the digest checks
-every pull performs. The package's signature is verified too:
-  - by the most specific "bomify trust" rule matching the package, if
-    any;
-  - otherwise by bomify-plugin-sigstore with --verify-option (e.g.
-    key=<public key>), which requires sigstore to be installed already.
-Without either, only checksums are verified, with a warning — which is
-also how bomify-plugin-sigstore itself gets installed the first time.
+every pull performs. Once bomify-plugin-sigstore is installed, the
+package's signature is verified too, against the signer named by the
+first of:
+  - --verify-option (e.g. key=<public key>, or certificate-identity and
+    certificate-oidc-issuer for a keyless signature);
+  - the most specific "bomify trust" rule matching the package.
+Without either, only checksums are verified, with a warning — as for
+bomify-plugin-sigstore itself, the first time it's installed.
 --verify=false skips signature verification and no longer requires a
 declared checksum (a declared one that doesn't match still fails).`
 
@@ -176,9 +177,20 @@ func pluginReference(registry, name string) (string, error) {
 	return registry + "/" + name + suffix, nil
 }
 
-// pluginInstallVerifier decides how ref's signature is verified (see
-// pluginInstallLong), returning nil when it isn't.
+// pluginInstallVerifier returns the verifier enforcing
+// pluginInstallPolicy's decision for ref, or nil when ref's signature
+// isn't verified.
 func pluginInstallVerifier(ref string, opts *pluginInstallOptions, logger *slog.Logger) (transfer.Verifier, error) {
+	policy, err := pluginInstallPolicy(ref, opts, logger)
+	if err != nil || policy == nil {
+		return nil, err
+	}
+	return signature.NewVerifier(plugin.Dir(dataDir), *policy, logger), nil
+}
+
+// pluginInstallPolicy decides how ref's signature is verified (see
+// pluginInstallLong), returning nil when it isn't.
+func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Logger) (*signature.Policy, error) {
 	if err := validateOptions("--verify-option", opts.verifyOptions); err != nil {
 		return nil, err
 	}
@@ -190,16 +202,14 @@ func pluginInstallVerifier(ref string, opts *pluginInstallOptions, logger *slog.
 		return nil, nil
 	}
 
-	pluginDir := plugin.Dir(dataDir)
-	_, err := plugin.Find(pluginDir, pluginVerifier)
+	_, err := plugin.Find(plugin.Dir(dataDir), pluginVerifier)
 	verifierInstalled := err == nil
 
 	if len(opts.verifyOptions) > 0 {
 		if !verifierInstalled {
 			return nil, fmt.Errorf("--verify-option needs %s, which isn't installed: %w", plugin.BinaryName(pluginVerifier), err)
 		}
-		policy := signature.Policy{Verifier: signature.Plugin{Kind: pluginVerifier, Options: opts.verifyOptions}}
-		return signature.NewVerifier(pluginDir, policy, logger), nil
+		return &signature.Policy{Verifier: signature.Plugin{Kind: pluginVerifier, Options: opts.verifyOptions}}, nil
 	}
 
 	rules, err := signature.Read(dataDir)
@@ -208,15 +218,16 @@ func pluginInstallVerifier(ref string, opts *pluginInstallOptions, logger *slog.
 	}
 	if rule, ok := signature.Resolve(rules, ref); ok {
 		logger.Debug("verifying plugin package per trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
-		return signature.NewVerifier(pluginDir, signature.Policy{Rules: rules}, logger), nil
+		return &signature.Policy{Rules: rules}, nil
 	}
 
-	hint := fmt.Sprintf("pass --verify-option key=<public key>, or run \"bomify trust create %s --match %s --option key=<public key>\"", pluginVerifier, signature.Repository(ref))
-	if verifierInstalled {
-		logger.Warn("no signing key configured for this plugin package, verifying checksums only", "reference", ref, "hint", hint)
-	} else {
+	if !verifierInstalled {
 		logger.Warn(plugin.BinaryName(pluginVerifier)+" is not installed, verifying checksums only", "reference", ref)
+		return nil, nil
 	}
+
+	hint := fmt.Sprintf("pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), or run \"bomify trust create %s --match %s --option ...\" with the same options", pluginVerifier, signature.Repository(ref))
+	logger.Warn("no signer configured for this plugin package, verifying checksums only", "reference", ref, "hint", hint)
 	return nil, nil
 }
 

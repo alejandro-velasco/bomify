@@ -63,6 +63,21 @@ func TestTrustCreateRejectsMalformedOption(t *testing.T) {
 	}
 }
 
+// TestTrustCreateRejectsEmptyOptionValue covers the classic unset shell
+// variable ("certificate-identity=$ME"): the rule must be refused on the
+// spot, not saved to fail every later pull.
+func TestTrustCreateRejectsEmptyOptionValue(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--match", "localhost/plugins", "--option", "certificate-identity=")
+	if err == nil || !strings.Contains(err.Error(), "empty value") {
+		t.Fatalf("trust create with an empty --option value: %v, want an empty value error", err)
+	}
+	if out, _ := runRootCmd(t, baseDir, "trust", "list"); strings.Contains(out, "localhost/plugins") {
+		t.Errorf("rule saved despite the error:\n%s", out)
+	}
+}
+
 func TestSigningFlagValidation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -72,7 +87,10 @@ func TestSigningFlagValidation(t *testing.T) {
 		{"verify and skip", []string{"pull", "registry.example.com/app:v1", "--verify", "sigstore", "--insecure-skip-verify"}, "none of the others"},
 		{"verify option without verify", []string{"pull", "registry.example.com/app:v1", "--verify-option", "key=a"}, "without --verify"},
 		{"malformed verify option", []string{"load", "--verify", "sigstore", "--verify-option", "=a"}, "want key=value"},
+		{"empty verify option value", []string{"load", "--verify", "sigstore", "--verify-option", "key="}, "empty value"},
 		{"sign option without sign", []string{"save", "app:v1", "--sign-option", "key=a"}, "without --sign"},
+		{"empty sign option value", []string{"save", "app:v1", "--sign", "sigstore", "--sign-option", "key="}, "empty value"},
+		{"empty plugin install verify option value", []string{"plugin", "install", "oci", "--verify-option", "certificate-identity="}, "empty value"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

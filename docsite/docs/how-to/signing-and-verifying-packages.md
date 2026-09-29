@@ -120,3 +120,50 @@ network access at all:
 bomify save myapp:1.0 --output myapp.tar --sign sigstore --sign-option key=signing.key
 bomify load --input myapp.tar --verify sigstore --verify-option key=signing.pub
 ```
+
+## 6. Sign keyless from GitHub Actions
+
+Instead of managing a key pair at all, a GitHub Actions workflow can
+sign as itself: with no `key` option, `bomify-plugin-sigstore` takes
+the OIDC identity token in `SIGSTORE_ID_TOKEN`, exchanges it with
+Sigstore for a short-lived certificate naming the workflow, and records
+the signature in Sigstore's public transparency log. Nothing secret is
+stored anywhere. bomify's own plugins are published exactly this way.
+
+Grant the job permission to request a token, fetch one for the
+`sigstore` audience right before pushing (it only lasts minutes), and
+push with `--sign sigstore` and no options:
+
+```yaml
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # lets the job request its own identity token
+      packages: write
+    steps:
+      # ... install bomify and bomify-plugin-sigstore, log in to the registry ...
+      - id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: core.setOutput('token', await core.getIDToken('sigstore'))
+      - run: bomify push ghcr.io/my-org/myapp:1.0 --sign sigstore
+        env:
+          SIGSTORE_ID_TOKEN: ${{ steps.oidc.outputs.token }}
+```
+
+Any other CI system with an OIDC provider works the same way: put its
+token in `SIGSTORE_ID_TOKEN`.
+
+Verify by naming the workflow that must have signed it — its file and
+the ref it ran on — and GitHub's token issuer, instead of a key:
+
+```sh
+bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore \
+  --verify-option certificate-identity=https://github.com/my-org/myapp/.github/workflows/publish.yml@refs/heads/main \
+  --verify-option certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+The same options work in a trust rule. Keyless verification checks the
+signature against Sigstore's public infrastructure, so unlike a key
+pair it needs network access.

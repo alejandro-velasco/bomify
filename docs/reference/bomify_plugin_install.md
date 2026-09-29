@@ -19,13 +19,14 @@ would keep it.
 
 By default (--verify), every plugin binary must match the SHA-256 its
 component declares in the package's SBOM, on top of the digest checks
-every pull performs. The package's signature is verified too:
-  - by the most specific "bomify trust" rule matching the package, if
-    any;
-  - otherwise by bomify-plugin-sigstore with --verify-option (e.g.
-    key=<public key>), which requires sigstore to be installed already.
-Without either, only checksums are verified, with a warning — which is
-also how bomify-plugin-sigstore itself gets installed the first time.
+every pull performs. Once bomify-plugin-sigstore is installed, the
+package's signature is verified too, against the signer named by the
+first of:
+  - --verify-option (e.g. key=<public key>, or certificate-identity and
+    certificate-oidc-issuer for a keyless signature);
+  - the most specific "bomify trust" rule matching the package.
+Without either, only checksums are verified, with a warning — as for
+bomify-plugin-sigstore itself, the first time it's installed.
 --verify=false skips signature verification and no longer requires a
 declared checksum (a declared one that doesn't match still fails).
 

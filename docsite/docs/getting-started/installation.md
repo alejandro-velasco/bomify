@@ -106,22 +106,26 @@ bomify delegates the real work — fetching components, generating SBOMs,
 scanning, signing — to plugins, which you install separately with
 `bomify plugin install`. It downloads each one as a verified package
 from bomify's plugin registry and places it in `~/.bomify/plugins`, the
-only place bomify looks for plugins:
+only place bomify looks for plugins.
+
+Install `sigstore` first: it's the plugin that verifies every plugin
+installed after it. Then add a trust rule requiring bomify's release
+workflow as the signer of bomify's plugins — without one, installs are
+checked by checksum only, with a warning — and install the rest:
 
 ```sh
-bomify plugin install oci     # also installs bomify-plugin-docker
-bomify plugin install helm
+bomify plugin install sigstore      # first: it verifies everything after it
+
+# Require bomify's release workflow as the signer of its plugins
+bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
+  --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
+  --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+bomify plugin install oci           # container images (and bomify-plugin-docker)
+bomify plugin install helm          # Helm charts, and SBOM generation for them
+bomify plugin install generic       # plain HTTP downloads/uploads
+bomify plugin install grype         # vulnerability scanning
 bomify plugin list
-```
-
-To install every first-party plugin at once:
-
-```sh
-bomify plugin install sigstore  # signing/verification
-bomify plugin install oci       # container images (and bomify-plugin-docker)
-bomify plugin install helm      # Helm charts, and SBOM generation for them
-bomify plugin install generic   # plain HTTP downloads/uploads
-bomify plugin install grype     # vulnerability scanning
 ```
 
 See [Installing plugins](installing-plugins.md) for what each plugin

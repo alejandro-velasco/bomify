@@ -1,0 +1,82 @@
+name: Release
+
+# Releases run in their own workflow, after Build has passed on main,
+# rather than as a job inside it: plugin packages are signed keyless as
+# this workflow, so the signer identity users trust for bomify's own
+# plugins names the release specifically —
+#
+#   https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
+#
+# — not the workflow that builds every push and pull request (see
+# plugins/README.md#installing-plugins). Renaming this file, or releasing
+# from anywhere but main, changes that identity.
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+
+# One release at a time: a second run waits rather than racing the first
+# to tag the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      # Lets hack/push-plugin-packages.sh request this workflow's OIDC
+      # token to sign plugin packages keyless (see PLUGIN_SIGN_KEYLESS
+      # below).
+      id-token: write
+    env:
+      CONTAINER_TOOL: podman
+      CONTAINER_REGISTRY: ghcr.io
+    steps:
+      # The exact commit Build just passed, not whatever main points at by
+      # now. If main has moved on since, semantic-release sees this commit
+      # is behind and skips; the newer commit's own Build run releases it.
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Compute container repo
+        id: repo
+        run: echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # podman keeps its own credential store; bomify shares Docker's
+      # (~/.docker/config.json), which push-plugin-packages needs.
+      - name: Log in to GHCR for bomify
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | go run . login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Release
+        env:
+          CONTAINER_REPO: ${{ steps.repo.outputs.repo }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLUGIN_REGISTRY: ghcr.io/${{ steps.repo.outputs.repo }}/plugins
+          # Sign plugin packages keyless, as this workflow (see the top of
+          # this file for the identity that produces).
+          PLUGIN_SIGN_KEYLESS: "true"
+        run: |
+          npx --yes \
+            --package=semantic-release \
+            --package=@semantic-release/commit-analyzer \
+            --package=@semantic-release/release-notes-generator \
+            --package=@semantic-release/changelog \
+            --package=@semantic-release/exec \
+            --package=@semantic-release/github \
+            semantic-release
