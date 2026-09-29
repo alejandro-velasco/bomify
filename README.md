@@ -1,4 +1,6 @@
-# bomify
+<h1 align="center">
+  <img src="docsite/docs/assets/logo.svg" alt="bomify" width="320">
+</h1>
 
 `bomify` is a CLI that builds packages from [CycloneDX](https://cyclonedx.org/) Software Bills of Materials (SBOMs).
 

@@ -1,26 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 215" role="img" aria-label="bomify logo: a file containing the letter B, flush against a shipping container reading omify">
-  <g fill="none" stroke="#5865F2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-    <!-- file, containing "B" -->
-    <path d="M10,60 L88,60 L110,82 L110,200 L10,200 Z" />
-    <path d="M88,60 L88,82 L110,82" />
-
-    <!-- shipping container: front (long) face, flush against the file, no gap -->
-    <path d="M110,80 L290,80 L290,200 L110,200" />
-
-
-    <path d="M305,100 L305,170" />
-    <path d="M320,110 L320,155" />
-
-
-
-    <!-- end face: only the side is shown, no top or bottom cap -->
-    <path d="M290,80 L335,100 L335,157 L290,200" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -51 341 205" role="img" aria-label="bomify logo: a steaming document marked B and a boat carrying a shipping container that holds omify">
+  <g fill="none" stroke="#5865F2" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(12,0)">
+      <path d="M10,16 a6,6 0 0 1 6,-6 H60 L78,28 V114 a6,6 0 0 1 -6,6 H16 a6,6 0 0 1 -6,-6 Z"/>
+      <path d="M60,10 V22 a6,6 0 0 0 6,6 H78"/>
+      <path d="M33,94 V50"/>
+      <path d="M33,50 H44 a11,11 0 0 1 0,22 H33"/>
+      <path d="M33,72 H46 a11,11 0 0 1 0,22 H33"/>
+      <g transform="translate(35,4)">
+        <circle cx="3" cy="-8" r="5"/><circle cx="-11" cy="-22" r="8"/><circle cx="-33" cy="-40" r="11"/>
+      </g>
+    </g>
+    <rect x="90" y="32" width="232" height="88" rx="3"/>
+    <path d="M276,32 V120"/>
+    <path d="M290,40 V112 M308,40 V112"/>
+    <path d="M290,78 h7 M308,78 h7"/>
+    <path d="M10,120 H336 L316,150 H28 Z"/>
+    <path d="M46,135 v0.01 M76,135 v0.01 M106,135 v0.01 M136,135 v0.01 M166,135 v0.01 M196,135 v0.01 M226,135 v0.01 M256,135 v0.01 M286,135 v0.01"/>
+    <g transform="translate(8,0)">
+      <circle cx="109" cy="79" r="15"/>
+      <path d="M133,94 V64"/>
+      <path d="M133,75 a11,11 0 0 1 22,0 V94"/>
+      <path d="M155,75 a11,11 0 0 1 22,0 V94"/>
+      <path d="M186,94 V64"/>
+      <path d="M186,51 v0.01"/>
+      <path d="M201,94 V60 a10,10 0 0 1 10,-10 H216"/>
+      <path d="M195,64 H214"/>
+      <path d="M225,64 V81 a12,12 0 0 0 24,0"/>
+      <path d="M249,64 V98 a10,10 0 0 1 -10,10 H229"/>
+    </g>
   </g>
-
-  <text x="60" y="180" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-weight="700" font-size="75" fill="#5865F2">B</text>
-
-  <text x="190" y="180" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-weight="700" font-size="40" letter-spacing="8" fill="#5865F2">omify</text>
-
 </svg>
