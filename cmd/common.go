@@ -94,6 +94,13 @@ func newRepository(ref string) (*remote.Repository, error) {
 		return nil, err
 	}
 	repo.Client = client
+	// Registries without the Referrers API (e.g. ghcr.io) fall back to the
+	// referrers tag schema, where pushing a signature replaces the
+	// sha256-<digest> index tag. oras would then DELETE the superseded
+	// index, which many such registries reject (ghcr.io: 405), failing
+	// the push even though the new index is already in place. Leave the
+	// old, now-untagged index for the registry's own garbage collection.
+	repo.SkipReferrersGC = true
 
 	return repo, nil
 }
