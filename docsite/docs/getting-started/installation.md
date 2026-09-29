@@ -4,19 +4,17 @@ icon: lucide/download
 
 # Installation
 
-bomify ships as a single static binary, plus one binary per first-party
-plugin (see [Installing plugins](installing-plugins.md)). Pick whichever of
-the following fits your workflow.
+bomify ships as a single static binary. Install it whichever way fits
+your workflow below, then install the plugins you need with
+[`bomify plugin install`](#install-plugins).
 
 ## Download a release
 
-Every tagged release publishes a `bomify-<version>-<os>-<arch>` archive —
-`.tar.gz` for Linux (amd64/arm64) and macOS (amd64/arm64), `.zip` for
-Windows (amd64) — along with a `checksums.txt` covering all of them, on the
-repository's [Releases](https://github.com/alejandro-velasco/bomify/releases)
-page. Each archive contains `bomify` and every first-party plugin
-(`bomify-plugin-oci`, `bomify-plugin-helm`, `bomify-plugin-generic`) at its
-root, ready to drop onto `PATH`.
+Every tagged release publishes a ready-to-run `bomify` binary per
+platform — `bomify-<version>-<os>-<arch>` for Linux (amd64/arm64) and
+macOS (amd64/arm64), `bomify-<version>-windows-amd64.exe` for Windows —
+along with a `checksums.txt` covering all of them, on the repository's
+[Releases](https://github.com/alejandro-velasco/bomify/releases) page.
 
 ### Linux / macOS
 
@@ -29,38 +27,30 @@ case "$ARCH" in
 esac
 
 VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/alejandro-velasco/bomify/releases/latest | grep -oE '[^/]+$')
-ARCHIVE_VERSION=${VERSION#v}  # release tags are v-prefixed (e.g. v1.11.0), archive filenames aren't (bomify-1.11.0-...)
+BINARY="bomify-${VERSION#v}-${OS}-${ARCH}"  # release tags are v-prefixed (e.g. v1.11.0), binary names aren't (bomify-1.11.0-...)
 
-curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz"
+curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/${BINARY}"
 curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/checksums.txt"
 
 # Verify the download against the published checksum before running anything.
-grep " bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz\$" checksums.txt | sha256sum -c -
+grep " ${BINARY}\$" checksums.txt | sha256sum -c -
 
-tar -xzf "bomify-${ARCHIVE_VERSION}-${OS}-${ARCH}.tar.gz"
-chmod +x bomify bomify-plugin-*
-sudo mv bomify bomify-plugin-* /usr/local/bin/
-```
-
-If you want purls using the `docker` purl type (as well as `oci`) to
-resolve, add the alias `make install` also creates:
-
-```sh
-sudo ln -sf /usr/local/bin/bomify-plugin-oci /usr/local/bin/bomify-plugin-docker
+chmod +x "${BINARY}"
+sudo mv "${BINARY}" /usr/local/bin/bomify
 ```
 
 ### Windows
 
-Download the `.zip` for your architecture from
-[Releases](https://github.com/alejandro-velasco/bomify/releases), extract
-it, and add the extracted folder (containing `bomify.exe` and the
-`bomify-plugin-*.exe` binaries) to your `PATH`.
+Download `bomify-<version>-windows-amd64.exe` from
+[Releases](https://github.com/alejandro-velasco/bomify/releases), rename it
+to `bomify.exe`, and put it in a folder on your `PATH`.
 
 ## Container image
 
 [`Containerfile`](https://github.com/alejandro-velasco/bomify/blob/main/Containerfile)
-builds an image with `bomify` and every first-party plugin already on
-`PATH`, published to `ghcr.io/alejandro-velasco/bomify`. Its entrypoint is
+builds an image with `bomify` on `PATH` and every first-party plugin
+preinstalled in its data directory (`/tmp/.bomify/plugins`), published to
+`ghcr.io/alejandro-velasco/bomify`. Its entrypoint is
 `bomify`, so `docker run`/`podman run` arguments are just the CLI arguments
 you'd pass locally:
 
@@ -73,6 +63,19 @@ docker run --rm -it \
   build /tmp/sbom.json --tag registry.example.com/myapp:1.0
 ```
 
+Mounting your own data directory over `/tmp/.bomify`, as above, replaces
+the preinstalled plugins with whatever is in its `plugins/` directory.
+Install the plugins you need into it from inside the container, so you
+get Linux builds whatever your own OS:
+
+```sh
+docker run --rm -it \
+  -v "${HOME}/.bomify:/tmp/.bomify" \
+  --user "$(id -u):$(id -g)" \
+  ghcr.io/alejandro-velasco/bomify:1.11.0 \
+  plugin install oci
+```
+
 ## Build from source
 
 Requires [Go](https://go.dev) (see `go.mod` for the exact version this
@@ -82,21 +85,44 @@ repository targets).
 git clone https://github.com/alejandro-velasco/bomify.git
 cd bomify
 make build      # builds ./bin/bomify
-make plugins    # builds every first-party plugin into ./bin/
 ```
 
-To install both onto your `PATH` (Linux/macOS, needs write access to
+To install it onto your `PATH` (Linux/macOS, needs write access to
 `/usr/local/bin`):
 
 ```sh
-make install
+sudo make install-bin
 ```
-
-This also symlinks `bomify-plugin-oci` to `bomify-plugin-docker`, so purls
-using either the `oci` or `docker` purl type resolve to the same plugin.
 
 ## Verify it's working
 
 ```sh
 bomify version
 ```
+
+## Install plugins
+
+bomify delegates the real work — fetching components, generating SBOMs,
+scanning, signing — to plugins, which you install separately with
+`bomify plugin install`. It downloads each one as a verified package
+from bomify's plugin registry and places it in `~/.bomify/plugins`, the
+only place bomify looks for plugins:
+
+```sh
+bomify plugin install oci     # also installs bomify-plugin-docker
+bomify plugin install helm
+bomify plugin list
+```
+
+To install every first-party plugin at once:
+
+```sh
+bomify plugin install sigstore  # signing/verification
+bomify plugin install oci       # container images (and bomify-plugin-docker)
+bomify plugin install helm      # Helm charts, and SBOM generation for them
+bomify plugin install generic   # plain HTTP downloads/uploads
+bomify plugin install grype     # vulnerability scanning
+```
+
+See [Installing plugins](installing-plugins.md) for what each plugin
+does, version pinning, and how verification works.

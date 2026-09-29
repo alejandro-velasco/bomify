@@ -64,10 +64,20 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # podman keeps its own credential store; bomify shares Docker's
+      # (~/.docker/config.json), which push-plugin-packages needs.
+      - name: Log in to GHCR for bomify
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | go run . login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Release
         env:
           CONTAINER_REPO: ${{ steps.repo.outputs.repo }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLUGIN_REGISTRY: ghcr.io/${{ steps.repo.outputs.repo }}/plugins
+          # To sign plugin packages, add the private key as a secret, write
+          # it to a file in an earlier step, and point PLUGIN_SIGN_KEY at
+          # that file (plus SIGSTORE_PASSWORD, if the key is encrypted).
+          # PLUGIN_SIGN_KEY: ${{ runner.temp }}/plugin-signing.key
         run: |
           npx --yes \
             --package=semantic-release \

@@ -74,6 +74,14 @@ component shared by two packages shares one report, just as it shares
 one pulled layer. It lives in its own directory rather than
 `manifests/`, since unlike a pull manifest it's replaced on every scan.
 
+`plugins/` holds every installed plugin binary, `bomify-plugin-<kind>`
+(`.exe` on Windows) — the only place bomify ever looks for one
+(`plugin.Find`; `PATH` is never consulted) — plus `installed.json`,
+recording which package `bomify plugin install` installed each from (see
+[Plugin installation](#plugin-installation)). A binary placed there by
+hand, or by `make install`, works just the same; it simply has no
+`installed.json` entry.
+
 `logs/<purlHash>.log` is a plugin's own log output for one pull/push/remote
 invocation for that component, named after the same purl hash as its
 manifest and layers directory — but unlike everything else here, it's
@@ -121,7 +129,12 @@ anything themselves. For each SBOM component they:
 1. **Detect** a "kind" from the component's purl type (`plugin.Detect`) —
    `pkg:oci/nginx@1.27` is kind `oci`, `pkg:helm/...` is kind `helm`, and so
    on. A component with no purl, or an unparseable one, fails immediately.
-2. **Find** a `bomify-plugin-<kind>` executable on `PATH` (`plugin.Find`).
+2. **Find** a `bomify-plugin-<kind>` executable in `<data-dir>/plugins`
+   (`plugin.Find`). A `pkg:bomify-plugin/...` component is the one
+   exception to this whole list: it's a plugin binary itself, which
+   `bomify build` copies in on its own rather than delegating (see
+   [Plugin installation](#plugin-installation)), and `bomify distribute`
+   skips, having nowhere to republish it.
 3. **Delegate** to it via a small subprocess contract: `component pull`/
    `component push` subcommands taking
    `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
@@ -179,7 +192,7 @@ implement.
 
 `bomify sbom generate <kind> [flags]` (`cmd/sbom.go`) is a much thinner
 piece of orchestration than the component dispatch above: it looks up
-`bomify-plugin-<kind>` on `PATH` (the same `plugin.Find` component
+`bomify-plugin-<kind>` in `<data-dir>/plugins` (the same `plugin.Find` component
 dispatch uses) and execs it as `bomify-plugin-<kind> sbom generate
 [flags]`, wiring the plugin's stdin/stdout/stderr directly to bomify's
 own and propagating its exit code — nothing more. `flags` is passed
@@ -206,7 +219,7 @@ delegation:
    (`build.ResolveTag`) and walk every component its SBOM manifest
    describes — the same manifest `bomify build`/`bomify pull`/`bomify
    load` record.
-2. **Find** a single `bomify-plugin-<type>` executable on `PATH`
+2. **Find** a single `bomify-plugin-<type>` executable in `<data-dir>/plugins`
    (`plugin.Find`) — `<type>` names the scanning tool itself (e.g.
    `grype`, `trivy`), not a purl type or deployment medium, so the same
    binary scans every component regardless of its own purl type.
@@ -325,6 +338,70 @@ envelope itself, which is what lets the same plugin work for a registry
 and for a `save` tarball alike. See
 [`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md) for the
 full contract.
+
+### Plugin installation
+
+Plugins are themselves distributed as bomify packages. What makes a
+package a *plugin* package is its SBOM: it describes the plugin's
+binaries as components of purl type `bomify-plugin`
+(`plugin.PurlType`), e.g.
+`pkg:bomify-plugin/oci@v1.2.0?os=linux&arch=amd64` — one per platform,
+the `os`/`arch` qualifiers in `GOOS`/`GOARCH` terms (`plugin.Binary`).
+bomify handles that purl type itself at both ends, never through a
+`bomify-plugin-<kind>`:
+
+- **Publishing** (`bomify build`): `plugin.PullBinary` copies the binary
+  from the local path or `file://` URL in the component's `distribution`
+  external reference (resolved against the SBOM's own directory) into
+  `layers/<purlHash>/bomify-plugin-<kind>[.exe]`. It shares `plugin.Pull`'s
+  pid-file/manifest bookkeeping (`pull`) — only the fetch step differs —
+  so reuse, concurrency, and SBOM-declared hash verification all behave
+  identically; `--check` (`plugin.CheckBinary`) just hashes the source
+  file. The result pushes, signs, and saves like any other package.
+- **Installing** (`bomify plugin install <name>`,
+  [`internal/plugin/install`](internal/plugin/install)): resolve
+  `<registry>/<name>:<version>` (`--registry` defaulting to
+  `ghcr.io/alejandro-velasco/bomify/plugins`) and pull it — so every
+  blob is digest-verified and the optional signature `Verifier` runs
+  before anything is fetched — into a staging directory *inside*
+  `plugins/`, rather than into the data directory proper: a plugin
+  package is never recorded as a local package. The pull is
+  `pull.PullLayers`, which skips every layer whose purl isn't a
+  `bomify-plugin` binary for this machine's OS/arch, so installing from
+  a package carrying every platform's build downloads only one
+  platform's. `install.Install` then
+  walks the SBOM for `bomify-plugin` components matching this machine's
+  OS/arch (at most one per kind), checks each binary against its
+  component's declared SHA-256, and only once every one has passed
+  renames them into `plugins/` (a same-filesystem rename, replacing any
+  earlier install) and records them in `plugins/installed.json`. A
+  failed pull or verification installs nothing, and the staging
+  directory is always removed.
+
+The first-party plugins are published this way on every release:
+`make plugin-packages` ([`hack/pluginpackages`](hack/pluginpackages))
+cross-compiles each plugin for every release platform and writes its
+SBOM, one `bomify-plugin` component per binary (plus a `docker` alias
+component in `oci`'s package, pointing at the same binary), and `make
+push-plugin-packages` ([`hack/push-plugin-packages.sh`](hack/push-plugin-packages.sh))
+builds and pushes each as `<registry>/<kind>:<version>` and `:latest`,
+signing them when given a key. semantic-release runs the former in its
+prepare step and the latter in its publish step
+([`.releaserc.json`](.releaserc.json)).
+
+Verification (`pluginInstallVerifier`, [`cmd/plugin.go`](cmd/plugin.go))
+reuses [Signing & verification](#signing--verification)'s machinery,
+with one twist — the signing plugin is itself something `plugin
+install` installs. By default a declared SHA-256 is required for every
+binary, and the package's signature is checked by an explicit
+`--verify-option` (always against `bomify-plugin-sigstore`, which must
+already be installed), else by the best-matching `conf/trust.json` rule;
+with neither, only checksums are verified, with a warning — which is how
+`bomify-plugin-sigstore` gets bootstrapped. `--verify=false` drops the
+signature check and the checksum requirement (a declared checksum that
+doesn't match still fails). `bomify plugin list` (`install.List`) shows
+every `bomify-plugin-*` in `plugins/`, with its `installed.json` entry if
+it has one.
 
 ### Concurrent, idempotent pulls
 

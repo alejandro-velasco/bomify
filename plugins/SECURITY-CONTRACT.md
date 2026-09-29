@@ -24,7 +24,7 @@ engine* to run — the same one, for every component in the SBOM — not
 Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
 a plugin for scanning tool `<type>` must be named exactly
 `bomify-plugin-<type>` (`bomify-plugin-<type>.exe` on Windows) and
-discoverable on `PATH`. `bomify security scan <type> ...` looks up
+installed in `<data-dir>/plugins`. `bomify security scan <type> ...` looks up
 `bomify-plugin-<type>` the same way `bomify build`/`bomify distribute`
 look up a component plugin, and never invokes it by any other name or
 location.
@@ -37,7 +37,7 @@ dispatch:
 
 1. **Resolve** `<tag>` to a package already built (or pulled/loaded)
    locally, and walk every component its SBOM describes.
-2. **Find** `bomify-plugin-<type>` on `PATH` once — the same binary
+2. **Find** `bomify-plugin-<type>` in `<data-dir>/plugins` once — the same binary
    scans every component, regardless of purl type.
 3. **Query** that binary's `security supported-components` once, to
    learn which component purl types and scan categories it supports —

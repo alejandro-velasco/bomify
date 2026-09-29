@@ -63,7 +63,7 @@ func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn 
 }
 
 // resolvePlugin detects the plugin kind for component and locates its
-// binary on PATH, logging along the way.
+// installed binary (see plugin.Find), logging along the way.
 func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string, err error) {
 	kind, err = plugin.Detect(component)
 	if err != nil {
@@ -71,7 +71,7 @@ func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string
 		return "", "", fmt.Errorf("detect plugin kind: %w", err)
 	}
 
-	path, err = plugin.Find(kind)
+	path, err = plugin.Find(plugin.Dir(dataDir), kind)
 	if err != nil {
 		return "", "", err
 	}

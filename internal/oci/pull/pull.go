@@ -90,6 +90,16 @@ type Result struct {
 // against the digest it pins — so ref being re-tagged mid-pull can't
 // substitute unverified content.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier) (Result, error) {
+	return PullLayers(ctx, target, ref, dataDir, concurrency, progress, verify, nil)
+}
+
+// PullLayers is Pull, fetching only the component layers and
+// vulnerability reports whose purl annotation keep accepts — e.g. just
+// the one platform's binary "bomify plugin install" needs out of a
+// package carrying every platform's. A nil keep fetches everything, and a
+// layer with no purl annotation is always fetched. The SBOM config is
+// always fetched in full, whichever layers are skipped.
+func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
 	}
@@ -121,6 +131,9 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 
 	var componentLayerDescs, reportDescs []ocispec.Descriptor
 	for _, layerDesc := range manifest.Layers {
+		if purl := layerDesc.Annotations[AnnotationPurl]; keep != nil && purl != "" && !keep(purl) {
+			continue
+		}
 		if layerDesc.MediaType == transfer.VulnerabilityReportMediaType {
 			reportDescs = append(reportDescs, layerDesc)
 		} else {

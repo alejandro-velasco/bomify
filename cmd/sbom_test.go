@@ -2,23 +2,24 @@ package cmd
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
 // buildFakePluginBinary builds cmd/testdata/fakeplugin as
-// bomify-plugin-<medium>[.exe] into a fresh temp directory and returns
-// that directory, so the caller can put it on PATH for plugin.Find to
-// discover.
+// bomify-plugin-<medium>[.exe] into a fresh data directory's plugins
+// directory, for plugin.Find to discover there, and returns that data
+// directory.
 func buildFakePluginBinary(t *testing.T, medium string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "bomify-plugin-"+medium)
+	bin := filepath.Join(plugin.Dir(dir), "bomify-plugin-"+medium)
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
@@ -31,9 +32,20 @@ func buildFakePluginBinary(t *testing.T, medium string) string {
 	return dir
 }
 
+// useDataDir makes dir the data directory NewRootCmd defaults to, since
+// "sbom generate" passes every flag after it — --data-dir included —
+// straight through to the plugin.
+func useDataDir(t *testing.T, dir string) {
+	t.Helper()
+
+	origDataDir := dataDir
+	t.Cleanup(func() { dataDir = origDataDir })
+	dataDir = ""
+	t.Setenv(defaultDataDirEnv, dir)
+}
+
 func TestSBOMGenerateDelegatesToPlugin(t *testing.T) {
-	dir := buildFakePluginBinary(t, "helm")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useDataDir(t, buildFakePluginBinary(t, "helm"))
 
 	root, err := NewRootCmd()
 	if err != nil {
@@ -59,8 +71,7 @@ func TestSBOMGenerateDelegatesToPlugin(t *testing.T) {
 }
 
 func TestSBOMGeneratePropagatesPluginFailure(t *testing.T) {
-	dir := buildFakePluginBinary(t, "helm")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useDataDir(t, buildFakePluginBinary(t, "helm"))
 
 	root, err := NewRootCmd()
 	if err != nil {
@@ -77,8 +88,79 @@ func TestSBOMGeneratePropagatesPluginFailure(t *testing.T) {
 	}
 }
 
+// TestSBOMGenerateHonorsDataDir covers --data-dir given before <medium>,
+// either side of "sbom generate": bomify parses it (it decides which
+// plugins directory the plugin is found in), and it never reaches the
+// plugin itself, while everything after <medium> still does.
+func TestSBOMGenerateHonorsDataDir(t *testing.T) {
+	baseDir := buildFakePluginBinary(t, "helm")
+	useDataDir(t, t.TempDir())
+
+	for _, args := range [][]string{
+		{"--data-dir", baseDir, "sbom", "generate", "helm", "--chart", "x"},
+		{"sbom", "generate", "--data-dir=" + baseDir, "--verbose", "helm", "--chart", "x"},
+	} {
+		dataDir = ""
+		root, err := NewRootCmd()
+		if err != nil {
+			t.Fatalf("NewRootCmd: %v", err)
+		}
+
+		var stdout, stderr bytes.Buffer
+		root.SetOut(&stdout)
+		root.SetErr(&stderr)
+		root.SetArgs(args)
+
+		if err := root.Execute(); err != nil {
+			t.Fatalf("%v: Execute() error = %v, stderr = %s", args, err, stderr.String())
+		}
+		if got, want := strings.TrimSpace(stdout.String()), "sbom generate --chart x"; got != want {
+			t.Errorf("%v: stdout = %q, want %q", args, got, want)
+		}
+	}
+}
+
+// TestSBOMGeneratePassesHelpThrough covers --help after <medium>: it's
+// the plugin's to answer, not bomify's.
+func TestSBOMGeneratePassesHelpThrough(t *testing.T) {
+	useDataDir(t, buildFakePluginBinary(t, "helm"))
+
+	root, err := NewRootCmd()
+	if err != nil {
+		t.Fatalf("NewRootCmd: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"sbom", "generate", "helm", "--help"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "sbom generate --help"; got != want {
+		t.Errorf("stdout = %q, want %q (the plugin's, not bomify's, help)", got, want)
+	}
+}
+
+func TestSBOMGenerateRejectsUnknownFlagBeforeMedium(t *testing.T) {
+	useDataDir(t, t.TempDir())
+
+	root, err := NewRootCmd()
+	if err != nil {
+		t.Fatalf("NewRootCmd: %v", err)
+	}
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sbom", "generate", "--chart", "x", "helm"})
+
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag: --chart") {
+		t.Fatalf("Execute() error = %v, want an unknown flag error for --chart before <medium>", err)
+	}
+}
+
 func TestSBOMGenerateMissingPlugin(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+	useDataDir(t, t.TempDir())
 
 	root, err := NewRootCmd()
 	if err != nil {

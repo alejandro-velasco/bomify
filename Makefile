@@ -36,7 +36,7 @@ CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
 
 DIST_DIR := dist
 
-# GOOS/GOARCH pairs to cross-compile release archives for.
+# GOOS/GOARCH pairs to cross-compile release binaries (and plugin packages) for.
 RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
 ################################################################################
@@ -45,7 +45,7 @@ RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/a
 #
 ################################################################################
 
-.PHONY: build build-container push-container plugins dist docs diagrams docs-site-sync docs-site docs-site-serve test run tidy clean
+.PHONY: build build-container push-container plugins dist plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test run tidy clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -71,11 +71,35 @@ plugins:
 	go build -o bin/ ./plugins/...
 	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go build -o ../../bin/ .) || exit 1; done
 
-# dist cross-compiles bomify and its plugins for each of RELEASE_PLATFORMS and
-# packages them into per-platform archives under $(DIST_DIR), alongside a
-# checksums.txt covering all of them. See hack/dist.sh.
+# dist cross-compiles bomify (not its plugins — see plugin-packages) for
+# each of RELEASE_PLATFORMS, as a bare binary per platform,
+# $(DIST_DIR)/bomify-<version>-<os>-<arch>[.exe], alongside a checksums.txt
+# covering all of them. See hack/dist.sh.
 dist: clean
 	VERSION=$(VERSION) LDFLAGS="$(LDFLAGS)" DIST_DIR=$(DIST_DIR) RELEASE_PLATFORMS="$(RELEASE_PLATFORMS)" hack/dist.sh
+
+# PLUGIN_REGISTRY is where push-plugin-packages publishes, and "bomify
+# plugin install" installs from by default: <registry>/<kind>:<version>.
+PLUGIN_REGISTRY ?= ghcr.io/alejandro-velasco/bomify/plugins
+PLUGIN_PACKAGES_DIR := $(DIST_DIR)/plugin-packages
+
+# plugin-packages cross-compiles every first-party plugin for each of
+# RELEASE_PLATFORMS and writes, per plugin, the binaries plus an SBOM
+# describing them as pkg:bomify-plugin components under
+# $(PLUGIN_PACKAGES_DIR)/<kind>/. See hack/pluginpackages.
+plugin-packages:
+	go run ./hack/pluginpackages -version $(VERSION) -platforms "$(RELEASE_PLATFORMS)" -out $(PLUGIN_PACKAGES_DIR)
+
+# push-plugin-packages builds each SBOM plugin-packages wrote into a bomify
+# package and pushes it as $(PLUGIN_REGISTRY)/<kind>:$(VERSION) (and
+# :latest, for a release version), signed with bomify-plugin-sigstore when
+# PLUGIN_SIGN_KEY names a private key. Run plugin-packages first (with the
+# same VERSION): it's not a dependency, so a release can build everything
+# in its prepare step and only push in its publish step. Needs registry
+# credentials from "bomify login" or "docker login". See
+# hack/push-plugin-packages.sh.
+push-plugin-packages: build
+	BOMIFY=$(BINARY) VERSION=$(VERSION) PACKAGES_DIR=$(PLUGIN_PACKAGES_DIR) PLUGIN_REGISTRY=$(PLUGIN_REGISTRY) hack/push-plugin-packages.sh
 
 # docs regenerates the CLI reference (see the --docs-dir flag in cmd/root.go).
 docs:
@@ -107,11 +131,25 @@ docs-site: docs-site-sync
 docs-site-serve: docs-site-sync
 	cd docsite && zensical serve
 
-install: build plugins
+# PLUGIN_DIR is where install puts the first-party plugins: bomify only
+# ever looks for plugins in <data-dir>/plugins, never on PATH, so this must
+# be the plugins directory of whichever data directory bomify will run
+# with (~/.bomify by default).
+PLUGIN_DIR ?= $(HOME)/.bomify/plugins
+
+# install is install-bin plus install-plugins. They're separate targets so
+# only install-bin (which writes to /usr/local/bin) needs sudo: running
+# install-plugins as root would leave the data directory root-owned.
+install: install-bin install-plugins
+
+install-bin: build
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
-	install -Dm755 bin/bomify-plugin-* /usr/local/bin/
+
+install-plugins: plugins
+	install -d $(PLUGIN_DIR)
+	install -m755 bin/bomify-plugin-* $(PLUGIN_DIR)/
 	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
-	ln -sf /usr/local/bin/bomify-plugin-oci /usr/local/bin/bomify-plugin-docker
+	ln -sf bomify-plugin-oci $(PLUGIN_DIR)/bomify-plugin-docker
 
 test:
 	go test ./...

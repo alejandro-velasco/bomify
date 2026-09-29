@@ -41,7 +41,8 @@ const maxEnvelopeSize = 4 << 20
 
 // Plugin is a signing plugin and the options to pass it.
 type Plugin struct {
-	// Kind names the plugin: bomify-plugin-<Kind> on PATH.
+	// Kind names the plugin: bomify-plugin-<Kind>, installed in the
+	// plugins directory (see plugin.Dir).
 	Kind string
 	// Options are passed through, unparsed, as --option flags.
 	Options []string
@@ -62,9 +63,9 @@ type payload struct {
 // with p and pushes the resulting envelope into the same target as an
 // OCI referrer of that manifest — a manifest of p's reported artifact
 // type whose subject is the package manifest and whose only layer is the
-// envelope.
-func NewSigner(p Plugin, logger *slog.Logger) (transfer.Signer, error) {
-	path, err := plugin.Find(p.Kind)
+// envelope. pluginDir is where p's plugin is installed (see plugin.Dir).
+func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer, error) {
+	path, err := plugin.Find(pluginDir, p.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +123,9 @@ func NewSigner(p Plugin, logger *slog.Logger) (transfer.Signer, error) {
 // Policy.For), and if one must, requires at least one of the manifest's
 // signature referrers to pass that plugin's "signature verify" — failing
 // the pull outright otherwise. A reference no policy applies to is
-// restored unverified.
-func NewVerifier(policy Policy, logger *slog.Logger) transfer.Verifier {
+// restored unverified. pluginDir is where the verifying plugins are
+// installed (see plugin.Dir).
+func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
 		p, required := policy.For(ref, logger)
 		if !required {
@@ -131,7 +133,7 @@ func NewVerifier(policy Policy, logger *slog.Logger) transfer.Verifier {
 			return nil
 		}
 
-		signer, err := Verify(ctx, target, ref, manifest, p, logger)
+		signer, err := Verify(ctx, target, ref, manifest, pluginDir, p, logger)
 		if err != nil {
 			return err
 		}
@@ -145,9 +147,10 @@ func NewVerifier(policy Policy, logger *slog.Logger) transfer.Verifier {
 // target — among those whose artifact type p's plugin reports it
 // supports — to pass that plugin's "signature verify", returning the
 // signer it reported. It fails if there are no such referrers at all, or
-// if every one fails, naming why each did.
-func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, p Plugin, logger *slog.Logger) (signer string, err error) {
-	path, err := plugin.Find(p.Kind)
+// if every one fails, naming why each did. pluginDir is where p's plugin
+// is installed (see plugin.Dir).
+func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, pluginDir string, p Plugin, logger *slog.Logger) (signer string, err error) {
+	path, err := plugin.Find(pluginDir, p.Kind)
 	if err != nil {
 		return "", err
 	}

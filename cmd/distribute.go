@@ -92,6 +92,16 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 	}
 
 	return forEachComponent(build.ManifestPath(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+		// A plugin binary has no remote of its own to republish to: it
+		// only ever travels inside its package (see "bomify plugin
+		// install").
+		if _, isBinary, err := plugin.ParseBinary(component); err != nil {
+			return err
+		} else if isBinary {
+			log.Info("skipping plugin binary component", "purl", component.PackageURL)
+			return nil
+		}
+
 		kind, path, err := resolvePlugin(component, log)
 		if err != nil {
 			return err

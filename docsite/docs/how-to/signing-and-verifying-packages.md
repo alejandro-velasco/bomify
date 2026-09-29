@@ -16,7 +16,7 @@ for how it works, and
 for the plugin's own options.
 
 Requires [`bomify-plugin-sigstore`](../getting-started/installing-plugins.md)
-to be on `PATH`.
+to be installed (`bomify plugin install sigstore`).
 
 ## 1. Create a key pair
 

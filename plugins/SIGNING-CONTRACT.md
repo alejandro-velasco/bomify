@@ -20,7 +20,7 @@ owes nothing to the others.
 Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
 a plugin for signing scheme `<kind>` must be named exactly
 `bomify-plugin-<kind>` (`bomify-plugin-<kind>.exe` on Windows) and
-discoverable on `PATH`.
+installed in `<data-dir>/plugins`.
 
 ## What bomify does
 

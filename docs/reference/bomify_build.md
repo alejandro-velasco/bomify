@@ -10,6 +10,13 @@ kind and pulled through it, and the SBOM is then recorded as this
 build's manifest so later commands (push, distribute, tag, packages)
 can find it.
 
+A component whose purl type is "bomify-plugin" (e.g.
+"pkg:bomify-plugin/oci@v1.2.0?os=linux&arch=amd64") is a plugin binary
+rather than something a plugin fetches: bomify copies it itself from
+the local path (or file:// URL) its "distribution" external reference
+names, resolved against the SBOM's own directory. Packages built this
+way are what "bomify plugin install" installs.
+
 --check verifies every component is pullable and authorized — an
 inexpensive existence/auth check each plugin performs itself, without
 downloading anything — and skips recording a build, since nothing was

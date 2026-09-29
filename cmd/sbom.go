@@ -25,10 +25,11 @@ func sbomCmd() *cobra.Command {
 const sbomGenerateShort = "Generate an SBOM for a deployment medium via its plugin"
 
 const sbomGenerateLong = `Generate delegates entirely to a "bomify-plugin-<medium>" binary's own
-"sbom generate" subcommand: bomify only locates the plugin on PATH and
-execs it with every flag after <medium> passed through unchanged,
-wiring stdin/stdout/stderr straight through. Unlike the component
-plugin contract ("bomify build"/"bomify distribute"), bomify neither
+"sbom generate" subcommand: bomify only locates the plugin in
+<data-dir>/plugins and execs it with every flag after <medium> passed
+through unchanged, wiring stdin/stdout/stderr straight through. bomify's
+own global flags (e.g. --data-dir) must come before <medium>. Unlike the
+component plugin contract ("bomify build"/"bomify distribute"), bomify neither
 parses the plugin's output nor imposes any flags of its own here — see
 plugins/SBOM-CONTRACT.md for the (deliberately minimal) contract a
 plugin must implement, and the plugin's own --help for what it accepts.
@@ -41,14 +42,11 @@ const sbomGenerateExample = `  # Generate an SBOM for a Helm chart
 
 func sbomGenerateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "generate <medium> [flags]",
-		Short: sbomGenerateShort,
-		Long:  sbomGenerateLong,
-		// Every flag after <medium> belongs to the plugin, not bomify, so
-		// bomify must not try to parse (or reject) any of them itself.
-		DisableFlagParsing: true,
-		Example:            sbomGenerateExample,
-		Args:               cobra.MinimumNArgs(1),
+		Use:     "generate <medium> [flags]",
+		Short:   sbomGenerateShort,
+		Long:    sbomGenerateLong,
+		Example: sbomGenerateExample,
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runSBOMGenerate(cmd, args[0], args[1:]); err != nil {
 				return fmt.Errorf("sbom generate: %w", err)
@@ -56,6 +54,12 @@ func sbomGenerateCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	// Every flag after <medium> belongs to the plugin, not bomify: stop
+	// parsing flags at <medium>, so they (--help included) arrive in args
+	// untouched, while bomify's own flags before it (e.g. --data-dir,
+	// which decides where the plugin is found) are parsed as usual.
+	cmd.Flags().SetInterspersed(false)
 
 	return cmd
 }
@@ -65,7 +69,7 @@ func sbomGenerateCmd() *cobra.Command {
 // straight to the plugin's. bomify neither parses the plugin's output nor
 // imposes any flags of its own here — see plugins/SBOM-CONTRACT.md.
 func runSBOMGenerate(cmd *cobra.Command, medium string, args []string) error {
-	path, err := plugin.Find(medium)
+	path, err := plugin.Find(plugin.Dir(dataDir), medium)
 	if err != nil {
 		return err
 	}

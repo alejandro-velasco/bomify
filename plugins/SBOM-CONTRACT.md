@@ -16,7 +16,8 @@ follows the same naming and discovery rules.
 
 Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
 a plugin for medium `<kind>` must be named exactly `bomify-plugin-<kind>`
-(`bomify-plugin-<kind>.exe` on Windows) and discoverable on `PATH`.
+(`bomify-plugin-<kind>.exe` on Windows) and installed in
+`<data-dir>/plugins`.
 `bomify sbom generate <kind> ...` looks up `bomify-plugin-<kind>` the
 same way `bomify build`/`bomify distribute` look up a component plugin,
 and never invokes it by any other name or location.
@@ -24,7 +25,7 @@ and never invokes it by any other name or location.
 ## What bomify does
 
 `bomify sbom generate <kind> [flags]` is a pure delegator: it locates
-`bomify-plugin-<kind>` on `PATH` and execs it as
+`bomify-plugin-<kind>` in `<data-dir>/plugins` and execs it as
 
 ```
 bomify-plugin-<kind> sbom generate [flags]

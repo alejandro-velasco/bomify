@@ -32,6 +32,90 @@ referrer of the package, so the plugin never touches a registry.
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | `sigstore` | [sigstore-go](https://github.com/sigstore/sigstore-go) (Sigstore bundle v0.3) | <ul><li>SIGNING-CONTRACT.md</li></ul> |
 
+## Installing plugins
+
+bomify only ever looks for a plugin in its plugins directory,
+`<data-dir>/plugins` (`~/.bomify/plugins` by default) — never on `PATH`.
+Plugins are distributed as bomify packages in an OCI registry, and
+`bomify plugin install` puts them there:
+
+```sh
+# Install the latest bomify-plugin-oci
+bomify plugin install oci
+
+# Install a specific version
+bomify plugin install grype:1.12.0
+
+# See what's installed, and where each plugin came from
+bomify plugin list
+```
+
+`bomify plugin install <name>` pulls
+`ghcr.io/alejandro-velasco/bomify/plugins/<name>:latest` (`--registry`
+points it at another repository prefix; `<name>:<version>` or
+`<name>@sha256:...` picks a specific one) and installs the plugin binary
+built for your OS and architecture, replacing any earlier install of the
+same plugin.
+
+By default every install is verified: each binary must match the SHA-256
+the package's SBOM declares for it, and the package's signature is
+checked by `bomify-plugin-sigstore` against a public key you trust —
+from a matching [`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
+rule, or given directly with `--verify-option key=<public key>`. With
+no key configured (and always for the very first install of
+`bomify-plugin-sigstore` itself, which has nothing to verify it yet),
+only checksums are verified, with a warning. `--verify=false` skips
+verification altogether.
+
+## Publishing a plugin
+
+A plugin package is an ordinary bomify package whose SBOM describes
+the plugin's binaries as `pkg:bomify-plugin/<kind>` components — one per
+platform, told apart by `os`/`arch` qualifiers (in `GOOS`/`GOARCH`
+terms). `bomify build` handles these itself rather than through a
+plugin: it copies each binary from the local path (or `file://` URL) in
+the component's `distribution` external reference, resolved against the
+SBOM's own directory. Declare each binary's SHA-256 too — `bomify build`
+checks it, and `bomify plugin install` requires it by default:
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    {
+      "type": "application",
+      "name": "bomify-plugin-mykind",
+      "version": "v1.0.0",
+      "purl": "pkg:bomify-plugin/mykind@v1.0.0?os=linux&arch=amd64",
+      "hashes": [{ "alg": "SHA-256", "content": "<sha256 of the binary>" }],
+      "externalReferences": [{ "type": "distribution", "url": "dist/linux-amd64/bomify-plugin-mykind" }]
+    }
+  ]
+}
+```
+
+Then build, push, and (ideally) sign it like any other package:
+
+```sh
+bomify build plugin.cdx.json --tag registry.example.com/plugins/mykind:v1.0.0
+bomify push registry.example.com/plugins/mykind:v1.0.0 --sign sigstore --sign-option key=signing.key
+```
+
+and install it with
+`bomify plugin install mykind:v1.0.0 --registry registry.example.com/plugins --verify-option key=signing.pub`.
+`install` downloads only the binaries built for the installing
+machine, so one package carrying every platform's build costs nothing
+extra to install.
+
+The first-party plugins are published exactly this way on every
+release, one package per plugin, by `make plugin-packages` (cross-compile
+every plugin and write its SBOM, under `dist/plugin-packages/<kind>/`)
+followed by `make push-plugin-packages` (build and push each, as
+`<version>` and `latest`); see
+[`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages).
+
 ## bomify-plugin-oci
 
 [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)

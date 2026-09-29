@@ -23,6 +23,13 @@ make build
 
 ## Usage
 
+Install the plugins you need — each is pulled from an OCI registry as a bomify package, verified, and placed in `~/.bomify/plugins`, the only place bomify looks for them (see [Installing plugins](plugins/README.md#installing-plugins)):
+
+```sh
+bomify plugin install oci
+bomify plugin list
+```
+
 Log in to a registry (default `docker.io`), then build a package from an SBOM and tag it:
 
 ```sh
@@ -78,7 +85,7 @@ bomify package vulnerabilities postgresql:18.11.6
 
 ## Container
 
-[`Containerfile`](Containerfile) builds an image with `bomify` and its first-party plugins on `PATH`:
+[`Containerfile`](Containerfile) builds an image with `bomify` on `PATH` and its first-party plugins preinstalled in its data directory (`/tmp/.bomify/plugins`):
 
 ```sh
 make build-container
@@ -90,13 +97,15 @@ Its entrypoint is `bomify`, so `docker run`/`podman run` arguments are just the 
 docker run -v "${HOME}/.bomify:/tmp/.bomify" -v `pwd`/testdata/helm.cdx.json:/tmp/helm.cdx.json --rm --user $(id -u):$(id -g) -it ghcr.io/alejandro-velasco/bomify:latest build -t registry.com/container-test:1.0.0 /tmp/helm.cdx.json
 ```
 
+Mounting your own data directory over `/tmp/.bomify`, as above, replaces the preinstalled plugins with whatever is in its `plugins/` directory — install the ones you need into it from inside the container (e.g. `... bomify:latest plugin install oci`), so they're Linux builds whatever your own OS.
+
 ## Testing locally
 
 [`deploy/registry/`](deploy/registry) spins up a throwaway, TLS-enabled OCI registry (self-signed cert generated and trusted for you) for exercising `build`/`distribute`/`pull` against a real registry without needing an account anywhere — see its [README](deploy/registry/README.md).
 
 ## Plugins
 
-Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary on `PATH`. `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand; `bomify security scan <type>` does too, but per component — the same plugin, called once per component in a built package, concurrently; and `--sign <kind>`/`--verify <kind>` hand a whole package's signature to that binary's `signature` subcommands. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write and install their own third-party plugin for a kind bomify doesn't support.
+Neither `bomify build` nor `bomify distribute` build or publish anything themselves — they detect a "kind" for each SBOM component and delegate to an external `bomify-plugin-<kind>` binary installed in bomify's plugins directory (`~/.bomify/plugins`, via `bomify plugin install <kind>`). `bomify sbom generate <medium>` delegates the same way, to that binary's own `sbom generate` subcommand; `bomify security scan <type>` does too, but per component — the same plugin, called once per component in a built package, concurrently; and `--sign <kind>`/`--verify <kind>` hand a whole package's signature to that binary's `signature` subcommands. [`plugins/`](plugins) holds the plugins bomify ships itself (see [`plugins/README.md`](plugins/README.md)); anyone can write, [publish](plugins/README.md#publishing-a-plugin), and install their own third-party plugin for a kind bomify doesn't support.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how plugin dispatch works, and [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) (component plugins), [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md) (SBOM generation plugins), [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md) (security scanning plugins), and [`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md) (signing plugins) for the four independent contracts a plugin can implement.
 

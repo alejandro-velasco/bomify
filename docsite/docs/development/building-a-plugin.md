@@ -41,11 +41,12 @@ bomify or share memory with it — every input arrives as a command-line
 flag, and every output is stdout, stderr, an exit code, or the files it's
 told to write to. This means a plugin can be written in any language; bomify
 only cares that the binary is named `bomify-plugin-<kind>` and is
-discoverable on `PATH`.
+installed in its plugins directory, `<data-dir>/plugins`
+(`~/.bomify/plugins` by default) — bomify never looks on `PATH`.
 
 `<kind>` comes directly from the purl type of the components it should
 handle — a component with purl `pkg:oci/nginx@1.27` needs a
-`bomify-plugin-oci` on `PATH`.
+`bomify-plugin-oci` installed.
 
 ## The subcommands, briefly
 
@@ -127,8 +128,11 @@ trivial) work, print a `plugin.RemoteResult`.
 - [ ] Validate your plugin's actual JSON output against
       [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json)/[`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json)
       with any off-the-shelf JSON Schema validator.
-- [ ] Name the binary `bomify-plugin-<kind>` and put it on `PATH` — that's
-      all bomify needs to find it.
+- [ ] Name the binary `bomify-plugin-<kind>` and put it in
+      `~/.bomify/plugins` — that's all bomify needs to find it.
+- [ ] To let others `bomify plugin install` it, publish it as a plugin
+      package — see
+      [Publishing a plugin](../getting-started/installing-plugins.md#publishing-a-plugin).
 
 If you're building a plugin bomify ships itself rather than a third-party
 one, also add it to the table in
