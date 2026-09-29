@@ -158,7 +158,7 @@ A machine-readable version of this schema is published at
 ## VerifyResult
 
 ```json
-{ "signer": "key sha256:gJOapHkekekClrPG4Hr2TqQ8K1SSLUH8kNWDAr3y7aA=" }
+{ "signer": "key sha256:<base64 fingerprint of the public key>" }
 ```
 
 | Field | Type | Required | Meaning |

@@ -1,0 +1,10 @@
+# Findings gitleaks reports that are known not to be secrets. Each line is
+# a finding's fingerprint (<commit>:<file>:<rule>:<line>), as printed in the
+# gitleaks report; only that exact finding is ignored.
+
+# plugins/SIGNING-CONTRACT.md: an example VerifyResult "signer" value, the
+# SHA-256 fingerprint of a throwaway test *public* key — not a secret. The
+# example has since been replaced with a placeholder; these ignore the
+# commits that still contain it.
+aaaea7452bfecbb0396cffd3abcc566afcf0c795:plugins/SIGNING-CONTRACT.md:generic-api-key:161
+aeabf9536edc31e8a86c875cf262feea862816be:plugins/SIGNING-CONTRACT.md:generic-api-key:161
