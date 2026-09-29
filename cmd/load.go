@@ -8,6 +8,8 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 const loadShort = "Load packages from a tarball"
@@ -19,7 +21,11 @@ records each of their tags. Reads from stdin if --input isn't given.
 Signature verification works exactly as for "bomify pull": --verify,
 else any "bomify trust" rule matching each tag, checked before
 anything of that package is restored. --insecure-skip-verify bypasses
-a matching trust rule.`
+a matching trust rule.
+
+--quiet prints only each restored package's pinned reference,
+<repository>@<digest>, one per tag on stdout — no progress bars, and no
+logging but warnings and errors.`
 
 const loadExample = `  # Load a tarball piped in from stdin
   cat packages.tar | bomify load
@@ -31,12 +37,16 @@ const loadExample = `  # Load a tarball piped in from stdin
   bomify load --input packages.tar --concurrency 6
 
   # Require every package to carry a signature made with a cosign key
-  bomify load --input packages.tar --verify sigstore --verify-option key=cosign.pub`
+  bomify load --input packages.tar --verify sigstore --verify-option key=cosign.pub
+
+  # Print just the pinned reference of each package loaded
+  bomify load --input packages.tar --quiet`
 
 type loadOptions struct {
 	input       string
 	concurrency int
 	verify      verifyFlags
+	quiet       bool
 }
 
 func loadCmd() *cobra.Command {
@@ -58,6 +68,7 @@ func loadCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.input, "input", "i", "", "read the tarball from here instead of stdin")
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to restore concurrently")
+	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only each restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.verify.register(cmd)
 
 	return cmd
@@ -65,6 +76,9 @@ func loadCmd() *cobra.Command {
 
 func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	logger := logging.FromContext(cmd.Context())
+	if opts.quiet {
+		logger = logging.WarningsOnly(logger)
+	}
 
 	verifier, err := opts.verify.verifier(dataDir, logger)
 	if err != nil {
@@ -81,17 +95,26 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 		r = f
 	}
 
-	mb := newMultiBar(cmd.ErrOrStderr())
-	progress := newProgressFunc(mb)
+	var progress transfer.ProgressFunc
+	if !opts.quiet {
+		mb := newMultiBar(cmd.ErrOrStderr())
+		defer mb.Wait()
+		progress = newProgressFunc(mb)
+	}
 
-	tags, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, verifier)
-	mb.Wait()
+	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, verifier)
 	if err != nil {
 		return err
 	}
 
-	for _, tag := range tags {
-		fmt.Fprintln(cmd.OutOrStdout(), "Loaded:", tag)
+	tags := make([]string, 0, len(loaded))
+	for _, l := range loaded {
+		tags = append(tags, l.Tag)
+		if opts.quiet {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(l.Tag), l.ManifestDigest)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "Loaded:", l.Tag)
+		}
 	}
 	logger.Info("loaded", "tags", tags)
 

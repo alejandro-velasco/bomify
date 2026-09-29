@@ -23,7 +23,7 @@ make build
 
 ## Usage
 
-Install the plugins you need — each is pulled from an OCI registry as a bomify package, verified, and placed in `~/.bomify/plugins`, the only place bomify looks for them (see [Installing plugins](plugins/README.md#installing-plugins)):
+Install the plugins you need — each is pulled from an OCI registry as a bomify package, verified, and placed in `~/.bomify/plugins`, the only place bomify looks for them. bomify refuses plugins nothing vouches for, so the first time, install `sigstore` by the digest a release publishes and trust bomify's release workflow as the signer (see [Installing plugins](plugins/README.md#installing-plugins) for both commands); after that:
 
 ```sh
 bomify plugin install oci

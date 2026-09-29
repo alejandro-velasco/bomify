@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -147,8 +148,11 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	}
 
 	gotTags := map[string]bool{}
-	for _, tag := range restored {
-		gotTags[tag] = true
+	for _, l := range restored {
+		gotTags[l.Tag] = true
+		if !strings.HasPrefix(l.ManifestDigest, "sha256:") {
+			t.Errorf("Load() restored %s with digest %q, want sha256:...", l.Tag, l.ManifestDigest)
+		}
 	}
 	if !gotTags["appA:v1.0"] || !gotTags["appB:v1.0"] {
 		t.Errorf("Load() restored %v, want both appA:v1.0 and appB:v1.0", restored)

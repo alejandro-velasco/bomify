@@ -60,8 +60,11 @@ type Layer struct {
 
 // Result is the outcome of a successful Pull.
 type Result struct {
-	SBOMHash string
-	Layers   []Layer
+	// ManifestDigest is the digest of the package manifest ref resolved
+	// to — the one verified and restored — as "sha256:...".
+	ManifestDigest string
+	SBOMHash       string
+	Layers         []Layer
 	// VulnerabilityReports lists the components whose vulnerability
 	// report (see internal/security) the package carried and Pull
 	// restored to "<dataDir>/vulnerabilities/<purl-hash>.json" — only
@@ -172,7 +175,7 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 		return Result{}, err
 	}
 
-	return Result{SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
+	return Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers, VulnerabilityReports: reports}, nil
 }
 
 // indexComponentsByPurl indexes bom's components by purl, so fetchLayer

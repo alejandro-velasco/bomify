@@ -4,7 +4,9 @@
 # $PLUGIN_REGISTRY/<kind>:$VERSION — plus :latest when VERSION is a plain
 # release version (e.g. 1.12.0), never for a dev build. Invoked by
 # `make push-plugin-packages`, which supplies BOMIFY, VERSION,
-# PACKAGES_DIR, and PLUGIN_REGISTRY.
+# PACKAGES_DIR, and PLUGIN_REGISTRY. Each package's pinned reference
+# (<repository>@<digest>) is written to PLUGIN_DIGESTS_FILE (default
+# PACKAGES_DIR/plugin-digests.txt), for the release to publish.
 #
 # Uses a throwaway data directory, so nothing here touches (or depends
 # on) the caller's own ~/.bomify. Registry credentials are the ones
@@ -135,6 +137,13 @@ if [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 	tags+=(latest)
 fi
 
+# Every package pushed, pinned by digest, one "<repository>@<digest>" per
+# line: the release publishes this so users can bootstrap
+# bomify-plugin-sigstore — which has nothing yet to verify its signature —
+# from a pin that didn't come from the registry itself.
+digests_file=${PLUGIN_DIGESTS_FILE:-$PACKAGES_DIR/plugin-digests.txt}
+: >"$digests_file"
+
 for sbom in "${sboms[@]}"; do
 	kind=$(basename "$(dirname "$sbom")")
 	repo="$PLUGIN_REGISTRY/$kind"
@@ -150,6 +159,15 @@ for sbom in "${sboms[@]}"; do
 		if [ "$keyless" = true ]; then
 			refresh_identity_token
 		fi
-		bomify push "$repo:$tag" "${sign_args[@]}"
+		# --quiet prints just <repository>@<digest> for what was pushed
+		# (and signed) — never re-resolved from the tag afterwards.
+		pinned=$(bomify push "$repo:$tag" "${sign_args[@]}" --quiet)
+		echo "    pushed $pinned"
+		if [ "$tag" = "$VERSION" ]; then
+			echo "$pinned" >>"$digests_file"
+		fi
 	done
 done
+
+echo "==> pinned references written to $digests_file"
+cat "$digests_file"

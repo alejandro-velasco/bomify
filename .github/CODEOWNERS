@@ -1,0 +1,12 @@
+# Changes to anything that decides what the release workflow builds and
+# signs need the owner's review: plugin packages are signed keyless as
+# .github/workflows/release.yml on main, so whoever can change these
+# files on main can make that signature vouch for anything. This only
+# takes effect alongside a branch protection rule (or ruleset) on main
+# requiring pull requests and code owner review.
+
+/.github/                        @alejandro-velasco
+/hack/                           @alejandro-velasco
+/Makefile                        @alejandro-velasco
+/.releaserc.json                 @alejandro-velasco
+/plugins/bomify-plugin-sigstore/ @alejandro-velasco

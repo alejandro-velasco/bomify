@@ -17,18 +17,21 @@ this machine — replacing any earlier install of the same kind. The
 package itself isn't kept as a local package the way "bomify pull"
 would keep it.
 
-By default (--verify), every plugin binary must match the SHA-256 its
-component declares in the package's SBOM, on top of the digest checks
-every pull performs. Once bomify-plugin-sigstore is installed, the
-package's signature is verified too, against the signer named by the
-first of:
-  - --verify-option (e.g. key=<public key>, or certificate-identity and
-    certificate-oidc-issuer for a keyless signature);
-  - the most specific "bomify trust" rule matching the package.
-Without either, only checksums are verified, with a warning — as for
-bomify-plugin-sigstore itself, the first time it's installed.
---verify=false skips signature verification and no longer requires a
-declared checksum (a declared one that doesn't match still fails).
+By default (--verify), a plugin is only installed if something vouches
+for it, checked before anything is downloaded:
+  - its signature, verified by bomify-plugin-sigstore against the signer
+    named by --verify-option (e.g. key=<public key>, or
+    certificate-identity and certificate-oidc-issuer for a keyless
+    signature), else by the most specific "bomify trust" rule matching
+    it; or
+  - a reference pinned by digest (<name>@sha256:...), which names
+    exactly the content to install — how bomify-plugin-sigstore itself
+    gets installed the first time, from the digest published with each
+    bomify release.
+Anything else is refused. Every plugin binary must also match the
+SHA-256 its component declares in the package's SBOM — an integrity
+check, not proof of who published it. --verify=false installs without
+any of this (a declared checksum that doesn't match still fails).
 
 ```
 bomify plugin install <name>[:<version>|@<digest>] [flags]
@@ -37,7 +40,12 @@ bomify plugin install <name>[:<version>|@<digest>] [flags]
 ### Examples
 
 ```
-  # Install the latest bomify-plugin-oci
+  # Bootstrap: install bomify-plugin-sigstore pinned to the digest a
+  # bomify release published for it
+  bomify plugin install sigstore@sha256:<digest>
+
+  # Install the latest bomify-plugin-oci (needs a signer configured, e.g.
+  # a "bomify trust" rule for its registry)
   bomify plugin install oci
 
   # Install a specific version

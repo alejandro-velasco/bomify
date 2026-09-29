@@ -63,7 +63,10 @@ func installFakeVerifier(t *testing.T, baseDir string) {
 }
 
 func TestPluginInstallPolicy(t *testing.T) {
-	const ref = "ghcr.io/alejandro-velasco/bomify/plugins/oci:latest"
+	const (
+		tagRef    = "ghcr.io/alejandro-velasco/bomify/plugins/oci:latest"
+		digestRef = "ghcr.io/alejandro-velasco/bomify/plugins/oci@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	)
 	logger := slog.New(slog.DiscardHandler)
 
 	origDataDir := dataDir
@@ -81,15 +84,21 @@ func TestPluginInstallPolicy(t *testing.T) {
 
 	tests := []struct {
 		name       string
+		ref        string
 		setup      func(t *testing.T, baseDir string)
 		opts       pluginInstallOptions
 		wantPolicy *signature.Policy
 		wantErr    bool
 	}{
-		{name: "nothing configured, sigstore missing", opts: pluginInstallOptions{verify: true}},
-		// Even bomify's own registry gets no built-in signer: a trust rule
-		// or --verify-option must name one.
-		{name: "nothing configured, sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}},
+		// Nothing vouches for a tag with no signer configured — not even on
+		// bomify's own registry, which has no built-in signer — so it's
+		// refused rather than installed unauthenticated.
+		{name: "nothing configured, sigstore missing", opts: pluginInstallOptions{verify: true}, wantErr: true},
+		{name: "nothing configured, sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}, wantErr: true},
+		// A digest pin names the exact content, so it needs no signer: how
+		// sigstore itself is bootstrapped.
+		{name: "digest pin, sigstore missing", ref: digestRef, opts: pluginInstallOptions{verify: true}},
+		{name: "digest pin, sigstore installed", ref: digestRef, setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}},
 		{name: "verify options with sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
 		{name: "verify options without sigstore", opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
 		{name: "malformed verify option", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"cosign.pub"}}, wantErr: true},
@@ -99,7 +108,8 @@ func TestPluginInstallPolicy(t *testing.T) {
 			wantPolicy: &signature.Policy{Rules: signature.Config{{Match: "ghcr.io/alejandro-velasco", Verifier: pluginVerifier, Options: []string{"key=org.pub"}}}},
 		},
 		{name: "verify options override a matching trust rule", setup: trustRule("ghcr.io/alejandro-velasco"), opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
-		{name: "trust rule for another registry", setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}},
+		{name: "trust rule for another registry", setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}, wantErr: true},
+		{name: "trust rule for another registry, digest pin", ref: digestRef, setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}},
 		{name: "verify=false ignores a matching trust rule", setup: trustRule(""), opts: pluginInstallOptions{verify: false}},
 		{name: "verify=false with verify options", setup: installFakeVerifier, opts: pluginInstallOptions{verify: false, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
 	}
@@ -111,6 +121,10 @@ func TestPluginInstallPolicy(t *testing.T) {
 				tt.setup(t, dataDir)
 			}
 
+			ref := tt.ref
+			if ref == "" {
+				ref = tagRef
+			}
 			policy, err := pluginInstallPolicy(ref, &tt.opts, logger)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("pluginInstallPolicy() error = %v, wantErr %v", err, tt.wantErr)

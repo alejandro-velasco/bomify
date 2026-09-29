@@ -67,13 +67,22 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concu
 	return nil
 }
 
+// Loaded is one tag Load restored.
+type Loaded struct {
+	// Tag is the tag as the archive recorded it.
+	Tag string
+	// ManifestDigest is the digest of the package manifest it restored
+	// for Tag, as "sha256:...".
+	ManifestDigest string
+}
+
 // Load extracts r — an OCI image-layout tarball Save produced — and
 // restores every tag it contains into baseDir exactly as `bomify pull`
 // would have for each, recording each in repositories.json. Returns the
 // tags it found and restored. A non-nil verify is applied to each tag
 // before anything of it is restored, exactly as pull.Pull applies it
 // (see transfer.Verifier).
-func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, progress transfer.ProgressFunc, verify transfer.Verifier) ([]string, error) {
+func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, progress transfer.ProgressFunc, verify transfer.Verifier) ([]Loaded, error) {
 	stageDir, err := os.MkdirTemp("", "bomify-load-*")
 	if err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
@@ -97,6 +106,7 @@ func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, pro
 		return nil, fmt.Errorf("archive contains no tags")
 	}
 
+	loaded := make([]Loaded, 0, len(tags))
 	for _, tag := range tags {
 		result, err := pull.Pull(ctx, store, tag, baseDir, concurrency, progress, verify)
 		if err != nil {
@@ -105,9 +115,10 @@ func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, pro
 		if err := build.UpdateRepositories(baseDir, []string{tag}, result.SBOMHash); err != nil {
 			return nil, fmt.Errorf("record %s: %w", tag, err)
 		}
+		loaded = append(loaded, Loaded{Tag: tag, ManifestDigest: result.ManifestDigest})
 	}
 
-	return tags, nil
+	return loaded, nil
 }
 
 func listTags(ctx context.Context, store *oci.Store) ([]string, error) {

@@ -19,6 +19,10 @@ referrer. One signature covers the whole package: the SBOM, every
 component, and every vulnerability report. See "bomify pull --verify"
 and "bomify trust" for checking it.
 
+--quiet prints only the pushed package's pinned reference,
+<repository>@<digest>, on stdout — no progress bars, and no logging but
+warnings and errors — for scripts that go on to publish or pin it.
+
 ```
 bomify push <tag> [flags]
 ```
@@ -37,6 +41,9 @@ bomify push <tag> [flags]
 
   # Sign the package with a cosign key while pushing it
   bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key
+
+  # Print just the pinned reference, e.g. to publish it
+  pinned=$(bomify push registry.example.com/myapp:latest --quiet)
 ```
 
 ### Options
@@ -44,6 +51,7 @@ bomify push <tag> [flags]
 ```
   -c, --concurrency int           number of layers to upload concurrently (default 3)
   -h, --help                      help for push
+  -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
 ```

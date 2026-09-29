@@ -37,7 +37,8 @@ referrer of the package, so the plugin never touches a registry.
 bomify only ever looks for a plugin in its plugins directory,
 `<data-dir>/plugins` (`~/.bomify/plugins` by default) — never on `PATH`.
 Plugins are distributed as bomify packages in an OCI registry, and
-`bomify plugin install` puts them there:
+`bomify plugin install` puts them there — once verification is set up,
+as described below:
 
 ```sh
 # Install the latest bomify-plugin-oci
@@ -57,31 +58,43 @@ points it at another repository prefix; `<name>:<version>` or
 built for your OS and architecture, replacing any earlier install of the
 same plugin.
 
-By default every install is verified: each binary must match the SHA-256
-the package's SBOM declares for it, and — once `bomify-plugin-sigstore`
-is installed — the package's signature is checked against a signer you
-trust, from a matching
-[`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
-rule or given directly with `--verify-option`: a public key
-(`key=<public key>`) or a keyless identity (`certificate-identity=...`
-and `certificate-oidc-issuer=...`). With no signer configured, only
-checksums are verified, with a warning — as for
-`bomify-plugin-sigstore`'s own first install, which has nothing to
-verify it yet. `--verify=false` skips verification altogether.
+`bomify plugin install` only installs a plugin something vouches for,
+checked before anything is downloaded:
+
+- **Its signature**, verified by `bomify-plugin-sigstore` against a
+  signer you trust — from a matching
+  [`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
+  rule, or given directly with `--verify-option`: a public key
+  (`key=<public key>`) or a keyless identity
+  (`certificate-identity=...` and `certificate-oidc-issuer=...`).
+- **Or a digest pin**, `<name>@sha256:<digest>`, which names exactly the
+  content to install: every blob pulled is checked against it.
+
+Anything else — no signer configured and a tag like `oci` or
+`oci:1.12.0` — is refused rather than installed unauthenticated. Each
+binary must also match the SHA-256 the package's SBOM declares for it,
+but that's an integrity check: it proves the binary is the one the
+package describes, not who published the package. `--verify=false`
+installs without any of this.
 
 bomify's own plugins are signed keyless by its release workflow on
-GitHub Actions. To require that signer, install `bomify-plugin-sigstore`
-first, then add a trust rule for bomify's plugin registry:
+GitHub Actions, and every release lists each plugin package's pinned
+reference in a `plugin-digests.txt` asset. Since `bomify-plugin-sigstore`
+has nothing to verify its own signature yet, install it by its pinned
+reference from the release you trust, then add a trust rule requiring
+that workflow for everything else:
 
 ```sh
-bomify plugin install sigstore
+# The .../plugins/sigstore@sha256:... line from the release's plugin-digests.txt
+bomify plugin install sigstore@sha256:<digest>
+
 bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
   --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
   --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
 Every later `bomify plugin install` from that registry — including
-reinstalling `sigstore` itself — then fails unless that workflow signed
+upgrading `sigstore` itself — then fails unless that workflow signed
 it.
 
 ## Publishing a plugin

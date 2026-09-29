@@ -9,6 +9,8 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 const pushShort = "Publish a bomify package to an OCI registry"
@@ -26,7 +28,11 @@ scanned carries none.
 updated to point at it, attaching the signature to it as an OCI
 referrer. One signature covers the whole package: the SBOM, every
 component, and every vulnerability report. See "bomify pull --verify"
-and "bomify trust" for checking it.`
+and "bomify trust" for checking it.
+
+--quiet prints only the pushed package's pinned reference,
+<repository>@<digest>, on stdout — no progress bars, and no logging but
+warnings and errors — for scripts that go on to publish or pin it.`
 
 const pushExample = `  # Push the package tagged myapp:latest to its own registry reference
   bomify push myapp:latest
@@ -38,11 +44,15 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
   bomify push myapp:latest --concurrency 6
 
   # Sign the package with a cosign key while pushing it
-  bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key`
+  bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key
+
+  # Print just the pinned reference, e.g. to publish it
+  pinned=$(bomify push registry.example.com/myapp:latest --quiet)`
 
 type pushOptions struct {
 	concurrency int
 	sign        signFlags
+	quiet       bool
 }
 
 func pushCmd() *cobra.Command {
@@ -64,6 +74,7 @@ func pushCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to upload concurrently")
+	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.sign.register(cmd)
 
 	return cmd
@@ -71,6 +82,9 @@ func pushCmd() *cobra.Command {
 
 func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logger := logging.FromContext(cmd.Context())
+	if opts.quiet {
+		logger = logging.WarningsOnly(logger)
+	}
 
 	sbomHash, err := build.ResolveTag(dataDir, tag)
 	if err != nil {
@@ -87,17 +101,23 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
-	mb := newMultiBar(cmd.OutOrStderr())
-	progress := newProgressFunc(mb)
+	var progress transfer.ProgressFunc
+	if !opts.quiet {
+		mb := newMultiBar(cmd.OutOrStderr())
+		defer mb.Wait()
+		progress = newProgressFunc(mb)
+	}
 
 	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, signer)
-	mb.Wait()
 	if err != nil {
 		return err
 	}
 
 	logPushedLayers(logger, result)
 
+	if opts.quiet {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(tag), result.ManifestDigest)
+	}
 	return nil
 }
 

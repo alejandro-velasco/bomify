@@ -104,19 +104,28 @@ bomify version
 
 bomify delegates the real work — fetching components, generating SBOMs,
 scanning, signing — to plugins, which you install separately with
-`bomify plugin install`. It downloads each one as a verified package
-from bomify's plugin registry and places it in `~/.bomify/plugins`, the
-only place bomify looks for plugins.
+`bomify plugin install`. It downloads each one as a package from
+bomify's plugin registry and places it in `~/.bomify/plugins`, the only
+place bomify looks for plugins. It refuses to install anything nothing
+vouches for, so plugins are installed in two steps.
 
-Install `sigstore` first: it's the plugin that verifies every plugin
-installed after it. Then add a trust rule requiring bomify's release
-workflow as the signer of bomify's plugins — without one, installs are
-checked by checksum only, with a warning — and install the rest:
+**1. Install `sigstore`, pinned by digest.** It's the plugin that
+verifies every other plugin's signature, so nothing can verify it yet —
+instead, install it by the exact digest listed in `plugin-digests.txt`
+on the release you're using, on the repository's
+[Releases](https://github.com/alejandro-velasco/bomify/releases) page:
 
 ```sh
-bomify plugin install sigstore      # first: it verifies everything after it
+# The ghcr.io/alejandro-velasco/bomify/plugins/sigstore@sha256:... line from plugin-digests.txt
+bomify plugin install sigstore@sha256:<digest>
+```
 
-# Require bomify's release workflow as the signer of its plugins
+**2. Trust bomify's release workflow, and install the rest.** Every
+bomify plugin is signed by bomify's release workflow on GitHub Actions;
+this trust rule requires exactly that signer, so each install below is
+signature-verified:
+
+```sh
 bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
   --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
   --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
@@ -127,6 +136,28 @@ bomify plugin install generic       # plain HTTP downloads/uploads
 bomify plugin install grype         # vulnerability scanning
 bomify plugin list
 ```
+
+### Without verification (testing and local use only)
+
+For a throwaway environment — trying bomify out, a local test setup, CI
+against a registry you control — you can skip both steps and install
+every plugin with `--verify=false`:
+
+```sh
+bomify plugin install sigstore --verify=false
+bomify plugin install oci      --verify=false
+bomify plugin install helm     --verify=false
+bomify plugin install generic  --verify=false
+bomify plugin install grype    --verify=false
+```
+
+!!! warning "Unverified plugins run with your permissions"
+    `--verify=false` installs whatever the registry serves, with no
+    signature check and no requirement that the package vouch for its
+    own checksums. bomify runs plugins as you, so anyone able to publish
+    to the registry — or tamper with what it serves — could run code on
+    your machine. Never use it on a machine or in an environment you
+    care about; use the verified steps above instead.
 
 See [Installing plugins](installing-plugins.md) for what each plugin
 does, version pinning, and how verification works.

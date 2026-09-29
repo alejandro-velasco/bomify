@@ -53,20 +53,28 @@ this machine — replacing any earlier install of the same kind. The
 package itself isn't kept as a local package the way "bomify pull"
 would keep it.
 
-By default (--verify), every plugin binary must match the SHA-256 its
-component declares in the package's SBOM, on top of the digest checks
-every pull performs. Once bomify-plugin-sigstore is installed, the
-package's signature is verified too, against the signer named by the
-first of:
-  - --verify-option (e.g. key=<public key>, or certificate-identity and
-    certificate-oidc-issuer for a keyless signature);
-  - the most specific "bomify trust" rule matching the package.
-Without either, only checksums are verified, with a warning — as for
-bomify-plugin-sigstore itself, the first time it's installed.
---verify=false skips signature verification and no longer requires a
-declared checksum (a declared one that doesn't match still fails).`
+By default (--verify), a plugin is only installed if something vouches
+for it, checked before anything is downloaded:
+  - its signature, verified by bomify-plugin-sigstore against the signer
+    named by --verify-option (e.g. key=<public key>, or
+    certificate-identity and certificate-oidc-issuer for a keyless
+    signature), else by the most specific "bomify trust" rule matching
+    it; or
+  - a reference pinned by digest (<name>@sha256:...), which names
+    exactly the content to install — how bomify-plugin-sigstore itself
+    gets installed the first time, from the digest published with each
+    bomify release.
+Anything else is refused. Every plugin binary must also match the
+SHA-256 its component declares in the package's SBOM — an integrity
+check, not proof of who published it. --verify=false installs without
+any of this (a declared checksum that doesn't match still fails).`
 
-const pluginInstallExample = `  # Install the latest bomify-plugin-oci
+const pluginInstallExample = `  # Bootstrap: install bomify-plugin-sigstore pinned to the digest a
+  # bomify release published for it
+  bomify plugin install sigstore@sha256:<digest>
+
+  # Install the latest bomify-plugin-oci (needs a signer configured, e.g.
+  # a "bomify trust" rule for its registry)
   bomify plugin install oci
 
   # Install a specific version
@@ -221,14 +229,27 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return &signature.Policy{Rules: rules}, nil
 	}
 
-	if !verifierInstalled {
-		logger.Warn(plugin.BinaryName(pluginVerifier)+" is not installed, verifying checksums only", "reference", ref)
+	// No signer to check against. A reference pinned by digest is still
+	// safe to install: the pull verifies every blob against that digest,
+	// so the caller — who got it from somewhere they trust, e.g. a release
+	// page — has named exactly what they'll get. Anything else would be
+	// installing unauthenticated code, so it's refused.
+	if isDigestReference(ref) {
+		logger.Info("installing by pinned digest, without a signature check", "reference", ref)
 		return nil, nil
 	}
 
-	hint := fmt.Sprintf("pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), or run \"bomify trust create %s --match %s --option ...\" with the same options", pluginVerifier, signature.Repository(ref))
-	logger.Warn("no signer configured for this plugin package, verifying checksums only", "reference", ref, "hint", hint)
-	return nil, nil
+	if !verifierInstalled {
+		return nil, fmt.Errorf("can't verify %s: %s isn't installed, and nothing else vouches for it — install it pinned by digest first (%s@sha256:<digest>, digests are published with each bomify release), pin this package by digest, or pass --verify=false to install it unverified", ref, plugin.BinaryName(pluginVerifier), pluginVerifier)
+	}
+	return nil, fmt.Errorf("can't verify %s: no signer is configured for it — pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), run \"bomify trust create %s --match %s --option ...\" with the same options, pin it by digest, or pass --verify=false to install it unverified", ref, pluginVerifier, signature.Repository(ref))
+}
+
+// isDigestReference reports whether ref names its package by digest
+// ("...@sha256:..."), rather than by a tag that could be moved.
+func isDigestReference(ref string) bool {
+	_, digest, ok := strings.Cut(ref, "@")
+	return ok && strings.HasPrefix(digest, "sha256:")
 }
 
 const pluginListShort = "List installed plugins"

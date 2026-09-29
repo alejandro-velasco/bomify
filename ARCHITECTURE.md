@@ -385,40 +385,59 @@ SBOM, one `bomify-plugin` component per binary (plus a `docker` alias
 component in `oci`'s package, pointing at the same binary), and `make
 push-plugin-packages` ([`hack/push-plugin-packages.sh`](hack/push-plugin-packages.sh))
 builds and pushes each as `<registry>/<kind>:<version>` and `:latest`,
-signing them. semantic-release runs the former in its prepare step and
-the latter in its publish step ([`.releaserc.json`](.releaserc.json)),
-with `PLUGIN_SIGN_KEYLESS=true`: the release job (granted `id-token:
-write`) signs keyless. That job lives in its own workflow,
-[`release.yml`](.github/workflows/release.yml), which runs only after
-the Build workflow passes on `main` (releasing the exact commit Build
-tested), so the signer identity names the release rather than the
-workflow every push and pull request runs. Right before every push, the script requests a
-fresh GitHub Actions OIDC token for the job — tokens only last minutes,
-far less than a whole release — checks it isn't about to expire, and
-hands it to `bomify-plugin-sigstore` as `SIGSTORE_ID_TOKEN`; the plugin
-itself knows nothing about GitHub, only generic OIDC tokens. It
-exchanges the token with Sigstore's Fulcio for a short-lived
-certificate naming the workflow —
-`https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main`
-— with the signature logged in Rekor. No key exists to store, rotate,
-or leak.
+signing them, and writes each package's pinned reference
+(`<repository>@<digest>`, as `bomify push --quiet` prints it) to
+`plugin-digests.txt`.
 
-Verification (`pluginInstallVerifier`, [`cmd/plugin.go`](cmd/plugin.go))
+Releases run in their own workflow,
+[`release.yml`](.github/workflows/release.yml), only after the Build
+workflow passes on `main` (releasing the exact commit Build tested), so
+the signer identity names the release rather than the workflow every
+push and pull request runs. It's split into three jobs so that only one
+can sign, and that one runs no third-party npm code:
+
+- `release` runs semantic-release ([`.releaserc.json`](.releaserc.json))
+  to version, tag, publish the GitHub release, and push the container
+  image — with no `id-token` permission.
+- `sign-plugins` runs `make plugin-packages` and `make
+  push-plugin-packages` with `PLUGIN_SIGN_KEYLESS=true`, and is the only
+  job granted `id-token: write`. Right before every push, the script
+  requests a fresh GitHub Actions OIDC token for the job — tokens only
+  last minutes, far less than a whole release — checks it isn't about to
+  expire, and hands it to `bomify-plugin-sigstore` as
+  `SIGSTORE_ID_TOKEN`; the plugin itself knows nothing about GitHub, only
+  generic OIDC tokens. It exchanges the token with Sigstore's Fulcio for
+  a short-lived certificate naming the workflow —
+  `https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main`
+  — with the signature logged in Rekor. No key exists to store, rotate,
+  or leak.
+- `publish-digests` attaches `plugin-digests.txt` to the GitHub release,
+  for users to bootstrap `bomify-plugin-sigstore` by digest (below).
+
+Every action is pinned to a commit SHA and every npm package to an exact
+version. Whoever can change `release.yml`, `hack/`, the `Makefile`, or
+the sigstore plugin on `main` can make that signature vouch for
+anything, which is why [CODEOWNERS](.github/CODEOWNERS) requires the
+owner's review for them — alongside branch protection on `main`, a
+repository setting.
+
+Verification (`pluginInstallPolicy`, [`cmd/plugin.go`](cmd/plugin.go))
 reuses [Signing & verification](#signing--verification)'s machinery,
 with one twist — the signing plugin is itself something `plugin
-install` installs. By default a declared SHA-256 is required for every
-binary, and the package's signature is checked (`pluginInstallPolicy`)
-by, in order: an explicit `--verify-option` (always against
-`bomify-plugin-sigstore`, which must already be installed); else the
-best-matching `conf/trust.json` rule. bomify has no built-in signer, not
-even for its own registry: the release workflow's identity above is
-what a user's trust rule names to require it. Otherwise only checksums are
-verified, with a warning — which is how `bomify-plugin-sigstore` gets
-bootstrapped. `--verify=false` drops the
-signature check and the checksum requirement (a declared checksum that
-doesn't match still fails). `bomify plugin list` (`install.List`) shows
-every `bomify-plugin-*` in `plugins/`, with its `installed.json` entry if
-it has one.
+install` installs. It fails closed: a package is installed only if its
+signature verifies, against an explicit `--verify-option` (always with
+`bomify-plugin-sigstore`, which must already be installed) or else the
+best-matching `conf/trust.json` rule — or if it's named by digest
+(`<name>@sha256:...`), which the pull then enforces blob by blob.
+Anything else is refused. bomify has no built-in signer, not even for
+its own registry: the release workflow's identity above is what a
+user's trust rule names to require it, and `plugin-digests.txt` is how
+they install `bomify-plugin-sigstore` itself before anything can verify
+it. A declared SHA-256 is also required for every binary — an integrity
+check, not an authenticity one. `--verify=false` drops all of this (a
+declared checksum that doesn't match still fails). `bomify plugin list`
+(`install.List`) shows every `bomify-plugin-*` in `plugins/`, with its
+`installed.json` entry if it has one.
 
 ### Concurrent, idempotent pulls
 
