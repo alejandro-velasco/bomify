@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const packagesShort = "List built packages"
@@ -90,27 +91,13 @@ func runPackages(cmd *cobra.Command, opts *packagesOptions) error {
 		return rows[i].Created.After(rows[j].Created)
 	})
 
-	// tabwriter aligns every column the same way, so a right-aligned SIZE
-	// (the conventional way to display a column of numbers) needs its
-	// values pre-padded to a common width before tabwriter ever sees
-	// them — as the rightmost column, tabwriter's own trailing padding
-	// after that fixed width is invisible, so this is enough on its own.
-	sizeStrs := make([]string, len(rows))
-	sizeWidth := len("SIZE")
-	for i, row := range rows {
-		sizeStrs[i] = fmt.Sprintf("%.1f", decor.SizeB1024(row.Size))
-		if len(sizeStrs[i]) > sizeWidth {
-			sizeWidth = len(sizeStrs[i])
-		}
+	header := []string{"REPOSITORY", "TAG", "PACKAGE ID", "CREATED", "SIZE"}
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		cells = append(cells, []string{row.Repository, row.Tag, shortID(row.ID), humanAge(row.Created), fmt.Sprintf("%.1f", decor.SizeB1024(row.Size))})
 	}
-
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintf(w, "REPOSITORY\tTAG\tPACKAGE ID\tCREATED\t%*s\n", sizeWidth, "SIZE")
-	for i, row := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%*s\n", row.Repository, row.Tag, shortID(row.ID), humanAge(row.Created), sizeWidth, sizeStrs[i])
-	}
-
-	return w.Flush()
+	table.RightAlign(4, header, cells)
+	return table.Write(cmd.OutOrStdout(), header, cells)
 }
 
 // packageSize returns the total on-disk size of sbomHash's components
@@ -140,7 +127,7 @@ func shortID(id string) string {
 // sbomHash, or the zero time if it can't be read (e.g. the manifest is
 // missing, which repositories.json alone doesn't guard against).
 func manifestCreated(baseDir, sbomHash string) time.Time {
-	info, err := os.Stat(build.ManifestPath(baseDir, sbomHash))
+	info, err := os.Stat(layout.Manifest(baseDir, sbomHash))
 	if err != nil {
 		return time.Time{}
 	}

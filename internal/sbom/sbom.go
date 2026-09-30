@@ -113,3 +113,12 @@ func fileFormat(path string) (cdx.BOMFileFormat, error) {
 		return 0, fmt.Errorf("unsupported file format %q", fileExt)
 	}
 }
+
+// Components dereferences a CycloneDX component list — a BOM's, or a
+// component's nested one — which is nil when the document has none.
+func Components(cs *[]cdx.Component) []cdx.Component {
+	if cs == nil {
+		return nil
+	}
+	return *cs
+}

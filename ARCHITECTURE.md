@@ -34,6 +34,10 @@ default, or `--data-dir`):
 
 ![Data directory layout](docs/diagrams/data-directory.svg)
 
+Every path below is derived in exactly one place,
+[`internal/layout`](internal/layout); no other package joins data
+directory paths itself.
+
 *Source: [`docs/diagrams/data-directory.mmd`](docs/diagrams/data-directory.mmd)*
 
 `conf/distribution.json` records `bomify distribute`'s remote-endpoint
@@ -48,7 +52,10 @@ with which signing plugin and options, whenever `--verify` isn't given.
 A rule's options are either plain `key=value` pairs or `keyOptions`
 naming stored keys (see `keys/` below). Its `match` is ranked
 most-specific-first on `/` segment boundaries, exactly like a
-distribution rule's (both share [`internal/prefix`](internal/prefix)).
+distribution rule's. All three rule files under `conf/` share one
+implementation, [`internal/rules`](internal/rules): stored as a JSON
+array with at most one rule per identity, written atomically, and
+resolved by most specific [`internal/prefix`](internal/prefix) match.
 
 `conf/scan.json` records vulnerability scanning policy rules (see
 [Vulnerability gating](#vulnerability-gating) and `bomify security
@@ -56,7 +63,7 @@ policy create`) — for packages matching each rule, the scanning plugin
 to use, the severity at or above which a scan fails, and the names of
 the stored VEX documents (see `vex/` below) that exempt
 vulnerabilities from it. Its `match` is ranked exactly like
-`trust.json`'s, through the same [`internal/prefix`](internal/prefix).
+`trust.json`'s, through the same [`internal/rules`](internal/rules).
 
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
@@ -67,9 +74,8 @@ keyed on:
   content hash. This is what `repositories.json` tags point at.
 - **A component's pull manifest** (see [`internal/plugin`](internal/plugin))
   records one component's SBOM entry (with its computed hash merged in) and
-  is keyed by a hash of that component's purl (`plugin.PurlHash` — this
-  stays in `internal/plugin` since it's bomify's own on-disk layout, not
-  part of the plugin-facing contract). This is what makes an identical
+  is keyed by a hash of that component's purl (`layout.PurlHash` —
+  bomify's own on-disk layout, not part of the plugin-facing contract). This is what makes an identical
   component pulled by two different SBOMs — or the same SBOM built twice
   — get reused instead of re-pulled. `internal/oci/pull` writes this same
   manifest for a component restored from a registry, so a later `bomify
@@ -126,7 +132,7 @@ below.
 
 Everything is content-addressed and every write that matters is atomic (a
 temp file/directory renamed into place once fully written and verified, see
-`internal/oci/pull`), so a crash mid-write never leaves a corrupt manifest or
+`internal/oci/pull` and `fsutil.WriteFileAtomic`/`fsutil.WriteJSON`), so a crash mid-write never leaves a corrupt manifest or
 layer behind — only ever a missing one, which just triggers a redo.
 
 ## Plugin architecture
@@ -172,10 +178,12 @@ anything themselves. For each SBOM component they:
    skips, having nowhere to republish it.
 3. **Delegate** to it via a small subprocess contract: `component pull`/
    `component push` subcommands taking
-   `--purl`/`--output`/`--hash`/`--log`/`--log-color` or
+   `--purl`/`--output`/`--log`/`--log-color` or
    `--purl`/`--input`/`--remote`/`--log`/`--log-color`, the plugin doing the
    real work and reporting a single JSON `{outputPath, message, hash}`
-   object on stdout. `bomify distribute` additionally calls a `component
+   object on stdout, `hash` being the pulled artifact's SHA-256 — the one
+   algorithm bomify verifies components with and keys its data directory
+   by. `bomify distribute` additionally calls a `component
    remote` subcommand (`--purl`/`--log`/`--log-color`) before `component
    push`, to learn where a component's content currently lives — a pure,
    stateless query reporting `{remote}` — and resolves the actual
@@ -187,8 +195,9 @@ anything themselves. For each SBOM component they:
 A plugin must never write general logging to stdout (reserved for that one
 JSON result) or stderr (reserved for a single fatal message bomify surfaces
 on failure) — instead it logs to the file named by `--log`,
-`<baseDir>/logs/<purlHash>.log` (`pkg/plugin`'s `plugin.OpenLog` gives a ready-made
-`*slog.Logger` for this, in bomify's own `tint`-based format). `--log-color`
+`<baseDir>/logs/<purlHash>.log` (`pkg/plugin`'s `plugin.ComponentCommand`
+hands every request a ready-made `*slog.Logger` for this, in bomify's own
+`tint`-based format). `--log-color`
 tells the plugin whether to include ANSI color codes in that output;
 bomify sets it to whether its own stdout is a terminal
 (`logging.SupportsColor`), since only bomify — which streams the file
@@ -215,9 +224,20 @@ See [`plugins/README.md`](plugins/README.md) for the first-party plugins
 bomify ships (`oci`, `helm`, `generic`), and
 [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md) for the full, authoritative
 specification of the component contract above — required/optional flags,
-`--check` mode, the exact `Result` JSON schema, valid hash algorithm
-names, and the logging contract — that a third-party plugin must
-implement.
+`--check` mode, the exact `Result` JSON schema, hashes, and the logging
+contract — that a third-party plugin must implement.
+
+Every plugin subprocess, whichever contract it's for, runs through one
+function, `plugin.Invoke`: run the binary, parse its stdout as the
+contract's JSON result, and fold its stderr into the error on failure.
+The component contract's calls (`internal/plugin`'s `component.go`) add
+the `--log` file and its streaming on top; the security scanning and
+signing contracts' calls live with their callers, in `internal/security`
+and `internal/signature`. On the plugin side, `pkg/plugin` mirrors this:
+`ComponentCommand`, `SecurityCommand`, and `SignatureCommand` each build
+one contract's whole subcommand tree around a small Go interface, so
+every first-party plugin's `cmd` package is only an adapter over its own
+`internal` logic.
 
 ![Plugin dispatch sequence](docs/diagrams/plugin-dispatch.svg)
 
@@ -259,7 +279,7 @@ delegation:
    `grype`, `trivy`), not a purl type or deployment medium, so the same
    binary scans every component regardless of its own purl type.
 3. **Query** that binary's `security supported-components` once
-   (`plugin.SupportedComponents`) to learn which component purl types it
+   (`security`'s `supportedComponents`) to learn which component purl types it
    can scan. A component whose purl type (`plugin.Detect`, the same
    detection component dispatch uses) isn't in that list — or can't be
    detected at all — is skipped with a log line, never dispatched to
@@ -268,7 +288,7 @@ delegation:
 4. **Delegate**, once per remaining component, up to `--concurrency` at
    a time (`forEachComponent` — the same concurrent-walk helper `bomify
    build`/`bomify distribute` use): call `security scan --purl <purl>`
-   (`plugin.Scan`) and parse its JSON result, a `pluginlib.SecurityResult`
+   (`security`'s `scanComponent`) and parse its JSON result, a `pluginlib.SecurityResult`
    object: a list of CycloneDX `Vulnerability` objects (the plugin sets
    each one's `affects` itself — to the purl it was given, or, if it had
    to unpack that purl into smaller pieces to scan it at all, to the
@@ -430,7 +450,7 @@ without a threshold couldn't refuse anything, so that's an error too
 (to just scan, run `bomify security scan` after pulling). For the same
 reason, a rule's `--on pull` requires its `--fail-on`.
 
-The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
+The scan runs as a third transfer hook, `transfer.Options.Scan`,
 alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's
 SBOM into memory after verifying it and hands it to the hook before
 writing anything, so a failure leaves nothing behind, as a failed
@@ -508,14 +528,14 @@ byte-for-byte what `bomify build` recorded.
 
 [`internal/signature`](internal/signature) holds bomify's side of this,
 wired into `push.Push` and `pull.Pull` as two optional hooks
-(`transfer.Hooks`' `Sign` and `Verify`, beside the scanning hook
+(`transfer.Options`' `Sign` and `Verify`, beside the scanning hook
 `Scan`), so `save`/`load` inherit them unchanged:
 
 - **Signing** (`push --sign <kind>`, `save --sign <kind>`): once the
   package manifest is packed, but **before** the tag is updated,
   bomify writes a small payload — the manifest's `mediaType`, `digest`,
   and `size` as JSON (`internal/signature`'s `writePayload`) — to a
-  file, calls the plugin's `signature sign` on it (`plugin.Sign`), and
+  file, calls the plugin's `signature sign` on it (`signature`'s `signPayload`), and
   pushes the envelope it returns as an **OCI 1.1 referrer**: a
   manifest of the plugin's own artifact type whose `subject` is the
   package manifest and whose one layer is the envelope. A failed sign

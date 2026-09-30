@@ -39,15 +39,14 @@ const buildExample = `  # Build the package described by sbom.json
   # Build and tag the result as myapp:latest
   bomify build sbom.json --tag myapp:latest
 
-  # Pull up to 4 components concurrently, verifying against sha-512
-  bomify build sbom.json --concurrency 4 --hash sha-512
+  # Pull up to 4 components concurrently
+  bomify build sbom.json --concurrency 4
 
   # Verify every component is pullable, without downloading anything
   bomify build sbom.json --check`
 
 type buildOptions struct {
 	file        string
-	hash        string
 	concurrency int
 	tags        []string
 	check       bool
@@ -72,7 +71,6 @@ func buildCmd() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVar(&buildOpts.hash, "hash", "sha-256", "hash algorithm to verify pulled components against their SBOM-declared hash")
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
 	buildCmd.Flags().BoolVar(&buildOpts.check, "check", false, "verify every component is pullable and authorized, without downloading any of them or recording a build")
@@ -81,16 +79,11 @@ func buildCmd() *cobra.Command {
 }
 
 func runBuild(opts *buildOptions, logger *slog.Logger) error {
-	hashAlgorithm, err := plugin.NormalizeHashAlgorithm(opts.hash)
-	if err != nil {
-		return err
-	}
-
 	if err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		if _, isBinary, err := plugin.ParseBinary(component); err != nil {
 			return err
 		} else if isBinary {
-			return buildPluginBinary(opts, component, hashAlgorithm, log)
+			return buildPluginBinary(opts, component, log)
 		}
 
 		kind, path, err := resolvePlugin(component, log)
@@ -101,7 +94,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 		log.Info("delegating to plugin", "kind", kind, "path", path)
 
 		if opts.check {
-			result, err := plugin.CheckPull(path, component, dataDir, hashAlgorithm, log)
+			result, err := plugin.CheckPull(path, component, dataDir, log)
 			if err != nil {
 				return err
 			}
@@ -109,7 +102,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 			return nil
 		}
 
-		result, err := plugin.Pull(path, component, dataDir, hashAlgorithm, log)
+		result, err := plugin.Pull(path, component, dataDir, log)
 		if err != nil {
 			return err
 		}
@@ -132,11 +125,11 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 // buildPluginBinary builds a plugin.PurlType component: bomify copies the
 // plugin binary its "distribution" external reference names itself,
 // rather than delegating to a plugin (see plugin.PullBinary).
-func buildPluginBinary(opts *buildOptions, component cdx.Component, hashAlgorithm cdx.HashAlgorithm, log *slog.Logger) error {
+func buildPluginBinary(opts *buildOptions, component cdx.Component, log *slog.Logger) error {
 	sbomDir := filepath.Dir(opts.file)
 
 	if opts.check {
-		result, err := plugin.CheckBinary(component, sbomDir, hashAlgorithm)
+		result, err := plugin.CheckBinary(component, sbomDir)
 		if err != nil {
 			return err
 		}
@@ -144,7 +137,7 @@ func buildPluginBinary(opts *buildOptions, component cdx.Component, hashAlgorith
 		return nil
 	}
 
-	result, err := plugin.PullBinary(component, sbomDir, dataDir, hashAlgorithm)
+	result, err := plugin.PullBinary(component, sbomDir, dataDir)
 	if err != nil {
 		return err
 	}

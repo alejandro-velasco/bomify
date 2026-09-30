@@ -35,8 +35,8 @@ bomify package build <sbom-file> [flags]
   # Build and tag the result as myapp:latest
   bomify build sbom.json --tag myapp:latest
 
-  # Pull up to 4 components concurrently, verifying against sha-512
-  bomify build sbom.json --concurrency 4 --hash sha-512
+  # Pull up to 4 components concurrently
+  bomify build sbom.json --concurrency 4
 
   # Verify every component is pullable, without downloading anything
   bomify build sbom.json --check
@@ -47,7 +47,6 @@ bomify package build <sbom-file> [flags]
 ```
       --check             verify every component is pullable and authorized, without downloading any of them or recording a build
   -c, --concurrency int   number of components to pull concurrently (default 1)
-      --hash string       hash algorithm to verify pulled components against their SBOM-declared hash (default "sha-256")
   -h, --help              help for build
   -t, --tag stringArray   tag this build as name[:version] (repeatable); defaults version to "latest"
 ```

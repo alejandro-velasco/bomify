@@ -191,7 +191,10 @@ A machine-readable version of this schema is published at
 Go plugins should build all three results as `plugin.SignResult`,
 `plugin.VerifyResult`, and `plugin.SupportedSignatureTypesResult` (see
 [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin))
-and print them with their `Print` methods, rather than hand-rolling the
+and return them from a `plugin.SigningPlugin`: `plugin.SignatureCommand`
+builds all three `signature` subcommands around that interface —
+flags, reading `--payload`/`--envelope`, and output included.
+Otherwise, print them with `plugin.Print` rather than hand-rolling the
 JSON encoding.
 
 ## Where signatures live

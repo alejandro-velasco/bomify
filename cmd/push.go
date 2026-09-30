@@ -10,10 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
-	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -61,10 +58,8 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
   pinned=$(bomify push registry.example.com/myapp:latest --quiet)`
 
 type pushOptions struct {
-	concurrency int
+	publishFlags
 	keepReports int
-	sign        signFlags
-	quiet       bool
 }
 
 func pushCmd() *cobra.Command {
@@ -85,26 +80,16 @@ func pushCmd() *cobra.Command {
 		ValidArgsFunction: completeLocalTags,
 	}
 
-	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to upload concurrently")
-	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
+	opts.register(cmd, "upload", "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
-	opts.sign.register(cmd)
 
 	return cmd
 }
 
 func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
-	logger := logging.FromContext(cmd.Context())
-	if opts.quiet {
-		logger = logging.WarningsOnly(logger)
-	}
+	logger := opts.logger(cmd)
 
 	sbomHash, err := build.ResolveTag(dataDir, tag)
-	if err != nil {
-		return err
-	}
-
-	signer, err := opts.sign.signer(logger)
 	if err != nil {
 		return err
 	}
@@ -114,14 +99,12 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
-	var progress transfer.ProgressFunc
-	if !opts.quiet {
-		mb := newMultiBar(cmd.OutOrStderr())
-		defer mb.Wait()
-		progress = newProgressFunc(mb)
+	transferOpts, done, err := opts.options(cmd, logger)
+	if err != nil {
+		return err
 	}
-
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, transfer.Hooks{Sign: signer})
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, transferOpts)
+	done()
 	if err != nil {
 		return err
 	}
@@ -129,9 +112,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logPushedLayers(logger, result)
 	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
-	if opts.quiet {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(tag), result.ManifestDigest)
-	}
+	opts.printPinned(cmd, tag, result.ManifestDigest)
 	return nil
 }
 

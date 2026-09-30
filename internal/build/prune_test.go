@@ -11,7 +11,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
@@ -43,9 +43,9 @@ func writeSBOM(t *testing.T, path string, components ...cdx.Component) {
 func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component) {
 	t.Helper()
 
-	hash := plugin.PurlHash(component)
+	hash := layout.PurlHash(component.PackageURL)
 
-	manifestPath := filepath.Join(baseDir, "manifests", hash+".json")
+	manifestPath := layout.Manifest(baseDir, hash)
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(manifestPath), err)
 	}
@@ -53,7 +53,7 @@ func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component
 		t.Fatalf("write %s: %v", manifestPath, err)
 	}
 
-	layerDir := filepath.Join(baseDir, "layers", hash)
+	layerDir := layout.Layer(baseDir, hash)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", layerDir, err)
 	}
@@ -69,7 +69,7 @@ func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component
 func writePulledLayerFixture(t *testing.T, baseDir string, component cdx.Component) {
 	t.Helper()
 
-	layerDir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	layerDir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", layerDir, err)
 	}
@@ -141,27 +141,27 @@ func TestPruneRemovesOnlyUnreachableManifestsAndLayers(t *testing.T) {
 
 	// The orphaned SBOM's own manifest, and component C's manifest and
 	// layer (used only by the orphan), should be gone.
-	if exists(ManifestPath(baseDir, orphanHash)) {
+	if exists(layout.Manifest(baseDir, orphanHash)) {
 		t.Error("orphaned SBOM manifest still exists")
 	}
-	if exists(filepath.Join(baseDir, "manifests", plugin.PurlHash(componentC)+".json")) {
+	if exists(layout.ComponentManifest(baseDir, componentC.PackageURL)) {
 		t.Error("component C's manifest still exists")
 	}
-	if exists(filepath.Join(baseDir, "layers", plugin.PurlHash(componentC))) {
+	if exists(layout.ComponentLayer(baseDir, componentC.PackageURL)) {
 		t.Error("component C's layer dir still exists")
 	}
 
 	// The kept SBOM's own manifest, and components A and B (B being
 	// shared with the pruned orphan), must survive.
-	if !exists(ManifestPath(baseDir, keptHash)) {
+	if !exists(layout.Manifest(baseDir, keptHash)) {
 		t.Error("kept SBOM manifest was removed")
 	}
 	for _, c := range []cdx.Component{componentA, componentB} {
-		hash := plugin.PurlHash(c)
-		if !exists(filepath.Join(baseDir, "manifests", hash+".json")) {
+		hash := layout.PurlHash(c.PackageURL)
+		if !exists(layout.Manifest(baseDir, hash)) {
 			t.Errorf("component %s's manifest was removed", c.Name)
 		}
-		if !exists(filepath.Join(baseDir, "layers", hash)) {
+		if !exists(layout.Layer(baseDir, hash)) {
 			t.Errorf("component %s's layer dir was removed", c.Name)
 		}
 	}
@@ -193,8 +193,8 @@ func TestPruneRemovesUnreachablePulledLayerWithNoManifest(t *testing.T) {
 		t.Fatalf("Prune() error = %v", err)
 	}
 
-	hash := plugin.PurlHash(component)
-	if exists(filepath.Join(baseDir, "layers", hash)) {
+	hash := layout.PurlHash(component.PackageURL)
+	if exists(layout.Layer(baseDir, hash)) {
 		t.Error("unreachable pulled component's layer dir still exists")
 	}
 	if len(result.Removed) != 1 || result.Removed[0].Kind != "layer" {
@@ -235,10 +235,10 @@ func TestPruneRemovesUnreachableVulnerabilityReports(t *testing.T) {
 		t.Fatalf("Prune() error = %v", err)
 	}
 
-	if !exists(security.ReportPath(baseDir, plugin.PurlHash(kept))) {
+	if !exists(layout.ComponentReport(baseDir, kept.PackageURL)) {
 		t.Error("reachable component's vulnerability report was removed")
 	}
-	if exists(security.ReportPath(baseDir, plugin.PurlHash(orphan))) {
+	if exists(layout.ComponentReport(baseDir, orphan.PackageURL)) {
 		t.Error("unreachable component's vulnerability report still exists")
 	}
 	if len(result.Removed) != 1 || result.Removed[0].Kind != "vulnerabilities" {
@@ -257,8 +257,8 @@ func TestPruneSkipsManifestWithLivePidFile(t *testing.T) {
 	// flight for it, so Prune should leave it alone rather than deleting
 	// out from under that pull. os.Getpid() (this test process) is
 	// guaranteed alive for the duration of the test.
-	hash := plugin.PurlHash(component)
-	pidPath := filepath.Join(baseDir, "manifests", hash+".pid")
+	hash := layout.PurlHash(component.PackageURL)
+	pidPath := layout.PID(baseDir, hash)
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -268,11 +268,11 @@ func TestPruneSkipsManifestWithLivePidFile(t *testing.T) {
 		t.Fatalf("Prune() error = %v", err)
 	}
 
-	manifestPath := filepath.Join(baseDir, "manifests", hash+".json")
+	manifestPath := layout.Manifest(baseDir, hash)
 	if !exists(manifestPath) {
 		t.Error("manifest with an in-flight pid file was removed")
 	}
-	if !exists(filepath.Join(baseDir, "layers", hash)) {
+	if !exists(layout.Layer(baseDir, hash)) {
 		t.Error("layer dir with an in-flight pid file was removed")
 	}
 	if !exists(pidPath) {
@@ -294,8 +294,8 @@ func TestPruneReclaimsManifestWithStalePidFile(t *testing.T) {
 	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0?download_url=https://example.com/a"}
 	writeComponentFixture(t, baseDir, component)
 
-	hash := plugin.PurlHash(component)
-	pidPath := filepath.Join(baseDir, "manifests", hash+".pid")
+	hash := layout.PurlHash(component.PackageURL)
+	pidPath := layout.PID(baseDir, hash)
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(deadPID(t))), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -305,11 +305,11 @@ func TestPruneReclaimsManifestWithStalePidFile(t *testing.T) {
 		t.Fatalf("Prune() error = %v", err)
 	}
 
-	manifestPath := filepath.Join(baseDir, "manifests", hash+".json")
+	manifestPath := layout.Manifest(baseDir, hash)
 	if exists(manifestPath) {
 		t.Error("manifest with a stale pid file was not removed")
 	}
-	if exists(filepath.Join(baseDir, "layers", hash)) {
+	if exists(layout.Layer(baseDir, hash)) {
 		t.Error("layer dir with a stale pid file was not removed")
 	}
 	if exists(pidPath) {
@@ -343,7 +343,7 @@ func TestPruneReportsUnprotectedForUnparsableManifest(t *testing.T) {
 	// truncated write or on-disk corruption — not something RecordManifest
 	// itself would ever produce, but something Prune must still handle
 	// safely if it happens.
-	if err := os.WriteFile(ManifestPath(baseDir, sbomHash), []byte("not json"), 0o644); err != nil {
+	if err := os.WriteFile(layout.Manifest(baseDir, sbomHash), []byte("not json"), 0o644); err != nil {
 		t.Fatalf("corrupt manifest: %v", err)
 	}
 

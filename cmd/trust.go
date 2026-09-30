@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/logging"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const trustShort = "Manage signature verification rules for bomify pull and load"
@@ -149,22 +149,20 @@ func trustListCmd() *cobra.Command {
 }
 
 func runTrustList(cmd *cobra.Command) error {
-	rules, err := signature.Read(dataDir)
+	config, err := signature.Read(dataDir)
 	if err != nil {
 		return err
 	}
 
 	// Display order only — unrelated to the specificity ranking used
 	// when rules are matched against a reference.
-	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
+	sort.SliceStable(config, func(i, j int) bool { return config[i].Match < config[j].Match })
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tVERIFIER\tOPTIONS\tKEY-OPTIONS")
-	for _, rule := range rules {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions))
+	rows := make([][]string, 0, len(config))
+	for _, rule := range config {
+		rows = append(rows, []string{rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions)})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "VERIFIER", "OPTIONS", "KEY-OPTIONS"}, rows)
 }
 
 const trustRemoveShort = "Remove a signature verification rule"
@@ -213,16 +211,13 @@ func formatKeyOptions(keyOptions map[string]string) string {
 const trustKeyShort = "Manage the public keys trust rules refer to"
 
 func trustKeyCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "key",
-		Short: trustKeyShort,
-	}
-
-	cmd.AddCommand(trustKeyAddCmd())
-	cmd.AddCommand(trustKeyListCmd())
-	cmd.AddCommand(trustKeyRemoveCmd())
-
-	return cmd
+	return storeCommand{
+		use: "key", short: trustKeyShort, path: "trust key", noun: "key",
+		add: signature.AddKey, list: signature.ListKeys, remove: signature.RemoveKey,
+		addHelp:    commandHelp{trustKeyAddShort, trustKeyAddLong, trustKeyAddExample},
+		listHelp:   commandHelp{trustKeyListShort, trustKeyListLong, trustKeyListExample},
+		removeHelp: commandHelp{trustKeyRemoveShort, trustKeyRemoveLong, trustKeyRemoveExample},
+	}.command()
 }
 
 const trustKeyAddShort = "Add or replace a public key in the managed key store"
@@ -251,24 +246,6 @@ const trustKeyAddExample = `  # Store the team's cosign public key as "team"
   # Rotate it: every rule using "team" now trusts the new key
   bomify trust key add team keys/team-2026.pub`
 
-func trustKeyAddCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "add <name> <file>",
-		Short:   trustKeyAddShort,
-		Long:    trustKeyAddLong,
-		Example: trustKeyAddExample,
-		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entry, err := signature.AddKey(dataDir, args[0], args[1])
-			if err != nil {
-				return fmt.Errorf("trust key add: %w", err)
-			}
-			logging.FromContext(cmd.Context()).Info("key stored", "name", entry.Name, "sha256", entry.SHA256, "source", entry.Source)
-			return nil
-		},
-	}
-}
-
 const trustKeyListShort = "List the public keys in the managed key store"
 
 const trustKeyListLong = `List prints every key in <data-dir>/keys/: its name, the content hash
@@ -277,28 +254,6 @@ it's stored under, when it was added, and the file it was copied from
 
 const trustKeyListExample = `  # See every stored key
   bomify trust key list`
-
-func trustKeyListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Short:   trustKeyListShort,
-		Long:    trustKeyListLong,
-		Example: trustKeyListExample,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entries, err := signature.ListKeys(dataDir)
-			if err != nil {
-				return err
-			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSHA256\tADDED\tSOURCE")
-			for _, e := range entries {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.SHA256[:12], e.Added, e.Source)
-			}
-			return w.Flush()
-		},
-	}
-}
 
 const trustKeyRemoveShort = "Remove a public key from the managed key store"
 
@@ -309,19 +264,3 @@ referring to a key that no longer exists.`
 
 const trustKeyRemoveExample = `  # Remove the key stored as "team"
   bomify trust key remove team`
-
-func trustKeyRemoveCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "remove <name>",
-		Short:   trustKeyRemoveShort,
-		Long:    trustKeyRemoveLong,
-		Example: trustKeyRemoveExample,
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := signature.RemoveKey(dataDir, args[0]); err != nil {
-				return fmt.Errorf("trust key remove: %w", err)
-			}
-			return nil
-		},
-	}
-}

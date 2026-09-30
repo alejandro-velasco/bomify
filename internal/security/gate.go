@@ -6,9 +6,10 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 // Severity is a vulnerability severity bomify can gate on, ordered from
@@ -123,7 +124,7 @@ func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 		}
 		// Built once per report, since every vulnerability in it resolves
 		// its "affects" against the same components.
-		purlByRef := purlsByBOMRef(componentsOf(r.Report.Components))
+		purlByRef := purlsByBOMRef(sbom.Components(r.Report.Components))
 		for _, vuln := range *r.Report.Vulnerabilities {
 			if slices.Contains(g.Ignore, vuln.ID) {
 				continue
@@ -196,10 +197,9 @@ func (e Evaluation) Err(failOn Severity) error {
 
 // WriteFindings prints findings to w as a table.
 func WriteFindings(w io.Writer, findings []Finding) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "SEVERITY\tID\tCOMPONENT")
+	rows := make([][]string, 0, len(findings))
 	for _, f := range findings {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", f.Severity, f.ID, f.Purl)
+		rows = append(rows, []string{f.Severity.String(), f.ID, f.Purl})
 	}
-	return tw.Flush()
+	return table.Write(w, []string{"SEVERITY", "ID", "COMPONENT"}, rows)
 }

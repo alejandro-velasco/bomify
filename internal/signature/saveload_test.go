@@ -39,14 +39,14 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 		t.Fatalf("NewSigner: %v", err)
 	}
 	var archive bytes.Buffer
-	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{Sign: signer}); err != nil {
+	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, transfer.Options{Concurrency: 1, Sign: signer}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	load := func(key string) (string, error) {
 		destDir := t.TempDir()
 		verifier := NewVerifier(pluginDir, Policy{Verifier: Plugin{Kind: fakeKind, Options: []string{"key=" + key}}}, discardLogger())
-		_, err := save.Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 1, nil, transfer.Hooks{Verify: verifier})
+		_, err := save.Load(ctx, destDir, bytes.NewReader(archive.Bytes()), transfer.Options{Concurrency: 1, Verify: verifier})
 		return destDir, err
 	}
 
@@ -68,7 +68,7 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 
 	// And an unsigned save fails verification outright.
 	archive.Reset()
-	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{}); err != nil {
+	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Save (unsigned): %v", err)
 	}
 	if _, err := load("secret"); err == nil || !strings.Contains(err.Error(), "no signature") {

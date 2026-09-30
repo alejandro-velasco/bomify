@@ -2,33 +2,21 @@ package cmd
 
 import (
 	"bytes"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
-// buildFakePluginBinary builds cmd/testdata/fakeplugin as
-// bomify-plugin-<medium>[.exe] into a fresh data directory's plugins
+// buildFakePluginBinary installs the fake plugin as
+// bomify-plugin-<medium> into a fresh data directory's plugins
 // directory, for plugin.Find to discover there, and returns that data
 // directory.
 func buildFakePluginBinary(t *testing.T, medium string) string {
 	t.Helper()
-
 	dir := t.TempDir()
-	bin := filepath.Join(plugin.Dir(dir), "bomify-plugin-"+medium)
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-
-	build := exec.Command("go", "build", "-o", bin, "./testdata/fakeplugin")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fake plugin: %v\n%s", err, out)
-	}
-
+	testutil.InstallFakePlugin(t, layout.Plugins(dir), medium)
 	return dir
 }
 

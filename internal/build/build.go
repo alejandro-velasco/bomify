@@ -7,21 +7,15 @@
 package build
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-)
 
-// ManifestPath returns the deterministic path of the manifest for an SBOM
-// with the given content hash (see RecordManifest).
-func ManifestPath(baseDir, sbomHash string) string {
-	return filepath.Join(baseDir, "manifests", sbomHash+".json")
-}
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
+	"github.com/alejandro-velasco/bomify/internal/layout"
+)
 
 // RecordManifest hashes the SBOM at sbomPath and copies it verbatim to
 // "<baseDir>/manifests/<hash>.json". If a manifest for that hash already
@@ -36,19 +30,15 @@ func RecordManifest(baseDir, sbomPath string) (sbomHash string, skipped bool, er
 	sum := sha256.Sum256(data)
 	sbomHash = hex.EncodeToString(sum[:])
 
-	path := ManifestPath(baseDir, sbomHash)
+	path := layout.Manifest(baseDir, sbomHash)
 	if _, err := os.Stat(path); err == nil {
 		return sbomHash, true, nil
 	} else if !os.IsNotExist(err) {
 		return sbomHash, false, fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return sbomHash, false, fmt.Errorf("create manifests directory: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return sbomHash, false, fmt.Errorf("write manifest %s: %w", path, err)
+	if err := fsutil.WriteFileAtomic(path, data); err != nil {
+		return sbomHash, false, err
 	}
 
 	return sbomHash, false, nil
@@ -59,30 +49,13 @@ func RecordManifest(baseDir, sbomPath string) (sbomHash string, skipped bool, er
 // repo name -> tag/version -> sbom hash.
 type Repositories map[string]map[string]string
 
-// RepositoriesPath returns the deterministic path of baseDir's
-// repositories.json.
-func RepositoriesPath(baseDir string) string {
-	return filepath.Join(baseDir, "package", "repositories.json")
-}
-
 // ReadRepositories reads and parses baseDir's repositories.json,
 // returning an empty Repositories if it doesn't exist yet.
 func ReadRepositories(baseDir string) (Repositories, error) {
-	path := RepositoriesPath(baseDir)
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return Repositories{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
 	repos := Repositories{}
-	if err := json.Unmarshal(data, &repos); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	if err := fsutil.ReadJSON(layout.Repositories(baseDir), &repos); err != nil {
+		return nil, err
 	}
-
 	return repos, nil
 }
 
@@ -164,25 +137,7 @@ func RemoveTag(baseDir, tag string) error {
 
 // writeRepositories writes repos to baseDir's repositories.json.
 func writeRepositories(baseDir string, repos Repositories) error {
-	path := RepositoriesPath(baseDir)
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create package directory: %w", err)
-	}
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(repos); err != nil {
-		return fmt.Errorf("marshal repositories: %w", err)
-	}
-
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-
-	return nil
+	return fsutil.WriteJSON(layout.Repositories(baseDir), repos)
 }
 
 // splitTag splits "name:version" into its repo and version parts,

@@ -9,28 +9,15 @@ package security
 import (
 	"bytes"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
-
-// ReportsDir returns the directory every vulnerability report under
-// baseDir lives in.
-func ReportsDir(baseDir string) string {
-	return filepath.Join(baseDir, "vulnerabilities")
-}
-
-// ReportPath returns the deterministic path of the vulnerability report
-// for the component whose purl hashes to purlHash.
-func ReportPath(baseDir, purlHash string) string {
-	return filepath.Join(ReportsDir(baseDir), purlHash+".json")
-}
 
 // NewReport builds component's vulnerability report from its scan
 // result: a CycloneDX document whose metadata component is component
@@ -111,7 +98,7 @@ func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (stri
 		return "", fmt.Errorf("encode vulnerability report: %w", err)
 	}
 
-	path := ReportPath(baseDir, plugin.PurlHash(component))
+	path := layout.Report(baseDir, layout.PurlHash(component.PackageURL))
 	if err := fsutil.WriteFileAtomic(path, buf.Bytes()); err != nil {
 		return "", fmt.Errorf("write report: %w", err)
 	}
@@ -122,5 +109,5 @@ func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (stri
 // ReadReport reads the vulnerability report for the component whose purl
 // hashes to purlHash.
 func ReadReport(baseDir, purlHash string) (*cdx.BOM, error) {
-	return sbom.Load(ReportPath(baseDir, purlHash))
+	return sbom.Load(layout.Report(baseDir, purlHash))
 }

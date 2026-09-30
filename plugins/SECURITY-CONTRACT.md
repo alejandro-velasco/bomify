@@ -88,7 +88,7 @@ to stdout and exit `0`. It must be a pure function of nothing at all —
 the same plugin binary always reports the same capabilities.
 
 Unlike the component contract, neither subcommand takes `--output`/
-`--input`, `--hash`, `--check`, or `--log`/`--log-color` — a security
+`--input`, `--check`, or `--log`/`--log-color` — a security
 scanning plugin only ever answers "what does this purl have" and "what
 do you support", nothing else. Routine logging is the plugin's own
 business; write it straight to stderr if you want it, there's no
@@ -165,8 +165,11 @@ A machine-readable version of this schema is published at
 [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
 
 Go plugins should build this as a `plugin.SecurityResult` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with `(SecurityResult).Print`,
-rather than hand-rolling the JSON encoding.
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
+`plugin.SecurityPlugin`'s `Scan`: `plugin.SecurityCommand` builds both
+`security` subcommands around that interface, flags and output
+included. Otherwise, print it with `plugin.Print` rather than
+hand-rolling the JSON encoding.
 
 ## SupportedComponentsResult
 
@@ -189,9 +192,9 @@ A machine-readable version of this schema is published at
 [`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-components-result.schema.json).
 
 Go plugins should build this as a `plugin.SupportedComponentsResult`
-(see [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with
-`(*SupportedComponentsResult).Print`, rather than hand-rolling the JSON
-encoding.
+(see [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
+`plugin.SecurityPlugin`'s `SupportedComponents`, or print it with
+`plugin.Print`, rather than hand-rolling the JSON encoding.
 
 ## Reports
 

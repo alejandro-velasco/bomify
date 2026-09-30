@@ -53,7 +53,7 @@ func TestPull(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	result, err := Pull(ref, outputDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(ref, outputDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -83,28 +83,11 @@ func TestPull(t *testing.T) {
 	}
 }
 
-func TestPullUnsupportedHashAlgorithm(t *testing.T) {
-	host := newTestRegistry(t)
-	ref := host + "/test/pull-image:1.0"
-
-	img, err := random.Image(64, 1)
-	if err != nil {
-		t.Fatalf("random.Image: %v", err)
-	}
-	if err := crane.Push(img, ref); err != nil {
-		t.Fatalf("seed registry with crane.Push: %v", err)
-	}
-
-	if _, err := Pull(ref, t.TempDir(), cdx.HashAlgoMD5, testLogger()); err == nil {
-		t.Fatal("Pull() with an unsupported hash algorithm: expected error, got nil")
-	}
-}
-
 func TestPullMissingImage(t *testing.T) {
 	host := newTestRegistry(t)
 	ref := host + "/test/does-not-exist:1.0"
 
-	if _, err := Pull(ref, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(ref, t.TempDir(), testLogger()); err == nil {
 		t.Fatal("Pull() for an image never pushed: expected error, got nil")
 	}
 }
@@ -125,7 +108,7 @@ func TestCheckPull(t *testing.T) {
 		t.Fatalf("img.Digest: %v", err)
 	}
 
-	result, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger())
+	result, err := CheckPull(ref, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull() error = %v", err)
 	}
@@ -142,7 +125,7 @@ func TestCheckPullMissingImage(t *testing.T) {
 	host := newTestRegistry(t)
 	ref := host + "/test/does-not-exist:1.0"
 
-	if _, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := CheckPull(ref, testLogger()); err == nil {
 		t.Fatal("CheckPull() for an image never pushed: expected error, got nil")
 	}
 }
@@ -188,11 +171,11 @@ func TestCheckPullMultiPlatformReportsSameDigestAsPull(t *testing.T) {
 		t.Fatalf("crane.Head digest = %s, want the index digest %s", headDesc.Digest, indexDigest)
 	}
 
-	pullResult, err := Pull(ref, t.TempDir(), cdx.HashAlgoSHA256, testLogger())
+	pullResult, err := Pull(ref, t.TempDir(), testLogger())
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
-	checkResult, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger())
+	checkResult, err := CheckPull(ref, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull() error = %v", err)
 	}

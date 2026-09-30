@@ -1,15 +1,12 @@
 package signature
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/alejandro-velasco/bomify/internal/prefix"
+	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 )
 
 // Rule is one entry in "<baseDir>/conf/trust.json": packages whose
@@ -42,30 +39,17 @@ type Rule struct {
 // Resolve).
 type Config []Rule
 
-// ConfigPath returns the deterministic path of baseDir's trust.json.
-func ConfigPath(baseDir string) string {
-	return filepath.Join(baseDir, "conf", "trust.json")
+func trustFile(baseDir string) rules.File[Rule] {
+	return rules.File[Rule]{
+		Path: layout.TrustConfig(baseDir),
+		Key:  func(r Rule) string { return fmt.Sprintf("match=%q", r.Match) },
+	}
 }
 
-// Read reads and parses baseDir's trust.json, returning an empty Config
-// if it doesn't exist yet.
+// Read reads baseDir's trust.json, returning an empty Config if it
+// doesn't exist yet.
 func Read(baseDir string) (Config, error) {
-	path := ConfigPath(baseDir)
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return Config{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	return config, nil
+	return trustFile(baseDir).Read()
 }
 
 // SetRule adds or replaces the rule for rule.Match in baseDir's
@@ -83,57 +67,23 @@ func SetRule(baseDir string, rule Rule) error {
 	if _, err := keyOptionArgs(baseDir, rule.KeyOptions); err != nil {
 		return err
 	}
-
-	config, err := Read(baseDir)
-	if err != nil {
-		return err
-	}
-
-	for i := range config {
-		if config[i].Match == rule.Match {
-			config[i] = rule
-			return writeConfig(baseDir, config)
-		}
-	}
-
-	return writeConfig(baseDir, append(config, rule))
+	return trustFile(baseDir).Set(rule)
 }
 
 // RemoveRule removes the rule for match from baseDir's trust.json,
 // returning an error if no such rule exists.
 func RemoveRule(baseDir, match string) error {
-	config, err := Read(baseDir)
-	if err != nil {
-		return err
-	}
-
-	for i, rule := range config {
-		if rule.Match == match {
-			config = append(config[:i], config[i+1:]...)
-			return writeConfig(baseDir, config)
-		}
-	}
-
-	return fmt.Errorf("no such rule: match=%q", match)
+	return trustFile(baseDir).Remove(Rule{Match: match})
 }
 
 // Resolve picks the rule in rules whose Match is the most specific (most
-// "/"-separated segments) prefix of ref's repository (see prefix.Repository),
-// reporting ok=false if none matches.
-func Resolve(rules Config, ref string) (rule Rule, ok bool) {
-	repository := prefix.Repository(ref)
-
-	best := -1
-	for _, candidate := range rules {
-		if !prefix.Matches(repository, candidate.Match) {
-			continue
-		}
-		if segments := prefix.Segments(candidate.Match); segments > best {
-			rule, best, ok = candidate, segments, true
-		}
-	}
-	return rule, ok
+// "/"-separated segments) prefix of ref's repository (see
+// prefix.Repository), reporting ok=false if none matches.
+func Resolve(config Config, ref string) (rule Rule, ok bool) {
+	return rules.ForReference(config, ref, ruleMatch)
 }
+
+func ruleMatch(r Rule) string { return r.Match }
 
 // Policy decides which plugin, if any, must verify a given package
 // before it's restored: an explicit Verifier applies to every reference;
@@ -177,27 +127,4 @@ func (p Policy) For(ref string, logger *slog.Logger) (Plugin, bool) {
 		return Plugin{Kind: rule.Verifier, Options: rule.Options}, true
 	}
 	return Plugin{}, false
-}
-
-// writeConfig writes config to baseDir's trust.json.
-func writeConfig(baseDir string, config Config) error {
-	path := ConfigPath(baseDir)
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create conf directory: %w", err)
-	}
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(config); err != nil {
-		return fmt.Errorf("marshal trust config: %w", err)
-	}
-
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-
-	return nil
 }

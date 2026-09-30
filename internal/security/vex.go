@@ -7,6 +7,7 @@ import (
 	"os"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/openvex/go-vex/pkg/vex"
 )
 
@@ -117,7 +118,7 @@ func cycloneDXStatements(data []byte) ([]vex.Statement, error) {
 	// A VEX document's "affects" may name its own components by bom-ref,
 	// or by BOM-Link ("urn:cdx:<serial>/<version>#<bom-ref>"), rather than
 	// by purl; resolve those to purls where it says what they are.
-	components := componentsOf(bom.Components)
+	components := sbom.Components(bom.Components)
 	if bom.Metadata != nil && bom.Metadata.Component != nil {
 		components = append(components, *bom.Metadata.Component)
 	}
@@ -190,20 +191,11 @@ func purlsByBOMRef(components []cdx.Component) map[string]string {
 			if c.BOMRef != "" && c.PackageURL != "" {
 				purlByRef[c.BOMRef] = c.PackageURL
 			}
-			index(componentsOf(c.Components))
+			index(sbom.Components(c.Components))
 		}
 	}
 	index(components)
 	return purlByRef
-}
-
-// componentsOf dereferences a CycloneDX component list, which is nil
-// when absent.
-func componentsOf(cs *[]cdx.Component) []cdx.Component {
-	if cs == nil {
-		return nil
-	}
-	return *cs
 }
 
 // vulnerabilityIDs returns vuln's own ID, always first, followed by

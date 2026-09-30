@@ -33,7 +33,7 @@ func TestPull(t *testing.T) {
 	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL + "/widget-1.0.bin"}
 	outputDir := t.TempDir()
 
-	result, err := Pull(ref, outputDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(ref, outputDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -61,20 +61,6 @@ func TestPull(t *testing.T) {
 	}
 }
 
-func TestPullUnsupportedHashAlgorithm(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("data"))
-	}))
-	defer srv.Close()
-
-	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL}
-
-	if _, err := Pull(ref, t.TempDir(), cdx.HashAlgoMD5, testLogger()); err == nil {
-		t.Fatal("Pull() with an unsupported hash algorithm: expected error, got nil")
-	}
-}
-
 func TestPullNonSuccessStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -83,7 +69,7 @@ func TestPullNonSuccessStatus(t *testing.T) {
 
 	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL}
 
-	if _, err := Pull(ref, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(ref, t.TempDir(), testLogger()); err == nil {
 		t.Fatal("Pull() with a 404 response: expected error, got nil")
 	}
 }

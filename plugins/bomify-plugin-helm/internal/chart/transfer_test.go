@@ -41,26 +41,6 @@ func TestRegistryHost(t *testing.T) {
 	}
 }
 
-func TestChartHash(t *testing.T) {
-	hash, err := chartHash(cdx.HashAlgoSHA256, []byte("chart contents"))
-	if err != nil {
-		t.Fatalf("chartHash() error = %v", err)
-	}
-
-	if hash.Algorithm != cdx.HashAlgoSHA256 {
-		t.Errorf("Algorithm = %q, want %q", hash.Algorithm, cdx.HashAlgoSHA256)
-	}
-	if want := "48d492eade212236b0c6bb101caaab594b0b6721b14afe1d0df72182738ab8e6"; hash.Value != want {
-		t.Errorf("Value = %q, want %q", hash.Value, want)
-	}
-}
-
-func TestChartHashUnsupportedAlgorithm(t *testing.T) {
-	if _, err := chartHash(cdx.HashAlgoMD5, []byte("chart contents")); err == nil {
-		t.Fatal("chartHash() with an unsupported algorithm: expected error, got nil")
-	}
-}
-
 func TestNewRegistryClientAnonymous(t *testing.T) {
 	if _, err := newRegistryClient(""); err != nil {
 		t.Fatalf("newRegistryClient(\"\") error = %v", err)
@@ -154,7 +134,7 @@ func TestOCIPushThenPullRoundTrip(t *testing.T) {
 
 	outputDir := t.TempDir()
 	pullRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	pullResult, err := Pull(pullRef, outputDir, cdx.HashAlgoSHA256, testLogger())
+	pullResult, err := Pull(pullRef, outputDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -216,7 +196,7 @@ func TestOCICheckPullAndCheckPush(t *testing.T) {
 	}
 
 	pullRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	pullResult, err := CheckPull(pullRef, cdx.HashAlgoSHA256, testLogger())
+	pullResult, err := CheckPull(pullRef, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull() error = %v", err)
 	}
@@ -230,7 +210,7 @@ func TestOCICheckPullMissingChart(t *testing.T) {
 	host := newTestOCIRegistry(t)
 
 	ref := Ref{Name: "does-not-exist", Version: "1.0.0", RepositoryURL: "oci://" + host + "/charts", OCI: true}
-	if _, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := CheckPull(ref, testLogger()); err == nil {
 		t.Fatal("CheckPull() for a chart never pushed: expected error, got nil")
 	}
 }
@@ -276,7 +256,7 @@ generated: "2024-01-01T00:00:00Z"
 	base := newTestHTTPRepo(t, index)
 	ref := Ref{Name: "widget", Version: "1.2.3", RepositoryURL: base, OCI: false}
 
-	result, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger())
+	result, err := CheckPull(ref, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull() error = %v", err)
 	}
@@ -306,7 +286,7 @@ generated: "2024-01-01T00:00:00Z"
 	base := newTestHTTPRepo(t, index)
 	ref := Ref{Name: "widget", Version: "9.9.9", RepositoryURL: base, OCI: false}
 
-	if _, err := CheckPull(ref, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := CheckPull(ref, testLogger()); err == nil {
 		t.Fatal("CheckPull() for a version not in index.yaml: expected error, got nil")
 	}
 }

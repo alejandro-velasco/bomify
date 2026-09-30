@@ -13,7 +13,7 @@ since they don't share requirements:
 - **Component plugins** (`component pull`/`component push`/`component
   remote`, one per purl type) — the full subprocess contract, naming and
   discovery, every subcommand and its flags, stdout/stderr/exit-code
-  rules, each JSON result shape, hash algorithm names, logging via
+  rules, each JSON result shape, the SHA-256 hash, logging via
   `--log`, and what a plugin does *not* need to handle — is specified in
   [`plugins/COMPONENT-CONTRACT.md`](../../../plugins/COMPONENT-CONTRACT.md).
 - **SBOM generation plugins** (`sbom generate`, one per deployment
@@ -73,15 +73,22 @@ has grown since:
   shape.
 - [`pkg/plugin`](../../../pkg/plugin) — the Go library implementing the
   Go-facing side of any contract bomify itself parses JSON from:
-  importable from any Go module, one struct/type + `Print` method per
-  JSON shape (`Result`/`Hash`/`RemoteResult` for the component contract,
+  importable from any Go module, one struct/type per JSON shape
+  (`Result`/`Hash`/`RemoteResult` for the component contract,
   `SecurityResult`/`SupportedComponentsResult` for the security scanning
   contract, `SignResult`/`VerifyResult`/`SupportedSignatureTypesResult`
-  for the signing contract), plus `OpenLog` for a component plugin's `--log`. Check the
-  package itself for its current exported symbols rather than trusting a
-  memorized list — a Go-based plugin, first- or third-party, should use
-  these instead of hand-rolling JSON encoding or log setup. Nothing
-  comparable exists for SBOM generation plugins, by design.
+  for the signing contract) plus `Print` to emit any of them, and one
+  interface + command builder per contract (`ComponentPlugin`/
+  `ComponentCommand`, `SecurityPlugin`/`SecurityCommand`,
+  `SigningPlugin`/`SignatureCommand`) that implements the contract's
+  flags, validation, logging, and output around a plugin's own logic;
+  `NewRootCommand`/`Run` wire up the binary itself. A contract change to
+  flags or output belongs in these builders, not in each plugin. Check
+  the package itself for its current exported symbols rather than
+  trusting a memorized list — a Go-based plugin, first- or third-party,
+  should use these instead of hand-rolling flags, JSON encoding, or log
+  setup. Nothing comparable exists for SBOM generation plugins, by
+  design.
 - [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) — how all four plugin
   contracts fit into bomify's design as a whole.
 

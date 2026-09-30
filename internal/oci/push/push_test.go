@@ -19,9 +19,9 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -80,7 +80,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, transfer.Hooks{})
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -92,12 +92,12 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, transfer.Hooks{})
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
-	gotManifest, err := os.ReadFile(build.ManifestPath(pulledDir, pullResult.SBOMHash))
+	gotManifest, err := os.ReadFile(layout.Manifest(pulledDir, pullResult.SBOMHash))
 	if err != nil {
 		t.Fatalf("read pulled manifest: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 		// exactly the path `bomify build` would have used for this
 		// component, not some digest-keyed directory of Pull's own
 		// invention.
-		wantPath := filepath.Join(pulledDir, "layers", plugin.PurlHash(component))
+		wantPath := layout.ComponentLayer(pulledDir, component.PackageURL)
 		if layer.Path != wantPath {
 			t.Errorf("layer %s path = %s, want %s", layer.Purl, layer.Path, wantPath)
 		}
@@ -161,7 +161,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	})
 
 	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
-	reportPath := security.ReportPath(baseDir, plugin.PurlHash(singleFileComponent))
+	reportPath := layout.ComponentReport(baseDir, singleFileComponent.PackageURL)
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, transfer.Hooks{})
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, transfer.Hooks{})
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -223,7 +223,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	if report.Purl != singleFileComponent.PackageURL {
 		t.Errorf("pulled vulnerability report purl = %q, want %q", report.Purl, singleFileComponent.PackageURL)
 	}
-	wantPath := security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent))
+	wantPath := layout.ComponentReport(pulledDir, singleFileComponent.PackageURL)
 	if report.Path != wantPath {
 		t.Errorf("pulled vulnerability report path = %s, want %s", report.Path, wantPath)
 	}
@@ -235,7 +235,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Errorf("pulled vulnerability report content = %q, want %q", got, reportBytes)
 	}
 
-	if _, err := os.Stat(security.ReportPath(pulledDir, plugin.PurlHash(multiFileComponent))); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentReport(pulledDir, multiFileComponent.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("multi-file component got a vulnerability report, want none: err = %v", err)
 	}
 }
@@ -261,7 +261,7 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 
-	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{}); err == nil {
+	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1}); err == nil {
 		t.Fatal("Push() error = nil, want error for a component never built locally")
 	}
 }
@@ -269,7 +269,7 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 func writeLayer(t *testing.T, baseDir string, component cdx.Component, files map[string]string) {
 	t.Helper()
 
-	dir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	for name, content := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -342,7 +342,7 @@ func TestPushAttachesReportsAsReferrer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, n, nil, transfer.Hooks{})
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: n})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}
@@ -403,7 +403,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		return nil
 	}
 
-	first, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{Sign: sign})
+	first, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1, Sign: sign})
 	if err != nil {
 		t.Fatalf("first Push() error = %v", err)
 	}
@@ -411,7 +411,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		t.Fatalf("signed %v, want the package manifest then its report referrer", signed)
 	}
 
-	again, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	again, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("second Push() error = %v", err)
 	}
@@ -420,7 +420,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	}
 
 	writeReport(t, baseDir, singleFileComponent, "CVE-NEW", "2026-02-01T00:00:00Z")
-	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("third Push() error = %v", err)
 	}
@@ -437,10 +437,10 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	if _, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
-	got, err := os.ReadFile(security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent)))
+	got, err := os.ReadFile(layout.ComponentReport(pulledDir, singleFileComponent.PackageURL))
 	if err != nil {
 		t.Fatalf("read pulled report: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 	ctx := context.Background()
-	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -476,7 +476,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	result, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, transfer.Hooks{Verify: verify})
+	result, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 1, Verify: verify})
 	if err != nil {
 		t.Fatalf("Pull() error = %v, want the package restored anyway", err)
 	}
@@ -486,7 +486,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 	if len(result.VulnerabilityReports) != 0 {
 		t.Errorf("restored %d reports, want none", len(result.VulnerabilityReports))
 	}
-	if _, err := os.Stat(security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent))); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentReport(pulledDir, singleFileComponent.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("unverified report was written: err = %v", err)
 	}
 }
@@ -495,7 +495,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 // vulnerability and dated scannedAt, as `bomify security scan` would.
 func writeReport(t *testing.T, baseDir string, component cdx.Component, id, scannedAt string) {
 	t.Helper()
-	reportPath := security.ReportPath(baseDir, plugin.PurlHash(component))
+	reportPath := layout.ComponentReport(baseDir, component.PackageURL)
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestPushIsDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}

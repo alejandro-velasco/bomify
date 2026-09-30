@@ -2,41 +2,56 @@
 package cmd
 
 import (
+	"context"
+	"log/slog"
+
 	"github.com/spf13/cobra"
+
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
+	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-oci/internal/image"
 )
 
-// NewRootCmd builds the bomify-plugin-oci root command and wires up its
-// component pull/push/remote subcommands.
+// NewRootCmd builds the bomify-plugin-oci root command, implementing the
+// component plugin contract (see plugins/COMPONENT-CONTRACT.md).
 func NewRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "bomify-plugin-oci",
-		Short:         "bomify plugin for container/OCI image components",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-
-	rootCmd.AddCommand(componentCmd())
-
-	return rootCmd
+	return plugin.NewRootCommand("oci", "bomify plugin for container/OCI image components",
+		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
+			Pull:       "Download the component's image and save it as an OCI Image Layout",
+			Push:       "Push the OCI Image Layout a prior pull wrote into --input to a remote endpoint",
+			Remote:     "Report the registry/namespace this component's purl names",
+			RemoteFlag: "remote registry/repository to push to",
+		}))
 }
 
-// componentCmd groups the component plugin contract's pull/push/remote
-// subcommands (see plugins/COMPONENT-CONTRACT.md), kept independent of any other
-// plugin class (e.g. sbom generate) this binary might also implement.
-func componentCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "component",
-		Short: "Component plugin subcommands (pull/push/remote) — see plugins/COMPONENT-CONTRACT.md",
+// component implements plugin.ComponentPlugin over internal/image.
+type component struct{}
+
+func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
+	req.Logger.Info("resolving purl", "purl", req.Purl)
+	ref, err := image.Resolve(req.Purl)
+	if err != nil {
+		return nil, err
 	}
+	req.Logger.Info("resolved reference", "ref", ref)
 
-	cmd.AddCommand(newPullCmd())
-	cmd.AddCommand(newPushCmd())
-	cmd.AddCommand(newRemoteCmd())
-
-	return cmd
+	if req.Check {
+		return image.CheckPull(ref, req.Logger)
+	}
+	return image.Pull(ref, req.Output, req.Logger)
 }
 
-// Execute runs the root command and returns any error encountered.
-func Execute() error {
-	return NewRootCmd().Execute()
+func (component) Push(_ context.Context, req plugin.PushRequest) (*plugin.Result, error) {
+	if req.Check {
+		return image.CheckPush(req.Purl, req.Remote, req.Logger)
+	}
+	return image.Push(req.Input, req.Purl, req.Remote, req.Logger)
+}
+
+func (component) Remote(_ context.Context, purl string, logger *slog.Logger) (string, error) {
+	location, err := image.Location(purl)
+	if err != nil {
+		return "", err
+	}
+	logger.Info("resolved location", "location", location)
+	return location, nil
 }

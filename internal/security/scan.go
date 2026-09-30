@@ -8,6 +8,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
@@ -28,7 +29,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 		concurrency = 1
 	}
 
-	capabilities, err := plugin.SupportedComponents(pluginPath, logger)
+	capabilities, err := supportedComponents(pluginPath, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 			log.Info("skipping component: unsupported by this scanner", "kind", kind)
 			continue
 		}
-		purlHash := plugin.PurlHash(component)
+		purlHash := layout.PurlHash(component.PackageURL)
 		if claimed[purlHash] {
 			log.Debug("skipping component: purl already scanned", "purl", component.PackageURL)
 			continue
@@ -71,7 +72,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 		}
 		g.Go(func() error {
 			log := logger.With("component", component.Name, "version", component.Version)
-			result, err := plugin.Scan(pluginPath, component, log)
+			result, err := scanComponent(pluginPath, component, log)
 			if err != nil {
 				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
 			}

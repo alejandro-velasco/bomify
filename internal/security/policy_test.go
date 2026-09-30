@@ -34,8 +34,8 @@ func TestResolve(t *testing.T) {
 func TestSetAndRemoveRule(t *testing.T) {
 	baseDir := t.TempDir()
 
-	if config, err := ReadConfig(baseDir); err != nil || len(config) != 0 {
-		t.Fatalf("ReadConfig(missing) = %v, %v; want empty", config, err)
+	if config, err := Read(baseDir); err != nil || len(config) != 0 {
+		t.Fatalf("Read(missing) = %v, %v; want empty", config, err)
 	}
 
 	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "high"}); err != nil {
@@ -48,7 +48,7 @@ func TestSetAndRemoveRule(t *testing.T) {
 		t.Error("SetRule accepted an invalid --fail-on")
 	}
 
-	config, err := ReadConfig(baseDir)
+	config, err := Read(baseDir)
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}

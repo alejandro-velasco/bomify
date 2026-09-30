@@ -2,8 +2,11 @@
 // binary: the Result/Hash/RemoteResult types the component plugin
 // contract's JSON output mirrors, SecurityResult for the security
 // scanning contract's, SignResult/VerifyResult for the signing
-// contract's, their Print methods to emit them correctly, and (in
-// log.go) OpenLog for a component plugin's --log file. See
+// contract's, and Print to emit any of them correctly. On top of those,
+// ComponentCommand, SecurityCommand, and SignatureCommand build each
+// contract's whole subcommand tree — its flags, validation, logging, and
+// output — around a plugin's own implementation, and Run executes a
+// plugin's root command with the contract's exit-code and stderr rules. See
 // plugins/COMPONENT-CONTRACT.md, plugins/SECURITY-CONTRACT.md, and
 // plugins/SIGNING-CONTRACT.md for the contracts this package implements
 // one side of; unlike those documents,
@@ -25,28 +28,16 @@ type Result struct {
 	OutputPath string `json:"outputPath"`
 	// Message is an optional human-readable summary of what happened.
 	Message string `json:"message,omitempty"`
-	// Hash is the content hash of the pulled artifact, for the algorithm
-	// requested via --hash. A pull plugin should leave this zero if it
-	// cannot compute a hash for the requested algorithm.
+	// Hash is the pulled artifact's SHA-256 (see NewHash). A pull plugin
+	// should leave this zero if it cannot compute one.
 	Hash Hash `json:"hash,omitempty"`
 }
 
-// Hash is a content hash reported by a plugin, mirroring cdx.Hash.
+// Hash is a content hash reported by a plugin, mirroring cdx.Hash. Its
+// Algorithm is always HashAlgorithm (see NewHash).
 type Hash struct {
 	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
 	Value     string            `json:"value,omitempty"`
-}
-
-// Print writes r to w as the single JSON object bomify expects a plugin to
-// print to stdout on success. Plugins should call this instead of
-// re-implementing JSON encoding themselves.
-func (r *Result) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode result: %w", err)
-	}
-	return nil
 }
 
 // RemoteResult is the structured output a plugin prints to stdout on
@@ -62,17 +53,6 @@ type RemoteResult struct {
 	// substitute part of this value back into --remote for a later push,
 	// preserving whatever came after the matched prefix.
 	Remote string `json:"remote"`
-}
-
-// Print writes r to w as the single JSON object bomify expects a plugin's
-// "remote" subcommand to print to stdout on success.
-func (r *RemoteResult) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode remote result: %w", err)
-	}
-	return nil
 }
 
 // SecurityResult is the JSON object a plugin's "security scan"
@@ -105,17 +85,6 @@ type SecurityResult struct {
 	Components      []cdx.Component     `json:"components,omitempty"`
 }
 
-// Print writes r to w as the single JSON object bomify expects a
-// plugin's "security scan" subcommand to print to stdout on success.
-func (r SecurityResult) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode security result: %w", err)
-	}
-	return nil
-}
-
 // SupportedComponentsResult is the JSON object a plugin's "security
 // supported-components" subcommand prints to stdout on success: which
 // component purl types and scan categories it supports. bomify calls
@@ -130,18 +99,6 @@ type SupportedComponentsResult struct {
 	// Scans lists the categories of scan this plugin performs (e.g.
 	// "sca", "sast").
 	Scans []string `json:"scans"`
-}
-
-// Print writes r to w as the single JSON object bomify expects a
-// plugin's "security supported-components" subcommand to print to
-// stdout on success.
-func (r *SupportedComponentsResult) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode supported components result: %w", err)
-	}
-	return nil
 }
 
 // SignResult is the JSON object a plugin's "signature sign" subcommand
@@ -169,17 +126,6 @@ type SignResult struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// Print writes r to w as the single JSON object bomify expects a
-// plugin's "signature sign" subcommand to print to stdout on success.
-func (r *SignResult) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode sign result: %w", err)
-	}
-	return nil
-}
-
 // VerifyResult is the JSON object a plugin's "signature verify"
 // subcommand prints to stdout when the envelope it was given is a valid
 // signature over the payload, by a signer its own trust configuration
@@ -192,17 +138,6 @@ type VerifyResult struct {
 	Signer string `json:"signer"`
 }
 
-// Print writes r to w as the single JSON object bomify expects a
-// plugin's "signature verify" subcommand to print to stdout on success.
-func (r *VerifyResult) Print(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode verify result: %w", err)
-	}
-	return nil
-}
-
 // SupportedSignatureTypesResult is the JSON object a plugin's "signature
 // supported-types" subcommand prints to stdout on success: which
 // referrer artifact types it can verify. bomify only hands a plugin's
@@ -212,14 +147,22 @@ type SupportedSignatureTypesResult struct {
 	ArtifactTypes []string `json:"artifactTypes"`
 }
 
-// Print writes r to w as the single JSON object bomify expects a
-// plugin's "signature supported-types" subcommand to print to stdout on
-// success.
-func (r *SupportedSignatureTypesResult) Print(w io.Writer) error {
+// HashAlgorithm is the one algorithm a Result's Hash is reported in.
+const HashAlgorithm = cdx.HashAlgoSHA256
+
+// NewHash returns hex — a hex-encoded SHA-256 digest — as a Hash.
+func NewHash(hex string) Hash {
+	return Hash{Algorithm: HashAlgorithm, Value: hex}
+}
+
+// Print writes v — any of this package's result types — to w as the
+// single JSON object bomify expects a plugin to print to stdout on
+// success. HTML escaping is disabled, so purl query strings stay intact.
+func Print(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return fmt.Errorf("encode supported signature types result: %w", err)
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encode result: %w", err)
 	}
 	return nil
 }

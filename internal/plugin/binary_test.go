@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 // binaryComponent returns a PurlType component for purl whose binary is
@@ -128,7 +129,7 @@ func TestPullBinary(t *testing.T) {
 	component := binaryComponent("pkg:bomify-plugin/oci@v1?os=linux&arch=amd64", "plugin-linux",
 		cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: sum})
 
-	result, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256)
+	result, err := PullBinary(component, srcDir, baseDir)
 	if err != nil {
 		t.Fatalf("PullBinary() error = %v", err)
 	}
@@ -136,19 +137,19 @@ func TestPullBinary(t *testing.T) {
 		t.Errorf("Hash = %q, want %q", result.Hash.Value, sum)
 	}
 
-	want := filepath.Join(componentDir(baseDir, component), "bomify-plugin-oci")
+	want := filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), "bomify-plugin-oci")
 	if result.OutputPath != want {
 		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
 	}
 	if data, err := os.ReadFile(want); err != nil || string(data) != "#!/bin/sh\necho hi\n" {
 		t.Errorf("copied binary = %q, %v", data, err)
 	}
-	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
+	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); err != nil {
 		t.Errorf("no manifest written: %v", err)
 	}
 
 	// A second pull reuses the first rather than copying again.
-	again, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256)
+	again, err := PullBinary(component, srcDir, baseDir)
 	if err != nil {
 		t.Fatalf("second PullBinary() error = %v", err)
 	}
@@ -163,10 +164,10 @@ func TestPullBinaryHashMismatch(t *testing.T) {
 	component := binaryComponent("pkg:bomify-plugin/oci@v1", "plugin",
 		cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: strings.Repeat("0", 64)})
 
-	if _, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256); err == nil || !strings.Contains(err.Error(), "mismatch") {
+	if _, err := PullBinary(component, srcDir, baseDir); err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Fatalf("PullBinary() error = %v, want a hash mismatch", err)
 	}
-	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLayer(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("component directory left behind after a failed pull: %v", err)
 	}
 }
@@ -174,12 +175,12 @@ func TestPullBinaryHashMismatch(t *testing.T) {
 func TestCheckBinary(t *testing.T) {
 	srcDir, sum := writeBinary(t, "plugin", "binary")
 	good := binaryComponent("pkg:bomify-plugin/oci", "plugin", cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: sum})
-	if _, err := CheckBinary(good, srcDir, cdx.HashAlgoSHA256); err != nil {
+	if _, err := CheckBinary(good, srcDir); err != nil {
 		t.Errorf("CheckBinary() error = %v", err)
 	}
 
 	missing := binaryComponent("pkg:bomify-plugin/oci", "nope")
-	if _, err := CheckBinary(missing, srcDir, cdx.HashAlgoSHA256); err == nil {
+	if _, err := CheckBinary(missing, srcDir); err == nil {
 		t.Error("CheckBinary() for a missing binary: want error")
 	}
 }

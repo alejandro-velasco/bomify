@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 func TestReadMissingFile(t *testing.T) {
@@ -19,7 +21,7 @@ func TestReadMissingFile(t *testing.T) {
 
 func TestReadParsesRules(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(ConfigPath(dir)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(layout.DistributionConfig(dir)), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -27,7 +29,7 @@ func TestReadParsesRules(t *testing.T) {
 		{"type": "oci", "match": "docker.io/myorg", "endpoint": "registry.example.com"},
 		{"type": "helm", "endpoint": "charts.example.com"}
 	]`
-	if err := os.WriteFile(ConfigPath(dir), []byte(raw), 0o644); err != nil {
+	if err := os.WriteFile(layout.DistributionConfig(dir), []byte(raw), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -52,10 +54,10 @@ func TestReadParsesRules(t *testing.T) {
 
 func TestReadInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(ConfigPath(dir)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(layout.DistributionConfig(dir)), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(ConfigPath(dir), []byte("not json"), 0o644); err != nil {
+	if err := os.WriteFile(layout.DistributionConfig(dir), []byte("not json"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -70,12 +72,12 @@ func TestReadInvalidJSON(t *testing.T) {
 // silently come back as an empty rule set.
 func TestReadRejectsOldFlatFormat(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(ConfigPath(dir)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(layout.DistributionConfig(dir)), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	const raw = `{"oci": {"endpoint": "local-registry/foo"}}`
-	if err := os.WriteFile(ConfigPath(dir), []byte(raw), 0o644); err != nil {
+	if err := os.WriteFile(layout.DistributionConfig(dir), []byte(raw), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -91,7 +93,7 @@ func TestSetRuleWritesNewEntry(t *testing.T) {
 		t.Fatalf("SetRule: unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(ConfigPath(dir))
+	data, err := os.ReadFile(layout.DistributionConfig(dir))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}

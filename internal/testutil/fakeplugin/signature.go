@@ -1,9 +1,3 @@
-// Command fakesigner is a synthetic bomify-plugin-* signing plugin used
-// only by tests, to exercise bomify's side of the signing contract
-// (plugins/SIGNING-CONTRACT.md) without real cryptography: its
-// "signature" is an HMAC-SHA256 of the payload, keyed by --option
-// key=<secret>, so verification with any other key fails exactly like a
-// real plugin rejecting an untrusted signer.
 package main
 
 import (
@@ -16,11 +10,11 @@ import (
 	"strings"
 )
 
-// ArtifactType is the referrer artifact type fakesigner signs as, and
+// ArtifactType is the referrer artifact type this fake signs as, and
 // (unless FAKESIGN_TYPES overrides it) the only one it verifies.
 const ArtifactType = "application/vnd.bomify.test.signature"
 
-// MediaType is the media type of fakesigner's envelope blob.
+// MediaType is the media type of this fake's envelope blob.
 const MediaType = "application/vnd.bomify.test.signature.v1+json"
 
 type optionFlags []string
@@ -28,9 +22,14 @@ type optionFlags []string
 func (o *optionFlags) String() string     { return strings.Join(*o, ",") }
 func (o *optionFlags) Set(v string) error { *o = append(*o, v); return nil }
 
-func main() {
-	if len(os.Args) < 3 || os.Args[1] != "signature" {
-		fail("usage: fakesigner signature <sign|verify|supported-types> [flags]")
+// signatureMain implements the signing contract: "signature
+// <sign|verify|supported-types>". Its "signature" is an HMAC-SHA256 of
+// the payload, keyed by --option key=<secret>, so verifying with any
+// other key fails exactly like a real plugin rejecting an untrusted
+// signer.
+func signatureMain() {
+	if len(os.Args) < 3 {
+		fail("usage: fakeplugin signature <sign|verify|supported-types> [flags]")
 	}
 
 	switch os.Args[2] {

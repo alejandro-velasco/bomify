@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
-	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 // PrunedItem describes one manifest or layer Prune removed.
@@ -60,9 +60,9 @@ func Prune(baseDir string) (PruneResult, error) {
 		return PruneResult{}, err
 	}
 
-	manifestsDir := filepath.Join(baseDir, "manifests")
-	layersDir := filepath.Join(baseDir, "layers")
-	reportsDir := security.ReportsDir(baseDir)
+	manifestsDir := layout.Manifests(baseDir)
+	layersDir := layout.Layers(baseDir)
+	reportsDir := layout.Reports(baseDir)
 
 	hashes, err := candidateHashes(manifestsDir, layersDir, reportsDir)
 	if err != nil {
@@ -75,16 +75,16 @@ func Prune(baseDir string) (PruneResult, error) {
 			continue
 		}
 
-		if plugin.PIDFileLive(filepath.Join(manifestsDir, hash+".pid")) {
+		if plugin.PIDFileLive(layout.PID(baseDir, hash)) {
 			result.Skipped = append(result.Skipped, hash)
 			continue
 		}
 		// A stale pid file (its process crashed without cleaning up)
 		// doesn't block reclaiming this component; remove it too, so a
 		// future Prune doesn't need to re-derive that it's stale.
-		os.Remove(filepath.Join(manifestsDir, hash+".pid"))
+		os.Remove(layout.PID(baseDir, hash))
 
-		manifestPath := filepath.Join(manifestsDir, hash+".json")
+		manifestPath := layout.Manifest(baseDir, hash)
 		if _, err := os.Stat(manifestPath); err == nil {
 			if err := os.Remove(manifestPath); err != nil {
 				return PruneResult{}, fmt.Errorf("remove %s: %w", manifestPath, err)
@@ -92,7 +92,7 @@ func Prune(baseDir string) (PruneResult, error) {
 			result.Removed = append(result.Removed, PrunedItem{Kind: "manifest", Path: manifestPath})
 		}
 
-		layerDir := filepath.Join(layersDir, hash)
+		layerDir := layout.Layer(baseDir, hash)
 		if info, err := os.Stat(layerDir); err == nil && info.IsDir() {
 			if err := os.RemoveAll(layerDir); err != nil {
 				return PruneResult{}, fmt.Errorf("remove %s: %w", layerDir, err)
@@ -100,7 +100,7 @@ func Prune(baseDir string) (PruneResult, error) {
 			result.Removed = append(result.Removed, PrunedItem{Kind: "layer", Path: layerDir})
 		}
 
-		reportPath := security.ReportPath(baseDir, hash)
+		reportPath := layout.Report(baseDir, hash)
 		if _, err := os.Stat(reportPath); err == nil {
 			if err := os.Remove(reportPath); err != nil {
 				return PruneResult{}, fmt.Errorf("remove %s: %w", reportPath, err)
@@ -203,7 +203,7 @@ func reachableHashes(baseDir string) (kept map[string]bool, unprotected []string
 // this means there really are components here Prune can't identify, and
 // so can't protect.
 func markComponents(baseDir, sbomHash string, kept map[string]bool) (ok bool) {
-	data, err := os.ReadFile(ManifestPath(baseDir, sbomHash))
+	data, err := os.ReadFile(layout.Manifest(baseDir, sbomHash))
 	if err != nil {
 		return true
 	}
@@ -212,12 +212,8 @@ func markComponents(baseDir, sbomHash string, kept map[string]bool) (ok bool) {
 	if err != nil {
 		return false
 	}
-	if bom.Components == nil {
-		return true
-	}
-
-	for _, component := range *bom.Components {
-		kept[plugin.PurlHash(component)] = true
+	for _, component := range sbom.Components(bom.Components) {
+		kept[layout.PurlHash(component.PackageURL)] = true
 	}
 	return true
 }

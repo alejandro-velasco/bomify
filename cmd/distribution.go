@@ -3,11 +3,12 @@ package cmd
 import (
 	"fmt"
 	"sort"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/distribution"
+	"github.com/alejandro-velasco/bomify/internal/rules"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const distributionShort = "Manage remote-endpoint rules for bomify distribute"
@@ -116,35 +117,25 @@ func distributionListCmd() *cobra.Command {
 }
 
 func runDistributionList(cmd *cobra.Command) error {
-	rules, err := distribution.Read(dataDir)
+	config, err := distribution.Read(dataDir)
 	if err != nil {
 		return err
 	}
 
 	// Display order only (alphabetical by type, then match) — unrelated to
 	// the specificity ranking used when rules are matched against a component.
-	sort.SliceStable(rules, func(i, j int) bool {
-		if rules[i].Type != rules[j].Type {
-			return rules[i].Type < rules[j].Type
+	sort.SliceStable(config, func(i, j int) bool {
+		if config[i].Type != config[j].Type {
+			return config[i].Type < config[j].Type
 		}
-		return rules[i].Match < rules[j].Match
+		return config[i].Match < config[j].Match
 	})
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "TYPE\tMATCH\tENDPOINT")
-	for _, rule := range rules {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", wildcardOr(rule.Type), wildcardOr(rule.Match), rule.Endpoint)
+	rows := make([][]string, 0, len(config))
+	for _, rule := range config {
+		rows = append(rows, []string{rules.Display(rule.Type), rules.Display(rule.Match), rule.Endpoint})
 	}
-
-	return w.Flush()
-}
-
-// wildcardOr renders an empty rule field (matching any value) as "*".
-func wildcardOr(field string) string {
-	if field == "" {
-		return "*"
-	}
-	return field
+	return table.Write(cmd.OutOrStdout(), []string{"TYPE", "MATCH", "ENDPOINT"}, rows)
 }
 
 const distributionRemoveShort = "Remove a remote-endpoint rule"

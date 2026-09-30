@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 func TestPackagesListsSize(t *testing.T) {
@@ -24,7 +24,7 @@ func TestPackagesListsSize(t *testing.T) {
 
 	// A pulled layer of a known size (10 bytes), so PackageSize's sum is
 	// predictable.
-	layerDir := filepath.Join(dataDir, "layers", plugin.PurlHash(component))
+	layerDir := layout.ComponentLayer(dataDir, component.PackageURL)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir layer dir: %v", err)
 	}

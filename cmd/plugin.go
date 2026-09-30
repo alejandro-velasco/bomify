@@ -5,16 +5,17 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/plugin/install"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 // defaultPluginRegistry is where "bomify plugin install" looks for plugin
@@ -194,7 +195,7 @@ func pluginInstallVerifier(ref string, opts *pluginInstallOptions, logger *slog.
 	if err != nil || policy == nil {
 		return nil, err
 	}
-	return signature.NewVerifier(plugin.Dir(dataDir), *policy, logger), nil
+	return signature.NewVerifier(layout.Plugins(dataDir), *policy, logger), nil
 }
 
 // pluginInstallPolicy decides how ref's signature is verified (see
@@ -211,7 +212,7 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return nil, nil
 	}
 
-	_, err := plugin.Find(plugin.Dir(dataDir), pluginVerifier)
+	_, err := plugin.Find(layout.Plugins(dataDir), pluginVerifier)
 	verifierInstalled := err == nil
 
 	if len(opts.verifyOptions) > 0 {
@@ -287,17 +288,15 @@ func runPluginList(cmd *cobra.Command) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tSOURCE")
+	rows := make([][]string, 0, len(entries))
 	for _, entry := range entries {
 		version, source := "-", "-"
 		if entry.Record != nil {
 			version, source = dashIfEmpty(entry.Record.Version), entry.Record.Reference
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", entry.Kind, version, source)
+		rows = append(rows, []string{entry.Kind, version, source})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"NAME", "VERSION", "SOURCE"}, rows)
 }
 
 // dashIfEmpty returns s, or "-" if it's empty.

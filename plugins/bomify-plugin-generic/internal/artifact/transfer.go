@@ -4,15 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-
-	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/pkg/auth"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
@@ -42,7 +39,7 @@ func setAuth(req *http.Request) error {
 
 // Pull downloads ref.DownloadURL with a plain HTTP GET and saves it into
 // outputDir as ref.Filename().
-func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("GET", "url", ref.DownloadURL)
 	req, err := http.NewRequest(http.MethodGet, ref.DownloadURL, nil)
 	if err != nil {
@@ -77,15 +74,10 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}
 	logger.Info("saved", "path", path)
 
-	digest, err := digestHash(hashAlgorithm, hasher)
-	if err != nil {
-		return nil, err
-	}
-
 	return &plugin.Result{
 		OutputPath: path,
 		Message:    fmt.Sprintf("pulled %s", ref.DownloadURL),
-		Hash:       digest,
+		Hash:       plugin.NewHash(hex.EncodeToString(hasher.Sum(nil))),
 	}, nil
 }
 
@@ -194,12 +186,4 @@ func CheckPush(remote string, logger *slog.Logger) (*plugin.Result, error) {
 		OutputPath: remote,
 		Message:    fmt.Sprintf("%s is reachable; write permission not verified (HEAD is not authoritative for a PUT URL)", remote),
 	}, nil
-}
-
-func digestHash(hashAlgorithm cdx.HashAlgorithm, hasher hash.Hash) (plugin.Hash, error) {
-	if hashAlgorithm != cdx.HashAlgoSHA256 {
-		return plugin.Hash{}, fmt.Errorf("bomify-plugin-generic: unsupported hash algorithm %q, only %s is supported", hashAlgorithm, cdx.HashAlgoSHA256)
-	}
-
-	return plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: hex.EncodeToString(hasher.Sum(nil))}, nil
 }

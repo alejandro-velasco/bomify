@@ -5,12 +5,13 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/namedstore"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 )
 
 // StoredKey is one public key (or certificate) in a data directory's
@@ -18,13 +19,8 @@ import (
 // (see Rule.KeyOptions).
 type StoredKey = namedstore.Entry
 
-// KeysDir returns the directory baseDir's managed keys live in.
-func KeysDir(baseDir string) string {
-	return filepath.Join(baseDir, "keys")
-}
-
 func keyStore(baseDir string) namedstore.Store {
-	return namedstore.Store{Dir: KeysDir(baseDir), Ext: ".pem", Kind: "key"}
+	return namedstore.Store{Dir: layout.Keys(baseDir), Ext: ".pem", Kind: "key"}
 }
 
 // ListKeys returns every key in baseDir's managed store, sorted by name.
@@ -101,25 +97,20 @@ func checkPublicPEM(data []byte) error {
 // refuses while a trust rule refers to name, so no rule is left pointing
 // at nothing.
 func RemoveKey(baseDir, name string) error {
-	rules, err := Read(baseDir)
+	config, err := Read(baseDir)
 	if err != nil {
 		return err
 	}
-	var users []string
-	for _, rule := range rules {
-		for _, keyName := range rule.KeyOptions {
+	uses := func(r Rule) bool {
+		for _, keyName := range r.KeyOptions {
 			if keyName == name {
-				match := rule.Match
-				if match == "" {
-					match = "*"
-				}
-				users = append(users, fmt.Sprintf("%q", match))
-				break
+				return true
 			}
 		}
+		return false
 	}
-	if len(users) > 0 {
-		return fmt.Errorf("key %q is still used by trust rule(s) %s; remove it from them first", name, strings.Join(users, ", "))
+	if err := rules.Users(config, uses, ruleMatch, name, "key", "trust"); err != nil {
+		return err
 	}
 	return keyStore(baseDir).Remove(name)
 }
@@ -168,16 +159,12 @@ func ReadResolved(baseDir string) (Config, error) {
 // a verifying plugin gets file paths exactly as if they'd been given
 // with --option. It fails on a key name missing from the store, naming
 // the rule.
-func ResolveKeyOptions(baseDir string, rules Config) (Config, error) {
-	resolved := slices.Clone(rules)
+func ResolveKeyOptions(baseDir string, config Config) (Config, error) {
+	resolved := slices.Clone(config)
 	for i, rule := range resolved {
 		args, err := keyOptionArgs(baseDir, rule.KeyOptions)
 		if err != nil {
-			match := rule.Match
-			if match == "" {
-				match = "*"
-			}
-			return nil, fmt.Errorf("trust rule %q: %w", match, err)
+			return nil, fmt.Errorf("trust rule %q: %w", rules.Display(rule.Match), err)
 		}
 		resolved[i].Options = append(slices.Clone(rule.Options), args...)
 		resolved[i].KeyOptions = nil

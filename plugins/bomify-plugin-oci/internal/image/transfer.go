@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
-	gcrv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/package-url/packageurl-go"
@@ -34,11 +32,8 @@ var craneAuth = crane.WithAuthFromKeychain(keychain)
 // so the pulled artifact is in OCI format rather than a docker-style
 // tarball. outputDir is a directory bomify has already created dedicated
 // to this component, so Pull writes directly into it.
-//
-// hashAlgorithm is the hash bomify wants reported in the result. OCI/docker
-// images are always content-addressed with SHA-256, so any other
-// algorithm is unsupported and returns an error.
-func Pull(ref string, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+// The reported hash is the image's own SHA-256 digest.
+func Pull(ref string, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("pulling image", "ref", ref)
 	img, err := crane.Pull(ref, craneAuth)
 	if err != nil {
@@ -54,10 +49,7 @@ func Pull(ref string, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger 
 	if err != nil {
 		return nil, fmt.Errorf("compute image digest: %w", err)
 	}
-	hash, err := digestHash(digest, hashAlgorithm)
-	if err != nil {
-		return nil, err
-	}
+	hash := plugin.NewHash(digest.Hex)
 	logger.Info("pull complete", "ref", ref, "hash", hash.Value)
 
 	return &plugin.Result{OutputPath: outputDir, Message: fmt.Sprintf("pulled %s", ref), Hash: hash}, nil
@@ -70,7 +62,7 @@ func Pull(ref string, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger 
 // while Pull resolves to a specific platform's image digest — using
 // HEAD's digest here would disagree with what Pull (and a real,
 // non-check build) verifies against the SBOM's declared hash.
-func CheckPull(ref string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+func CheckPull(ref string, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("resolving image", "ref", ref)
 	img, err := crane.Pull(ref, craneAuth)
 	if err != nil {
@@ -81,22 +73,10 @@ func CheckPull(ref string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("compute image digest: %w", err)
 	}
-	hash, err := digestHash(digest, hashAlgorithm)
-	if err != nil {
-		return nil, err
-	}
+	hash := plugin.NewHash(digest.Hex)
 	logger.Info("check complete", "ref", ref, "hash", hash.Value)
 
 	return &plugin.Result{OutputPath: ref, Message: fmt.Sprintf("%s exists and is pullable", ref), Hash: hash}, nil
-}
-
-// digestHash converts an image digest to a plugin.Hash for hashAlgorithm.
-func digestHash(digest gcrv1.Hash, hashAlgorithm cdx.HashAlgorithm) (plugin.Hash, error) {
-	if hashAlgorithm != cdx.HashAlgoSHA256 {
-		return plugin.Hash{}, fmt.Errorf("bomify-plugin-oci: unsupported hash algorithm %q, only %s is supported", hashAlgorithm, cdx.HashAlgoSHA256)
-	}
-
-	return plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: digest.Hex}, nil
 }
 
 // Push reads the OCI Image Layout a prior Pull wrote into inputDir and

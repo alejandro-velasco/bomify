@@ -3,11 +3,11 @@ package security
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/namedstore"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 )
 
 // StoredVEX is one VEX document in a data directory's managed store (see
@@ -15,13 +15,8 @@ import (
 // scan policy rules can refer to it (see Rule.VEX).
 type StoredVEX = namedstore.Entry
 
-// VEXDir returns the directory baseDir's managed VEX documents live in.
-func VEXDir(baseDir string) string {
-	return filepath.Join(baseDir, "vex")
-}
-
 func vexStore(baseDir string) namedstore.Store {
-	return namedstore.Store{Dir: VEXDir(baseDir), Ext: ".vex", Kind: "VEX document"}
+	return namedstore.Store{Dir: layout.VEX(baseDir), Ext: ".vex", Kind: "VEX document"}
 }
 
 // VEXPath returns the path of the stored VEX document whose content
@@ -61,18 +56,13 @@ func AddVEX(baseDir, name, path string) (StoredVEX, error) {
 // refuses while a scan policy rule refers to name, so no rule is left
 // pointing at nothing.
 func RemoveVEX(baseDir, name string) error {
-	rules, err := ReadConfig(baseDir)
+	config, err := Read(baseDir)
 	if err != nil {
 		return err
 	}
-	var users []string
-	for _, rule := range rules {
-		if slices.Contains(rule.VEX, name) {
-			users = append(users, fmt.Sprintf("%q", wildcardMatch(rule.Match)))
-		}
-	}
-	if len(users) > 0 {
-		return fmt.Errorf("VEX document %q is still used by scan policy rule(s) %s; remove it from them first", name, strings.Join(users, ", "))
+	uses := func(r Rule) bool { return slices.Contains(r.VEX, name) }
+	if err := rules.Users(config, uses, ruleMatch, name, "VEX document", "scan policy"); err != nil {
+		return err
 	}
 	return vexStore(baseDir).Remove(name)
 }
@@ -85,13 +75,4 @@ func ResolveVEX(baseDir string, names []string) ([]string, error) {
 		return nil, fmt.Errorf("%w (see \"bomify security vex add\")", err)
 	}
 	return paths, nil
-}
-
-// wildcardMatch renders a rule's Match as "bomify security policy list"
-// does: "*" for one that applies to every package.
-func wildcardMatch(match string) string {
-	if match == "" {
-		return "*"
-	}
-	return match
 }
