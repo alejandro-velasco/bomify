@@ -3,12 +3,12 @@ package cmd
 import (
 	"fmt"
 	"sort"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/distribution"
 	"github.com/alejandro-velasco/bomify/internal/rules"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const distributionShort = "Manage remote-endpoint rules for bomify distribute"
@@ -131,13 +131,11 @@ func runDistributionList(cmd *cobra.Command) error {
 		return config[i].Match < config[j].Match
 	})
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "TYPE\tMATCH\tENDPOINT")
+	rows := make([][]string, 0, len(config))
 	for _, rule := range config {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", rules.Display(rule.Type), rules.Display(rule.Match), rule.Endpoint)
+		rows = append(rows, []string{rules.Display(rule.Type), rules.Display(rule.Match), rule.Endpoint})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"TYPE", "MATCH", "ENDPOINT"}, rows)
 }
 
 const distributionRemoveShort = "Remove a remote-endpoint rule"

@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin/install"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 // defaultPluginRegistry is where "bomify plugin install" looks for plugin
@@ -288,17 +288,15 @@ func runPluginList(cmd *cobra.Command) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tSOURCE")
+	rows := make([][]string, 0, len(entries))
 	for _, entry := range entries {
 		version, source := "-", "-"
 		if entry.Record != nil {
 			version, source = dashIfEmpty(entry.Record.Version), entry.Record.Reference
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", entry.Kind, version, source)
+		rows = append(rows, []string{entry.Kind, version, source})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"NAME", "VERSION", "SOURCE"}, rows)
 }
 
 // dashIfEmpty returns s, or "-" if it's empty.

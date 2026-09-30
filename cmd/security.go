@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const securityShort = "Security scanning commands"
@@ -359,21 +359,11 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 	// when rules are matched against a reference.
 	sort.SliceStable(config, func(i, j int) bool { return config[i].Match < config[j].Match })
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tVEX\tON")
+	rows := make([][]string, 0, len(config))
 	for _, rule := range config {
-		failOn := rule.FailOn
-		if failOn == "" {
-			failOn = "-"
-		}
-		on := strings.Join(rule.On, ",")
-		if on == "" {
-			on = "-"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", rules.Display(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","), on)
+		rows = append(rows, []string{rules.Display(rule.Match), rule.Scanner, dashIfEmpty(rule.FailOn), strings.Join(rule.VEX, ","), dashIfEmpty(strings.Join(rule.On, ","))})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SCANNER", "FAIL-ON", "VEX", "ON"}, rows)
 }
 
 const securityPolicyRemoveShort = "Remove a vulnerability scanning policy rule"

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const trustShort = "Manage signature verification rules for bomify pull and load"
@@ -158,13 +158,11 @@ func runTrustList(cmd *cobra.Command) error {
 	// when rules are matched against a reference.
 	sort.SliceStable(config, func(i, j int) bool { return config[i].Match < config[j].Match })
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tVERIFIER\tOPTIONS\tKEY-OPTIONS")
+	rows := make([][]string, 0, len(config))
 	for _, rule := range config {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions))
+		rows = append(rows, []string{rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions)})
 	}
-
-	return w.Flush()
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "VERIFIER", "OPTIONS", "KEY-OPTIONS"}, rows)
 }
 
 const trustRemoveShort = "Remove a signature verification rule"

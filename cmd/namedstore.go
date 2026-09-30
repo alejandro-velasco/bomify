@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/namedstore"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 // commandHelp is one command's help text.
@@ -64,12 +64,11 @@ func (s storeCommand) command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSHA256\tADDED\tSOURCE")
+			rows := make([][]string, 0, len(entries))
 			for _, e := range entries {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.SHA256[:12], e.Added, e.Source)
+				rows = append(rows, []string{e.Name, e.SHA256[:12], e.Added, e.Source})
 			}
-			return w.Flush()
+			return table.Write(cmd.OutOrStdout(), []string{"NAME", "SHA256", "ADDED", "SOURCE"}, rows)
 		},
 	})
 
