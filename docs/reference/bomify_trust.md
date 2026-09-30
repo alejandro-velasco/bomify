@@ -20,6 +20,7 @@ Manage signature verification rules for bomify pull and load
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
 * [bomify trust create](bomify_trust_create.md)	 - Create or update a signature verification rule
+* [bomify trust key](bomify_trust_key.md)	 - Manage the public keys trust rules refer to
 * [bomify trust list](bomify_trust_list.md)	 - List signature verification rules
 * [bomify trust remove](bomify_trust_remove.md)	 - Remove a signature verification rule
 

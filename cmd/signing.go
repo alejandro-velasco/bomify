@@ -63,7 +63,7 @@ func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Ve
 		return nil, err
 	}
 
-	rules, err := signature.Read(baseDir)
+	rules, err := signature.ReadResolved(baseDir)
 	if err != nil {
 		return nil, err
 	}

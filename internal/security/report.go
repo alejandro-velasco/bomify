@@ -14,6 +14,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
@@ -111,7 +112,7 @@ func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (stri
 	}
 
 	path := ReportPath(baseDir, plugin.PurlHash(component))
-	if err := writeFileAtomic(path, buf.Bytes()); err != nil {
+	if err := fsutil.WriteFileAtomic(path, buf.Bytes()); err != nil {
 		return "", fmt.Errorf("write report: %w", err)
 	}
 

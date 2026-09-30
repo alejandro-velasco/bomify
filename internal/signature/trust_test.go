@@ -48,14 +48,14 @@ func TestPolicyFlagOverridesRules(t *testing.T) {
 func TestSetAndRemoveRule(t *testing.T) {
 	baseDir := t.TempDir()
 
-	if err := SetRule(baseDir, "registry.example.com", "sigstore", []string{"key=a.pub"}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Verifier: "sigstore", Options: []string{"key=a.pub"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRule(baseDir, "", "sigstore", nil); err != nil {
+	if err := SetRule(baseDir, Rule{Verifier: "sigstore"}); err != nil {
 		t.Fatal(err)
 	}
 	// Re-setting an existing match replaces it rather than appending.
-	if err := SetRule(baseDir, "registry.example.com", "notation", []string{"key=b.pub"}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Verifier: "notation", Options: []string{"key=b.pub"}}); err != nil {
 		t.Fatal(err)
 	}
 

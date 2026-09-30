@@ -1,22 +1,22 @@
-## bomify trust list
+## bomify trust key list
 
-List signature verification rules
+List the public keys in the managed key store
 
 ### Synopsis
 
-List prints every rule recorded in <data-dir>/conf/trust.json. MATCH
-prints "*" for a rule that omitted it, meaning it applies to every
-package. KEY-OPTIONS lists each option=name pair naming a stored key.
+List prints every key in <data-dir>/keys/: its name, the content hash
+it's stored under, when it was added, and the file it was copied from
+(never read again).
 
 ```
-bomify trust list [flags]
+bomify trust key list [flags]
 ```
 
 ### Examples
 
 ```
-  # See every configured rule
-  bomify trust list
+  # See every stored key
+  bomify trust key list
 ```
 
 ### Options
@@ -35,5 +35,5 @@ bomify trust list [flags]
 
 ### SEE ALSO
 
-* [bomify trust](bomify_trust.md)	 - Manage signature verification rules for bomify pull and load
+* [bomify trust key](bomify_trust_key.md)	 - Manage the public keys trust rules refer to
 

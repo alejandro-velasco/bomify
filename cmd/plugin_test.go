@@ -75,7 +75,7 @@ func TestPluginInstallPolicy(t *testing.T) {
 	trustRule := func(match string) func(t *testing.T, baseDir string) {
 		return func(t *testing.T, baseDir string) {
 			installFakeVerifier(t, baseDir)
-			if err := signature.SetRule(baseDir, match, pluginVerifier, []string{"key=org.pub"}); err != nil {
+			if err := signature.SetRule(baseDir, signature.Rule{Match: match, Verifier: pluginVerifier, Options: []string{"key=org.pub"}}); err != nil {
 				t.Fatal(err)
 			}
 		}
