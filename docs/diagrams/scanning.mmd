@@ -1,0 +1,41 @@
+flowchart TD
+    classDef source fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef plugin fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+    classDef ok fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+    classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
+
+    Start(["bomify build / push / save / pull / load"]) --> When["hook point:<br/>build — after the build is recorded<br/>push, save — before anything is packed<br/>pull, load — after --verify, before anything is written"]
+    When --> Skip{"--skip-scan?"}
+
+    Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names this hook)"]
+    Skip -->|"no"| Rule{"a scan.json rule matches the<br/>reference, and its --on names<br/>this hook?"}
+
+    Rule -->|"yes, most specific wins"| UseRule["the rule's scanner, threshold,<br/>and stored VEX — --scan and<br/>--fail-on override them,<br/>--vex adds to the VEX"]
+    Rule -->|"no"| UseFlags["flags only:<br/>--scan, --fail-on,<br/>--ignore, --vex"]
+
+    UseRule --> Active{"a scanner or<br/>a threshold?"}
+    UseFlags --> Active
+
+    Active -->|"no"| NoScan
+    Active -->|"yes"| Scanner{"a scanner?"}
+
+    Scanner -->|"yes"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
+    Scanner -->|"no"| IsPull{"pull / load?"}
+
+    IsPull -->|"yes"| NeedScan["fails: gating a pull needs --scan<br/>— a pulled package's reports<br/>are its publisher's, not a verdict"]
+    IsPull -->|"no"| Local["the local reports in<br/>vulnerabilities/<br/>(warn about components with none)"]
+
+    PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus --ignore,<br/>minus VEX exemptions (each logged)"]
+    Local --> Gate
+
+    Gate --> Left{"anything left?"}
+
+    Left -->|"no"| Continue["carry on:<br/>build — done<br/>push, save — pack, sign, attach fresh reports<br/>pull, load — write the package,<br/>then the fresh reports"]
+    Left -->|"yes"| Failed["print the findings table; the command fails:<br/>build — stays recorded, fresh reports kept<br/>push, save — nothing uploaded or written<br/>pull, load — nothing written"]
+
+    class Start source
+    class PluginScan plugin
+    class Continue ok
+    class Failed,NeedScan failed
+    class NoScan skipped

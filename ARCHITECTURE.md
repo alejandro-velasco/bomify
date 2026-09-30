@@ -437,6 +437,10 @@ behind:
   publisher's, never taken as a verdict. Scanning may need network
   access, which is why nothing scans at pull unless asked to.
 
+![Scanning at lifecycle hooks](docs/diagrams/scanning.svg)
+
+*Source: [`docs/diagrams/scanning.mmd`](docs/diagrams/scanning.mmd)*
+
 #### Reports in a registry
 
 Reports travel with a package as an **OCI referrer** of its manifest,
