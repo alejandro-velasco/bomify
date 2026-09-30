@@ -9,7 +9,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -29,7 +29,7 @@ func setUpHookPackage(t *testing.T) string {
 	writeHookResponses(t)
 	writePackage(t, baseDir, hookTag, hookComponent)
 
-	layerDir := filepath.Join(baseDir, "layers", plugin.PurlHash(hookComponent))
+	layerDir := layout.ComponentLayer(baseDir, hookComponent.PackageURL)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir layer: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestLoadScanGate(t *testing.T) {
 	if repos, _ := build.ReadRepositories(destDir); len(repos) != 0 {
 		t.Errorf("tags recorded despite a failing gate: %v", repos)
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "manifests")); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Manifests(destDir)); !os.IsNotExist(err) {
 		t.Errorf("manifests written despite a failing gate: err = %v", err)
 	}
 

@@ -18,8 +18,8 @@ import (
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
@@ -59,13 +59,13 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 		seen     = map[string]bool{}
 	)
 	for _, component := range components {
-		purlHash := plugin.PurlHash(component)
+		purlHash := layout.PurlHash(component.PackageURL)
 		if seen[purlHash] {
 			continue
 		}
 		seen[purlHash] = true
 
-		reportPath := ReportPath(baseDir, purlHash)
+		reportPath := layout.Report(baseDir, purlHash)
 		data, err := os.ReadFile(reportPath)
 		if err != nil {
 			if os.IsNotExist(err) {

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -22,9 +21,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
@@ -74,7 +72,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		concurrency = 1
 	}
 
-	manifestPath := build.ManifestPath(baseDir, sbomHash)
+	manifestPath := layout.Manifest(baseDir, sbomHash)
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return Result{}, fmt.Errorf("read manifest %s: %w", manifestPath, err)
@@ -197,7 +195,7 @@ func configMediaType(data []byte) string {
 // it, annotated with component's purl.
 func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress transfer.ProgressFunc) (ocispec.Descriptor, Layer, error) {
 	purl := component.PackageURL
-	dir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("no local layer at %s (run `bomify build` first)", dir)

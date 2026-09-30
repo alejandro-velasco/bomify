@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
@@ -69,7 +70,7 @@ func sbomGenerateCmd() *cobra.Command {
 // straight to the plugin's. bomify neither parses the plugin's output nor
 // imposes any flags of its own here — see plugins/SBOM-CONTRACT.md.
 func runSBOMGenerate(cmd *cobra.Command, medium string, args []string) error {
-	path, err := plugin.Find(plugin.Dir(dataDir), medium)
+	path, err := plugin.Find(layout.Plugins(dataDir), medium)
 	if err != nil {
 		return err
 	}

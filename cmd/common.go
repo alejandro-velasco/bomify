@@ -12,6 +12,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/auth"
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
@@ -71,7 +72,7 @@ func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string
 		return "", "", fmt.Errorf("detect plugin kind: %w", err)
 	}
 
-	path, err = plugin.Find(plugin.Dir(dataDir), kind)
+	path, err = plugin.Find(layout.Plugins(dataDir), kind)
 	if err != nil {
 		return "", "", err
 	}

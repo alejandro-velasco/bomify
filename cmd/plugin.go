@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
@@ -194,7 +195,7 @@ func pluginInstallVerifier(ref string, opts *pluginInstallOptions, logger *slog.
 	if err != nil || policy == nil {
 		return nil, err
 	}
-	return signature.NewVerifier(plugin.Dir(dataDir), *policy, logger), nil
+	return signature.NewVerifier(layout.Plugins(dataDir), *policy, logger), nil
 }
 
 // pluginInstallPolicy decides how ref's signature is verified (see
@@ -211,7 +212,7 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return nil, nil
 	}
 
-	_, err := plugin.Find(plugin.Dir(dataDir), pluginVerifier)
+	_, err := plugin.Find(layout.Plugins(dataDir), pluginVerifier)
 	verifierInstalled := err == nil
 
 	if len(opts.verifyOptions) > 0 {

@@ -25,8 +25,8 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
@@ -328,7 +328,7 @@ func writeConfig(desc ocispec.Descriptor, data []byte, dataDir string) (string, 
 		return "", nil, fmt.Errorf("parse sbom manifest %s: %w", desc.Digest, err)
 	}
 
-	destPath := build.ManifestPath(dataDir, hash)
+	destPath := layout.Manifest(dataDir, hash)
 	if err := fsutil.WriteFileAtomic(destPath, data); err != nil {
 		return "", nil, err
 	}
@@ -357,7 +357,7 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 	// is still someone else's registry data) fall through to the generic
 	// verbatim-file path below instead of erroring.
 	if desc.MediaType == transfer.LayerMediaType && purl != "" {
-		destDir := filepath.Join(dataDir, "layers", plugin.PurlHash(cdx.Component{PackageURL: purl}))
+		destDir := layout.ComponentLayer(dataDir, purl)
 
 		// downloadAndUntar only ever swaps destDir into place as a whole,
 		// complete unpack (see its atomic rename), never a partial one,
@@ -380,7 +380,7 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 		return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
 	}
 
-	destPath := filepath.Join(dataDir, "layers", hash, layerFilename(desc))
+	destPath := filepath.Join(layout.Layer(dataDir, hash), layerFilename(desc))
 	if err := downloadBlob(ctx, target, desc, destPath, label, progress); err != nil {
 		return Layer{}, err
 	}
@@ -404,7 +404,7 @@ func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, d
 		return Layer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, AnnotationPurl)
 	}
 
-	destPath := security.ReportPath(dataDir, plugin.PurlHash(cdx.Component{PackageURL: purl}))
+	destPath := layout.Report(dataDir, layout.PurlHash(purl))
 	if err := downloadBlob(ctx, target, desc, destPath, purl, progress); err != nil {
 		return Layer{}, err
 	}

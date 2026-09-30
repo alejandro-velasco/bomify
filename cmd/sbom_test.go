@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 // buildFakePluginBinary builds cmd/testdata/fakeplugin as
@@ -19,7 +19,7 @@ func buildFakePluginBinary(t *testing.T, medium string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	bin := filepath.Join(plugin.Dir(dir), "bomify-plugin-"+medium)
+	bin := filepath.Join(layout.Plugins(dir), "bomify-plugin-"+medium)
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}

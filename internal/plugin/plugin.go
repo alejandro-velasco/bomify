@@ -27,8 +27,6 @@ package plugin
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +43,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
@@ -130,12 +129,6 @@ func ExecutableName(kind, goos string) string {
 	return BinaryName(kind)
 }
 
-// Dir returns the directory plugins are installed into and discovered
-// from: "<dataDir>/plugins". See Find.
-func Dir(dataDir string) string {
-	return filepath.Join(dataDir, "plugins")
-}
-
 // Find resolves the plugin binary for kind in dir (see Dir) — the only
 // place bomify looks for one; PATH is never consulted. It returns an
 // error if no such plugin is installed there.
@@ -180,7 +173,7 @@ func Find(dir, kind string) (string, error) {
 // stdout while it runs: it is if logger has debug-level logging enabled
 // (i.e. bomify was run with --verbose), and isn't otherwise.
 func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
-	logFile := logPath(baseDir, component)
+	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	return pull(component, baseDir, func(dir string) (*pluginlib.Result, error) {
@@ -192,9 +185,9 @@ func Pull(path string, component cdx.Component, baseDir string, hashAlgorithm cd
 // component into the (freshly emptied) directory it's given and reports
 // the result — a plugin subprocess for Pull, a local copy for PullBinary.
 func pull(component cdx.Component, baseDir string, fetch func(dir string) (*pluginlib.Result, error), hashAlgorithm cdx.HashAlgorithm) (*pluginlib.Result, error) {
-	dir := componentDir(baseDir, component)
-	pid := pidPath(baseDir, component)
-	manifest := manifestPath(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
+	pid := layout.ComponentPID(baseDir, component.PackageURL)
+	manifest := layout.ComponentManifest(baseDir, component.PackageURL)
 
 	for {
 		if owner, ok := readPID(pid); ok {
@@ -332,7 +325,7 @@ func WriteManifest(baseDir string, component cdx.Component, computed pluginlib.H
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	path := manifestPath(baseDir, component)
+	path := layout.ComponentManifest(baseDir, component.PackageURL)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create manifests directory: %w", err)
 	}
@@ -391,13 +384,13 @@ func verifyHash(component cdx.Component, result *pluginlib.Result) error {
 //
 // logger controls log streaming exactly as it does for Pull.
 func Push(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 
-	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
+	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); err != nil {
 		return nil, fmt.Errorf("component not found in %s (run bomify build first): %w", dir, err)
 	}
 
-	logFile := logPath(baseDir, component)
+	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--input", dir, "--remote", remote)
@@ -414,7 +407,7 @@ func Push(path string, component cdx.Component, baseDir, remote string, logger *
 // plugin reports a hash, CheckPull verifies it against component's
 // SBOM-declared hash exactly as Pull does.
 func CheckPull(path string, component cdx.Component, baseDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*pluginlib.Result, error) {
-	logFile := logPath(baseDir, component)
+	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.Result](path, "pull", component.PackageURL, logFile, verbose, "--hash", string(hashAlgorithm), "--check=true")
@@ -434,7 +427,7 @@ func CheckPull(path string, component cdx.Component, baseDir string, hashAlgorit
 // without publishing anything. Like CheckPull, it's stateless and
 // requires no prior Pull.
 func CheckPush(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
-	logFile := logPath(baseDir, component)
+	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.Result](path, "push", component.PackageURL, logFile, verbose, "--remote", remote, "--check=true")
@@ -454,7 +447,7 @@ func CheckPush(path string, component cdx.Component, baseDir, remote string, log
 //
 // logger controls log streaming exactly as it does for Pull/Push.
 func Remote(path string, component cdx.Component, baseDir string, logger *slog.Logger) (string, error) {
-	logFile := logPath(baseDir, component)
+	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
 	result, err := run[pluginlib.RemoteResult](path, "remote", component.PackageURL, logFile, verbose)
@@ -600,44 +593,6 @@ func runSignature[T any](path, verb string, args []string) (T, error) {
 	}
 
 	return result, nil
-}
-
-// PurlHash returns a hex-encoded hash of component's purl, used to derive
-// both componentDir and manifestPath so pull and push independently agree
-// on the same locations. It's exported so callers building on top of a
-// component's own manifest (e.g. an aggregate build-level manifest) can
-// derive the exact same filename without duplicating the hash logic.
-func PurlHash(component cdx.Component) string {
-	sum := sha256.Sum256([]byte(component.PackageURL))
-	return hex.EncodeToString(sum[:])
-}
-
-// componentDir returns the deterministic subdirectory of baseDir/layers
-// where a component's pulled artifact lives.
-func componentDir(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "layers", PurlHash(component))
-}
-
-// manifestPath returns the deterministic path of a component's manifest
-// file (see Manifest), under baseDir/manifests.
-func manifestPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "manifests", PurlHash(component)+".json")
-}
-
-// logPath returns the deterministic path of a component's plugin log
-// file, under baseDir/logs, named after the same purl hash as its
-// manifest and layers directory.
-func logPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "logs", PurlHash(component)+".log")
-}
-
-// pidPath returns the deterministic path of a component's pid file, a
-// sibling of its manifest under baseDir/manifests. Pull claims this file
-// for the duration of a pull and removes it once the pull completes
-// (whether it succeeded or failed), so its existence signals a pull
-// currently in flight for that component.
-func pidPath(baseDir string, component cdx.Component) string {
-	return filepath.Join(baseDir, "manifests", PurlHash(component)+".pid")
 }
 
 // claimPIDFile atomically creates path containing the current process's

@@ -11,6 +11,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
@@ -281,7 +282,7 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 		components = *bom.Components
 	}
 
-	path, err := plugin.Find(plugin.Dir(dataDir), scanner)
+	path, err := plugin.Find(layout.Plugins(dataDir), scanner)
 	if err != nil {
 		return err
 	}

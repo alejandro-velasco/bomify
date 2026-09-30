@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
@@ -35,7 +35,7 @@ func (f *signFlags) signer(logger *slog.Logger) (transfer.Signer, error) {
 	if err := validateOptions("--sign-option", f.options); err != nil {
 		return nil, err
 	}
-	return signature.NewSigner(plugin.Dir(dataDir), signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
+	return signature.NewSigner(layout.Plugins(dataDir), signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
 }
 
 // verifyFlags are the --verify/--verify-option/--insecure-skip-verify
@@ -73,7 +73,7 @@ func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Ve
 		Rules:    rules,
 		Skip:     f.skip,
 	}
-	return signature.NewVerifier(plugin.Dir(baseDir), policy, logger), nil
+	return signature.NewVerifier(layout.Plugins(baseDir), policy, logger), nil
 }
 
 // validateOptions requires every one of options to be "key=value", with

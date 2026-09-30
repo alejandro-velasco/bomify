@@ -9,6 +9,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/distribution"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
@@ -91,7 +92,7 @@ func runDistribute(opts *distributeOptions, logger *slog.Logger) error {
 		return err
 	}
 
-	return forEachComponent(build.ManifestPath(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+	return forEachComponent(layout.Manifest(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		// A plugin binary has no remote of its own to republish to: it
 		// only ever travels inside its package (see "bomify plugin
 		// install").
@@ -151,5 +152,5 @@ func resolveRemote(kind, origin string, flags map[string]string, rules distribut
 	if remote, ok := distribution.Resolve(rules, kind, origin); ok {
 		return remote, nil
 	}
-	return "", fmt.Errorf("no remote configured for kind %q origin %q: pass --remote %s=<endpoint> or add a matching rule to %s", kind, origin, kind, distribution.ConfigPath(dataDir))
+	return "", fmt.Errorf("no remote configured for kind %q origin %q: pass --remote %s=<endpoint> or add a matching rule to %s", kind, origin, kind, layout.DistributionConfig(dataDir))
 }

@@ -17,6 +17,7 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
@@ -126,7 +127,7 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 func installed(t *testing.T, dataDir, kind string) string {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(plugin.Dir(dataDir), plugin.ExecutableName(kind, hostOS)))
+	data, err := os.ReadFile(filepath.Join(layout.Plugins(dataDir), plugin.ExecutableName(kind, hostOS)))
 	if err != nil {
 		t.Fatalf("plugin %s not installed: %v", kind, err)
 	}
@@ -139,7 +140,7 @@ func installed(t *testing.T, dataDir, kind string) string {
 func assertNothingInstalled(t *testing.T, dataDir string) {
 	t.Helper()
 
-	entries, err := os.ReadDir(plugin.Dir(dataDir))
+	entries, err := os.ReadDir(layout.Plugins(dataDir))
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -177,7 +178,7 @@ func TestInstallPicksHostBinary(t *testing.T) {
 
 	// Nothing but the binary and the index is left behind: no staging
 	// directory, and no package recorded the way "bomify pull" would.
-	files, _ := os.ReadDir(plugin.Dir(dataDir))
+	files, _ := os.ReadDir(layout.Plugins(dataDir))
 	for _, f := range files {
 		if name := f.Name(); name != plugin.ExecutableName("fake", hostOS) && name != indexFile {
 			t.Errorf("unexpected %s left in the plugins directory", name)
@@ -289,7 +290,7 @@ func TestInstallVerifierFailureInstallsNothing(t *testing.T) {
 
 func TestListIncludesUnmanagedBinaries(t *testing.T) {
 	dataDir := t.TempDir()
-	dir := plugin.Dir(dataDir)
+	dir := layout.Plugins(dataDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

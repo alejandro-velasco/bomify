@@ -11,6 +11,7 @@ import (
 	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 const packagesShort = "List built packages"
@@ -140,7 +141,7 @@ func shortID(id string) string {
 // sbomHash, or the zero time if it can't be read (e.g. the manifest is
 // missing, which repositories.json alone doesn't guard against).
 func manifestCreated(baseDir, sbomHash string) time.Time {
-	info, err := os.Stat(build.ManifestPath(baseDir, sbomHash))
+	info, err := os.Stat(layout.Manifest(baseDir, sbomHash))
 	if err != nil {
 		return time.Time{}
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
@@ -136,12 +137,12 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		return err
 	}
 
-	path, err := plugin.Find(plugin.Dir(dataDir), opts.scanType)
+	path, err := plugin.Find(layout.Plugins(dataDir), opts.scanType)
 	if err != nil {
 		return err
 	}
 
-	sbomPath := build.ManifestPath(dataDir, sbomHash)
+	sbomPath := layout.Manifest(dataDir, sbomHash)
 	bom, err := sbom.Load(sbomPath)
 	if err != nil {
 		return fmt.Errorf("load sbom: %w", err)

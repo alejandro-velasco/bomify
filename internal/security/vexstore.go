@@ -3,10 +3,10 @@ package security
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/namedstore"
 )
 
@@ -15,13 +15,8 @@ import (
 // scan policy rules can refer to it (see Rule.VEX).
 type StoredVEX = namedstore.Entry
 
-// VEXDir returns the directory baseDir's managed VEX documents live in.
-func VEXDir(baseDir string) string {
-	return filepath.Join(baseDir, "vex")
-}
-
 func vexStore(baseDir string) namedstore.Store {
-	return namedstore.Store{Dir: VEXDir(baseDir), Ext: ".vex", Kind: "VEX document"}
+	return namedstore.Store{Dir: layout.VEX(baseDir), Ext: ".vex", Kind: "VEX document"}
 }
 
 // VEXPath returns the path of the stored VEX document whose content

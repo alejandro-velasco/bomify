@@ -3,6 +3,8 @@
 package fsutil
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +35,37 @@ func WriteFileAtomic(path string, data []byte) error {
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// WriteJSON writes v to path as indented JSON, atomically (see
+// WriteFileAtomic). HTML escaping is disabled: json.Marshal's default
+// would otherwise mangle purl query strings ("...&tag=..." becomes
+// "...&tag=...").
+func WriteJSON(path string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	return WriteFileAtomic(path, buf.Bytes())
+}
+
+// ReadJSON parses the JSON file at path into v. A missing file is not an
+// error: v is left untouched, so callers pre-set it to their empty value.
+func ReadJSON(path string, v any) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	return nil
 }

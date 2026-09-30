@@ -20,6 +20,7 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
@@ -132,7 +133,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 		t.Errorf("SBOMHash = %s, want %s", result.SBOMHash, wantSBOMHash)
 	}
 
-	manifestPath := build.ManifestPath(dataDir, result.SBOMHash)
+	manifestPath := layout.Manifest(dataDir, result.SBOMHash)
 	got, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("read manifest: %v", err)
@@ -165,7 +166,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 			t.Errorf("layer %s content = %q, want %q", layer.Purl, gotContent, wantContent)
 		}
 
-		wantDir := filepath.Join(dataDir, "layers", wantHash)
+		wantDir := layout.Layer(dataDir, wantHash)
 		if filepath.Dir(layer.Path) != wantDir {
 			t.Errorf("layer %s path dir = %s, want %s", layer.Purl, filepath.Dir(layer.Path), wantDir)
 		}
@@ -255,7 +256,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 	}
 
 	baseDir := t.TempDir()
-	layerDir := filepath.Join(baseDir, "layers", plugin.PurlHash(component))
+	layerDir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir layer dir: %v", err)
 	}
@@ -342,7 +343,7 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	t.Helper()
 
 	sourceDir := t.TempDir()
-	layerDir := filepath.Join(sourceDir, "layers", plugin.PurlHash(component))
+	layerDir := layout.ComponentLayer(sourceDir, component.PackageURL)
 	if err := os.MkdirAll(layerDir, 0o755); err != nil {
 		t.Fatalf("mkdir layer dir: %v", err)
 	}
@@ -405,7 +406,7 @@ func TestPullRecordsComponentManifest(t *testing.T) {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
-	manifestPath := filepath.Join(dataDir, "manifests", plugin.PurlHash(component)+".json")
+	manifestPath := layout.ComponentManifest(dataDir, component.PackageURL)
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("read component manifest: %v", err)
@@ -443,7 +444,7 @@ func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
 	// Simulate a pre-fix pull: the layer directory already exists, but no
 	// manifest — planted directly rather than via Pull, so this doesn't
 	// depend on the very behavior TestPullRecordsComponentManifest covers.
-	preexistingDir := filepath.Join(dataDir, "layers", plugin.PurlHash(component))
+	preexistingDir := layout.ComponentLayer(dataDir, component.PackageURL)
 	if err := os.MkdirAll(preexistingDir, 0o755); err != nil {
 		t.Fatalf("mkdir preexisting layer dir: %v", err)
 	}
@@ -455,7 +456,7 @@ func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
-	manifestPath := filepath.Join(dataDir, "manifests", plugin.PurlHash(component)+".json")
+	manifestPath := layout.ComponentManifest(dataDir, component.PackageURL)
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Errorf("component manifest not backfilled for preexisting layer: %v", err)
 	}

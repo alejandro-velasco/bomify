@@ -12,10 +12,8 @@
 package namedstore
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,18 +60,9 @@ func (s Store) indexPath() string {
 
 // List returns every entry in s, sorted by name.
 func (s Store) List() ([]Entry, error) {
-	path := s.indexPath()
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
 	var index []Entry
-	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	if err := fsutil.ReadJSON(s.indexPath(), &index); err != nil {
+		return nil, err
 	}
 	slices.SortFunc(index, func(a, b Entry) int { return strings.Compare(a.Name, b.Name) })
 	return index, nil
@@ -198,12 +187,5 @@ func (s Store) writeIndex(index []Entry) error {
 	if index == nil {
 		index = []Entry{}
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(index); err != nil {
-		return fmt.Errorf("marshal %s index: %w", s.Kind, err)
-	}
-	return fsutil.WriteFileAtomic(s.indexPath(), buf.Bytes())
+	return fsutil.WriteJSON(s.indexPath(), index)
 }

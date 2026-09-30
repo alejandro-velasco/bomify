@@ -8,6 +8,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
@@ -53,7 +54,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 			log.Info("skipping component: unsupported by this scanner", "kind", kind)
 			continue
 		}
-		purlHash := plugin.PurlHash(component)
+		purlHash := layout.PurlHash(component.PackageURL)
 		if claimed[purlHash] {
 			log.Debug("skipping component: purl already scanned", "purl", component.PackageURL)
 			continue

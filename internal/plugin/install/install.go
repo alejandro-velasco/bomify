@@ -7,9 +7,7 @@
 package install
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -21,7 +19,8 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"oras.land/oras-go/v2"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
@@ -86,7 +85,7 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 		logger = slog.New(slog.DiscardHandler)
 	}
 
-	dir := plugin.Dir(dataDir)
+	dir := layout.Plugins(dataDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create plugins directory: %w", err)
 	}
@@ -110,7 +109,7 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 		return nil, err
 	}
 
-	bom, err := sbom.Load(build.ManifestPath(staging, result.SBOMHash))
+	bom, err := sbom.Load(layout.Manifest(staging, result.SBOMHash))
 	if err != nil {
 		return nil, fmt.Errorf("load package sbom: %w", err)
 	}
@@ -126,7 +125,7 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 	}
 	var ready []staged
 	for _, c := range candidates {
-		src := filepath.Join(staging, "layers", plugin.PurlHash(c.component), c.binary.FileName())
+		src := filepath.Join(layout.ComponentLayer(staging, c.component.PackageURL), c.binary.FileName())
 		sum, err := verifyBinary(src, c.component, opts.RequireChecksum)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", c.component.PackageURL, err)
@@ -260,7 +259,7 @@ type Entry struct {
 // sorted by kind: every bomify-plugin-<kind> executable there, with how
 // it was installed when Install did it.
 func List(dataDir string) ([]Entry, error) {
-	dir := plugin.Dir(dataDir)
+	dir := layout.Plugins(dataDir)
 
 	files, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -311,50 +310,14 @@ func kindOf(f fs.DirEntry) (string, bool) {
 // readIndex reads dir's record of installed plugins, keyed by kind,
 // returning an empty one if there isn't one yet.
 func readIndex(dir string) (map[string]Record, error) {
-	path := filepath.Join(dir, indexFile)
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return map[string]Record{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
 	index := map[string]Record{}
-	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	if err := fsutil.ReadJSON(filepath.Join(dir, indexFile), &index); err != nil {
+		return nil, err
 	}
 	return index, nil
 }
 
 // writeIndex atomically replaces dir's record of installed plugins.
 func writeIndex(dir string, index map[string]Record) error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(index); err != nil {
-		return fmt.Errorf("marshal plugin index: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(dir, ".installed-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write plugin index: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	path := filepath.Join(dir, indexFile)
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
+	return fsutil.WriteJSON(filepath.Join(dir, indexFile), index)
 }

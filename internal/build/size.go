@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
@@ -20,7 +20,7 @@ import (
 // layer directory) contributes 0, rather than erroring — matching
 // PackageSize to whatever's actually on disk right now.
 func PackageSize(baseDir, sbomHash string) (int64, error) {
-	data, err := os.ReadFile(ManifestPath(baseDir, sbomHash))
+	data, err := os.ReadFile(layout.Manifest(baseDir, sbomHash))
 	if err != nil {
 		return 0, fmt.Errorf("read manifest %s: %w", sbomHash, err)
 	}
@@ -36,13 +36,13 @@ func PackageSize(baseDir, sbomHash string) (int64, error) {
 	seen := map[string]bool{}
 	var total int64
 	for _, component := range *bom.Components {
-		hash := plugin.PurlHash(component)
+		hash := layout.PurlHash(component.PackageURL)
 		if seen[hash] {
 			continue
 		}
 		seen[hash] = true
 
-		size, err := dirSize(filepath.Join(baseDir, "layers", hash))
+		size, err := dirSize(layout.Layer(baseDir, hash))
 		if err != nil {
 			return 0, err
 		}

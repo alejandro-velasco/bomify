@@ -14,6 +14,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
@@ -53,7 +54,7 @@ func TestPluginReference(t *testing.T) {
 func installFakeVerifier(t *testing.T, baseDir string) {
 	t.Helper()
 
-	dir := plugin.Dir(baseDir)
+	dir := layout.Plugins(baseDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestBuildPluginPackage(t *testing.T) {
 		t.Errorf("build not tagged: %v", err)
 	}
 
-	binary := filepath.Join(baseDir, "layers", plugin.PurlHash(component), plugin.ExecutableName("fake", runtime.GOOS))
+	binary := filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), plugin.ExecutableName("fake", runtime.GOOS))
 	if data, err := os.ReadFile(binary); err != nil || string(data) != "fake plugin binary" {
 		t.Errorf("plugin binary in package = %q, %v", data, err)
 	}

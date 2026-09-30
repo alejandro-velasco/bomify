@@ -16,6 +16,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -86,7 +87,7 @@ func TestPull(t *testing.T) {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
-	want := filepath.ToSlash(filepath.Join(componentDir(baseDir, component), "nginx-1.27.tar"))
+	want := filepath.ToSlash(filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), "nginx-1.27.tar"))
 	if got := filepath.ToSlash(result.OutputPath); got != want {
 		t.Errorf("OutputPath = %q, want %q", got, want)
 	}
@@ -102,7 +103,7 @@ func TestPullRemovesLogFileAfterSuccess(t *testing.T) {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
-	if _, err := os.Stat(logPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLog(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("log file still exists after successful Pull: %v", err)
 	}
 }
@@ -117,7 +118,7 @@ func TestPullRemovesLogFileAfterFailure(t *testing.T) {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
-	if _, err := os.Stat(logPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLog(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("log file still exists after failed Pull: %v", err)
 	}
 }
@@ -198,7 +199,7 @@ func TestPullFailureRemovesComponentDir(t *testing.T) {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
-	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLayer(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("componentDir still exists after failed Pull: %v", err)
 	}
 }
@@ -230,7 +231,7 @@ func TestPullHashMismatchFails(t *testing.T) {
 		t.Fatal("Pull() with mismatched hash: expected error, got nil")
 	}
 
-	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLayer(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("componentDir still exists after hash mismatch: %v", err)
 	}
 }
@@ -304,7 +305,7 @@ func TestPullWritesManifest(t *testing.T) {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
-	data, err := os.ReadFile(manifestPath(baseDir, component))
+	data, err := os.ReadFile(layout.ComponentManifest(baseDir, component.PackageURL))
 	if err != nil {
 		t.Fatalf("ReadFile manifest: %v", err)
 	}
@@ -343,7 +344,7 @@ func TestPullFailureDoesNotWriteManifest(t *testing.T) {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
-	if _, err := os.Stat(manifestPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("manifest exists after failed Pull: %v", err)
 	}
 }
@@ -358,7 +359,7 @@ func TestPullPIDFileRemovedAfterSuccess(t *testing.T) {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
-	if _, err := os.Stat(pidPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentPID(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("pid file still exists after successful Pull: %v", err)
 	}
 }
@@ -373,7 +374,7 @@ func TestPullPIDFileRemovedAfterFailure(t *testing.T) {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
-	if _, err := os.Stat(pidPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentPID(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("pid file still exists after failed Pull: %v", err)
 	}
 }
@@ -383,8 +384,8 @@ func TestPullPIDFileExistsWhilePullInFlight(t *testing.T) {
 	baseDir := t.TempDir()
 
 	component := cdx.Component{PackageURL: "slow-me"}
-	pid := pidPath(baseDir, component)
-	proceed := filepath.Join(componentDir(baseDir, component), ".proceed")
+	pid := layout.ComponentPID(baseDir, component.PackageURL)
+	proceed := filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), ".proceed")
 
 	done := make(chan error, 1)
 	go func() {
@@ -426,7 +427,7 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -466,7 +467,7 @@ func TestPullReusesComponentRestoredByPreviousPull(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "hash-from-a-prior-pull"}},
 	}
 
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -496,7 +497,7 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -506,7 +507,7 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 		t.Fatalf("WriteFile leftover: %v", err)
 	}
 
-	pid := pidPath(baseDir, component)
+	pid := layout.ComponentPID(baseDir, component.PackageURL)
 	if err := os.MkdirAll(filepath.Dir(pid), 0o755); err != nil {
 		t.Fatalf("MkdirAll manifests dir: %v", err)
 	}
@@ -550,7 +551,7 @@ func TestPullClearsPreexistingDirWithNoPIDOrManifest(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -586,8 +587,8 @@ func TestPullConcurrentCallersPullOnce(t *testing.T) {
 	invokeLog := newInvocationLog(t)
 
 	component := cdx.Component{PackageURL: "slow-me"}
-	pid := pidPath(baseDir, component)
-	proceed := filepath.Join(componentDir(baseDir, component), ".proceed")
+	pid := layout.ComponentPID(baseDir, component.PackageURL)
+	proceed := filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), ".proceed")
 
 	const callers = 5
 	errs := make(chan error, callers)
@@ -634,7 +635,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "expected-hash"}},
 	}
 
-	dir := componentDir(baseDir, component)
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -649,7 +650,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 	// Unlike a fresh-pull mismatch, Pull doesn't own this state (it never
 	// pulled it), so it must leave it alone rather than deleting it just
 	// because this one caller's expectation didn't match.
-	if _, err := os.Stat(manifestPath(baseDir, component)); err != nil {
+	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); err != nil {
 		t.Errorf("manifest was removed after a reused-hash mismatch: %v", err)
 	}
 	if _, err := os.Stat(dir); err != nil {
@@ -737,7 +738,7 @@ func TestMergeHash(t *testing.T) {
 func simulatePriorPull(t *testing.T, baseDir string, component cdx.Component) {
 	t.Helper()
 
-	if err := os.MkdirAll(componentDir(baseDir, component), 0o755); err != nil {
+	if err := os.MkdirAll(layout.ComponentLayer(baseDir, component.PackageURL), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	if err := WriteManifest(baseDir, component, pluginlib.Hash{}); err != nil {
@@ -814,10 +815,10 @@ func TestCheckPullDoesNotRequirePriorState(t *testing.T) {
 		t.Fatalf("CheckPull returned error: %v", err)
 	}
 
-	if _, err := os.Stat(componentDir(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLayer(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("componentDir exists after CheckPull: %v", err)
 	}
-	if _, err := os.Stat(manifestPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("manifest exists after CheckPull: %v", err)
 	}
 }
@@ -907,7 +908,7 @@ func TestRemoteRemovesLogFileAfterSuccess(t *testing.T) {
 		t.Fatalf("Remote returned error: %v", err)
 	}
 
-	if _, err := os.Stat(logPath(baseDir, component)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentLog(baseDir, component.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("log file still exists after Remote: %v", err)
 	}
 }
@@ -918,15 +919,15 @@ func TestComponentDir(t *testing.T) {
 	a := cdx.Component{PackageURL: "pkg:oci/nginx@1.27"}
 	b := cdx.Component{PackageURL: "pkg:oci/redis@7.2.14"}
 
-	if got, want := componentDir(baseDir, a), componentDir(baseDir, a); got != want {
+	if got, want := layout.ComponentLayer(baseDir, a.PackageURL), layout.ComponentLayer(baseDir, a.PackageURL); got != want {
 		t.Errorf("componentDir() is not deterministic: %q != %q", got, want)
 	}
 
-	if componentDir(baseDir, a) == componentDir(baseDir, b) {
+	if layout.ComponentLayer(baseDir, a.PackageURL) == layout.ComponentLayer(baseDir, b.PackageURL) {
 		t.Error("componentDir() collided for two different purls")
 	}
 
-	if got := componentDir(baseDir, a); !strings.HasPrefix(got, baseDir) {
+	if got := layout.ComponentLayer(baseDir, a.PackageURL); !strings.HasPrefix(got, baseDir) {
 		t.Errorf("componentDir() = %q, want it under baseDir %q", got, baseDir)
 	}
 }

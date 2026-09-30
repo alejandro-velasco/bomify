@@ -12,7 +12,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -22,7 +22,7 @@ import (
 func buildFakeSecurityPluginBinary(t *testing.T, baseDir, scanType string) {
 	t.Helper()
 
-	bin := filepath.Join(plugin.Dir(baseDir), "bomify-plugin-"+scanType)
+	bin := filepath.Join(layout.Plugins(baseDir), "bomify-plugin-"+scanType)
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
@@ -126,7 +126,7 @@ func runSecurityScanCmd(t *testing.T, baseDir, scanType, tag string) (string, er
 func readReport(t *testing.T, baseDir string, component cdx.Component) *cdx.BOM {
 	t.Helper()
 
-	report, err := security.ReadReport(baseDir, plugin.PurlHash(component))
+	report, err := security.ReadReport(baseDir, layout.PurlHash(component.PackageURL))
 	if err != nil {
 		t.Fatalf("read report for %s: %v", component.PackageURL, err)
 	}
@@ -295,7 +295,7 @@ func TestSecurityScanSharesReportsAcrossPackages(t *testing.T) {
 		t.Fatalf("scan other:1: %v", err)
 	}
 
-	entries, err := os.ReadDir(security.ReportsDir(baseDir))
+	entries, err := os.ReadDir(layout.Reports(baseDir))
 	if err != nil {
 		t.Fatalf("read reports dir: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 		t.Errorf("oci report vulnerabilities = %+v, want CVE-OCI only", report.Vulnerabilities)
 	}
 
-	if _, err := os.Stat(security.ReportPath(baseDir, plugin.PurlHash(componentNPM))); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentReport(baseDir, componentNPM.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("unsupported component has a report (stat err = %v), want none", err)
 	}
 }

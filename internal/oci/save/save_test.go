@@ -13,9 +13,8 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
-	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 func writeSBOM(t *testing.T, path string, components ...cdx.Component) {
@@ -45,9 +44,9 @@ func writeSBOM(t *testing.T, path string, components ...cdx.Component) {
 func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component, files map[string]string) {
 	t.Helper()
 
-	hash := plugin.PurlHash(component)
+	hash := layout.PurlHash(component.PackageURL)
 
-	manifestPath := filepath.Join(baseDir, "manifests", hash+".json")
+	manifestPath := layout.Manifest(baseDir, hash)
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(manifestPath), err)
 	}
@@ -55,7 +54,7 @@ func writeComponentFixture(t *testing.T, baseDir string, component cdx.Component
 		t.Fatalf("write %s: %v", manifestPath, err)
 	}
 
-	layerDir := filepath.Join(baseDir, "layers", hash)
+	layerDir := layout.Layer(baseDir, hash)
 	for name, content := range files {
 		path := filepath.Join(layerDir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -171,8 +170,8 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		path, sbomPath string
 	}{
-		{build.ManifestPath(destDir, repos["appA"]["v1.0"]), sbom1Path},
-		{build.ManifestPath(destDir, repos["appB"]["v1.0"]), sbom2Path},
+		{layout.Manifest(destDir, repos["appA"]["v1.0"]), sbom1Path},
+		{layout.Manifest(destDir, repos["appB"]["v1.0"]), sbom2Path},
 	} {
 		got, err := os.ReadFile(tc.path)
 		if err != nil {
@@ -188,12 +187,12 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	}
 
 	// componentA (shared) and componentB should both be restored intact.
-	aDir := filepath.Join(destDir, "layers", plugin.PurlHash(componentA))
+	aDir := layout.ComponentLayer(destDir, componentA.PackageURL)
 	if files := readDir(t, aDir); files["artifact"] != "single file contents" {
 		t.Errorf("componentA restored content = %v", files)
 	}
 
-	bDir := filepath.Join(destDir, "layers", plugin.PurlHash(componentB))
+	bDir := layout.ComponentLayer(destDir, componentB.PackageURL)
 	files := readDir(t, bDir)
 	if files["oci-layout"] != `{"imageLayoutVersion":"1.0.0"}` || files["blobs/sha256/abcd"] != "fake blob content" {
 		t.Errorf("componentB restored content = %v", files)
@@ -214,7 +213,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 	writeComponentFixture(t, sourceDir, componentB, map[string]string{"artifact": "other contents"})
 
 	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
-	reportPath := security.ReportPath(sourceDir, plugin.PurlHash(componentA))
+	reportPath := layout.ComponentReport(sourceDir, componentA.PackageURL)
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -244,7 +243,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	got, err := os.ReadFile(security.ReportPath(destDir, plugin.PurlHash(componentA)))
+	got, err := os.ReadFile(layout.ComponentReport(destDir, componentA.PackageURL))
 	if err != nil {
 		t.Fatalf("read restored vulnerability report: %v", err)
 	}
@@ -252,7 +251,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Errorf("restored vulnerability report = %q, want %q", got, reportBytes)
 	}
 
-	if _, err := os.Stat(security.ReportPath(destDir, plugin.PurlHash(componentB))); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.ComponentReport(destDir, componentB.PackageURL)); !os.IsNotExist(err) {
 		t.Errorf("componentB got a vulnerability report, want none: err = %v", err)
 	}
 }

@@ -13,11 +13,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
-	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const packageShort = "Manage individual bomify packages"
@@ -310,7 +309,7 @@ func runPackageVulnerabilities(cmd *cobra.Command, opts *packageVulnerabilitiesO
 		return err
 	}
 
-	bom, err := sbom.Load(build.ManifestPath(dataDir, sbomHash))
+	bom, err := sbom.Load(layout.Manifest(dataDir, sbomHash))
 	if err != nil {
 		return fmt.Errorf("load sbom: %w", err)
 	}
@@ -334,13 +333,13 @@ func runPackageVulnerabilities(cmd *cobra.Command, opts *packageVulnerabilitiesO
 		}
 		matchedPurls[component.PackageURL] = true
 
-		purlHash := plugin.PurlHash(component)
+		purlHash := layout.PurlHash(component.PackageURL)
 		if printed[purlHash] {
 			continue
 		}
 		printed[purlHash] = true
 
-		data, err := os.ReadFile(security.ReportPath(dataDir, purlHash))
+		data, err := os.ReadFile(layout.Report(dataDir, purlHash))
 		if err != nil {
 			if os.IsNotExist(err) {
 				logger.Debug("no vulnerability report", "purl", component.PackageURL)

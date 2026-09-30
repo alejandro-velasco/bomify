@@ -5,11 +5,11 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/namedstore"
 )
 
@@ -18,13 +18,8 @@ import (
 // (see Rule.KeyOptions).
 type StoredKey = namedstore.Entry
 
-// KeysDir returns the directory baseDir's managed keys live in.
-func KeysDir(baseDir string) string {
-	return filepath.Join(baseDir, "keys")
-}
-
 func keyStore(baseDir string) namedstore.Store {
-	return namedstore.Store{Dir: KeysDir(baseDir), Ext: ".pem", Kind: "key"}
+	return namedstore.Store{Dir: layout.Keys(baseDir), Ext: ".pem", Kind: "key"}
 }
 
 // ListKeys returns every key in baseDir's managed store, sorted by name.
