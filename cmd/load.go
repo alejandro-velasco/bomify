@@ -95,7 +95,7 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	if err := opts.scan.validate(); err != nil {
 		return err
 	}
-	scanner := &pullScanner{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
+	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
 
 	r := cmd.InOrStdin()
 	if opts.input != "" {
@@ -114,13 +114,13 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanner.scan})
+	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanHook.scan})
 	if err != nil {
 		return err
 	}
 	// Written after the packages' own reports, so a fresh scan replaces
 	// what the publisher attached.
-	if err := writeReports(scanner.collected); err != nil {
+	if err := writeReports(scanHook.collected); err != nil {
 		return err
 	}
 

@@ -274,12 +274,12 @@ func writeReports(reports []security.ComponentReport) error {
 	return nil
 }
 
-// pullScanner is the transfer.Scanner pull and load run for each
+// pullScanHook is the transfer.Hooks.Scan hook pull and load run for each
 // package, before anything of it is written: it scans the SBOM's
 // components fresh and gates them, collecting the reports for the
 // caller to write once the pull succeeds (see collected). A package no
 // plan applies to passes straight through.
-type pullScanner struct {
+type pullScanHook struct {
 	flags       *scanFlags
 	w           io.Writer
 	concurrency int
@@ -287,7 +287,7 @@ type pullScanner struct {
 	collected   []security.ComponentReport
 }
 
-func (s *pullScanner) scan(_ context.Context, ref string, sbomData []byte) error {
+func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) error {
 	p, err := s.flags.plan(ref, security.HookPull, s.logger)
 	if err != nil || p.Scanner == "" {
 		return err

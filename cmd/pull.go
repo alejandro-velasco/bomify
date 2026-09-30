@@ -113,7 +113,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	if err := opts.scan.validate(); err != nil {
 		return err
 	}
-	scanner := &pullScanner{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
+	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
 
 	repo, err := newRepository(ref)
 	if err != nil {
@@ -127,13 +127,13 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanner.scan})
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanHook.scan})
 	if err != nil {
 		return err
 	}
 	// Written after the package's own reports, so a fresh scan replaces
 	// what the publisher attached.
-	if err := writeReports(scanner.collected); err != nil {
+	if err := writeReports(scanHook.collected); err != nil {
 		return err
 	}
 
