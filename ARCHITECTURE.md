@@ -409,9 +409,11 @@ build` or `push`/`save`, then `bomify security scan <type> <tag>
 --fail-on <severity>` (`&&`-chained in CI) does the same with no extra
 flags on those commands.
 
-`pull` and `load` take `--scan <type>`, the gate flags, and
-`--skip-scan` (`cmd/scanning.go`'s `scanFlags`), and resolve a
-`scanPlan` — a scanner, and a gate — for each package:
+`pull` and `load` take just `--scan <type>`, `--fail-on`, and
+`--skip-scan` (`cmd/scanning.go`'s `scanFlags`) — the one-off
+exemptions `--ignore` and `--vex` belong to `bomify security scan`,
+and a pull relies on a rule's stored VEX instead. For each package,
+`pullScanHook` resolves a scanner and a gate:
 
 1. `--skip-scan`: nothing (warning if a rule would have scanned).
 2. `--scan`, else the matching scan policy rule's scanner — but only a
@@ -421,9 +423,13 @@ flags on those commands.
 3. The gate exactly as for `bomify security scan` (see above), with
    the same condition on the rule.
 
-The package is always scanned fresh (`security.Scan`), never gated on
+A scan on pull is only ever a gate, so the two must come together:
+the package is always scanned fresh (`security.Scan`), never gated on
 the reports it carries — those are its publisher's, never taken as a
-verdict — so `--fail-on` without `--scan`, and no rule, is an error.
+verdict — so a threshold without a scanner is an error; and a scanner
+without a threshold couldn't refuse anything, so that's an error too
+(to just scan, run `bomify security scan` after pulling). For the same
+reason, a rule's `--on pull` requires its `--fail-on`.
 
 The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
 alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's

@@ -33,7 +33,8 @@ no --fail-on of its own, always applies its VEX documents alongside any
 
 --on pull also makes a matching package get scanned with <scanner> and
 gated automatically by "bomify pull" and "bomify load", before anything
-of it is written. Without --on, the rule only applies to "bomify
+of it is written; it needs --fail-on, since a scan there only ever
+refuses packages. Without --on, the rule only applies to "bomify
 security scan". Pull's and load's own --scan and --fail-on override the
 rule, and --skip-scan ignores it.
 

@@ -23,9 +23,9 @@ else any "bomify trust" rule matching each tag, checked before
 anything of that package is restored. --insecure-skip-verify bypasses
 a matching trust rule.
 
---scan, --fail-on, --ignore, --vex, and --skip-scan gate each tag
-before anything of it is restored, exactly as "bomify pull" does, as
-does a "bomify security policy" rule listing "pull" in its --on.
+--scan, --fail-on, and --skip-scan gate each tag before anything of it
+is restored, exactly as "bomify pull" does, as does a "bomify security
+policy" rule listing "pull" in its --on.
 Scanning may need network access, so on an air-gapped machine leave it
 off, or scan before saving instead.
 

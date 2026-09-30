@@ -38,16 +38,19 @@ report referrer's own signature is checked the same way before its
 reports are restored.
 --insecure-skip-verify bypasses a matching trust rule.
 
---scan <type> scans the package's components fresh — after --verify,
-before anything is written — and --fail-on <severity> (with --ignore
-and --vex) refuses to restore it if anything at or above it is found,
-leaving no trace, as a failed verify does. The fresh reports replace
-the ones the package carries. Gating a pull always needs --scan: the
-reports a pulled package carries are its publisher's, not a verdict to
-trust. A "bomify security policy" rule listing "pull" in its --on does
-the same for a matching <reference> without flags; --skip-scan ignores
-it. Scanning may need network access (e.g. grype's database, or the
-images it scans).
+--scan <type> --fail-on <severity> scans the package's components
+fresh — after --verify, before anything is written — and refuses to
+restore it if anything at or above <severity> is found, leaving no
+trace, as a failed verify does; a matching rule's stored VEX documents
+exempt what they cover. The fresh reports replace the ones the package
+carries. The two go together: --fail-on without --scan would gate on
+the publisher's own reports, and --scan without a threshold couldn't
+refuse anything (to just scan, run "bomify security scan" after
+pulling). A "bomify security policy" rule listing "pull" in its --on
+does the same for a matching <reference> without flags, and either
+flag overrides its part of the rule; --skip-scan ignores it. Scanning
+may need network access (e.g. grype's database, or the images it
+scans).
 
 --quiet prints only the restored package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but

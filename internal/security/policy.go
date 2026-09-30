@@ -109,6 +109,11 @@ func SetRule(baseDir string, rule Rule) error {
 			return fmt.Errorf("unknown hook %q (want any of %s)", hook, strings.Join(Hooks, ", "))
 		}
 	}
+	// A scan at a hook is only ever a gate: one with nothing to refuse on
+	// would scan every pull for nothing.
+	if len(rule.On) > 0 && rule.FailOn == "" {
+		return fmt.Errorf("--on %s needs --fail-on: a scan on pull only refuses packages; to just scan, run \"bomify security scan\" after pulling", strings.Join(rule.On, ","))
+	}
 	if _, err := ResolveVEX(baseDir, rule.VEX); err != nil {
 		return err
 	}

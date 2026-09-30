@@ -11,19 +11,17 @@ flowchart TD
     Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names pull)"]
     Skip -->|"no"| Rule{"a scan.json rule matches the<br/>reference, and its --on names<br/>pull?"}
 
-    Rule -->|"yes, most specific wins"| UseRule["the rule's scanner, threshold,<br/>and stored VEX — --scan and<br/>--fail-on override them,<br/>--vex adds to the VEX"]
-    Rule -->|"no"| UseFlags["flags only:<br/>--scan, --fail-on,<br/>--ignore, --vex"]
+    Rule -->|"yes, most specific wins"| UseRule["the rule's scanner, threshold,<br/>and stored VEX — --scan and<br/>--fail-on override them"]
+    Rule -->|"no"| UseFlags["flags only:<br/>--scan, --fail-on"]
 
     UseRule --> Active{"a scanner or<br/>a threshold?"}
     UseFlags --> Active
 
-    Active -->|"no"| NoScan
-    Active -->|"yes"| Scanner{"a scanner?"}
+    Active -->|"neither"| NoScan
+    Active -->|"only one"| NeedBoth["fails: --scan and --fail-on go together<br/>— never gating on the publisher's reports,<br/>never scanning with nothing to refuse on"]
+    Active -->|"both"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
 
-    Scanner -->|"yes"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
-    Scanner -->|"no"| NeedScan["fails: --fail-on needs --scan<br/>— hooks always scan fresh, never<br/>trusting reports already on disk<br/>or a pulled package's own"]
-
-    PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus --ignore,<br/>minus VEX exemptions (each logged)"]
+    PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus the rule's<br/>VEX exemptions (each logged)"]
 
     Gate --> Left{"anything left?"}
 
@@ -33,5 +31,5 @@ flowchart TD
     class Start source
     class PluginScan plugin
     class Continue ok
-    class Failed,NeedScan failed
+    class Failed,NeedBoth failed
     class NoScan skipped

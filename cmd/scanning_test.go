@@ -100,6 +100,25 @@ func TestLoadScanGate(t *testing.T) {
 	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--skip-scan", "--scan", "grype"); err == nil {
 		t.Error("load --skip-scan --scan: error = nil, want a flag error")
 	}
+
+	// A scan on pull is only ever a gate: --scan with nothing to refuse
+	// on is an error, not a scan that can't stop anything.
+	emptyDir := t.TempDir()
+	usePlugin(t, emptyDir, "grype")
+	if _, err := runRootCmd(t, emptyDir, "load", "--input", archive, "--scan", "grype"); err == nil || isGateError(err) {
+		t.Errorf("load --scan without a threshold: error = %v, want a request for --fail-on", err)
+	}
+	if repos, _ := build.ReadRepositories(emptyDir); len(repos) != 0 {
+		t.Errorf("tags recorded despite the refused scan: %v", repos)
+	}
+
+	// One-off exemptions belong to "bomify security scan"; pull and load
+	// rely on a rule's stored VEX.
+	for _, flag := range []string{"--ignore", "--vex"} {
+		if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high", flag, "x"); err == nil {
+			t.Errorf("load %s: error = nil, want an unknown-flag error", flag)
+		}
+	}
 }
 
 func TestPolicyRuleOnHooks(t *testing.T) {
@@ -129,6 +148,9 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 		t.Errorf("load --fail-on critical over a rule on pull: %v", err)
 	}
 
+	if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--match", "x", "--on", "pull"); err == nil {
+		t.Error("policy create --on pull without --fail-on: error = nil, want one")
+	}
 	for _, hook := range []string{"deploy", "build", "push"} {
 		if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--on", hook); err == nil {
 			t.Errorf("policy create --on %s: error = nil, want an unknown-hook error", hook)
