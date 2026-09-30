@@ -10,11 +10,11 @@ import (
 	"strings"
 )
 
-// ArtifactType is the referrer artifact type the signing contract signs as, and
+// ArtifactType is the referrer artifact type this fake signs as, and
 // (unless FAKESIGN_TYPES overrides it) the only one it verifies.
 const ArtifactType = "application/vnd.bomify.test.signature"
 
-// MediaType is the media type of the signing contract's envelope blob.
+// MediaType is the media type of this fake's envelope blob.
 const MediaType = "application/vnd.bomify.test.signature.v1+json"
 
 type optionFlags []string

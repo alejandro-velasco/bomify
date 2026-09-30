@@ -3,8 +3,8 @@
 // more specific plugin. It implements the pull/push contract described in
 // plugins/COMPONENT-CONTRACT.md:
 //
-//	bomify-plugin-generic pull --purl '<component purl>' --output <dir>
-//	bomify-plugin-generic push --purl '<component purl>' --input <dir> --remote <endpoint>
+//	bomify-plugin-generic component pull --purl '<component purl>' --output <dir>
+//	bomify-plugin-generic component push --purl '<component purl>' --input <dir> --remote <endpoint>
 //
 // pull resolves the component's purl "download_url" qualifier
 // (pkg:generic/<name>@<version>?download_url=<url>, per the package-url

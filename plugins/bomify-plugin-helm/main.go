@@ -2,8 +2,8 @@
 // components. It implements the pull/push contract described in
 // plugins/COMPONENT-CONTRACT.md, using the Helm SDK (helm.sh/helm/v4):
 //
-//	bomify-plugin-helm pull --purl '<component purl>' --output <dir>
-//	bomify-plugin-helm push --purl '<component purl>' --input <dir> --remote <endpoint>
+//	bomify-plugin-helm component pull --purl '<component purl>' --output <dir>
+//	bomify-plugin-helm component push --purl '<component purl>' --input <dir> --remote <endpoint>
 //
 // pull resolves a chart reference from the component's purl and downloads
 // it, supporting both classic HTTP(S) chart repositories and OCI

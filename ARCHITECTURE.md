@@ -450,7 +450,7 @@ without a threshold couldn't refuse anything, so that's an error too
 (to just scan, run `bomify security scan` after pulling). For the same
 reason, a rule's `--on pull` requires its `--fail-on`.
 
-The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
+The scan runs as a third transfer hook, `transfer.Options.Scan`,
 alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's
 SBOM into memory after verifying it and hands it to the hook before
 writing anything, so a failure leaves nothing behind, as a failed
@@ -528,7 +528,7 @@ byte-for-byte what `bomify build` recorded.
 
 [`internal/signature`](internal/signature) holds bomify's side of this,
 wired into `push.Push` and `pull.Pull` as two optional hooks
-(`transfer.Hooks`' `Sign` and `Verify`, beside the scanning hook
+(`transfer.Options`' `Sign` and `Verify`, beside the scanning hook
 `Scan`), so `save`/`load` inherit them unchanged:
 
 - **Signing** (`push --sign <kind>`, `save --sign <kind>`): once the
