@@ -1,6 +1,3 @@
-// Command fakeplugin is a synthetic bomify-plugin-* plugin used only by
-// internal/plugin's tests, so Pull, Push, and Remote can be exercised
-// without depending on a real external tool.
 package main
 
 import (
@@ -31,8 +28,10 @@ type remoteResult struct {
 	Remote string `json:"remote"`
 }
 
-func main() {
-	if len(os.Args) < 3 || os.Args[1] != "component" {
+// componentMain implements the component contract: "component
+// <pull|push|remote>".
+func componentMain() {
+	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: fakeplugin component <pull|push|remote> --purl <purl> ...")
 		os.Exit(1)
 	}

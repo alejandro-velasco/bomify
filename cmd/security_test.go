@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -14,23 +12,15 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
-// buildFakeSecurityPluginBinary builds cmd/testdata/fakesecurityplugin as
-// bomify-plugin-<scanType>[.exe] into baseDir's plugins directory, for
+// buildFakeSecurityPluginBinary installs the fake plugin as
+// bomify-plugin-<scanType> into baseDir's plugins directory, for
 // plugin.Find to discover there.
 func buildFakeSecurityPluginBinary(t *testing.T, baseDir, scanType string) {
 	t.Helper()
-
-	bin := filepath.Join(layout.Plugins(baseDir), "bomify-plugin-"+scanType)
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-
-	build := exec.Command("go", "build", "-o", bin, "./testdata/fakesecurityplugin")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fake security plugin: %v\n%s", err, out)
-	}
+	testutil.InstallFakePlugin(t, layout.Plugins(baseDir), scanType)
 }
 
 // writeResponsesFile writes responses (purl -> raw SecurityResult object

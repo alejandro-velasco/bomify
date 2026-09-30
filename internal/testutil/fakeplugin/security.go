@@ -1,7 +1,3 @@
-// Command fakesecurityplugin is a synthetic bomify-plugin-* used only by
-// cmd's tests, to exercise "bomify security scan"'s per-component
-// dispatch, capability filtering, and per-component reports without depending on
-// a real plugin.
 package main
 
 import (
@@ -11,8 +7,10 @@ import (
 	"os"
 )
 
-func main() {
-	if len(os.Args) < 3 || os.Args[1] != "security" {
+// securityMain implements the security scanning contract: "security
+// <scan|supported-components>".
+func securityMain() {
+	if len(os.Args) < 3 {
 		usageError()
 	}
 
@@ -27,7 +25,7 @@ func main() {
 }
 
 func usageError() {
-	fmt.Fprintln(os.Stderr, "usage: fakesecurityplugin security <scan --purl <purl>|supported-components>")
+	fmt.Fprintln(os.Stderr, "usage: fakeplugin security <scan --purl <purl>|supported-components>")
 	os.Exit(1)
 }
 

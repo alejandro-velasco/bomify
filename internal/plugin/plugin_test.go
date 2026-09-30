@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -903,21 +903,10 @@ func TestComponentDir(t *testing.T) {
 	}
 }
 
-// buildFakePlugin compiles testdata/fakeplugin into a temp directory and
-// returns the resulting binary's path, standing in for a real
+// buildFakePlugin installs the fake plugin (see testutil) into a temp
+// directory and returns its path, standing in for a real
 // bomify-plugin-* executable.
 func buildFakePlugin(t *testing.T) string {
 	t.Helper()
-
-	bin := filepath.Join(t.TempDir(), "fakeplugin")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-
-	cmd := exec.Command("go", "build", "-o", bin, "./testdata/fakeplugin")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build fake plugin: %v\n%s", err, out)
-	}
-
-	return bin
+	return testutil.InstallFakePlugin(t, t.TempDir(), "fake")
 }

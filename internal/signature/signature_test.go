@@ -6,9 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -19,9 +16,10 @@ import (
 	"oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
-// fakeKind is the plugin kind the fake signing plugin (testdata/fakesigner)
+// fakeKind is the plugin kind the fake signing plugin (see testutil)
 // is installed as.
 const fakeKind = "fakesign"
 
@@ -29,23 +27,13 @@ const fakeKind = "fakesign"
 // signer into, for NewSigner/NewVerifier/Verify to find it in.
 var pluginDir string
 
-// installFakeSigner builds testdata/fakesigner as bomify-plugin-fakesign
-// into a fresh plugins directory and points pluginDir at it.
+// installFakeSigner installs the fake plugin (see testutil) as
+// bomify-plugin-fakesign into a fresh plugins directory and points
+// pluginDir at it.
 func installFakeSigner(t *testing.T) {
 	t.Helper()
-
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "bomify-plugin-"+fakeKind)
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-
-	build := exec.Command("go", "build", "-o", bin, "./testdata/fakesigner")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fake signer: %v\n%s", err, out)
-	}
-
-	pluginDir = dir
+	pluginDir = t.TempDir()
+	testutil.InstallFakePlugin(t, pluginDir, fakeKind)
 }
 
 func discardLogger() *slog.Logger {
