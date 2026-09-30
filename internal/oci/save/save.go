@@ -23,6 +23,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 // Save resolves each of tags in baseDir's repositories.json and packages
@@ -31,10 +32,11 @@ import (
 // any other, with no registry involved. Shared components (the same purl
 // pulled by more than one of the given tags) are stored once. Layers
 // upload concurrently within each tag, bounded by concurrency. A non-nil
-// hooks.Sign signs each tag's package as push.Push would (see
+// hooks.Sign signs each tag's package as push.Push would, and each of
+// vex is attached to every tag's package as push.Push attaches it (see
 // transfer.Signer), its signature travelling inside the tarball as an
 // OCI referrer.
-func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) error {
+func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks, vex []security.VEXDocument) error {
 	if len(tags) == 0 {
 		return fmt.Errorf("no tags to save")
 	}
@@ -55,7 +57,7 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concu
 		if err != nil {
 			return err
 		}
-		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress, hooks); err != nil {
+		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress, hooks, vex); err != nil {
 			return fmt.Errorf("package %s: %w", tag, err)
 		}
 	}

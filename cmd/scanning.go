@@ -6,14 +6,20 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2"
 
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // gateFlags are the --fail-on/--ignore/--vex flags, plus a skip flag,
@@ -223,6 +229,10 @@ type pullScanHook struct {
 	concurrency int
 	logger      *slog.Logger
 	collected   []security.ComponentReport
+	// policy and verify are the pull's signature verification: the
+	// package's publisher's VEX counts only where they verify it.
+	policy signature.Policy
+	verify transfer.Verifier
 }
 
 // scan decides, for the package ref, whether to scan it and what gates
@@ -237,7 +247,11 @@ type pullScanHook struct {
 // scanner with no threshold, or a threshold with no scanner, is an error
 // rather than a scan that can't refuse anything or a gate on the
 // publisher's own reports.
-func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) error {
+//
+// The gate also honors VEX documents the package's publisher attached
+// (see publisherVEX) — applied before the rule's own, so local VEX wins
+// where they disagree.
+func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbomData []byte) error {
 	f := s.flags
 	if err := f.validate(); err != nil {
 		return err
@@ -272,6 +286,12 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 		return errors.New("--scan needs --fail-on (or a matching rule's threshold) to refuse anything; to just scan, run \"bomify security scan\" after pulling")
 	}
 
+	published, err := s.publisherVEX(ctx, target, ref, manifest)
+	if err != nil {
+		return err
+	}
+	gate.VEX = security.CombineVEX(published, gate.VEX)
+
 	bom, err := sbom.LoadBytes(sbomData)
 	if err != nil {
 		return fmt.Errorf("parse sbom: %w", err)
@@ -295,4 +315,72 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 	}
 	s.collected = append(s.collected, reports...)
 	return nil
+}
+
+// publisherVEX loads the VEX documents attached to the package ref
+// resolved to (see security.AttachVEX) — but only where this pull
+// verifies signatures, and only those whose own signature verifies:
+// otherwise anyone who can push to the repository could silence any
+// finding. Documents it can't trust are skipped with a warning, never
+// failing the pull; they only ever exempt, so skipping one is the safe
+// side.
+func (s *pullScanHook) publisherVEX(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) (*security.VEX, error) {
+	referrers, err := security.VEXReferrers(ctx, target, manifest)
+	if err != nil {
+		s.logger.Warn("can't list the package's VEX documents; ignoring them", "reference", ref, "error", err)
+		return nil, nil
+	}
+	if len(referrers) == 0 {
+		return nil, nil
+	}
+	if !s.policy.Verifies(ref) || s.verify == nil {
+		s.logger.Warn("ignoring the package's VEX documents: they only count on a pull that verifies signatures (--verify, or a \"bomify trust\" rule)", "reference", ref, "documents", len(referrers))
+		return nil, nil
+	}
+
+	var docs []security.VEXDocument
+	for _, referrer := range referrers {
+		if err := s.verify(ctx, target, ref, referrer); err != nil {
+			s.logger.Warn("ignoring an unverified VEX document", "reference", ref, "document", referrer.Digest.String(), "error", err)
+			continue
+		}
+		doc, err := security.FetchVEX(ctx, target, referrer)
+		if err != nil {
+			s.logger.Warn("ignoring a VEX document that can't be fetched", "reference", ref, "document", referrer.Digest.String(), "error", err)
+			continue
+		}
+		docs = append(docs, doc)
+	}
+	return security.LoadVEXDocuments(docs, "published with "+ref+": ")
+}
+
+// publishVEX reads each of args — the name of a document in the managed
+// VEX store (see "bomify security vex add"), or else a file — for push
+// or save to attach to the package (see security.AttachVEX), checking
+// each loads first.
+func publishVEX(args []string) ([]security.VEXDocument, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	stored, err := security.ListVEX(dataDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var docs []security.VEXDocument
+	for _, arg := range args {
+		path, name := arg, filepath.Base(arg)
+		if i := slices.IndexFunc(stored, func(e security.StoredVEX) bool { return e.Name == arg }); i >= 0 {
+			path, name = security.VEXPath(dataDir, stored[i].SHA256), arg
+		}
+		if _, err := security.LoadVEX([]string{path}); err != nil {
+			return nil, fmt.Errorf("--vex %s: %w", arg, err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("--vex %s: %w", arg, err)
+		}
+		docs = append(docs, security.VEXDocument{Name: name, Data: data})
+	}
+	return docs, nil
 }

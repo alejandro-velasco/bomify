@@ -434,8 +434,11 @@ The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
 alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's
 SBOM into memory after verifying it and hands it to the hook before
 writing anything, so a failure leaves nothing behind, as a failed
-verify does. The fresh reports are written after the package's own,
-replacing what its publisher attached. Scanning may need network access
+verify does. The gate also honors VEX documents the package's
+publisher attached, when they verify (see [VEX in a
+registry](#vex-in-a-registry)). The fresh reports are written after
+the package's own, replacing what its publisher attached. Scanning may
+need network access
 (e.g. grype's database, or the images it scans), which is why nothing
 scans on pull unless asked to.
 
@@ -491,6 +494,41 @@ never orphans a signature over it.
   needs none of this: it's built from a fresh layout every time, so it
   only ever holds the current reports.
 
+#### VEX in a registry
+
+A package's publisher can attach VEX documents to it, so the
+statements they've made about its vulnerabilities travel with it:
+`bomify push --vex <name|file>` and `bomify save --vex ...`
+(repeatable), where a name is looked up in the [managed VEX
+store](#data-directory) first and anything else is read as a file.
+Each document becomes its own OCI referrer of the package manifest
+(`security.AttachVEX`): artifact type
+`application/vnd.bomify.vex.v1+json`, its one layer the document as
+written (OpenVEX, CSAF, or CycloneDX VEX), dated by the push. A
+document the package already carries isn't attached again, so pushing
+again with the same `--vex` attaches nothing new; with `--sign`, each
+new VEX referrer is signed like the package. Nothing is ever attached
+implicitly — a local scan policy rule's VEX is never published unless
+named.
+
+On pull or load, a [scan on pull](#scanning-on-pull) honors them —
+but only under two conditions, since a VEX document only ever tells
+the gate *not* to fail, and anyone who can push to the repository
+could otherwise attach one silencing any finding:
+
+1. The pull verifies signatures (`--verify`, or a `bomify trust` rule
+   matching the reference — `signature.Policy.Verifies`). Otherwise
+   the package's VEX is ignored with a warning.
+2. Each VEX referrer passes the same verification itself. One that
+   doesn't — unsigned, or signed by someone else — is skipped with a
+   warning; the rest still count.
+
+Trusted documents are applied oldest first, then the matching rule's
+own stored VEX (`security.CombineVEX`), so where a publisher and the
+consumer's own VEX disagree, the consumer's wins. They're used only by
+that pull's gate and never kept: to reuse a publisher's document, add
+it with `bomify security vex add` like any other.
+
 ### Signing & verification
 
 A package is signed as a whole, never component by component: what's
@@ -520,7 +558,8 @@ wired into `push.Push` and `pull.Pull` as two optional hooks
   manifest of the plugin's own artifact type whose `subject` is the
   package manifest and whose one layer is the envelope. A failed sign
   therefore never leaves a tag pointing at an unsigned package. The
-  report referrer, if any, is signed the same way before tagging too.
+  report referrer and any VEX referrers are signed the same way before
+  tagging too.
   The payload deliberately omits `artifactType`, which a registry doesn't
   report when resolving a tag, so the payload computed at pull time is
   byte-identical.
@@ -771,6 +810,9 @@ image with generic tooling:
   layers are the reports (see [Reports in a
   registry](#reports-in-a-registry)). Like a signature, it never changes
   the package's digest.
+- So do VEX documents a push names with `--vex`: one **VEX referrer**
+  each, its one layer the document (see [VEX in a
+  registry](#vex-in-a-registry)).
 
 How that lands in a registry repository — the package manifest's
 descriptors in order, and the content-addressed blobs they point at:

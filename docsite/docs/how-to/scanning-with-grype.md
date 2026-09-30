@@ -213,6 +213,21 @@ at pull or load may need network access (grype's database, or the
 images it scans), so leave it off on an air-gapped machine and scan
 before saving instead.
 
+## 9. Publish VEX with a package
+
+When you publish a package, you can attach your VEX documents to it so
+the statements travel with it — a stored name, or a file:
+
+```sh
+bomify push registry.example.com/team/myapp:1.0 --sign sigstore --sign-option key=cosign.key --vex myapp
+```
+
+Whoever pulls it with `--scan` and `--fail-on` gets those exemptions,
+but only if their pull verifies signatures (`--verify`, or a `bomify
+trust` rule) and each VEX document's own signature verifies — so sign
+when you publish them. Their own policy rule's VEX still wins where
+the two disagree.
+
 ## Next steps
 
 - [Distributing a package](distributing-a-package.md) once you're

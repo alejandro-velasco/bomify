@@ -14,7 +14,8 @@ stdout if --output isn't given.
 
 --sign signs each saved package with a signing plugin, exactly as
 "bomify push --sign" would, the signature travelling inside the
-tarball for "bomify load --verify" to check.
+tarball for "bomify load --verify" to check. --vex attaches VEX
+documents to every saved package, exactly as "bomify push --vex" does.
 
 ```
 bomify package save <tag>... [flags]
@@ -44,6 +45,7 @@ bomify package save <tag>... [flags]
   -o, --output string             write the tarball here instead of stdout
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --vex stringArray           attach this VEX document to every saved package — a name from "bomify security vex add", or a file (repeatable)
 ```
 
 ### Options inherited from parent commands

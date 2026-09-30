@@ -39,7 +39,7 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 		t.Fatalf("NewSigner: %v", err)
 	}
 	var archive bytes.Buffer
-	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{Sign: signer}); err != nil {
+	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{Sign: signer}, nil); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestSaveLoadCarriesSignature(t *testing.T) {
 
 	// And an unsigned save fails verification outright.
 	archive.Reset()
-	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{}); err != nil {
+	if err := save.Save(ctx, sourceDir, []string{"app:v1"}, &archive, 1, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Save (unsigned): %v", err)
 	}
 	if _, err := load("secret"); err == nil || !strings.Contains(err.Error(), "no signature") {

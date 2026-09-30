@@ -283,7 +283,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -375,7 +375,7 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	}
 
 	tag = "test"
-	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -509,7 +509,7 @@ func TestPullFailedScanWritesNothing(t *testing.T) {
 
 	var scannedRef string
 	var scannedSBOM []byte
-	scan := func(ctx context.Context, ref string, sbom []byte) error {
+	scan := func(ctx context.Context, _ oras.ReadOnlyTarget, ref string, _ ocispec.Descriptor, sbom []byte) error {
 		scannedRef, scannedSBOM = ref, sbom
 		return errors.New("vulnerable")
 	}
@@ -534,7 +534,7 @@ func TestPullFailedScanWritesNothing(t *testing.T) {
 	}
 
 	// A scanner that passes lets the pull go ahead as usual.
-	pass := func(context.Context, string, []byte) error { return nil }
+	pass := func(context.Context, oras.ReadOnlyTarget, string, ocispec.Descriptor, []byte) error { return nil }
 	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Scan: pass}); err != nil {
 		t.Errorf("Pull() with a passing scanner: %v", err)
 	}

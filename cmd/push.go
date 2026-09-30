@@ -41,6 +41,13 @@ referrer. One signature covers the SBOM and every component; the
 report referrer is signed separately, the same way. See "bomify pull
 --verify" and "bomify trust" for checking them.
 
+--vex attaches a VEX document to the package as its own OCI referrer
+(repeatable): a name from "bomify security vex add", or a file. A
+document the package already carries isn't attached again, and with
+--sign each is signed like the package. A pull honors them in its
+vulnerability gate only when it verifies signatures and each VEX
+document's own signature verifies (see "bomify pull --scan").
+
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors — for scripts that go on to publish or pin it.`
@@ -64,6 +71,7 @@ type pushOptions struct {
 	concurrency int
 	keepReports int
 	sign        signFlags
+	vex         []string
 	quiet       bool
 }
 
@@ -89,6 +97,7 @@ func pushCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
 	opts.sign.register(cmd)
+	cmd.Flags().StringArrayVar(&opts.vex, "vex", nil, "attach this VEX document to the package — a name from \"bomify security vex add\", or a file (repeatable)")
 
 	return cmd
 }
@@ -108,6 +117,10 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	if err != nil {
 		return err
 	}
+	vex, err := publishVEX(opts.vex)
+	if err != nil {
+		return err
+	}
 
 	repo, err := newRepository(tag)
 	if err != nil {
@@ -121,7 +134,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, transfer.Hooks{Sign: signer})
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, transfer.Hooks{Sign: signer}, vex)
 	if err != nil {
 		return err
 	}

@@ -164,19 +164,33 @@ type Policy struct {
 //     own options.
 //  4. Nothing matched: the package is restored unverified.
 func (p Policy) For(ref string, logger *slog.Logger) (Plugin, bool) {
-	if p.Skip {
-		if rule, ok := Resolve(p.Rules, ref); ok {
-			logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+	if !p.Verifies(ref) {
+		if p.Skip {
+			if rule, ok := Resolve(p.Rules, ref); ok {
+				logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+			}
 		}
 		return Plugin{}, false
 	}
 	if p.Verifier.Kind != "" {
 		return p.Verifier, true
 	}
-	if rule, ok := Resolve(p.Rules, ref); ok {
-		return Plugin{Kind: rule.Verifier, Options: rule.Options}, true
+	rule, _ := Resolve(p.Rules, ref)
+	return Plugin{Kind: rule.Verifier, Options: rule.Options}, true
+}
+
+// Verifies reports whether p requires a signature on ref at all — what
+// For decides, without choosing a plugin or logging. Callers use it to
+// tell a package that verified from one nothing asked to verify.
+func (p Policy) Verifies(ref string) bool {
+	if p.Skip {
+		return false
 	}
-	return Plugin{}, false
+	if p.Verifier.Kind != "" {
+		return true
+	}
+	_, ok := Resolve(p.Rules, ref)
+	return ok
 }
 
 // writeConfig writes config to baseDir's trust.json.

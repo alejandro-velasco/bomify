@@ -136,7 +136,7 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	var archive bytes.Buffer
-	if err := Save(ctx, sourceDir, []string{"appA:v1.0", "appB:v1.0"}, &archive, 2, nil, transfer.Hooks{}); err != nil {
+	if err := Save(ctx, sourceDir, []string{"appA:v1.0", "appB:v1.0"}, &archive, 2, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
@@ -235,7 +235,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 
 	var archive bytes.Buffer
-	if err := Save(ctx, sourceDir, []string{"myapp:v1.0"}, &archive, 2, nil, transfer.Hooks{}); err != nil {
+	if err := Save(ctx, sourceDir, []string{"myapp:v1.0"}, &archive, 2, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
@@ -261,7 +261,7 @@ func TestSaveFailsForUnknownTag(t *testing.T) {
 	baseDir := t.TempDir()
 
 	var archive bytes.Buffer
-	if err := Save(context.Background(), baseDir, []string{"nope:v1.0"}, &archive, 1, nil, transfer.Hooks{}); err == nil {
+	if err := Save(context.Background(), baseDir, []string{"nope:v1.0"}, &archive, 1, nil, transfer.Hooks{}, nil); err == nil {
 		t.Fatal("Save() error = nil, want error for a tag that doesn't resolve to anything")
 	}
 }

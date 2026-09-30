@@ -36,7 +36,11 @@ the publisher's own reports, and --scan without a threshold couldn't
 refuse anything (to just scan, run "bomify security scan" after
 pulling). A "bomify security policy" rule listing "pull" in its --on
 does the same for a matching <reference> without flags, and either
-flag overrides its part of the rule; --skip-scan ignores it. Scanning
+flag overrides its part of the rule; --skip-scan ignores it. VEX
+documents the package's publisher attached (see "bomify push --vex")
+also exempt what they cover — but only when this pull verifies
+signatures and each document's own signature verifies; otherwise
+they're ignored with a warning. Scanning
 may need network access (e.g. grype's database, or the images it
 scans).
 

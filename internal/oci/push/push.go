@@ -51,6 +51,9 @@ type Result struct {
 	// Manifest (see security.Attach), or the zero Descriptor if no
 	// component had a local report.
 	ReportsReferrer ocispec.Descriptor
+	// VEXReferrers are the VEX referrers this push attached — none for a
+	// document the package already carried.
+	VEXReferrers []ocispec.Descriptor
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
@@ -65,7 +68,10 @@ type Result struct {
 // with the report referrer, if one was attached — before ref is tagged
 // (see transfer.Signer), so a signing failure never leaves ref pointing
 // at an unsigned package.
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) (Result, error) {
+//
+// Each of vex is attached as a VEX referrer of the package too (see
+// security.AttachVEX), and signed like the rest, before ref is tagged.
+func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks, vex []security.VEXDocument) (Result, error) {
 	sign := hooks.Sign
 	if progress == nil {
 		progress = transfer.Discard
@@ -153,6 +159,19 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 			result.VulnerabilityReports = append(result.VulnerabilityReports, Layer{Purl: report.Purl, Hash: report.Hash})
 		}
 	}
+
+	vexReferrers, err := security.AttachVEX(ctx, target, manifestDesc, vex)
+	if err != nil {
+		return Result{}, fmt.Errorf("attach VEX documents: %w", err)
+	}
+	if sign != nil {
+		for _, referrer := range vexReferrers {
+			if err := sign(ctx, target, ref, referrer); err != nil {
+				return Result{}, fmt.Errorf("sign VEX document of %s: %w", ref, err)
+			}
+		}
+	}
+	result.VEXReferrers = vexReferrers
 
 	if err := target.Tag(ctx, manifestDesc, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)

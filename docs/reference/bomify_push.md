@@ -26,6 +26,13 @@ referrer. One signature covers the SBOM and every component; the
 report referrer is signed separately, the same way. See "bomify pull
 --verify" and "bomify trust" for checking them.
 
+--vex attaches a VEX document to the package as its own OCI referrer
+(repeatable): a name from "bomify security vex add", or a file. A
+document the package already carries isn't attached again, and with
+--sign each is signed like the package. A pull honors them in its
+vulnerability gate only when it verifies signatures and each VEX
+document's own signature verifies (see "bomify pull --scan").
+
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors — for scripts that go on to publish or pin it.
@@ -62,6 +69,7 @@ bomify push <tag> [flags]
   -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --vex stringArray           attach this VEX document to the package — a name from "bomify security vex add", or a file (repeatable)
 ```
 
 ### Options inherited from parent commands

@@ -88,14 +88,14 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 		logger = logging.WarningsOnly(logger)
 	}
 
-	verifier, err := opts.verify.verifier(dataDir, logger)
+	verifier, policy, err := opts.verify.verifier(dataDir, logger)
 	if err != nil {
 		return err
 	}
 	if err := opts.scan.validate(); err != nil {
 		return err
 	}
-	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
+	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger, policy: policy, verify: verifier}
 
 	r := cmd.InOrStdin()
 	if opts.input != "" {

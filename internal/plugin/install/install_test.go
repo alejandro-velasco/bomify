@@ -115,7 +115,7 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, 1, nil, transfer.Hooks{}, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	return store

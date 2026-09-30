@@ -54,18 +54,20 @@ func (f *verifyFlags) register(cmd *cobra.Command) {
 }
 
 // verifier returns the transfer.Verifier enforcing f together with
-// baseDir's trust rules (see signature.Policy).
-func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Verifier, error) {
+// baseDir's trust rules, and the signature.Policy it enforces — so a
+// caller can tell a package that verified from one nothing asked to
+// verify (see signature.Policy.Verifies).
+func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Verifier, signature.Policy, error) {
 	if f.plugin == "" && len(f.options) > 0 {
-		return nil, fmt.Errorf("--verify-option given without --verify")
+		return nil, signature.Policy{}, fmt.Errorf("--verify-option given without --verify")
 	}
 	if err := validateOptions("--verify-option", f.options); err != nil {
-		return nil, err
+		return nil, signature.Policy{}, err
 	}
 
 	rules, err := signature.ReadResolved(baseDir)
 	if err != nil {
-		return nil, err
+		return nil, signature.Policy{}, err
 	}
 
 	policy := signature.Policy{
@@ -73,7 +75,7 @@ func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Ve
 		Rules:    rules,
 		Skip:     f.skip,
 	}
-	return signature.NewVerifier(plugin.Dir(baseDir), policy, logger), nil
+	return signature.NewVerifier(plugin.Dir(baseDir), policy, logger), policy, nil
 }
 
 // validateOptions requires every one of options to be "key=value", with

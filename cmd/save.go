@@ -23,7 +23,8 @@ stdout if --output isn't given.
 
 --sign signs each saved package with a signing plugin, exactly as
 "bomify push --sign" would, the signature travelling inside the
-tarball for "bomify load --verify" to check.`
+tarball for "bomify load --verify" to check. --vex attaches VEX
+documents to every saved package, exactly as "bomify push --vex" does.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar
@@ -41,6 +42,7 @@ type saveOptions struct {
 	output      string
 	concurrency int
 	sign        signFlags
+	vex         []string
 }
 
 func saveCmd() *cobra.Command {
@@ -64,6 +66,7 @@ func saveCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the tarball here instead of stdout")
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to archive concurrently")
 	opts.sign.register(cmd)
+	cmd.Flags().StringArrayVar(&opts.vex, "vex", nil, "attach this VEX document to every saved package — a name from \"bomify security vex add\", or a file (repeatable)")
 
 	return cmd
 }
@@ -72,6 +75,10 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	logger := logging.FromContext(cmd.Context())
 
 	signer, err := opts.sign.signer(logger)
+	if err != nil {
+		return err
+	}
+	vex, err := publishVEX(opts.vex)
 	if err != nil {
 		return err
 	}
@@ -89,7 +96,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, transfer.Hooks{Sign: signer})
+	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, transfer.Hooks{Sign: signer}, vex)
 	mb.Wait()
 	if err != nil {
 		return err
