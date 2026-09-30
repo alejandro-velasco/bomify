@@ -28,6 +28,11 @@ the registry refuses).
 --sign signs the package, and its reports separately, before the tag
 moves, so the tag never points at an unsigned package.
 
+--vex (repeatable) attaches a VEX document, a name from "bomify security
+vex add" or a file, as its own referrer; one already attached isn't
+added again. A pull's gate honors it only when the pull verifies
+signatures and the document's own signature verifies.
+
 --quiet prints only the pinned reference, <repository>@<digest>, with no
 progress or info logging.`
 
@@ -128,5 +133,8 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	}
 	if len(result.VulnerabilityReports) > 0 {
 		logger.Info("vulnerability reports referrer attached", "digest", result.ReportsReferrer.Digest.String())
+	}
+	for _, referrer := range result.Attached {
+		logger.Info("attached", "artifactType", referrer.ArtifactType, "digest", referrer.Digest.String())
 	}
 }

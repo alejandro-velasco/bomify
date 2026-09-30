@@ -22,7 +22,7 @@ are done by external `bomify-plugin-<kind>` binaries.
 - [Plugins](plugins.md): the four plugin contracts, component
   dispatch, SBOM generation, and concurrent pulls.
 - [Security scanning](security-scanning.md): scans, gating,
-  VEX, scanning on pull, and reports in a registry.
+  VEX, scanning on pull, and reports and VEX in a registry.
 - [Signing and verification](signing.md).
 - [Plugin installation](plugin-installation.md), and how
   releases publish and sign the first-party plugins.

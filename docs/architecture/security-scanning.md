@@ -98,8 +98,10 @@ reports its publisher attached. For the same reason, a rule's `--on
 pull` requires `--fail-on`.
 
 The hook runs as `transfer.Options.Scan`: `pull.PullLayers` hands it the
-SBOM after verifying the package and before writing anything, so a
-failure leaves nothing behind. The fresh reports are written after the
+SBOM, along with the target and package manifest, after verifying the
+package and before writing anything, so a failure leaves nothing
+behind. Its gate also honors VEX the package's publisher attached, when
+it verifies (see [VEX in a registry](#vex-in-a-registry)). The fresh reports are written after the
 package's own, replacing them. Scanning may need network access, which
 is why nothing scans on pull unless asked.
 
@@ -136,3 +138,39 @@ orphans its signature.
   405) only cause a warning, since `pull` always takes the newest.
   `bomify security prune` runs the same pruning on its own and fails
   instead. A `save` tarball is built fresh, so it never needs pruning.
+
+Report referrers and VEX referrers are pushed, listed, and read through
+shared helpers in `internal/oci/transfer`'s `referrer.go`:
+`PushReferrer` (an empty config, the given layers, the package as
+`subject`), `Referrers` (by artifact type, newest first by created
+annotation), and `ReferrerLayers`/`FetchAttachment`, which cap how much
+of a referrer, published by whoever could push, bomify will read.
+Signature referrers are the exception: their type and envelope come
+from the signing plugin.
+
+## VEX in a registry
+
+A publisher can attach VEX documents to a package, so their statements
+travel with it: `push --vex` and `save --vex` (repeatable), each a name
+in the [VEX store](data-directory.md) or else a file
+(`security.ReadVEX`). Each becomes a `transfer.Attachment` in
+`transfer.Options.Attach`, which `push.Push` attaches as its own
+referrer (`transfer.Attach`): artifact type
+`application/vnd.bomify.vex.v1+json`, one layer holding the document as
+written, dated to the nanosecond so documents from one push keep their
+order. A document the package already carries isn't attached again,
+and with `--sign` each new referrer is signed like the package. Nothing
+is attached implicitly; a rule's VEX is never published unless named.
+
+A scan on pull honors them (`security.PublishedVEX`) only when:
+
+1. the pull verifies signatures (`--verify` or a matching trust rule,
+   `signature.Policy.Verifies`), since VEX only ever exempts, and
+   anyone who can push could otherwise silence any finding; and
+2. each VEX referrer passes the same `transfer.Verifier` itself.
+   Unsigned or untrusted ones are skipped with a warning.
+
+Trusted documents apply oldest first, then the rule's stored VEX and
+`--vex` (`security.CombineVEX`), so the consumer's own statements win.
+They're used by that gate only and never stored. Files, stored copies,
+and pulled documents all load through `security.LoadVEXDocuments`.

@@ -20,13 +20,14 @@ type Signer func(ctx context.Context, target oras.Target, ref string, manifest o
 // the data directory.
 type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error
 
-// Scanner decides whether the package ref resolved to — whose SBOM, the
-// package's config blob, is sbom — may be restored, typically by
-// scanning the components it describes for vulnerabilities (see
-// internal/security). Pull calls it after Verifier, before writing
-// anything at all, so a failed Scanner leaves nothing behind in the data
-// directory either.
-type Scanner func(ctx context.Context, ref string, sbom []byte) error
+// Scanner decides whether the package ref resolved to in target — its
+// OCI manifest, manifest, whose SBOM (the package's config blob) is
+// sbom — may be restored, typically by scanning the components it
+// describes for vulnerabilities (see internal/security); target and
+// manifest let it read what's attached to the package, such as VEX.
+// Pull calls it after Verifier, before writing anything at all, so a
+// failed Scanner leaves nothing behind in the data directory either.
+type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbom []byte) error
 
 // Options are what Push, Pull, and Save/Load take beyond what to
 // transfer: how, and the optional steps to run around a package.
@@ -42,6 +43,10 @@ type Options struct {
 	Sign   Signer
 	Verify Verifier
 	Scan   Scanner
+
+	// Attach are documents Push attaches to every package it pushes, each
+	// as its own referrer, signed like the package (see transfer.Attach).
+	Attach []Attachment
 }
 
 // WithDefaults returns o with Concurrency at least 1 and a non-nil

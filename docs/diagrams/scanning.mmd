@@ -21,7 +21,10 @@ flowchart TD
     Active -->|"only one"| NeedBoth["fails: --scan and --fail-on go together<br/>— never gating on the publisher's reports,<br/>never scanning with nothing to refuse on"]
     Active -->|"both"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
 
-    PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus the rule's<br/>VEX exemptions (each logged)"]
+    PluginScan --> PubVEX{"pull verifies signatures,<br/>and the package carries<br/>VEX referrers?"}
+    PubVEX -->|"yes"| Verified["keep each VEX document<br/>whose own signature verifies<br/>(warn about the rest)"]
+    PubVEX -->|"no"| Gate
+    Verified --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus VEX exemptions —<br/>publisher's first, then the rule's,<br/>so the rule's win (each logged)"]
 
     Gate --> Left{"anything left?"}
 

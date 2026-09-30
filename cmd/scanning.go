@@ -8,12 +8,16 @@ import (
 	"log/slog"
 	"slices"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // gateFlags are the --fail-on/--ignore/--vex flags, plus a skip flag,
@@ -223,6 +227,11 @@ type pullScanHook struct {
 	concurrency int
 	logger      *slog.Logger
 	collected   []security.ComponentReport
+	// policy and verify are the pull's signature verification: VEX the
+	// package's publisher attached counts only where they verify it (see
+	// security.PublishedVEX).
+	policy signature.Policy
+	verify transfer.Verifier
 }
 
 // scan decides, for the package ref, whether to scan it and what gates
@@ -237,7 +246,7 @@ type pullScanHook struct {
 // scanner with no threshold, or a threshold with no scanner, is an error
 // rather than a scan that can't refuse anything or a gate on the
 // publisher's own reports.
-func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) error {
+func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbomData []byte) error {
 	f := s.flags
 	if err := f.validate(); err != nil {
 		return err
@@ -271,6 +280,14 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 	case gate.FailOn == 0:
 		return errors.New("--scan needs --fail-on (or a matching rule's threshold) to refuse anything; to just scan, run \"bomify security scan\" after pulling")
 	}
+
+	// The publisher's VEX applies first, so the rule's and --vex's own win
+	// where they disagree.
+	verify := s.verify
+	if !s.policy.Verifies(ref) {
+		verify = nil
+	}
+	gate.VEX = security.CombineVEX(security.PublishedVEX(ctx, target, ref, manifest, verify, s.logger), gate.VEX)
 
 	bom, err := sbom.LoadBytes(sbomData)
 	if err != nil {

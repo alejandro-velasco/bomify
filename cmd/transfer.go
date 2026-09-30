@@ -6,9 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
+	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // transferFlags are the flags every command moving whole packages shares:
@@ -85,14 +88,15 @@ type restore struct {
 func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 	logger := f.logger(cmd)
 
-	verifier, err := f.verify.verifier(dataDir, logger)
+	policy, err := f.verify.policy(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	if err := f.scan.validate(); err != nil {
 		return nil, err
 	}
-	scan := &pullScanHook{flags: &f.scan, w: cmd.ErrOrStderr(), concurrency: f.concurrency, logger: logger}
+	verifier := signature.NewVerifier(layout.Plugins(dataDir), policy, logger)
+	scan := &pullScanHook{flags: &f.scan, w: cmd.ErrOrStderr(), concurrency: f.concurrency, logger: logger, policy: policy, verify: verifier}
 
 	opts, done := f.options(cmd)
 	opts.Verify, opts.Scan = verifier, scan.scan
@@ -108,24 +112,37 @@ func (r *restore) finish() error {
 }
 
 // publishFlags are the flags push and save share: transferFlags, plus
-// signing each package as it's packed.
+// signing each package as it's packed and the VEX documents to attach to
+// it.
 type publishFlags struct {
 	transferFlags
 	sign signFlags
+	vex  []string
 }
 
 func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 	f.transferFlags.register(cmd, verb, quietUsage)
 	f.sign.register(cmd)
+	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "attach this VEX document to the package: a name from \"bomify security vex add\", or a file (repeatable)")
 }
 
-// options is transferFlags.options plus the signer --sign describes.
+// options is transferFlags.options plus the signer --sign describes and
+// the VEX documents --vex names, each attached to the package.
 func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
 	signer, err := f.sign.signer(logger)
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
+	var attach []transfer.Attachment
+	for _, arg := range f.vex {
+		doc, err := security.ReadVEX(dataDir, arg)
+		if err != nil {
+			return transfer.Options{}, nil, fmt.Errorf("--vex %s: %w", arg, err)
+		}
+		attach = append(attach, doc.Attachment())
+	}
+
 	opts, done := f.transferFlags.options(cmd)
-	opts.Sign = signer
+	opts.Sign, opts.Attach = signer, attach
 	return opts, done, nil
 }

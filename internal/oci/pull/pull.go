@@ -131,7 +131,7 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 		return Result{}, fmt.Errorf("fetch config: %w", err)
 	}
 	if opts.Scan != nil {
-		if err := opts.Scan(ctx, ref, sbomData); err != nil {
+		if err := opts.Scan(ctx, target, ref, desc, sbomData); err != nil {
 			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
 		}
 	}

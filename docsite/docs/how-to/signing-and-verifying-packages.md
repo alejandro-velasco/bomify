@@ -6,9 +6,9 @@ icon: lucide/badge-check
 
 A package is signed as a whole when pushed or saved, and verified before
 it's pulled or loaded. One signature covers the SBOM and every component,
-stored beside the package as an OCI referrer. Vulnerability reports are
-signed and verified separately; a report that fails verification is
-skipped with a warning.
+stored beside the package as an OCI referrer. Vulnerability reports and VEX
+documents attached with `--vex` are signed and verified separately; one
+that fails verification is skipped with a warning.
 
 `bomify-plugin-sigstore` is the first-party signing plugin (`bomify
 plugin install sigstore`). See

@@ -17,8 +17,8 @@ reports and signatures, to a single tarball (an OCI image layout) that
 "bomify load" can restore anywhere without a registry. Shared components
 are stored once. It writes to stdout unless --output is given.
 
---sign signs each package as "bomify push --sign" does; the signature
-travels inside the tarball.`
+--sign and --vex work as for "bomify push"; signatures and VEX travel
+inside the tarball.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar

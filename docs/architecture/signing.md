@@ -2,8 +2,8 @@
 
 A package is signed as a whole: the signature covers its OCI manifest,
 which pins the SBOM and every layer by digest, and `pull` verifies each
-blob against those digests. The report referrer is signed and verified
-the same way, separately. Signatures never go in the SBOM, whose hash is
+blob against those digests. The report referrer and VEX referrers are
+signed and verified the same way, separately. Signatures never go in the SBOM, whose hash is
 the build's identity.
 
 [`internal/signature`](https://github.com/alejandro-velasco/bomify/tree/main/internal/signature) implements
