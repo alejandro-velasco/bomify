@@ -3,15 +3,18 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
 
@@ -144,8 +147,8 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 // TestPushAttachesVulnerabilityReportOnMatch covers the "if there is a
 // match" half of push/pull carrying vulnerability reports along with a
 // package: a component with a local vulnerability report (as `bomify
-// security scan` would have written) gets it pushed as an extra layer
-// and restored by pull to that same path, while a component with no
+// security scan` would have written) gets it attached to the package's
+// report referrer and restored by pull to that same path, while a component with no
 // report carries none — Push/Pull don't invent one.
 func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	baseDir := t.TempDir()
@@ -311,11 +314,11 @@ func readDir(t *testing.T, dir string) map[string]string {
 	return files
 }
 
-// TestPushOrdersVulnerabilityReportsBySBOM guards the manifest's layer
-// order: report layers must follow the SBOM's component order, not the
-// order their concurrent uploads happen to finish in, or the same
-// package could get a different manifest digest on every push.
-func TestPushOrdersVulnerabilityReportsBySBOM(t *testing.T) {
+// TestPushAttachesReportsAsReferrer guards where vulnerability reports
+// live: never in the package manifest itself, but as the layers of one
+// report referrer of it, in the SBOM's component order rather than the
+// order their uploads happen to finish in.
+func TestPushAttachesReportsAsReferrer(t *testing.T) {
 	baseDir := t.TempDir()
 
 	const n = 8
@@ -329,17 +332,183 @@ func TestPushOrdersVulnerabilityReportsBySBOM(t *testing.T) {
 		}
 		components = append(components, component)
 		writeLayer(t, baseDir, component, map[string]string{"artifact": component.Name})
+		writeReport(t, baseDir, component, fmt.Sprintf("CVE-%d", i), "2026-01-01T00:00:00Z")
+	}
+	sbomHash := recordSBOM(t, baseDir, components)
 
-		reportPath := security.ReportPath(baseDir, plugin.PurlHash(component))
-		if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
-			t.Fatalf("mkdir vulnerabilities dir: %v", err)
+	ctx := context.Background()
+	for attempt := 0; attempt < 5; attempt++ {
+		store, err := oci.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("new oci store: %v", err)
 		}
-		report := fmt.Sprintf(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-%d"}]}`, i)
-		if err := os.WriteFile(reportPath, []byte(report), 0o644); err != nil {
-			t.Fatalf("write vulnerability report: %v", err)
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, n, nil, nil)
+		if err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+
+		if manifest := fetchManifest(t, store, result.Manifest); len(manifest.Layers) != n {
+			t.Fatalf("package manifest has %d layers, want only the %d component layers", len(manifest.Layers), n)
+		}
+
+		referrers, err := security.Referrers(ctx, store, result.Manifest)
+		if err != nil {
+			t.Fatalf("Referrers: %v", err)
+		}
+		if len(referrers) != 1 || referrers[0].Digest != result.ReportsReferrer.Digest {
+			t.Fatalf("got referrers %v, want just %s", referrers, result.ReportsReferrer.Digest)
+		}
+		if got := referrers[0].Annotations[ocispec.AnnotationCreated]; got != "2026-01-01T00:00:00Z" {
+			t.Errorf("referrer created = %q, want the reports' scan time", got)
+		}
+
+		reports, err := security.FetchReports(ctx, store, referrers[0])
+		if err != nil {
+			t.Fatalf("FetchReports: %v", err)
+		}
+		if len(reports) != n {
+			t.Fatalf("referrer carries %d reports, want %d", len(reports), n)
+		}
+		for i, component := range components {
+			if got := reports[i].Annotations[transfer.AnnotationPurl]; got != component.PackageURL {
+				t.Errorf("attempt %d: reports[%d] is %q's, want %q's", attempt, i, got, component.PackageURL)
+			}
+			if got := result.VulnerabilityReports[i].Purl; got != component.PackageURL {
+				t.Errorf("attempt %d: Result.VulnerabilityReports[%d] = %q, want %q", attempt, i, got, component.PackageURL)
+			}
 		}
 	}
+}
 
+// TestPushRescanKeepsPackageDigest covers the reason reports are
+// referrers: pushing again with unchanged reports attaches nothing new,
+// and re-scanning then pushing again leaves the package digest — and so
+// its signature — untouched, only attaching a newer referrer, which is
+// the one pull restores.
+func TestPushRescanKeepsPackageDigest(t *testing.T) {
+	baseDir := t.TempDir()
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{"artifact": "contents"})
+	writeReport(t, baseDir, singleFileComponent, "CVE-OLD", "2026-01-01T00:00:00Z")
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{singleFileComponent})
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+	ctx := context.Background()
+
+	var signed []ocispec.Descriptor
+	sign := func(_ context.Context, _ oras.Target, _ string, d ocispec.Descriptor) error {
+		signed = append(signed, d)
+		return nil
+	}
+
+	first, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, sign)
+	if err != nil {
+		t.Fatalf("first Push() error = %v", err)
+	}
+	if len(signed) != 2 || signed[0].Digest != first.Manifest.Digest || signed[1].Digest != first.ReportsReferrer.Digest {
+		t.Fatalf("signed %v, want the package manifest then its report referrer", signed)
+	}
+
+	again, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, nil)
+	if err != nil {
+		t.Fatalf("second Push() error = %v", err)
+	}
+	if again.ReportsReferrer.Digest != first.ReportsReferrer.Digest {
+		t.Errorf("unchanged reports gave a new referrer %s, want %s again", again.ReportsReferrer.Digest, first.ReportsReferrer.Digest)
+	}
+
+	writeReport(t, baseDir, singleFileComponent, "CVE-NEW", "2026-02-01T00:00:00Z")
+	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, nil)
+	if err != nil {
+		t.Fatalf("third Push() error = %v", err)
+	}
+	if rescanned.ManifestDigest != first.ManifestDigest {
+		t.Errorf("re-scan changed the package digest from %s to %s", first.ManifestDigest, rescanned.ManifestDigest)
+	}
+
+	referrers, err := security.Referrers(ctx, store, first.Manifest)
+	if err != nil {
+		t.Fatalf("Referrers: %v", err)
+	}
+	if len(referrers) != 2 || referrers[0].Digest != rescanned.ReportsReferrer.Digest {
+		t.Fatalf("got referrers %v, want 2 with the re-scan's first", referrers)
+	}
+
+	pulledDir := t.TempDir()
+	if _, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, nil); err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+	got, err := os.ReadFile(security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent)))
+	if err != nil {
+		t.Fatalf("read pulled report: %v", err)
+	}
+	if !strings.Contains(string(got), "CVE-NEW") {
+		t.Errorf("pulled report = %s, want the newest scan's", got)
+	}
+}
+
+// TestPullSkipsUnverifiedReports covers reports being advisory: a report
+// referrer the verifier rejects is skipped, with the reason reported,
+// rather than failing a pull whose package itself verified.
+func TestPullSkipsUnverifiedReports(t *testing.T) {
+	baseDir := t.TempDir()
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{"artifact": "contents"})
+	writeReport(t, baseDir, singleFileComponent, "CVE-TEST", "2026-01-01T00:00:00Z")
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{singleFileComponent})
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+	ctx := context.Background()
+	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, nil)
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	verify := func(_ context.Context, _ oras.ReadOnlyTarget, _ string, d ocispec.Descriptor) error {
+		if d.Digest == pushed.ReportsReferrer.Digest {
+			return errors.New("unsigned")
+		}
+		return nil
+	}
+
+	pulledDir := t.TempDir()
+	result, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, verify)
+	if err != nil {
+		t.Fatalf("Pull() error = %v, want the package restored anyway", err)
+	}
+	if result.ReportsSkipped == nil {
+		t.Error("ReportsSkipped = nil, want why the reports were skipped")
+	}
+	if len(result.VulnerabilityReports) != 0 {
+		t.Errorf("restored %d reports, want none", len(result.VulnerabilityReports))
+	}
+	if _, err := os.Stat(security.ReportPath(pulledDir, plugin.PurlHash(singleFileComponent))); !os.IsNotExist(err) {
+		t.Errorf("unverified report was written: err = %v", err)
+	}
+}
+
+// writeReport writes component's local vulnerability report, naming one
+// vulnerability and dated scannedAt, as `bomify security scan` would.
+func writeReport(t *testing.T, baseDir string, component cdx.Component, id, scannedAt string) {
+	t.Helper()
+	reportPath := security.ReportPath(baseDir, plugin.PurlHash(component))
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir vulnerabilities dir: %v", err)
+	}
+	report := fmt.Sprintf(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"metadata":{"timestamp":%q},"vulnerabilities":[{"id":%q}]}`, scannedAt, id)
+	if err := os.WriteFile(reportPath, []byte(report), 0o644); err != nil {
+		t.Fatalf("write vulnerability report: %v", err)
+	}
+}
+
+// recordSBOM records an SBOM describing components under baseDir, as
+// `bomify build` would, and returns its hash.
+func recordSBOM(t *testing.T, baseDir string, components []cdx.Component) string {
+	t.Helper()
 	sbomBytes, err := json.Marshal(map[string]any{"bomFormat": "CycloneDX", "specVersion": "1.5", "version": 1, "components": components})
 	if err != nil {
 		t.Fatalf("marshal sbom: %v", err)
@@ -352,49 +521,20 @@ func TestPushOrdersVulnerabilityReportsBySBOM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordManifest: %v", err)
 	}
+	return sbomHash
+}
 
-	ctx := context.Background()
-	// Several fresh pushes, fully concurrent, to give completion order
-	// every chance to differ from SBOM order.
-	for attempt := 0; attempt < 5; attempt++ {
-		store, err := oci.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("new oci store: %v", err)
-		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, n, nil, nil)
-		if err != nil {
-			t.Fatalf("Push() error = %v", err)
-		}
-
-		desc, err := store.Resolve(ctx, "test")
-		if err != nil {
-			t.Fatalf("Resolve: %v", err)
-		}
-		data, err := content.FetchAll(ctx, store, desc)
-		if err != nil {
-			t.Fatalf("fetch manifest: %v", err)
-		}
-		var manifest ocispec.Manifest
-		if err := json.Unmarshal(data, &manifest); err != nil {
-			t.Fatalf("parse manifest: %v", err)
-		}
-
-		if len(manifest.Layers) != 2*n {
-			t.Fatalf("manifest has %d layers, want %d", len(manifest.Layers), 2*n)
-		}
-		for i, component := range components {
-			layer := manifest.Layers[n+i]
-			if layer.MediaType != transfer.VulnerabilityReportMediaType {
-				t.Fatalf("layers[%d] media type = %q, want a vulnerability report", n+i, layer.MediaType)
-			}
-			if got := layer.Annotations[transfer.AnnotationPurl]; got != component.PackageURL {
-				t.Errorf("attempt %d: layers[%d] is %q's report, want %q's", attempt, n+i, got, component.PackageURL)
-			}
-			if got := result.VulnerabilityReports[i].Purl; got != component.PackageURL {
-				t.Errorf("attempt %d: Result.VulnerabilityReports[%d] = %q, want %q", attempt, i, got, component.PackageURL)
-			}
-		}
+func fetchManifest(t *testing.T, store content.ReadOnlyStorage, desc ocispec.Descriptor) ocispec.Manifest {
+	t.Helper()
+	data, err := content.FetchAll(context.Background(), store, desc)
+	if err != nil {
+		t.Fatalf("fetch manifest: %v", err)
 	}
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+	return manifest
 }
 
 func TestCreatedAnnotation(t *testing.T) {

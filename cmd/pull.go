@@ -21,15 +21,20 @@ components that SBOM describes), laying them out in the data
 directory exactly as "bomify build" would have. Layers download
 concurrently, each with its own progress bar.
 
-Any component the package carries a vulnerability report for is
-restored to "<data-dir>/vulnerabilities/<purl-hash>.json", the same
-path "bomify security scan" itself would have written it to.
+The vulnerability reports of the package's newest report referrer (see
+"bomify push") are restored to
+"<data-dir>/vulnerabilities/<purl-hash>.json", the same path "bomify
+security scan" itself would have written them to. Reports are
+advisory: if they can't be listed, fetched, or verified, the package is
+still restored, and a warning says why its reports weren't.
 
 --verify requires the package to carry a signature the named signing
 plugin verifies (see "bomify push --sign"); without it, any "bomify
 trust" rule matching <reference> applies instead. Either way, the
 signature is checked before anything is written to the data
-directory, so a package that fails verification leaves no trace.
+directory, so a package that fails verification leaves no trace. The
+report referrer's own signature is checked the same way before its
+reports are restored.
 --insecure-skip-verify bypasses a matching trust rule.
 
 --quiet prints only the restored package's pinned reference,
@@ -135,5 +140,8 @@ func logPulledLayers(logger *slog.Logger, result pull.Result) {
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report restored", "purl", report.Purl, "hash", report.Hash, "path", report.Path)
+	}
+	if result.ReportsSkipped != nil {
+		logger.Warn("vulnerability reports not restored", "error", result.ReportsSkipped)
 	}
 }

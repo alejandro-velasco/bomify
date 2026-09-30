@@ -38,24 +38,33 @@ type Layer struct {
 
 // Result is the outcome of a successful Push.
 type Result struct {
+	// Manifest is the pushed package manifest ref now points at.
+	Manifest       ocispec.Descriptor
 	ManifestDigest string
 	Layers         []Layer
 	// VulnerabilityReports lists the components whose local vulnerability
-	// report (see internal/security) was attached alongside their layer —
-	// only ever a subset of Layers, since most components carry none.
+	// report (see internal/security) was attached to the package, as
+	// layers of ReportsReferrer — only ever a subset of Layers, since
+	// most components carry none.
 	VulnerabilityReports []Layer
+	// ReportsReferrer is the vulnerability report referrer attached to
+	// Manifest (see security.Attach), or the zero Descriptor if no
+	// component had a local report.
+	ReportsReferrer ocispec.Descriptor
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
 // build.RecordManifest) as an OCI artifact — the manifest itself as the
 // config, and each component it describes as a layer — and pushes it to
-// target, tagging the result ref. Any component with a local
-// vulnerability report (see internal/security) is pushed an extra layer
-// carrying it too (see pushVulnerabilityReport). Layers upload
+// target, tagging the result ref. Every component's local vulnerability
+// report (see internal/security), if any, is attached as one OCI referrer
+// of that manifest rather than as part of it (see security.Attach), so
+// re-scanning never changes the package's digest. Layers upload
 // concurrently, bounded by concurrency (values less than 1 are treated
-// as 1). A non-nil sign is called with the packed manifest before ref is
-// tagged (see transfer.Signer), so a signing failure never leaves ref
-// pointing at an unsigned package.
+// as 1). A non-nil sign is called with the packed manifest — and then
+// with the report referrer, if one was attached — before ref is tagged
+// (see transfer.Signer), so a signing failure never leaves ref pointing
+// at an unsigned package.
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, sign transfer.Signer) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
@@ -85,15 +94,11 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		components = *bom.Components
 	}
 
+	// Layers are slotted by component index rather than appended as each
+	// upload finishes: completion order varies from run to run, and the
+	// manifest's layer order is part of its digest.
 	layerDescs := make([]ocispec.Descriptor, len(components))
 	layers := make([]Layer, len(components))
-
-	// Reports are slotted by component index, like layers, rather than
-	// appended as each upload finishes: completion order varies from run
-	// to run, and the manifest's layer order is part of its digest.
-	reportDescs := make([]ocispec.Descriptor, len(components))
-	reports := make([]Layer, len(components))
-	attachedReports := make([]bool, len(components))
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
@@ -106,14 +111,6 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 			}
 			layerDescs[i] = desc
 			layers[i] = layer
-
-			reportDesc, report, attached, err := pushVulnerabilityReport(gctx, target, baseDir, component, progress)
-			if err != nil {
-				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
-			}
-			reportDescs[i] = reportDesc
-			reports[i] = report
-			attachedReports[i] = attached
 			return nil
 		})
 	}
@@ -121,21 +118,9 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, err
 	}
 
-	// Component layers first, then each attached report, both in SBOM
-	// order; components with no report contribute nothing to the second
-	// half.
-	manifestLayers := layerDescs
-	var attachedReportList []Layer
-	for i, attached := range attachedReports {
-		if attached {
-			manifestLayers = append(manifestLayers, reportDescs[i])
-			attachedReportList = append(attachedReportList, reports[i])
-		}
-	}
-
 	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
 		ConfigDescriptor: &configDesc,
-		Layers:           manifestLayers,
+		Layers:           layerDescs,
 		ManifestAnnotations: map[string]string{
 			ocispec.AnnotationCreated: createdAnnotation(bom),
 		},
@@ -150,11 +135,29 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		}
 	}
 
+	result := Result{Manifest: manifestDesc, ManifestDigest: manifestDesc.Digest.String(), Layers: layers}
+
+	referrer, attached, ok, err := security.Attach(ctx, target, manifestDesc, baseDir, components, progress)
+	if err != nil {
+		return Result{}, fmt.Errorf("attach vulnerability reports: %w", err)
+	}
+	if ok {
+		if sign != nil {
+			if err := sign(ctx, target, ref, referrer); err != nil {
+				return Result{}, fmt.Errorf("sign vulnerability reports of %s: %w", ref, err)
+			}
+		}
+		result.ReportsReferrer = referrer
+		for _, report := range attached {
+			result.VulnerabilityReports = append(result.VulnerabilityReports, Layer{Purl: report.Purl, Hash: report.Hash})
+		}
+	}
+
 	if err := target.Tag(ctx, manifestDesc, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
 
-	return Result{ManifestDigest: manifestDesc.Digest.String(), Layers: layers, VulnerabilityReports: attachedReportList}, nil
+	return result, nil
 }
 
 // createdAnnotation returns the value Push pins the package manifest's
@@ -243,42 +246,6 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 	}
 
 	return desc, Layer{Purl: purl, Hash: hash}, nil
-}
-
-// pushVulnerabilityReport pushes component's local vulnerability report
-// (see internal/security), if one exists at
-// "<baseDir>/vulnerabilities/<purl-hash>.json", as an extra layer
-// annotated with component's purl, so a later pull can restore it to
-// that same path. attached is false, with no error and no blob pushed,
-// when component simply has no local report — never scanned, or scanned
-// by a plugin that doesn't support its purl type.
-func pushVulnerabilityReport(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress transfer.ProgressFunc) (desc ocispec.Descriptor, layer Layer, attached bool, err error) {
-	purl := component.PackageURL
-	purlHash := plugin.PurlHash(component)
-	reportPath := security.ReportPath(baseDir, purlHash)
-
-	data, err := os.ReadFile(reportPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ocispec.Descriptor{}, Layer{}, false, nil
-		}
-		return ocispec.Descriptor{}, Layer{}, false, fmt.Errorf("read vulnerability report %s: %w", reportPath, err)
-	}
-
-	label := purl
-	if label == "" {
-		label = purlHash
-	}
-	desc, err = transfer.PushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
-	if err != nil {
-		return ocispec.Descriptor{}, Layer{}, false, fmt.Errorf("push vulnerability report: %w", err)
-	}
-	desc.Annotations = map[string]string{
-		ocispec.AnnotationTitle: purlHash + ".json",
-		transfer.AnnotationPurl: purl,
-	}
-
-	return desc, Layer{Purl: purl, Hash: desc.Digest.Encoded()}, true, nil
 }
 
 // tarDir archives dir's contents (see transfer.WriteTar) into a new

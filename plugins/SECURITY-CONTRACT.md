@@ -213,11 +213,18 @@ the component's purl as its pull manifest and layer directory:
 - The report's `vulnerabilities` are exactly the `vulnerabilities` the
   plugin reported. bomify never sets, rewrites, merges, or reorders
   them, `affects` included.
+- The report's `metadata.timestamp` is when bomify ran the scan, and its
+  `metadata.tools` names the plugin (`<type>`) that ran it.
 
 Because a report is keyed by purl alone, a component shared by two
 packages shares one report: scanning either package replaces it with
 that newest scan's result. Nothing in a report depends on which
 package's SBOM the component was scanned from.
+
+When the package is pushed or saved, bomify attaches its reports to it
+as an OCI referrer rather than as part of the package, so a re-scan
+never changes the package's digest (see
+[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#reports-in-a-registry)).
 
 This is entirely bomify's responsibility; a plugin never sees another
 component's result, or where (or whether) its own gets stored.

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
@@ -47,13 +48,26 @@ func ReportPath(baseDir, purlHash string) string {
 // "affects" (see plugins/SECURITY-CONTRACT.md) — rather than whatever
 // bom-ref that SBOM gave it, and any nested components it declared there
 // are dropped.
-func NewReport(component cdx.Component, result pluginlib.SecurityResult) *cdx.BOM {
+//
+// scanner (the scanning plugin's type) and scannedAt are recorded as the
+// report's metadata tool and timestamp, which is how a package's report
+// referrer is dated (see Attach). A zero scannedAt records no timestamp.
+func NewReport(component cdx.Component, result pluginlib.SecurityResult, scanner string, scannedAt time.Time) *cdx.BOM {
 	subject := component
 	subject.BOMRef = component.PackageURL
 	subject.Components = nil
 
 	bom := cdx.NewBOM()
 	bom.Metadata = &cdx.Metadata{Component: &subject}
+	if !scannedAt.IsZero() {
+		bom.Metadata.Timestamp = scannedAt.UTC().Format(time.RFC3339)
+	}
+	if scanner != "" {
+		bom.Metadata.Tools = &cdx.ToolsChoice{Components: &[]cdx.Component{{
+			Type: cdx.ComponentTypeApplication,
+			Name: scanner,
+		}}}
+	}
 
 	affected := make(map[string]bool)
 	for _, vuln := range result.Vulnerabilities {

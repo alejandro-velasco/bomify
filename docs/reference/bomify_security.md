@@ -19,5 +19,6 @@ Security scanning commands
 ### SEE ALSO
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify security prune](bomify_security_prune.md)	 - Delete stale vulnerability report referrers of a package in a registry
 * [bomify security scan](bomify_security_scan.md)	 - Scan a built package's components for vulnerabilities via a security scanning plugin
 

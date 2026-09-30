@@ -74,6 +74,9 @@ type Loaded struct {
 	// ManifestDigest is the digest of the package manifest it restored
 	// for Tag, as "sha256:...".
 	ManifestDigest string
+	// ReportsSkipped is why Tag's vulnerability reports weren't restored
+	// (see pull.Result.ReportsSkipped), or nil.
+	ReportsSkipped error
 }
 
 // Load extracts r — an OCI image-layout tarball Save produced — and
@@ -115,7 +118,7 @@ func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, pro
 		if err := build.UpdateRepositories(baseDir, []string{tag}, result.SBOMHash); err != nil {
 			return nil, fmt.Errorf("record %s: %w", tag, err)
 		}
-		loaded = append(loaded, Loaded{Tag: tag, ManifestDigest: result.ManifestDigest})
+		loaded = append(loaded, Loaded{Tag: tag, ManifestDigest: result.ManifestDigest, ReportsSkipped: result.ReportsSkipped})
 	}
 
 	return loaded, nil

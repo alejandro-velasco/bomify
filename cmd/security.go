@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -23,6 +25,7 @@ func securityCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(securityScanCmd())
+	cmd.AddCommand(securityPruneCmd())
 
 	return cmd
 }
@@ -142,7 +145,7 @@ func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
 			return err
 		}
 
-		reportPath, err := security.WriteReport(dataDir, component, security.NewReport(component, result))
+		reportPath, err := security.WriteReport(dataDir, component, security.NewReport(component, result, opts.scanType, time.Now()))
 		if err != nil {
 			return err
 		}
@@ -152,5 +155,74 @@ func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
 		return err
 	}
 
+	return nil
+}
+
+const securityPruneShort = "Delete stale vulnerability report referrers of a package in a registry"
+
+const securityPruneLong = `Prune deletes all but the newest --keep vulnerability report referrers
+attached to the package <ref> resolves to in its registry, each along
+with anything referring to it in turn (typically its signature). The
+package itself, its own signatures, and anything else attached to it are
+left alone.
+
+"bomify push" already does this after attaching new reports (see its
+--keep-reports); prune is for retrying that when it couldn't, or for
+cleaning up a package without pushing it again. Unlike push, prune fails
+if any stale referrer couldn't be deleted — e.g. because the registry
+refuses manifest deletes altogether.`
+
+const securityPruneExample = `  # Keep only the newest vulnerability reports of a pushed package
+  bomify security prune registry.example.com/myapp:latest
+
+  # Keep the three newest
+  bomify security prune registry.example.com/myapp:latest --keep 3`
+
+func securityPruneCmd() *cobra.Command {
+	var keep int
+
+	cmd := &cobra.Command{
+		Use:     "prune <ref>",
+		Short:   securityPruneShort,
+		Long:    securityPruneLong,
+		Example: securityPruneExample,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if keep < 1 {
+				return fmt.Errorf("security prune: --keep must be at least 1")
+			}
+			if err := runSecurityPrune(cmd.Context(), args[0], keep, logging.FromContext(cmd.Context())); err != nil {
+				return fmt.Errorf("security prune: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&keep, "keep", 1, "number of newest vulnerability report referrers to keep")
+
+	return cmd
+}
+
+func runSecurityPrune(ctx context.Context, ref string, keep int, logger *slog.Logger) error {
+	repo, err := newRepository(ref)
+	if err != nil {
+		return err
+	}
+
+	manifest, err := repo.Resolve(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", ref, err)
+	}
+
+	deleted, err := security.PruneReferrers(ctx, repo, manifest, keep)
+	for _, d := range deleted {
+		logger.Info("stale referrer deleted", "digest", d.Digest.String(), "artifactType", d.ArtifactType)
+	}
+	if err != nil {
+		return err
+	}
+	if len(deleted) == 0 {
+		logger.Info("nothing to prune", "reference", ref)
+	}
 	return nil
 }

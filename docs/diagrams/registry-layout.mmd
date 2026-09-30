@@ -13,8 +13,10 @@ flowchart LR
             Config["config<br/>mediaType: application/vnd.cyclonedx+json (or +xml)"]
             L1["layers[0]: component A<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
             L2["layers[1]: component B<br/>(same shape, SBOM order)"]
-            R1["layers[2]: component A's report<br/>mediaType: application/vnd.bomify.component.vulnerabilities.v1+json<br/>title: &lt;purl-hash&gt;.json · land.bomify.purl: &lt;purl A&gt;"]
         end
+
+        ReportRef{{"report referrer (untagged)<br/>artifactType: application/vnd.bomify.vulnerabilities.v1+json<br/>created: newest report's scan time"}}
+        R1["layers[0]: component A's report<br/>mediaType: application/vnd.bomify.component.vulnerabilities.v1+json<br/>title: &lt;purl-hash&gt;.json · land.bomify.purl: &lt;purl A&gt;"]
 
         subgraph Blobs["blob store — content-addressed, shared across every tag and package in the repository"]
             BConfig[("sha256:… SBOM")]
@@ -28,19 +30,20 @@ flowchart LR
     Manifest --> Config
     Manifest --> L1
     Manifest --> L2
-    Manifest --> R1
+    ReportRef -- "subject" --> Manifest
+    ReportRef --> R1
     Config -- "digest" --> BConfig
     L1 -- "digest" --> BL1
     L2 -- "digest" --> BL2
     R1 -- "digest" --> BR1
 
-    Note["report layers come after every component layer, in SBOM order:<br/>one per scanned component, none for component B (never scanned)"]
-    Note -.- R1
+    Note["reports never change the package manifest: one referrer per scan,<br/>one report layer per scanned component, in SBOM order —<br/>none for component B (never scanned)"]
+    Note -.- ReportRef
 
     class Tag ref
     class Manifest manifest
     class Config,L1,L2,BConfig,BL1,BL2 component
-    class R1,BR1 vuln
+    class ReportRef,R1,BR1 vuln
     style Repo fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
     style Descriptors fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
     style Blobs fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1px,color:#334155

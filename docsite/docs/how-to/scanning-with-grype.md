@@ -99,7 +99,8 @@ filter the SBOM yourself first.
 - [Publishing and pulling packages with an OCI registry](publishing-and-pulling-packages.md)
   or [saving them for an airgapped environment](saving-packages-for-airgapped-environments.md)
   — either one carries a component's scan report along with the rest
-  of the package automatically.
+  of the package automatically. Re-scanning and pushing again refreshes
+  a published package's reports without changing its digest.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md)
   as one way to produce an SBOM worth building and scanning in the first
   place.

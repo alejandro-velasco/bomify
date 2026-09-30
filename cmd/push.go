@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +13,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
@@ -20,15 +24,22 @@ const pushLong = `Push packages the SBOM manifest a prior "bomify build" recorde
 publishes it under <tag>. <tag> is both the local bookkeeping key
 (see "bomify tag" / "bomify packages") and the destination reference.
 
-Any component with a local vulnerability report from a prior "bomify
-security scan" is pushed an extra layer carrying it; a component never
-scanned carries none.
+Every local vulnerability report from a prior "bomify security scan" of
+the package's components is attached to it as a single OCI referrer,
+rather than as part of the package itself: re-scanning and pushing
+again leaves the package's digest, and so any signature over it,
+unchanged, and just attaches a newer report referrer. Pushing again
+with unchanged reports attaches nothing new. Once attached, all but the
+newest --keep-reports report referrers (default 1; 0 keeps them all)
+are deleted from the registry, each with its own signature. Deletion
+is best-effort: a registry that refuses it (e.g. ghcr.io) only logs a
+warning, and "bomify security prune" can retry it later.
 
 --sign signs the pushed package with a signing plugin before <tag> is
 updated to point at it, attaching the signature to it as an OCI
-referrer. One signature covers the whole package: the SBOM, every
-component, and every vulnerability report. See "bomify pull --verify"
-and "bomify trust" for checking it.
+referrer. One signature covers the SBOM and every component; the
+report referrer is signed separately, the same way. See "bomify pull
+--verify" and "bomify trust" for checking them.
 
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
@@ -51,6 +62,7 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
 
 type pushOptions struct {
 	concurrency int
+	keepReports int
 	sign        signFlags
 	quiet       bool
 }
@@ -75,6 +87,7 @@ func pushCmd() *cobra.Command {
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to upload concurrently")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
+	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
 	opts.sign.register(cmd)
 
 	return cmd
@@ -114,11 +127,25 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	}
 
 	logPushedLayers(logger, result)
+	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
 	if opts.quiet {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(tag), result.ManifestDigest)
 	}
 	return nil
+}
+
+// pruneReports deletes all but the newest keep vulnerability report
+// referrers of manifest from repo (see security.PruneReferrers), logging
+// rather than failing on anything it couldn't delete.
+func pruneReports(ctx context.Context, logger *slog.Logger, repo security.PruneTarget, manifest ocispec.Descriptor, keep int) {
+	deleted, err := security.PruneReferrers(ctx, repo, manifest, keep)
+	for _, d := range deleted {
+		logger.Info("stale referrer deleted", "digest", d.Digest.String(), "artifactType", d.ArtifactType)
+	}
+	if err != nil {
+		logger.Warn("could not delete stale vulnerability reports; retry with \"bomify security prune\"", "error", err)
+	}
 }
 
 func logPushedLayers(logger *slog.Logger, result push.Result) {
@@ -128,5 +155,8 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report attached", "purl", report.Purl, "hash", report.Hash)
+	}
+	if len(result.VulnerabilityReports) > 0 {
+		logger.Info("vulnerability reports referrer attached", "digest", result.ReportsReferrer.Digest.String())
 	}
 }
