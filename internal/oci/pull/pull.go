@@ -26,6 +26,7 @@ import (
 	"oras.land/oras-go/v2/content"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
@@ -100,8 +101,12 @@ type Result struct {
 // fetched by that same verified descriptor — and each blob checked
 // against the digest it pins — so ref being re-tagged mid-pull can't
 // substitute unverified content.
-func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier) (Result, error) {
-	return PullLayers(ctx, target, ref, dataDir, concurrency, progress, verify, nil)
+//
+// A non-nil hooks.Scan is then called with the package's SBOM, fetched
+// into memory but not yet written, so a package it rejects also leaves
+// nothing behind (see transfer.Scanner).
+func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, hooks transfer.Hooks) (Result, error) {
+	return PullLayers(ctx, target, ref, dataDir, concurrency, progress, hooks, nil)
 }
 
 // PullLayers is Pull, fetching only the component layers and
@@ -110,7 +115,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 // package carrying every platform's. A nil keep fetches everything, and a
 // layer with no purl annotation is always fetched. The SBOM config is
 // always fetched in full, whichever layers are skipped.
-func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) (Result, error) {
+func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, concurrency int, progress ProgressFunc, hooks transfer.Hooks, keep func(purl string) bool) (Result, error) {
 	if progress == nil {
 		progress = transfer.Discard
 	}
@@ -123,8 +128,8 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 		return Result{}, fmt.Errorf("resolve %s: %w", ref, err)
 	}
 
-	if verify != nil {
-		if err := verify(ctx, target, ref, desc); err != nil {
+	if hooks.Verify != nil {
+		if err := hooks.Verify(ctx, target, ref, desc); err != nil {
 			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
 		}
 	}
@@ -134,9 +139,18 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 		return Result{}, fmt.Errorf("fetch manifest %s: %w", ref, err)
 	}
 
-	sbomHash, bom, err := fetchConfig(ctx, target, manifest.Config, dataDir, progress)
+	sbomData, err := fetchConfig(ctx, target, manifest.Config, progress)
 	if err != nil {
 		return Result{}, fmt.Errorf("fetch config: %w", err)
+	}
+	if hooks.Scan != nil {
+		if err := hooks.Scan(ctx, ref, sbomData); err != nil {
+			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
+		}
+	}
+	sbomHash, bom, err := writeConfig(manifest.Config, sbomData, dataDir)
+	if err != nil {
+		return Result{}, fmt.Errorf("write config: %w", err)
 	}
 	componentsByPurl := indexComponentsByPurl(bom)
 
@@ -161,7 +175,7 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 	}
 
 	result := Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers}
-	result.VulnerabilityReports, result.ReportsSkipped = restoreReports(ctx, target, ref, desc, dataDir, concurrency, progress, verify, keep)
+	result.VulnerabilityReports, result.ReportsSkipped = restoreReports(ctx, target, ref, desc, dataDir, concurrency, progress, hooks.Verify, keep)
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -283,28 +297,40 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec
 	return manifest, nil
 }
 
-// fetchConfig downloads desc — the aggregate SBOM manifest — to
-// "<dataDir>/manifests/<hash>.json" and parses it, so callers that need
-// to inspect its components (see indexComponentsByPurl) don't have to
-// read the file back themselves.
-func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress ProgressFunc) (string, *cdx.BOM, error) {
+// fetchConfig downloads desc — the aggregate SBOM manifest — into
+// memory, checked against its digest, without writing anything: a
+// transfer.Scanner gets to see it before anything of the package lands
+// in the data directory (see writeConfig).
+func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, progress ProgressFunc) ([]byte, error) {
+	pw := progress("sbom manifest", desc.Size)
+	defer pw.Close()
+
+	data, err := content.FetchAll(ctx, target, desc)
+	if err != nil {
+		return nil, err
+	}
+	pw.Write(data)
+	return data, nil
+}
+
+// writeConfig writes data — desc's content, the aggregate SBOM manifest
+// — to "<dataDir>/manifests/<hash>.json" and parses it, so callers that
+// need to inspect its components (see indexComponentsByPurl) don't have
+// to read the file back themselves.
+func writeConfig(desc ocispec.Descriptor, data []byte, dataDir string) (string, *cdx.BOM, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
 		return "", nil, err
 	}
 
-	destPath := build.ManifestPath(dataDir, hash)
-	if err := downloadBlob(ctx, target, desc, destPath, "sbom manifest", progress); err != nil {
-		return "", nil, err
-	}
-
-	data, err := os.ReadFile(destPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("read %s: %w", destPath, err)
-	}
 	bom, err := sbom.LoadBytes(data)
 	if err != nil {
-		return "", nil, fmt.Errorf("parse %s: %w", destPath, err)
+		return "", nil, fmt.Errorf("parse sbom manifest %s: %w", desc.Digest, err)
+	}
+
+	destPath := build.ManifestPath(dataDir, hash)
+	if err := fsutil.WriteFileAtomic(destPath, data); err != nil {
+		return "", nil, err
 	}
 
 	return hash, bom, nil

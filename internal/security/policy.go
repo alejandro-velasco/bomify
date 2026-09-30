@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
@@ -31,6 +33,26 @@ type Rule struct {
 	// standing exemption should say which component it applies to and why,
 	// which is what VEX records.
 	VEX []string `json:"vex,omitempty"`
+	// On lists the lifecycle hooks (see Hooks) at which a matching
+	// package is scanned with Scanner and gated on FailOn automatically:
+	// "build", "push" (and save), "pull" (and load). Empty means none —
+	// the rule then only applies to "bomify security scan".
+	On []string `json:"on,omitempty"`
+}
+
+// The lifecycle hooks a Rule can name in On.
+const (
+	HookBuild = "build"
+	HookPush  = "push"
+	HookPull  = "pull"
+)
+
+// Hooks lists every hook a Rule can name in On.
+var Hooks = []string{HookBuild, HookPush, HookPull}
+
+// AppliesOn reports whether r scans packages automatically at hook.
+func (r Rule) AppliesOn(hook string) bool {
+	return slices.Contains(r.On, hook)
 }
 
 // Gate returns r's FailOn as a Gate, with no VEX loaded (see
@@ -83,6 +105,11 @@ func ReadConfig(baseDir string) (Config, error) {
 func SetRule(baseDir string, rule Rule) error {
 	if _, err := rule.Gate(); err != nil {
 		return err
+	}
+	for _, hook := range rule.On {
+		if !slices.Contains(Hooks, hook) {
+			return fmt.Errorf("unknown hook %q (want any of %s)", hook, strings.Join(Hooks, ", "))
+		}
 	}
 	if _, err := ResolveVEX(baseDir, rule.VEX); err != nil {
 		return err

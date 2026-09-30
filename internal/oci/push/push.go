@@ -61,11 +61,12 @@ type Result struct {
 // of that manifest rather than as part of it (see security.Attach), so
 // re-scanning never changes the package's digest. Layers upload
 // concurrently, bounded by concurrency (values less than 1 are treated
-// as 1). A non-nil sign is called with the packed manifest — and then
+// as 1). A non-nil hooks.Sign is called with the packed manifest — and then
 // with the report referrer, if one was attached — before ref is tagged
 // (see transfer.Signer), so a signing failure never leaves ref pointing
 // at an unsigned package.
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, sign transfer.Signer) (Result, error) {
+func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) (Result, error) {
+	sign := hooks.Sign
 	if progress == nil {
 		progress = transfer.Discard
 	}

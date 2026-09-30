@@ -23,6 +23,12 @@ else any "bomify trust" rule matching each tag, checked before
 anything of that package is restored. --insecure-skip-verify bypasses
 a matching trust rule.
 
+--scan, --fail-on, --ignore, --vex, and --skip-scan gate each tag
+before anything of it is restored, exactly as "bomify pull" does, as
+does a "bomify security policy" rule listing "pull" in its --on.
+Scanning may need network access, so on an air-gapped machine leave it
+off, or scan before saving instead.
+
 --quiet prints only each restored package's pinned reference,
 <repository>@<digest>, one per tag on stdout — no progress bars, and no
 logging but warnings and errors.`
@@ -46,6 +52,7 @@ type loadOptions struct {
 	input       string
 	concurrency int
 	verify      verifyFlags
+	scan        scanFlags
 	quiet       bool
 }
 
@@ -70,6 +77,7 @@ func loadCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to restore concurrently")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only each restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.verify.register(cmd)
+	opts.scan.register(cmd)
 
 	return cmd
 }
@@ -84,6 +92,10 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := opts.scan.validate(); err != nil {
+		return err
+	}
+	scanner := &pullScanner{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
 
 	r := cmd.InOrStdin()
 	if opts.input != "" {
@@ -102,8 +114,13 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, verifier)
+	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanner.scan})
 	if err != nil {
+		return err
+	}
+	// Written after the packages' own reports, so a fresh scan replaces
+	// what the publisher attached.
+	if err := writeReports(scanner.collected); err != nil {
 		return err
 	}
 

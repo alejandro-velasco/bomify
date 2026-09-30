@@ -227,7 +227,7 @@ func TestSecurityVEXAddListRemove(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	for _, args := range [][]string{
-		{"add", "other", bad},                                   // not VEX
+		{"add", "other", bad}, // not VEX
 		{"add", "other", filepath.Join(t.TempDir(), "missing")}, // no such file
 		{"add", "has space", vex},                               // bad name
 		{"remove", "missing"},                                   // no such name

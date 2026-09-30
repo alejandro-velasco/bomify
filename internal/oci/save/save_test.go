@@ -13,6 +13,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
@@ -135,14 +136,14 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	var archive bytes.Buffer
-	if err := Save(ctx, sourceDir, []string{"appA:v1.0", "appB:v1.0"}, &archive, 2, nil, nil); err != nil {
+	if err := Save(ctx, sourceDir, []string{"appA:v1.0", "appB:v1.0"}, &archive, 2, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
 	// Load into a completely fresh directory: nothing from sourceDir
 	// should be needed or referenced.
 	destDir := t.TempDir()
-	restored, err := Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 2, nil, nil)
+	restored, err := Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 2, nil, transfer.Hooks{})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -234,12 +235,12 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 
 	var archive bytes.Buffer
-	if err := Save(ctx, sourceDir, []string{"myapp:v1.0"}, &archive, 2, nil, nil); err != nil {
+	if err := Save(ctx, sourceDir, []string{"myapp:v1.0"}, &archive, 2, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
 	destDir := t.TempDir()
-	if _, err := Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 2, nil, nil); err != nil {
+	if _, err := Load(ctx, destDir, bytes.NewReader(archive.Bytes()), 2, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
@@ -260,7 +261,7 @@ func TestSaveFailsForUnknownTag(t *testing.T) {
 	baseDir := t.TempDir()
 
 	var archive bytes.Buffer
-	if err := Save(context.Background(), baseDir, []string{"nope:v1.0"}, &archive, 1, nil, nil); err == nil {
+	if err := Save(context.Background(), baseDir, []string{"nope:v1.0"}, &archive, 1, nil, transfer.Hooks{}); err == nil {
 		t.Fatal("Save() error = nil, want error for a tag that doesn't resolve to anything")
 	}
 }
@@ -268,7 +269,7 @@ func TestSaveFailsForUnknownTag(t *testing.T) {
 func TestLoadFailsForNonArchiveInput(t *testing.T) {
 	baseDir := t.TempDir()
 
-	_, err := Load(context.Background(), baseDir, bytes.NewReader([]byte("not a tar file")), 1, nil, nil)
+	_, err := Load(context.Background(), baseDir, bytes.NewReader([]byte("not a tar file")), 1, nil, transfer.Hooks{})
 	if err == nil {
 		t.Fatal("Load() error = nil, want error for non-tar input")
 	}

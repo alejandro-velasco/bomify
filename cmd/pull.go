@@ -10,6 +10,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
@@ -37,6 +38,17 @@ report referrer's own signature is checked the same way before its
 reports are restored.
 --insecure-skip-verify bypasses a matching trust rule.
 
+--scan <type> scans the package's components fresh — after --verify,
+before anything is written — and --fail-on <severity> (with --ignore
+and --vex) refuses to restore it if anything at or above it is found,
+leaving no trace, as a failed verify does. The fresh reports replace
+the ones the package carries. Gating a pull always needs --scan: the
+reports a pulled package carries are its publisher's, not a verdict to
+trust. A "bomify security policy" rule listing "pull" in its --on does
+the same for a matching <reference> without flags; --skip-scan ignores
+it. Scanning may need network access (e.g. grype's database, or the
+images it scans).
+
 --quiet prints only the restored package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors.`
@@ -59,6 +71,7 @@ const pullExample = `  # Pull a tagged reference
 type pullOptions struct {
 	concurrency int
 	verify      verifyFlags
+	scan        scanFlags
 	quiet       bool
 }
 
@@ -82,6 +95,7 @@ func pullCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to download concurrently")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.verify.register(cmd)
+	opts.scan.register(cmd)
 
 	return cmd
 }
@@ -96,6 +110,10 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := opts.scan.validate(); err != nil {
+		return err
+	}
+	scanner := &pullScanner{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
 
 	repo, err := newRepository(ref)
 	if err != nil {
@@ -109,8 +127,13 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, verifier)
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanner.scan})
 	if err != nil {
+		return err
+	}
+	// Written after the package's own reports, so a fresh scan replaces
+	// what the publisher attached.
+	if err := writeReports(scanner.collected); err != nil {
 		return err
 	}
 

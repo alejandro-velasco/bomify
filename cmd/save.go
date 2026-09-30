@@ -6,8 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const saveShort = "Save packages to a tarball"
@@ -22,7 +25,11 @@ stdout if --output isn't given.
 
 --sign signs each saved package with a signing plugin, exactly as
 "bomify push --sign" would, the signature travelling inside the
-tarball for "bomify load --verify" to check.`
+tarball for "bomify load --verify" to check.
+
+--scan, --fail-on, --ignore, --vex, and --skip-scan gate each tag
+before anything is written, exactly as "bomify push" does, as does a
+"bomify security policy" rule listing "push" in its --on.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar
@@ -40,6 +47,7 @@ type saveOptions struct {
 	output      string
 	concurrency int
 	sign        signFlags
+	scan        scanFlags
 }
 
 func saveCmd() *cobra.Command {
@@ -63,6 +71,7 @@ func saveCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the tarball here instead of stdout")
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to archive concurrently")
 	opts.sign.register(cmd)
+	opts.scan.register(cmd)
 
 	return cmd
 }
@@ -73,6 +82,25 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	signer, err := opts.sign.signer(logger)
 	if err != nil {
 		return err
+	}
+
+	// Each tag is gated before anything is written, as "bomify push"
+	// gates it — so a failing tag never reaches the tarball.
+	for _, tag := range tags {
+		p, err := opts.scan.plan(tag, security.HookPush, logger)
+		if err != nil {
+			return err
+		}
+		if !p.active() {
+			continue
+		}
+		sbomHash, err := build.ResolveTag(dataDir, tag)
+		if err != nil {
+			return err
+		}
+		if err := gateLocalPackage(cmd.ErrOrStderr(), p, sbomHash, opts.concurrency, logger.With("tag", tag)); err != nil {
+			return fmt.Errorf("not saved: %s: %w", tag, err)
+		}
 	}
 
 	w := cmd.OutOrStdout()
@@ -88,7 +116,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, signer)
+	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, transfer.Hooks{Sign: signer})
 	mb.Wait()
 	if err != nil {
 		return err

@@ -396,6 +396,47 @@ the gate, so a failing package's reports are still there to inspect.
 A failure prints a table of every offending vulnerability (severity,
 ID, component purl) to stderr and exits non-zero.
 
+#### Scanning at lifecycle hooks
+
+The same scan and gate also run as part of the package lifecycle, the
+way signing does, at three hooks (`security.Hooks`): **build** (after
+`bomify build` records the package), **push** (before `bomify push` or
+`bomify save` sends it anywhere), and **pull** (before `bomify pull` or
+`bomify load` writes anything of it). Each of those commands takes
+`--scan <type>`, the gate flags, and `--skip-scan` (`cmd/scanning.go`'s
+`scanFlags`), and resolves a `scanPlan` — a scanner, and a gate — for
+each package:
+
+1. `--skip-scan`: nothing (warning if a rule would have scanned).
+2. `--scan`, else the matching scan policy rule's scanner — but only a
+   rule whose `on` lists that hook (`security.Rule.AppliesOn`). A rule
+   with no `on` still applies to `bomify security scan`, and nowhere
+   else, so rules only scan automatically where they say so.
+3. The gate exactly as for `bomify security scan` (see above), with
+   the same hook condition on the rule.
+
+With a scanner, the package is scanned fresh (`security.Scan`); with a
+gate but no scanner, build/push/save gate on the reports already in
+`vulnerabilities/`. Where each hook runs decides what a failure leaves
+behind:
+
+- **build** scans after the build is recorded, so a failure leaves the
+  build, and its fresh reports, in place to inspect. With several
+  `--tag`s, the first whose plan does anything decides.
+- **push/save** scan before anything is packed, so a failure uploads
+  (or writes) nothing; the fresh reports are the ones the pushed
+  package then carries (see [Reports in a
+  registry](#reports-in-a-registry)).
+- **pull/load** run as a third transfer hook, `transfer.Hooks.Scan`,
+  alongside `Sign` and `Verify`: `pull.PullLayers` fetches the
+  package's SBOM into memory after verifying it and hands it to the
+  hook before writing anything, so a failure leaves nothing behind, as
+  a failed verify does. The fresh reports are written after the
+  package's own, replacing what its publisher attached. Gating a pull
+  always needs a scanner: the reports a pulled package carries are the
+  publisher's, never taken as a verdict. Scanning may need network
+  access, which is why nothing scans at pull unless asked to.
+
 #### Reports in a registry
 
 Reports travel with a package as an **OCI referrer** of its manifest,
@@ -461,8 +502,8 @@ byte-for-byte what `bomify build` recorded.
 
 [`internal/signature`](internal/signature) holds bomify's side of this,
 wired into `push.Push` and `pull.Pull` as two optional hooks
-(`transfer.Signer`/`transfer.Verifier`), so `save`/`load` inherit them
-unchanged:
+(`transfer.Hooks`' `Sign` and `Verify`, beside the scanning hook
+`Scan`), so `save`/`load` inherit them unchanged:
 
 - **Signing** (`push --sign <kind>`, `save --sign <kind>`): once the
   package manifest is packed, but **before** the tag is updated,

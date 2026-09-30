@@ -182,6 +182,35 @@ packages inside an image only stops failing once every one of them is
 covered. Reports themselves are unchanged — `bomify package
 vulnerabilities` still shows everything the scanner found.
 
+## 8. Scan automatically on build, push, and pull
+
+`bomify build`, `push`, `save`, `pull`, and `load` take the same
+`--scan` and `--fail-on` flags, so the scan and the gate can happen as
+part of the lifecycle rather than as a separate step:
+
+```sh
+# Record the build, then scan it; a failure keeps the build to inspect
+bomify build sbom.cdx.json --tag myapp:1.0 --scan grype --fail-on high
+
+# Refuse to push anything with a high or critical vulnerability
+bomify push registry.example.com/team/myapp:1.0 --scan grype --fail-on high
+
+# Scan a package fresh before restoring it; a failure writes nothing
+bomify pull registry.example.com/team/myapp:1.0 --scan grype --fail-on high
+```
+
+To do it without flags, list the hooks in a policy rule with `--on`.
+A rule without `--on` only applies to `bomify security scan`:
+
+```sh
+bomify security policy create grype --match registry.example.com/team --fail-on high --on push,pull
+```
+
+`--skip-scan` skips a rule's automatic scan for one command. Scanning
+at pull or load may need network access (grype's database, or the
+images it scans), so leave it off on an air-gapped machine and scan
+before saving instead.
+
 ## Next steps
 
 - [Distributing a package](distributing-a-package.md) once you're

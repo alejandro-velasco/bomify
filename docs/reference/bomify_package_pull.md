@@ -26,6 +26,17 @@ report referrer's own signature is checked the same way before its
 reports are restored.
 --insecure-skip-verify bypasses a matching trust rule.
 
+--scan <type> scans the package's components fresh — after --verify,
+before anything is written — and --fail-on <severity> (with --ignore
+and --vex) refuses to restore it if anything at or above it is found,
+leaving no trace, as a failed verify does. The fresh reports replace
+the ones the package carries. Gating a pull always needs --scan: the
+reports a pulled package carries are its publisher's, not a verdict to
+trust. A "bomify security policy" rule listing "pull" in its --on does
+the same for a matching <reference> without flags; --skip-scan ignores
+it. Scanning may need network access (e.g. grype's database, or the
+images it scans).
+
 --quiet prints only the restored package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors.
@@ -57,11 +68,16 @@ bomify package pull <reference> [flags]
 
 ```
   -c, --concurrency int             number of layers to download concurrently (default 3)
+      --fail-on string              fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                        help for pull
+      --ignore stringArray          a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
       --insecure-skip-verify        restore the package without verifying its signature, even if a "bomify trust" rule requires it
   -q, --quiet                       print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging
+      --scan string                 scan the package's components with the bomify-plugin-<type> scanner first (e.g. grype); overrides a matching "bomify security policy" rule's scanner
+      --skip-scan                   don't scan or gate at all, even if a "bomify security policy" rule matching the package says to
       --verify string               require a signature this signing plugin (bomify-plugin-<kind>, e.g. sigstore) verifies, overriding any "bomify trust" rule
       --verify-option stringArray   a key=value option passed through to the --verify plugin (repeatable; e.g. key=cosign.pub)
+      --vex stringArray             an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
 ```
 
 ### Options inherited from parent commands

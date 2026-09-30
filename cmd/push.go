@@ -41,6 +41,14 @@ referrer. One signature covers the SBOM and every component; the
 report referrer is signed separately, the same way. See "bomify pull
 --verify" and "bomify trust" for checking them.
 
+--scan <type> scans the package's components fresh before anything is
+uploaded — the reports it writes are the ones the package then carries
+— and --fail-on <severity> (with --ignore and --vex) refuses to push it
+if anything at or above it is found. --fail-on without --scan gates on
+the reports a prior scan left instead. A "bomify security policy" rule
+listing "push" in its --on does the same for a matching <tag> without
+flags; --skip-scan ignores it.
+
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors — for scripts that go on to publish or pin it.`
@@ -64,6 +72,7 @@ type pushOptions struct {
 	concurrency int
 	keepReports int
 	sign        signFlags
+	scan        scanFlags
 	quiet       bool
 }
 
@@ -89,6 +98,7 @@ func pushCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
 	opts.sign.register(cmd)
+	opts.scan.register(cmd)
 
 	return cmd
 }
@@ -109,6 +119,18 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
+	// Gated before anything is uploaded; fresh reports are what the
+	// pushed package then carries.
+	p, err := opts.scan.plan(tag, security.HookPush, logger)
+	if err != nil {
+		return err
+	}
+	if p.active() {
+		if err := gateLocalPackage(cmd.ErrOrStderr(), p, sbomHash, opts.concurrency, logger); err != nil {
+			return fmt.Errorf("not pushed: %w", err)
+		}
+	}
+
 	repo, err := newRepository(tag)
 	if err != nil {
 		return err
@@ -121,7 +143,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, signer)
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, transfer.Hooks{Sign: signer})
 	if err != nil {
 		return err
 	}
