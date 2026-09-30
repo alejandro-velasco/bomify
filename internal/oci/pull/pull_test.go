@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -121,7 +122,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress, nil)
+	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress, transfer.Hooks{})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -205,7 +206,7 @@ func TestPullRejectsNonSHA256Digest(t *testing.T) {
 		t.Fatalf("tag manifest: %v", err)
 	}
 
-	_, err = Pull(ctx, store, "test", t.TempDir(), 1, nil, nil)
+	_, err = Pull(ctx, store, "test", t.TempDir(), 1, nil, transfer.Hooks{})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want error for non-sha256 digest")
 	}
@@ -282,7 +283,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, nil); err != nil {
+	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -294,7 +295,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result1, err := Pull(ctx, store, tag, dataDir, 1, progress, nil)
+	result1, err := Pull(ctx, store, tag, dataDir, 1, progress, transfer.Hooks{})
 	if err != nil {
 		t.Fatalf("first Pull() error = %v", err)
 	}
@@ -312,7 +313,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	atomic.StoreInt32(&progressCalls, 0)
 
-	result2, err := Pull(ctx, store, tag, dataDir, 1, progress, nil)
+	result2, err := Pull(ctx, store, tag, dataDir, 1, progress, transfer.Hooks{})
 	if err != nil {
 		t.Fatalf("second Pull() error = %v", err)
 	}
@@ -374,7 +375,7 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	}
 
 	tag = "test"
-	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, nil); err != nil {
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -400,7 +401,7 @@ func TestPullRecordsComponentManifest(t *testing.T) {
 	store, tag := pushComponentFixture(t, component, []byte("image contents"))
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, nil); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
@@ -450,7 +451,7 @@ func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
 		t.Fatalf("write preexisting layer file: %v", err)
 	}
 
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, nil); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
@@ -475,7 +476,7 @@ func TestPullFailedVerifyWritesNothing(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, verify); err == nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Verify: verify}); err == nil {
 		t.Fatal("Pull() error = nil, want the verifier's error")
 	}
 
@@ -496,5 +497,45 @@ func TestPullFailedVerifyWritesNothing(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("data dir has %d entries after a failed verify, want none", len(entries))
+	}
+}
+
+// TestPullFailedScanWritesNothing covers the Scan hook: it sees the
+// package's SBOM before anything is written, and rejecting it leaves the
+// data directory as empty as a failed verify does.
+func TestPullFailedScanWritesNothing(t *testing.T) {
+	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+	store, tag := pushComponentFixture(t, component, []byte("image contents"))
+
+	var scannedRef string
+	var scannedSBOM []byte
+	scan := func(ctx context.Context, ref string, sbom []byte) error {
+		scannedRef, scannedSBOM = ref, sbom
+		return errors.New("vulnerable")
+	}
+
+	dataDir := t.TempDir()
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Scan: scan}); err == nil {
+		t.Fatal("Pull() error = nil, want the scanner's error")
+	}
+	if scannedRef != tag {
+		t.Errorf("scanner got ref %q, want %q", scannedRef, tag)
+	}
+	if !bytes.Contains(scannedSBOM, []byte(component.PackageURL)) {
+		t.Errorf("scanner got SBOM %q, want the package's", scannedSBOM)
+	}
+
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		t.Fatalf("read data dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("data dir has %d entries after a failed scan, want none", len(entries))
+	}
+
+	// A scanner that passes lets the pull go ahead as usual.
+	pass := func(context.Context, string, []byte) error { return nil }
+	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Scan: pass}); err != nil {
+		t.Errorf("Pull() with a passing scanner: %v", err)
 	}
 }

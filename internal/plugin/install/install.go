@@ -105,7 +105,7 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 		b, ok, err := plugin.ParseBinary(cdx.Component{PackageURL: purl})
 		return err == nil && ok && b.Matches(goos, goarch)
 	}
-	result, err := pull.PullLayers(ctx, target, ref, staging, opts.Concurrency, opts.Progress, opts.Verify, keep)
+	result, err := pull.PullLayers(ctx, target, ref, staging, opts.Concurrency, opts.Progress, transfer.Hooks{Verify: opts.Verify}, keep)
 	if err != nil {
 		return nil, err
 	}

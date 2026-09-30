@@ -31,6 +31,13 @@ and why. For a one-off, use "bomify security scan --ignore".
 no --fail-on of its own, always applies its VEX documents alongside any
 --vex of its own, and ignores rules entirely with --skip-gate.
 
+--on pull also makes a matching package get scanned with <scanner> and
+gated automatically by "bomify pull" and "bomify load", before anything
+of it is written; it needs --fail-on, since a scan there only ever
+refuses packages. Without --on, the rule only applies to "bomify
+security scan". Pull's and load's own --scan and --fail-on override the
+rule, and --skip-scan ignores it.
+
 ```
 bomify security policy create <scanner> [flags]
 ```
@@ -45,6 +52,9 @@ bomify security policy create <scanner> [flags]
   bomify security vex add team team.openvex.json
   bomify security policy create grype --match registry.example.com/team --fail-on high --vex team
 
+  # ...and scan and gate them automatically before they're pulled or loaded
+  bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
+
   # Scan every other package with grype, never failing
   bomify security policy create grype
 ```
@@ -55,6 +65,7 @@ bomify security policy create <scanner> [flags]
       --fail-on string    fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails
   -h, --help              help for create
       --match string      apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
+      --on strings        lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none
       --vex stringArray   the name of a stored VEX document (see "bomify security vex add") exempting vulnerabilities it shows don't affect the package (repeatable)
 ```
 

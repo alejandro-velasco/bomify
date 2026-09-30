@@ -19,6 +19,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
@@ -114,7 +115,7 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, 1, nil, nil); err != nil {
+	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	return store

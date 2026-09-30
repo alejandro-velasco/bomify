@@ -1,0 +1,35 @@
+flowchart TD
+    classDef source fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+    classDef plugin fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
+    classDef ok fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+    classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
+
+    Start(["bomify pull / load"]) --> When["after --verify,<br/>before anything is written"]
+    When --> Skip{"--skip-scan?"}
+
+    Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names pull)"]
+    Skip -->|"no"| Rule{"a scan.json rule matches the<br/>reference, and its --on names<br/>pull?"}
+
+    Rule -->|"yes, most specific wins"| UseRule["the rule's scanner, threshold,<br/>and stored VEX — --scan and<br/>--fail-on override them"]
+    Rule -->|"no"| UseFlags["flags only:<br/>--scan, --fail-on"]
+
+    UseRule --> Active{"a scanner or<br/>a threshold?"}
+    UseFlags --> Active
+
+    Active -->|"neither"| NoScan
+    Active -->|"only one"| NeedBoth["fails: --scan and --fail-on go together<br/>— never gating on the publisher's reports,<br/>never scanning with nothing to refuse on"]
+    Active -->|"both"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
+
+    PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus the rule's<br/>VEX exemptions (each logged)"]
+
+    Gate --> Left{"anything left?"}
+
+    Left -->|"no"| Continue["carry on: write the package,<br/>then the fresh reports"]
+    Left -->|"yes"| Failed["print the findings table;<br/>the command fails —<br/>nothing written"]
+
+    class Start source
+    class PluginScan plugin
+    class Continue ok
+    class Failed,NeedBoth failed
+    class NoScan skipped

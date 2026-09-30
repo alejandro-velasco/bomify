@@ -121,7 +121,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, signer)
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, opts.concurrency, progress, transfer.Hooks{Sign: signer})
 	if err != nil {
 		return err
 	}

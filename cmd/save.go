@@ -8,6 +8,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
 const saveShort = "Save packages to a tarball"
@@ -88,7 +89,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	mb := newMultiBar(cmd.ErrOrStderr())
 	progress := newProgressFunc(mb)
 
-	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, signer)
+	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, transfer.Hooks{Sign: signer})
 	mb.Wait()
 	if err != nil {
 		return err

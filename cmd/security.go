@@ -75,7 +75,7 @@ package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
 threshold instead, if any does, and that rule's stored VEX documents
 always apply alongside --vex, which reads the given file as it is now;
---skip-gate ignores the rule. Reports
+--skip-gate ignores the rule's threshold (the scan still runs). Reports
 are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
@@ -279,7 +279,14 @@ and why. For a one-off, use "bomify security scan --ignore".
 
 "bomify security scan" applies a matching rule's --fail-on when given
 no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-gate.`
+--vex of its own, and ignores rules entirely with --skip-gate.
+
+--on pull also makes a matching package get scanned with <scanner> and
+gated automatically by "bomify pull" and "bomify load", before anything
+of it is written; it needs --fail-on, since a scan there only ever
+refuses packages. Without --on, the rule only applies to "bomify
+security scan". Pull's and load's own --scan and --fail-on override the
+rule, and --skip-scan ignores it.`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
@@ -287,6 +294,9 @@ const securityPolicyCreateExample = `  # Fail any scan of a team's packages on h
   # ...exempting whatever the team's VEX document shows doesn't affect it
   bomify security vex add team team.openvex.json
   bomify security policy create grype --match registry.example.com/team --fail-on high --vex team
+
+  # ...and scan and gate them automatically before they're pulled or loaded
+  bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
 
   # Scan every other package with grype, never failing
   bomify security policy create grype`
@@ -311,6 +321,7 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
+	cmd.Flags().StringSliceVar(&rule.On, "on", nil, "lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none")
 	cmd.Flags().StringArrayVar(&rule.VEX, "vex", nil, "the name of a stored VEX document (see \"bomify security vex add\") exempting vulnerabilities it shows don't affect the package (repeatable)")
 
 	return cmd
@@ -320,8 +331,9 @@ const securityPolicyListShort = "List vulnerability scanning policy rules"
 
 const securityPolicyListLong = `List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
 prints "*" for a rule that omitted it, meaning it applies to every
-package, FAIL-ON prints "-" for a rule that never fails, and VEX lists
-the names of each rule's stored VEX documents.`
+package, FAIL-ON prints "-" for a rule that never fails, VEX lists the
+names of each rule's stored VEX documents, and ON the lifecycle hooks
+it scans at automatically ("-" for none).`
 
 const securityPolicyListExample = `  # See every configured rule
   bomify security policy list`
@@ -350,13 +362,17 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tVEX")
+	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tVEX\tON")
 	for _, rule := range rules {
 		failOn := rule.FailOn
 		if failOn == "" {
 			failOn = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","))
+		on := strings.Join(rule.On, ",")
+		if on == "" {
+			on = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","), on)
 	}
 
 	return w.Flush()

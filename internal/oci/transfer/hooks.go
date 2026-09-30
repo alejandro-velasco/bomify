@@ -19,3 +19,19 @@ type Signer func(ctx context.Context, target oras.Target, ref string, manifest o
 // fetching anything else, so a failed Verifier leaves nothing behind in
 // the data directory.
 type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error
+
+// Scanner decides whether the package ref resolved to — whose SBOM, the
+// package's config blob, is sbom — may be restored, typically by
+// scanning the components it describes for vulnerabilities (see
+// internal/security). Pull calls it after Verifier, before writing
+// anything at all, so a failed Scanner leaves nothing behind in the data
+// directory either.
+type Scanner func(ctx context.Context, ref string, sbom []byte) error
+
+// Hooks are the optional steps Push and Pull run around a package: Sign
+// when pushing, Verify and then Scan when pulling. Any may be nil.
+type Hooks struct {
+	Sign   Signer
+	Verify Verifier
+	Scan   Scanner
+}

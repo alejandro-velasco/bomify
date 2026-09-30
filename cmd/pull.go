@@ -10,6 +10,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
@@ -37,6 +38,20 @@ report referrer's own signature is checked the same way before its
 reports are restored.
 --insecure-skip-verify bypasses a matching trust rule.
 
+--scan <type> --fail-on <severity> scans the package's components
+fresh — after --verify, before anything is written — and refuses to
+restore it if anything at or above <severity> is found, leaving no
+trace, as a failed verify does; a matching rule's stored VEX documents
+exempt what they cover. The fresh reports replace the ones the package
+carries. The two go together: --fail-on without --scan would gate on
+the publisher's own reports, and --scan without a threshold couldn't
+refuse anything (to just scan, run "bomify security scan" after
+pulling). A "bomify security policy" rule listing "pull" in its --on
+does the same for a matching <reference> without flags, and either
+flag overrides its part of the rule; --skip-scan ignores it. Scanning
+may need network access (e.g. grype's database, or the images it
+scans).
+
 --quiet prints only the restored package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors.`
@@ -59,6 +74,7 @@ const pullExample = `  # Pull a tagged reference
 type pullOptions struct {
 	concurrency int
 	verify      verifyFlags
+	scan        scanFlags
 	quiet       bool
 }
 
@@ -82,6 +98,7 @@ func pullCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to download concurrently")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 	opts.verify.register(cmd)
+	opts.scan.register(cmd)
 
 	return cmd
 }
@@ -96,6 +113,10 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := opts.scan.validate(); err != nil {
+		return err
+	}
+	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
 
 	repo, err := newRepository(ref)
 	if err != nil {
@@ -109,8 +130,13 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		progress = newProgressFunc(mb)
 	}
 
-	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, verifier)
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanHook.scan})
 	if err != nil {
+		return err
+	}
+	// Written after the package's own reports, so a fresh scan replaces
+	// what the publisher attached.
+	if err := writeReports(scanHook.collected); err != nil {
 		return err
 	}
 

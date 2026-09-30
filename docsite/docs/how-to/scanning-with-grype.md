@@ -182,6 +182,37 @@ packages inside an image only stops failing once every one of them is
 covered. Reports themselves are unchanged — `bomify package
 vulnerabilities` still shows everything the scanner found.
 
+## 8. Gate what you push, and what you pull
+
+Before pushing, just run the scan with a threshold first — `&&` stops
+the push if it fails, and the push carries the fresh reports:
+
+```sh
+bomify security scan grype registry.example.com/team/myapp:1.0 --fail-on high \
+  && bomify push registry.example.com/team/myapp:1.0
+```
+
+Pulling is different: scanning afterwards would only gate once the
+package is already on disk. `bomify pull` and `bomify load` take
+`--scan` and `--fail-on` to scan a package fresh *before* anything of
+it is written — a failure leaves nothing behind:
+
+```sh
+bomify pull registry.example.com/team/myapp:1.0 --scan grype --fail-on high
+```
+
+To do it for every pull without flags, add `--on pull` to a policy rule.
+A rule without `--on` only applies to `bomify security scan`:
+
+```sh
+bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
+```
+
+`--skip-scan` skips a rule's automatic scan for one command. Scanning
+at pull or load may need network access (grype's database, or the
+images it scans), so leave it off on an air-gapped machine and scan
+before saving instead.
+
 ## Next steps
 
 - [Distributing a package](distributing-a-package.md) once you're

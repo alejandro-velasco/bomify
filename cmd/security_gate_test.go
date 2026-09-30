@@ -78,6 +78,11 @@ func TestSecurityScanAppliesPolicy(t *testing.T) {
 	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate"); err != nil {
 		t.Errorf("--skip-gate: error = %v, want none", err)
 	}
+	// Only pull and load take --skip-scan: an explicit scan can't skip
+	// itself.
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-scan"); err == nil {
+		t.Error("security scan --skip-scan: error = nil, want an unknown-flag error")
+	}
 }
 
 func TestSecurityScanGateFlagValidation(t *testing.T) {
@@ -227,7 +232,7 @@ func TestSecurityVEXAddListRemove(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	for _, args := range [][]string{
-		{"add", "other", bad},                                   // not VEX
+		{"add", "other", bad}, // not VEX
 		{"add", "other", filepath.Join(t.TempDir(), "missing")}, // no such file
 		{"add", "has space", vex},                               // bad name
 		{"remove", "missing"},                                   // no such name

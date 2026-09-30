@@ -43,7 +43,7 @@ package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
 threshold instead, if any does, and that rule's stored VEX documents
 always apply alongside --vex, which reads the given file as it is now;
---skip-gate ignores the rule. Reports
+--skip-gate ignores the rule's threshold (the scan still runs). Reports
 are written either way.
 
 ```

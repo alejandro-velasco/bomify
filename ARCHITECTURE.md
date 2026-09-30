@@ -396,6 +396,53 @@ the gate, so a failing package's reports are still there to inspect.
 A failure prints a table of every offending vulnerability (severity,
 ID, component purl) to stderr and exits non-zero.
 
+#### Scanning on pull
+
+The same scan and gate can also run as part of `bomify pull` and
+`bomify load`, before anything of the package is written. That's the
+one place a lifecycle hook does something running `bomify security
+scan` separately can't: `security scan` needs the package on disk, so
+pulling and then scanning only gates after everything has landed. The
+other points are left to the separate command on purpose — `bomify
+build` or `push`/`save`, then `bomify security scan <type> <tag>
+--fail-on <severity>` (`&&`-chained in CI) does the same with no extra
+flags on those commands.
+
+`pull` and `load` take just `--scan <type>`, `--fail-on`, and
+`--skip-scan` (`cmd/scanning.go`'s `scanFlags`) — the one-off
+exemptions `--ignore` and `--vex` belong to `bomify security scan`,
+and a pull relies on a rule's stored VEX instead. For each package,
+`pullScanHook` resolves a scanner and a gate:
+
+1. `--skip-scan`: nothing (warning if a rule would have scanned).
+2. `--scan`, else the matching scan policy rule's scanner — but only a
+   rule whose `on` lists `pull` (`security.Rule.AppliesOn`). A rule
+   with no `on` still applies to `bomify security scan`, and nowhere
+   else, so rules only scan pulls where they say so.
+3. The gate exactly as for `bomify security scan` (see above), with
+   the same condition on the rule.
+
+A scan on pull is only ever a gate, so the two must come together:
+the package is always scanned fresh (`security.Scan`), never gated on
+the reports it carries — those are its publisher's, never taken as a
+verdict — so a threshold without a scanner is an error; and a scanner
+without a threshold couldn't refuse anything, so that's an error too
+(to just scan, run `bomify security scan` after pulling). For the same
+reason, a rule's `--on pull` requires its `--fail-on`.
+
+The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
+alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's
+SBOM into memory after verifying it and hands it to the hook before
+writing anything, so a failure leaves nothing behind, as a failed
+verify does. The fresh reports are written after the package's own,
+replacing what its publisher attached. Scanning may need network access
+(e.g. grype's database, or the images it scans), which is why nothing
+scans on pull unless asked to.
+
+![Scanning on pull](docs/diagrams/scanning.svg)
+
+*Source: [`docs/diagrams/scanning.mmd`](docs/diagrams/scanning.mmd)*
+
 #### Reports in a registry
 
 Reports travel with a package as an **OCI referrer** of its manifest,
@@ -461,8 +508,8 @@ byte-for-byte what `bomify build` recorded.
 
 [`internal/signature`](internal/signature) holds bomify's side of this,
 wired into `push.Push` and `pull.Pull` as two optional hooks
-(`transfer.Signer`/`transfer.Verifier`), so `save`/`load` inherit them
-unchanged:
+(`transfer.Hooks`' `Sign` and `Verify`, beside the scanning hook
+`Scan`), so `save`/`load` inherit them unchanged:
 
 - **Signing** (`push --sign <kind>`, `save --sign <kind>`): once the
   package manifest is packed, but **before** the tag is updated,
