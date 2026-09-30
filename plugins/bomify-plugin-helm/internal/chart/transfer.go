@@ -16,7 +16,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/cli"
 	"helm.sh/helm/v4/pkg/registry"
@@ -94,7 +93,7 @@ func registryHost(repositoryURL string) string {
 // ref.Filename(), using the Helm SDK's pull action — the same
 // implementation behind the `helm pull` CLI command. It supports both
 // classic HTTP(S) chart repositories and OCI registries, per ref.OCI.
-func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
 	host := registryHost(ref.RepositoryURL)
 
 	registryClient, err := newRegistryClient(host)
@@ -142,15 +141,14 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 	}
 	logger.Info("pull complete", "path", path)
 
-	hash, err := chartHash(hashAlgorithm, data)
-	if err != nil {
-		return nil, err
-	}
-
+	// Unlike an OCI image digest, this isn't independently verified by a
+	// registry for HTTP-repo pulls, but it's still the actual hash of what
+	// was written to disk.
+	sum := sha256.Sum256(data)
 	return &plugin.Result{
 		OutputPath: path,
 		Message:    fmt.Sprintf("pulled %s@%s from %s", ref.Name, ref.Version, ref.RepositoryURL),
-		Hash:       hash,
+		Hash:       plugin.NewHash(hex.EncodeToString(sum[:])),
 	}, nil
 }
 
@@ -158,16 +156,16 @@ func Pull(ref Ref, outputDir string, hashAlgorithm cdx.HashAlgorithm, logger *sl
 // an OCI manifest resolve (no chart layer) for an OCI registry, or a
 // fetch of the small index.yaml a real Pull consults first, for a
 // classic HTTP(S) repository.
-func CheckPull(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+func CheckPull(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	if ref.OCI {
 		return checkPullOCI(ref, logger)
 	}
-	return checkPullHTTP(ref, hashAlgorithm, logger)
+	return checkPullHTTP(ref, logger)
 }
 
 // checkPullOCI resolves ref's manifest without pulling its chart layer.
 // The resolved descriptor's digest is the OCI manifest's own digest, not
-// the chart tarball hash chartHash computes for a real Pull, so no hash
+// the chart tarball hash a real Pull reports, so no hash
 // is reported here.
 func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	registryClient, err := newRegistryClient(registryHost(ref.RepositoryURL))
@@ -192,9 +190,9 @@ func checkPullOCI(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 // checkPullHTTP fetches ref.RepositoryURL's small index.yaml — the same
 // listing a real Pull consults first — and looks for a matching entry,
 // without downloading the chart. Its digest field is the same SHA-256
-// chartHash would compute from the downloaded chart, so hash comes back
+// a real Pull computes from the downloaded chart, so hash comes back
 // populated at no extra cost.
-func checkPullHTTP(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger) (*plugin.Result, error) {
+func checkPullHTTP(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	indexURL := strings.TrimSuffix(ref.RepositoryURL, "/") + "/index.yaml"
 
 	req, err := http.NewRequest(http.MethodGet, indexURL, nil)
@@ -244,8 +242,8 @@ func checkPullHTTP(ref Ref, hashAlgorithm cdx.HashAlgorithm, logger *slog.Logger
 		OutputPath: entryURL(ref.RepositoryURL, entry),
 		Message:    fmt.Sprintf("%s@%s exists at %s", ref.Name, ref.Version, ref.RepositoryURL),
 	}
-	if hashAlgorithm == cdx.HashAlgoSHA256 && entry.Digest != "" {
-		result.Hash = plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: entry.Digest}
+	if entry.Digest != "" {
+		result.Hash = plugin.NewHash(entry.Digest)
 	}
 	return result, nil
 }
@@ -335,17 +333,4 @@ func CheckPush(ref Ref, remote string, logger *slog.Logger) (*plugin.Result, err
 	logger.Info("check complete", "destination", dst)
 
 	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("authorized to push to %s", dst)}, nil
-}
-
-// chartHash returns the content hash to report for a pulled chart,
-// computed directly from its downloaded bytes. Unlike an OCI image
-// digest, this isn't independently verified by a registry for HTTP-repo
-// pulls, but it's still the actual hash of what was written to disk.
-func chartHash(hashAlgorithm cdx.HashAlgorithm, data []byte) (plugin.Hash, error) {
-	if hashAlgorithm != cdx.HashAlgoSHA256 {
-		return plugin.Hash{}, fmt.Errorf("bomify-plugin-helm: unsupported hash algorithm %q, only %s is supported", hashAlgorithm, cdx.HashAlgoSHA256)
-	}
-
-	sum := sha256.Sum256(data)
-	return plugin.Hash{Algorithm: cdx.HashAlgoSHA256, Value: hex.EncodeToString(sum[:])}, nil
 }

@@ -79,7 +79,7 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 		}
 		defer cleanup()
 
-		result, err := plugin.Sign(path, payloadFile, ref, p.Options, logger)
+		result, err := signPayload(path, payloadFile, ref, p.Options, logger)
 		if err != nil {
 			return err
 		}
@@ -162,7 +162,7 @@ func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifes
 		return "", fmt.Errorf("cannot list signatures: %T does not support referrers", target)
 	}
 
-	supported, err := plugin.SupportedSignatureTypes(path, logger)
+	supported, err := supportedTypes(path, logger)
 	if err != nil {
 		return "", err
 	}
@@ -232,7 +232,7 @@ func verifyReferrer(ctx context.Context, store content.ReadOnlyStorage, referrer
 	}
 	defer os.Remove(envelopeFile)
 
-	result, err := plugin.VerifySignature(path, payloadFile, envelopeFile, envelopeDesc.MediaType, ref, options, logger)
+	result, err := verifyEnvelope(path, payloadFile, envelopeFile, envelopeDesc.MediaType, ref, options, logger)
 	if err != nil {
 		return "", err
 	}

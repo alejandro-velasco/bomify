@@ -219,7 +219,7 @@ func platformOf(b plugin.Binary) string {
 // declares, returning its actual SHA-256. A component declaring none
 // fails only when required.
 func verifyBinary(src string, component cdx.Component, required bool) (string, error) {
-	sum, err := plugin.HashFile(src, cdx.HashAlgoSHA256)
+	sum, err := plugin.HashFile(src)
 	if err != nil {
 		return "", fmt.Errorf("plugin binary missing from package: %w", err)
 	}

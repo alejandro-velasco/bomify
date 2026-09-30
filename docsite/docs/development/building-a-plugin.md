@@ -58,8 +58,7 @@ and JSON result shape, all specified in
 [`COMPONENT-CONTRACT.md`](component-contract.md#commands):
 
 - **`component pull`** fetches the component `--purl` identifies into
-  `--output`, and reports a content hash for `--hash` if it can compute
-  one.
+  `--output`, and reports its SHA-256 if it can compute it.
 - **`component push`** publishes whatever a prior `pull` wrote into
   `--input` to `--remote`.
 - **`component remote`** reports where a component's content currently
@@ -73,11 +72,15 @@ message on failure).
 ## Using the Go helper library
 
 If you're writing a plugin in Go, [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)
-is a small, importable library implementing the contract's Go-facing side —
-`Result`/`Hash`/`RemoteResult` structs with `Print` methods that encode them
-correctly, and `OpenLog` for the `--log` file. Use it instead of
-hand-rolling JSON encoding or log setup; nothing about it depends on being
-inside bomify's own module.
+is a small, importable library implementing the contract's Go-facing side.
+Implement its `plugin.ComponentPlugin` interface — `Pull`, `Push`, and
+`Remote`, each handed a request carrying the parsed flags and a logger
+already writing to `--log` — and `plugin.ComponentCommand` builds the
+whole `component` subcommand tree from it: every flag, the `--check`
+rules, the log file, and printing exactly one JSON result. `plugin.Run`
+then executes it with the contract's exit-code and stderr rules. Use it
+instead of hand-rolling flags, JSON encoding, or log setup; nothing about
+it depends on being inside bomify's own module.
 
 ## Worked example: `bomify-plugin-generic`
 
@@ -87,28 +90,21 @@ push — and a reasonable template to start from. Its shape:
 
 ```
 bomify-plugin-generic/
-├─ main.go              # entrypoint, calls cmd.Execute()
+├─ main.go              # entrypoint: plugin.Run(cmd.NewRootCmd())
 ├─ cmd/
-│  ├─ root.go            # wires up the "component" subcommand
-│  ├─ pull.go             # the `component pull` subcommand's flags + RunE
-│  ├─ push.go             # the `component push` subcommand's flags + RunE
-│  └─ remote.go           # the `component remote` subcommand's flags + RunE
+│  └─ root.go            # a plugin.ComponentPlugin over internal/artifact
 └─ internal/artifact/
    ├─ resolve.go          # purl -> Ref (the download URL, name, version)
    └─ transfer.go         # the actual GET/PUT/HEAD logic
 ```
 
-The pattern worth copying: `cmd/*.go` is thin — cobra flag parsing, opening
-the log via `plugin.OpenLog`, calling into `internal/<pkg>`, printing the
-result — and all the real logic (resolving the purl, doing the network
-call, building the `plugin.Result`) lives in an internal package with no
-cobra/CLI dependency at all. That split is what makes each piece
-independently testable; see `internal/artifact/*_test.go` for the tests
-that result from it.
-
-`remote.go` is a good one to read first — it's the smallest subcommand, and
-shows the full round-trip: parse `--purl`, open the log, do the (here,
-trivial) work, print a `plugin.RemoteResult`.
+The pattern worth copying: `cmd/root.go` is thin — a `ComponentPlugin`
+whose methods resolve the purl and call into `internal/<pkg>`, plus the
+help text `plugin.ComponentCommand` shows — and all the real logic
+(doing the network call, building the `plugin.Result`) lives in an
+internal package with no cobra/CLI dependency at all. That split is what
+makes each piece independently testable; see
+`internal/artifact/*_test.go` for the tests that result from it.
 
 ## Checklist
 

@@ -29,7 +29,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 		concurrency = 1
 	}
 
-	capabilities, err := plugin.SupportedComponents(pluginPath, logger)
+	capabilities, err := supportedComponents(pluginPath, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 		}
 		g.Go(func() error {
 			log := logger.With("component", component.Name, "version", component.Version)
-			result, err := plugin.Scan(pluginPath, component, log)
+			result, err := scanComponent(pluginPath, component, log)
 			if err != nil {
 				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
 			}

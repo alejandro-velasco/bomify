@@ -2,26 +2,36 @@
 package cmd
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-grype/internal/scan"
 )
 
-// NewRootCmd builds the bomify-plugin-grype root command and wires up
-// its security scan/supported-components subcommands (see
-// plugins/SECURITY-CONTRACT.md).
+// NewRootCmd builds the bomify-plugin-grype root command, implementing
+// the security scanning contract (see plugins/SECURITY-CONTRACT.md).
 func NewRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "bomify-plugin-grype",
-		Short:         "bomify security scanning plugin backed by grype",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-
-	rootCmd.AddCommand(securityCmd())
-
-	return rootCmd
+	return pluginlib.NewRootCommand("grype", "bomify security scanning plugin backed by grype",
+		pluginlib.SecurityCommand(scanner{}, pluginlib.SecurityHelp{
+			Scan: "Report the vulnerabilities the given purl is affected by, via grype's vulnerability database",
+		}))
 }
 
-// Execute runs the root command and returns any error encountered.
-func Execute() error {
-	return NewRootCmd().Execute()
+// scanner implements pluginlib.SecurityPlugin over internal/scan.
+type scanner struct{}
+
+func (scanner) Scan(_ context.Context, purl string) (pluginlib.SecurityResult, error) {
+	provider, err := scan.Load()
+	if err != nil {
+		return pluginlib.SecurityResult{}, err
+	}
+	defer provider.Close()
+
+	return scan.Purl(provider, purl)
+}
+
+func (scanner) SupportedComponents(context.Context) (pluginlib.SupportedComponentsResult, error) {
+	return pluginlib.SupportedComponentsResult{Types: scan.SupportedTypes(), Scans: []string{"sca"}}, nil
 }

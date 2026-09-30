@@ -7,9 +7,11 @@ which `bomify build` and `bomify distribute` delegate to. It's aimed at
 anyone writing a plugin, first- or third-party. The Go types referenced
 below (`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
 [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) — a small library, importable from any Go
-module, and `plugin.OpenLog`/`(*Result).Print`/`(*RemoteResult).Print` are
-ready-made helpers a Go-based plugin can use instead of re-implementing
-this spec by hand. See also [`README.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md) for the list of
+module. A Go-based plugin should implement its `plugin.ComponentPlugin`
+interface and let `plugin.ComponentCommand` build the `component`
+subcommands from it: that implements every flag, the `--check` rules,
+the `--log` logger, and the stdout/stderr/exit-code rules below, so the
+plugin itself only fetches and publishes. See also [`README.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md) for the list of
 first-party plugins and [`ARCHITECTURE.md`](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md) for how
 this contract fits into bomify's design as a whole.
 
@@ -57,7 +59,7 @@ them.
 ### `component pull`
 
 ```
-bomify-plugin-<kind> component pull --purl <purl> --output <dir> --hash <algorithm> --log <path> --log-color <bool>
+bomify-plugin-<kind> component pull --purl <purl> --output <dir> --log <path> --log-color <bool>
 ```
 
 Fetches or builds the component `--purl` identifies and writes it into
@@ -67,7 +69,6 @@ Fetches or builds the component `--purl` identifies and writes it into
 | --- | --- | --- |
 | `--purl` | yes | *The component's package URL. The plugin derives everything it needs to know about what to fetch from this string.* |
 | `--output` | only when `--check` is false | Directory to write the pulled artifact into. bomify creates this directory before invoking the plugin — the plugin may assume it already exists and is empty, and should write directly into it (a single file, or a directory tree — whatever shape suits the artifact). Not passed at all when `--check=true`, since nothing is written. |
-| `--hash` | no | Hash algorithm (see [Hash algorithms](#hash-algorithms) below) bomify wants the pulled artifact's content hash reported as, in the result's `hash` field. May be empty, in which case the plugin should omit `hash` from its result entirely. |
 | `--check` | no | *See [Check mode](#check-mode). Defaults to `false`.* |
 | `--log` | yes | *See [Logging](#logging).* |
 | `--log-color` | yes | *See [Logging](#logging).* |
@@ -198,12 +199,13 @@ and bomify treats them identically:
 | --- | --- | --- | --- |
 | `outputPath` | string | yes | For `pull`: the local path the artifact was written to (normally just `--output`, echoed back). For `push`: the reference the artifact was published under at `--remote` (e.g. `<remote>/<name>:<version>`). For either subcommand with `--check=true`: no path was written to or read from, so report whatever identifies the artifact/destination that was checked instead (e.g. the resolved registry reference or download URL). |
 | `message` | string | no | A short, human-readable summary of what happened (e.g. `"pulled nginx:1.27"`). Purely informational — bomify logs it but never parses it. |
-| `hash` | object | no | The content hash of the pulled artifact, for the algorithm `--hash` requested. Only meaningful for `pull`; leave both of its fields unset for `push`, and for `pull` when either `--hash` was empty or the algorithm requested isn't one the plugin can compute — never report a hash for a different algorithm than what was requested, and never guess. |
-| `hash.algorithm` | string | present only together with `hash.value` | One of the [CycloneDX hash algorithm names](#hash-algorithms) below — must exactly equal the `--hash` value the plugin was given. |
+| `hash` | object | no | The pulled artifact's SHA-256 (see [Hashes](#hashes)). Only meaningful for `pull`; leave both of its fields unset for `push`, and for `pull` when the plugin can't compute it — never guess. |
+| `hash.algorithm` | string | present only together with `hash.value` | Always exactly `SHA-256`, the CycloneDX name of the one algorithm bomify uses. |
 | `hash.value` | string | present only together with `hash.algorithm` | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
 
 Go plugins should build this as a `plugin.Result` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with `(*Result).Print`,
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
+`ComponentPlugin`, which prints it — or print it with `plugin.Print`
 rather than hand-rolling the JSON encoding.
 
 A machine-readable version of this schema, suitable for validating a
@@ -211,22 +213,15 @@ plugin's actual stdout output with any off-the-shelf JSON Schema
 validator, is published at
 [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json).
 
-### Hash algorithms
+### Hashes
 
-`--hash`'s value, and `hash.algorithm` in the result, must be one of the
-canonical [CycloneDX](https://cyclonedx.org/) hash algorithm names:
-
-`MD5`, `SHA-1`, `SHA-256`, `SHA-384`, `SHA-512`, `SHA3-256`, `SHA3-384`,
-`SHA3-512`, `BLAKE2b-256`, `BLAKE2b-384`, `BLAKE2b-512`, `BLAKE3`,
-`Streebog-256`, `Streebog-512`.
-
-bomify normalizes case- and hyphen-insensitive input (e.g. a user-supplied
-`--hash sha256`) to one of these exact strings (see
-`plugin.NormalizeHashAlgorithm`) before ever invoking a plugin, so a plugin
-only ever needs to compare `--hash` against this exact list — never
-normalize it itself. A plugin unable to compute the requested algorithm
-should not error because of that alone; it should simply omit `hash` from
-its result.
+bomify verifies every pulled component against the SHA-256 its SBOM
+declares, and keys its whole data directory by SHA-256, so that's the one
+algorithm a plugin ever reports: `hash.algorithm` is always `SHA-256`
+(`plugin.HashAlgorithm`; `plugin.NewHash` builds a `Hash` from a hex
+digest), and `hash.value` the hex-encoded digest of what `pull` wrote to
+`--output`. A plugin that can't compute it — e.g. a `--check` that
+learns nothing about the content — omits `hash` rather than erroring.
 
 ## RemoteResult
 
@@ -264,8 +259,9 @@ what a `bomify distribute` rule's `--match` compares against, and what
 gets substituted out of it on a match.
 
 Go plugins should build this as a `plugin.RemoteResult` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and print it with `(*RemoteResult).Print`,
-rather than hand-rolling the JSON encoding.
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) — `plugin.ComponentCommand` does, from
+the string a `ComponentPlugin`'s `Remote` returns — or print it with
+`plugin.Print` rather than hand-rolling the JSON encoding.
 
 A machine-readable version of this schema is published at
 [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
@@ -292,10 +288,10 @@ message on failure). Instead:
   a plugin should never make that determination itself, since it has no
   visibility into what bomify's stdout is ultimately connected to.
 
-Go plugins should call `plugin.OpenLog(logPath, logColor)` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) to get a ready-made
-`*slog.Logger` for this, in the same format bomify's own CLI logging uses,
-rather than constructing one by hand.
+Go plugins built on `plugin.ComponentCommand` get a ready-made
+`*slog.Logger` for this in every request (`plugin.OpenLog(logPath,
+logColor)` in [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) opens one directly), in the same format
+bomify's own CLI logging uses, rather than constructing one by hand.
 
 ## What a plugin does *not* need to handle
 

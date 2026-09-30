@@ -60,16 +60,14 @@ bomify build sbom.json --tag myapp:1.0 --tag myapp:latest
 ```
 
 `--tag` is repeatable, so one build can be reachable under several
-names at once. Pull components concurrently and verify them against a
-stronger hash while you're at it:
+names at once. Pull components concurrently while you're at it:
 
 ```sh
-bomify build sbom.json --tag myapp:1.0 --concurrency 4 --hash sha-512
+bomify build sbom.json --tag myapp:1.0 --concurrency 4
 ```
 
-Each pulled component is checked against its SBOM-declared hash using
-the algorithm `--hash` names (default `sha-256`); a mismatch fails the
-build.
+Each pulled component is checked against its SBOM-declared SHA-256; a
+mismatch fails the build.
 
 ## 4. Find it again later
 

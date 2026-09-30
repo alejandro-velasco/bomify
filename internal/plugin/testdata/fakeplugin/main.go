@@ -43,7 +43,6 @@ func main() {
 	output := fs.String("output", "", "output directory (pull)")
 	input := fs.String("input", "", "input directory (push)")
 	remote := fs.String("remote", "", "remote endpoint (push)")
-	hashAlgorithm := fs.String("hash", "", "hash algorithm to report (pull)")
 	check := fs.Bool("check", false, "check-only mode: skip --output/--input and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
@@ -115,11 +114,11 @@ func main() {
 			}
 		}
 
-		// "nohash-*" purls simulate a plugin that can't compute the
-		// requested hash algorithm and leaves Hash unset.
-		if *hashAlgorithm != "" && !strings.HasPrefix(*purl, "nohash-") {
+		// "nohash-*" purls simulate a plugin that can't compute a hash
+		// and leaves Hash unset.
+		if !strings.HasPrefix(*purl, "nohash-") {
 			res.Hash = hash{
-				Algorithm: cdx.HashAlgorithm(*hashAlgorithm),
+				Algorithm: cdx.HashAlgoSHA256,
 				Value:     fmt.Sprintf("fakehash-%s-%s", name, version),
 			}
 		}

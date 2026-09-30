@@ -82,7 +82,7 @@ func TestPull(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestPullRemovesLogFileAfterSuccess(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestPullRemovesLogFileAfterFailure(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -137,7 +137,7 @@ func TestPullVerboseStreamsLogToStdout(t *testing.T) {
 	os.Stdout = w
 	t.Cleanup(func() { os.Stdout = origStdout })
 
-	_, pullErr := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, verboseTestLogger())
+	_, pullErr := Pull(bin, component, baseDir, verboseTestLogger())
 
 	os.Stdout = origStdout
 	w.Close()
@@ -172,7 +172,7 @@ func TestPullNotVerboseDoesNotStreamLogToStdout(t *testing.T) {
 	os.Stdout = w
 	t.Cleanup(func() { os.Stdout = origStdout })
 
-	_, pullErr := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	_, pullErr := Pull(bin, component, baseDir, testLogger())
 
 	os.Stdout = origStdout
 	w.Close()
@@ -195,7 +195,7 @@ func TestPullFailureRemovesComponentDir(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -213,7 +213,7 @@ func TestPullHashMatch(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "fakehash-nginx-1.27"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 }
@@ -227,7 +227,7 @@ func TestPullHashMismatchFails(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with mismatched hash: expected error, got nil")
 	}
 
@@ -244,7 +244,7 @@ func TestPullHashSkippedWhenSBOMHasNoDeclaredHash(t *testing.T) {
 	// there's nothing in the SBOM to compare it against, so it's fine.
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 }
@@ -261,37 +261,8 @@ func TestPullHashSkippedWhenPluginOmitsHash(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
-	}
-}
-
-func TestNormalizeHashAlgorithm(t *testing.T) {
-	tests := []struct {
-		in   string
-		want cdx.HashAlgorithm
-	}{
-		{"sha-256", cdx.HashAlgoSHA256},
-		{"sha256", cdx.HashAlgoSHA256},
-		{"SHA-256", cdx.HashAlgoSHA256},
-		{"md5", cdx.HashAlgoMD5},
-	}
-
-	for _, tt := range tests {
-		got, err := NormalizeHashAlgorithm(tt.in)
-		if err != nil {
-			t.Errorf("NormalizeHashAlgorithm(%q) returned error: %v", tt.in, err)
-			continue
-		}
-		if got != tt.want {
-			t.Errorf("NormalizeHashAlgorithm(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
-func TestNormalizeHashAlgorithmUnrecognized(t *testing.T) {
-	if _, err := NormalizeHashAlgorithm("not-a-real-algorithm"); err == nil {
-		t.Fatal("NormalizeHashAlgorithm() with bogus input: expected error, got nil")
 	}
 }
 
@@ -301,7 +272,7 @@ func TestPullWritesManifest(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -340,7 +311,7 @@ func TestPullFailureDoesNotWriteManifest(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -355,7 +326,7 @@ func TestPullPIDFileRemovedAfterSuccess(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -370,7 +341,7 @@ func TestPullPIDFileRemovedAfterFailure(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -389,7 +360,7 @@ func TestPullPIDFileExistsWhilePullInFlight(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+		_, err := Pull(bin, component, baseDir, testLogger())
 		done <- err
 	}()
 
@@ -435,7 +406,7 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -475,7 +446,7 @@ func TestPullReusesComponentRestoredByPreviousPull(t *testing.T) {
 		t.Fatalf("WriteManifest: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -515,7 +486,7 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 		t.Fatalf("WriteFile pid: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -561,7 +532,7 @@ func TestPullClearsPreexistingDirWithNoPIDOrManifest(t *testing.T) {
 		t.Fatalf("WriteFile leftover: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -594,7 +565,7 @@ func TestPullConcurrentCallersPullOnce(t *testing.T) {
 	errs := make(chan error, callers)
 	for i := 0; i < callers; i++ {
 		go func() {
-			_, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+			_, err := Pull(bin, component, baseDir, testLogger())
 			errs <- err
 		}()
 	}
@@ -643,7 +614,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
-	if _, err := Pull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
 		t.Fatal("Pull() with mismatched reused hash: expected error, got nil")
 	}
 
@@ -793,7 +764,7 @@ func TestCheckPull(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := CheckPull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger())
+	result, err := CheckPull(bin, component, baseDir, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull returned error: %v", err)
 	}
@@ -811,7 +782,7 @@ func TestCheckPullDoesNotRequirePriorState(t *testing.T) {
 	// Unlike Pull, CheckPull never creates componentDir, a manifest, or a
 	// pid file — it's a pure query, exactly like Remote.
 	baseDir := t.TempDir()
-	if _, err := CheckPull(bin, component, baseDir, cdx.HashAlgoSHA256, testLogger()); err != nil {
+	if _, err := CheckPull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("CheckPull returned error: %v", err)
 	}
 
@@ -828,7 +799,7 @@ func TestCheckPullFailure(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := CheckPull(bin, component, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := CheckPull(bin, component, t.TempDir(), testLogger()); err == nil {
 		t.Fatal("CheckPull() with failing plugin: expected error, got nil")
 	}
 }
@@ -841,7 +812,7 @@ func TestCheckPullHashMismatchFails(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
-	if _, err := CheckPull(bin, component, t.TempDir(), cdx.HashAlgoSHA256, testLogger()); err == nil {
+	if _, err := CheckPull(bin, component, t.TempDir(), testLogger()); err == nil {
 		t.Fatal("CheckPull() with mismatched hash: expected error, got nil")
 	}
 }

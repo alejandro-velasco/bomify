@@ -23,15 +23,10 @@
 package main
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-grype/cmd"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	plugin.Run(cmd.NewRootCmd())
 }

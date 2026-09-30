@@ -96,7 +96,7 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	f.Close()
 
 	for _, c := range components {
-		result, err := plugin.PullBinary(c, srcDir, sourceDir, cdx.HashAlgoSHA256)
+		result, err := plugin.PullBinary(c, srcDir, sourceDir)
 		if err != nil {
 			t.Fatalf("PullBinary(%s): %v", c.PackageURL, err)
 		}

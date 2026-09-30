@@ -1,13 +1,9 @@
 package plugin
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"net/url"
 	"os"
@@ -76,7 +72,7 @@ func (b Binary) FileName() string {
 // reuse, hash verification, and manifest bookkeeping. sbomDir is the
 // directory of the SBOM component came from, which a relative source path
 // is resolved against.
-func PullBinary(component cdx.Component, sbomDir, baseDir string, hashAlgorithm cdx.HashAlgorithm) (*pluginlib.Result, error) {
+func PullBinary(component cdx.Component, sbomDir, baseDir string) (*pluginlib.Result, error) {
 	b, ok, err := ParseBinary(component)
 	if err != nil {
 		return nil, err
@@ -92,7 +88,7 @@ func PullBinary(component cdx.Component, sbomDir, baseDir string, hashAlgorithm 
 		}
 
 		dst := filepath.Join(dir, b.FileName())
-		sum, err := copyHashed(src, dst, hashAlgorithm)
+		sum, err := copyHashed(src, dst)
 		if err != nil {
 			return nil, err
 		}
@@ -100,26 +96,26 @@ func PullBinary(component cdx.Component, sbomDir, baseDir string, hashAlgorithm 
 		return &pluginlib.Result{
 			OutputPath: dst,
 			Message:    "copied plugin binary from " + src,
-			Hash:       pluginlib.Hash{Algorithm: hashAlgorithm, Value: sum},
+			Hash:       pluginlib.Hash{Algorithm: HashAlgorithm, Value: sum},
 		}, nil
-	}, hashAlgorithm)
+	})
 }
 
 // CheckBinary is CheckPull for a PurlType component: it confirms the
 // binary PullBinary would copy exists and matches component's
 // SBOM-declared hash, without copying anything.
-func CheckBinary(component cdx.Component, sbomDir string, hashAlgorithm cdx.HashAlgorithm) (*pluginlib.Result, error) {
+func CheckBinary(component cdx.Component, sbomDir string) (*pluginlib.Result, error) {
 	src, err := BinarySource(component, sbomDir)
 	if err != nil {
 		return nil, err
 	}
 
-	sum, err := HashFile(src, hashAlgorithm)
+	sum, err := HashFile(src)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &pluginlib.Result{Message: "plugin binary found at " + src, Hash: pluginlib.Hash{Algorithm: hashAlgorithm, Value: sum}}
+	result := &pluginlib.Result{Message: "plugin binary found at " + src, Hash: pluginlib.Hash{Algorithm: HashAlgorithm, Value: sum}}
 	if err := verifyHash(component, result); err != nil {
 		return nil, err
 	}
@@ -166,13 +162,9 @@ func localPath(raw, sbomDir string) (string, error) {
 	return raw, nil
 }
 
-// HashFile returns path's content hash under algorithm, hex-encoded.
-func HashFile(path string, algorithm cdx.HashAlgorithm) (string, error) {
-	h, err := newHash(algorithm)
-	if err != nil {
-		return "", err
-	}
-
+// HashFile returns path's SHA-256 (see HashAlgorithm), hex-encoded.
+func HashFile(path string) (string, error) {
+	h := sha256.New()
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -185,14 +177,10 @@ func HashFile(path string, algorithm cdx.HashAlgorithm) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// copyHashed copies src to dst (executable), returning its content hash
-// under algorithm, hex-encoded.
-func copyHashed(src, dst string, algorithm cdx.HashAlgorithm) (string, error) {
-	h, err := newHash(algorithm)
-	if err != nil {
-		return "", err
-	}
-
+// copyHashed copies src to dst (executable), returning its SHA-256 (see
+// HashAlgorithm), hex-encoded.
+func copyHashed(src, dst string) (string, error) {
+	h := sha256.New()
 	in, err := os.Open(src)
 	if err != nil {
 		return "", err
@@ -212,22 +200,4 @@ func copyHashed(src, dst string, algorithm cdx.HashAlgorithm) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// newHash returns a hash.Hash for algorithm, for the algorithms the Go
-// standard library implements.
-func newHash(algorithm cdx.HashAlgorithm) (hash.Hash, error) {
-	switch algorithm {
-	case cdx.HashAlgoMD5:
-		return md5.New(), nil
-	case cdx.HashAlgoSHA1:
-		return sha1.New(), nil
-	case cdx.HashAlgoSHA256:
-		return sha256.New(), nil
-	case cdx.HashAlgoSHA384:
-		return sha512.New384(), nil
-	case cdx.HashAlgoSHA512:
-		return sha512.New(), nil
-	}
-	return nil, fmt.Errorf("hash algorithm %s is not supported for pkg:%s components (use MD5, SHA-1, SHA-256, SHA-384, or SHA-512)", algorithm, PurlType)
 }

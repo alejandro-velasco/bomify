@@ -129,7 +129,7 @@ func TestPullBinary(t *testing.T) {
 	component := binaryComponent("pkg:bomify-plugin/oci@v1?os=linux&arch=amd64", "plugin-linux",
 		cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: sum})
 
-	result, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256)
+	result, err := PullBinary(component, srcDir, baseDir)
 	if err != nil {
 		t.Fatalf("PullBinary() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPullBinary(t *testing.T) {
 	}
 
 	// A second pull reuses the first rather than copying again.
-	again, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256)
+	again, err := PullBinary(component, srcDir, baseDir)
 	if err != nil {
 		t.Fatalf("second PullBinary() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestPullBinaryHashMismatch(t *testing.T) {
 	component := binaryComponent("pkg:bomify-plugin/oci@v1", "plugin",
 		cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: strings.Repeat("0", 64)})
 
-	if _, err := PullBinary(component, srcDir, baseDir, cdx.HashAlgoSHA256); err == nil || !strings.Contains(err.Error(), "mismatch") {
+	if _, err := PullBinary(component, srcDir, baseDir); err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Fatalf("PullBinary() error = %v, want a hash mismatch", err)
 	}
 	if _, err := os.Stat(layout.ComponentLayer(baseDir, component.PackageURL)); !os.IsNotExist(err) {
@@ -175,12 +175,12 @@ func TestPullBinaryHashMismatch(t *testing.T) {
 func TestCheckBinary(t *testing.T) {
 	srcDir, sum := writeBinary(t, "plugin", "binary")
 	good := binaryComponent("pkg:bomify-plugin/oci", "plugin", cdx.Hash{Algorithm: cdx.HashAlgoSHA256, Value: sum})
-	if _, err := CheckBinary(good, srcDir, cdx.HashAlgoSHA256); err != nil {
+	if _, err := CheckBinary(good, srcDir); err != nil {
 		t.Errorf("CheckBinary() error = %v", err)
 	}
 
 	missing := binaryComponent("pkg:bomify-plugin/oci", "nope")
-	if _, err := CheckBinary(missing, srcDir, cdx.HashAlgoSHA256); err == nil {
+	if _, err := CheckBinary(missing, srcDir); err == nil {
 		t.Error("CheckBinary() for a missing binary: want error")
 	}
 }
