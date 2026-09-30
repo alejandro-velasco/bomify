@@ -29,10 +29,10 @@ report referrer is signed separately, the same way. See "bomify pull
 --scan <type> scans the package's components fresh before anything is
 uploaded — the reports it writes are the ones the package then carries
 — and --fail-on <severity> (with --ignore and --vex) refuses to push it
-if anything at or above it is found. --fail-on without --scan gates on
-the reports a prior scan left instead. A "bomify security policy" rule
-listing "push" in its --on does the same for a matching <tag> without
-flags; --skip-scan ignores it.
+if anything at or above it is found; --fail-on needs --scan, since a
+push always scans fresh. A "bomify security policy" rule listing "push"
+in its --on does the same for a matching <tag> without flags;
+--skip-scan ignores it.
 
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but

@@ -334,7 +334,8 @@ it, so ratings with no severity (the EPSS and CISA KEV scores
 gate applies to `<tag>` the same way `signature.Policy` decides which
 signer must verify a package:
 
-1. `--skip-gate`: nothing fails (warning if a rule would have).
+1. `--skip-scan` (hidden alias `--skip-gate`): nothing fails
+   (warning if a rule would have).
 2. `--fail-on` (plus `--ignore`): used as its threshold.
 3. The most specific `conf/scan.json` rule matching `<tag>`'s
    repository (`security.Resolve`). Rules deliberately carry no list of
@@ -399,10 +400,12 @@ ID, component purl) to stderr and exits non-zero.
 #### Scanning at lifecycle hooks
 
 The same scan and gate also run as part of the package lifecycle, the
-way signing does, at three hooks (`security.Hooks`): **build** (after
-`bomify build` records the package), **push** (before `bomify push` or
-`bomify save` sends it anywhere), and **pull** (before `bomify pull` or
-`bomify load` writes anything of it). Each of those commands takes
+way signing does, at two hooks (`security.Hooks`): **push** (before
+`bomify push` or `bomify save` sends it anywhere) and **pull** (before
+`bomify pull` or `bomify load` writes anything of it). There's no build
+hook: `bomify build` followed by `bomify security scan --fail-on` does
+the same, since the build is recorded either way. Each of those
+commands takes
 `--scan <type>`, the gate flags, and `--skip-scan` (`cmd/scanning.go`'s
 `scanFlags`), and resolves a `scanPlan` — a scanner, and a gate — for
 each package:
@@ -415,14 +418,12 @@ each package:
 3. The gate exactly as for `bomify security scan` (see above), with
    the same hook condition on the rule.
 
-With a scanner, the package is scanned fresh (`security.Scan`); with a
-gate but no scanner, build/push/save gate on the reports already in
-`vulnerabilities/`. Where each hook runs decides what a failure leaves
-behind:
+A hook always scans fresh (`security.Scan`), and never gates on
+reports already on disk or on those a pulled package carries — the
+latter are the publisher's, never taken as a verdict. So a gate needs a
+scanner: `--fail-on` without `--scan`, and no rule, is an error. Where
+each hook runs decides what a failure leaves behind:
 
-- **build** scans after the build is recorded, so a failure leaves the
-  build, and its fresh reports, in place to inspect. With several
-  `--tag`s, the first whose plan does anything decides.
 - **push/save** scan before anything is packed, so a failure uploads
   (or writes) nothing; the fresh reports are the ones the pushed
   package then carries (see [Reports in a
@@ -432,10 +433,9 @@ behind:
   package's SBOM into memory after verifying it and hands it to the
   hook before writing anything, so a failure leaves nothing behind, as
   a failed verify does. The fresh reports are written after the
-  package's own, replacing what its publisher attached. Gating a pull
-  always needs a scanner: the reports a pulled package carries are the
-  publisher's, never taken as a verdict. Scanning may need network
-  access, which is why nothing scans at pull unless asked to.
+  package's own, replacing what its publisher attached. Scanning may
+  need network access, which is why nothing scans at pull unless asked
+  to.
 
 ![Scanning at lifecycle hooks](docs/diagrams/scanning.svg)
 

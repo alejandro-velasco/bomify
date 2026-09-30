@@ -22,15 +22,6 @@ inexpensive existence/auth check each plugin performs itself, without
 downloading anything — and skips recording a build, since nothing was
 actually pulled.
 
---scan <type> scans the recorded build's components with a scanning
-plugin afterwards, writing each component's report as "bomify security
-scan" would, and --fail-on <severity> (with --ignore and --vex) fails
-the command if anything at or above it is found. A "bomify security
-policy" rule listing "build" in its --on does the same for any matching
---tag without flags; --skip-scan ignores it. A failing scan leaves the
-build recorded, reports included, to inspect with "bomify package
-vulnerabilities".
-
 ```
 bomify package build <sbom-file> [flags]
 ```
@@ -54,16 +45,11 @@ bomify package build <sbom-file> [flags]
 ### Options
 
 ```
-      --check                verify every component is pullable and authorized, without downloading any of them or recording a build
-  -c, --concurrency int      number of components to pull concurrently (default 1)
-      --fail-on string       fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
-      --hash string          hash algorithm to verify pulled components against their SBOM-declared hash (default "sha-256")
-  -h, --help                 help for build
-      --ignore stringArray   a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
-      --scan string          scan the package's components with the bomify-plugin-<type> scanner first (e.g. grype); overrides a matching "bomify security policy" rule's scanner
-      --skip-scan            don't scan or gate at all, even if a "bomify security policy" rule matching the package says to
-  -t, --tag stringArray      tag this build as name[:version] (repeatable); defaults version to "latest"
-      --vex stringArray      an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
+      --check             verify every component is pullable and authorized, without downloading any of them or recording a build
+  -c, --concurrency int   number of components to pull concurrently (default 1)
+      --hash string       hash algorithm to verify pulled components against their SBOM-declared hash (default "sha-256")
+  -h, --help              help for build
+  -t, --tag stringArray   tag this build as name[:version] (repeatable); defaults version to "latest"
 ```
 
 ### Options inherited from parent commands

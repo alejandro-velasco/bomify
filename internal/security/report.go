@@ -9,7 +9,6 @@ package security
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -124,30 +123,4 @@ func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (stri
 // hashes to purlHash.
 func ReadReport(baseDir, purlHash string) (*cdx.BOM, error) {
 	return sbom.Load(ReportPath(baseDir, purlHash))
-}
-
-// ReadReports returns the local vulnerability report of each component
-// in components that has one, in components' order and once per purl,
-// and the components that have none — never scanned, or not supported
-// by whatever scanned them.
-func ReadReports(baseDir string, components []cdx.Component) (reports []ComponentReport, missing []cdx.Component, err error) {
-	seen := map[string]bool{}
-	for _, c := range components {
-		purlHash := plugin.PurlHash(c)
-		if seen[purlHash] {
-			continue
-		}
-		seen[purlHash] = true
-
-		if _, statErr := os.Stat(ReportPath(baseDir, purlHash)); os.IsNotExist(statErr) {
-			missing = append(missing, c)
-			continue
-		}
-		report, err := ReadReport(baseDir, purlHash)
-		if err != nil {
-			return nil, nil, fmt.Errorf("read vulnerability report for %s: %w", c.PackageURL, err)
-		}
-		reports = append(reports, ComponentReport{Component: c, Report: report})
-	}
-	return reports, missing, nil
 }

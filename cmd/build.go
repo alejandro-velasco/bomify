@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"path/filepath"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
-	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const buildShort = "Build the package described by a CycloneDX SBOM"
@@ -33,16 +31,7 @@ way are what "bomify plugin install" installs.
 --check verifies every component is pullable and authorized — an
 inexpensive existence/auth check each plugin performs itself, without
 downloading anything — and skips recording a build, since nothing was
-actually pulled.
-
---scan <type> scans the recorded build's components with a scanning
-plugin afterwards, writing each component's report as "bomify security
-scan" would, and --fail-on <severity> (with --ignore and --vex) fails
-the command if anything at or above it is found. A "bomify security
-policy" rule listing "build" in its --on does the same for any matching
---tag without flags; --skip-scan ignores it. A failing scan leaves the
-build recorded, reports included, to inspect with "bomify package
-vulnerabilities".`
+actually pulled.`
 
 const buildExample = `  # Build the package described by sbom.json
   bomify build sbom.json
@@ -62,7 +51,6 @@ type buildOptions struct {
 	concurrency int
 	tags        []string
 	check       bool
-	scan        scanFlags
 }
 
 func buildCmd() *cobra.Command {
@@ -77,7 +65,7 @@ func buildCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			buildOpts.file = args[0]
-			if err := runBuild(cmd.ErrOrStderr(), buildOpts, logging.FromContext(cmd.Context())); err != nil {
+			if err := runBuild(buildOpts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
 			return nil
@@ -88,17 +76,11 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().IntVarP(&buildOpts.concurrency, "concurrency", "c", 1, "number of components to pull concurrently")
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
 	buildCmd.Flags().BoolVar(&buildOpts.check, "check", false, "verify every component is pullable and authorized, without downloading any of them or recording a build")
-	buildOpts.scan.register(buildCmd)
 
 	return buildCmd
 }
 
-func runBuild(w io.Writer, opts *buildOptions, logger *slog.Logger) error {
-	// Checked before pulling anything, so a bad flag fails fast.
-	if err := opts.scan.validate(); err != nil {
-		return err
-	}
-
+func runBuild(opts *buildOptions, logger *slog.Logger) error {
 	hashAlgorithm, err := plugin.NormalizeHashAlgorithm(opts.hash)
 	if err != nil {
 		return err
@@ -144,21 +126,7 @@ func runBuild(w io.Writer, opts *buildOptions, logger *slog.Logger) error {
 		return nil
 	}
 
-	sbomHash, err := finalizeBuild(opts, logger)
-	if err != nil {
-		return err
-	}
-
-	// Scanning a build that's already recorded: a failing gate leaves it
-	// in place, reports and all, to inspect rather than rebuild.
-	p, err := opts.scan.planForTags(opts.tags, security.HookBuild, logger)
-	if err != nil || !p.active() {
-		return err
-	}
-	if err := gateLocalPackage(w, p, sbomHash, opts.concurrency, logger); err != nil {
-		return fmt.Errorf("build recorded, but %w (see \"bomify package vulnerabilities\")", err)
-	}
-	return nil
+	return finalizeBuild(opts, logger)
 }
 
 // buildPluginBinary builds a plugin.PurlType component: bomify copies the
@@ -187,10 +155,10 @@ func buildPluginBinary(opts *buildOptions, component cdx.Component, hashAlgorith
 
 // finalizeBuild records the SBOM as this build's manifest and applies any
 // --tag values, even if that exact manifest already existed.
-func finalizeBuild(opts *buildOptions, logger *slog.Logger) (string, error) {
+func finalizeBuild(opts *buildOptions, logger *slog.Logger) error {
 	sbomHash, skipped, err := build.RecordManifest(dataDir, opts.file)
 	if err != nil {
-		return "", fmt.Errorf("record sbom manifest: %w", err)
+		return fmt.Errorf("record sbom manifest: %w", err)
 	}
 	if skipped {
 		logger.Info("sbom already built, skipping", "hash", sbomHash)
@@ -199,11 +167,11 @@ func finalizeBuild(opts *buildOptions, logger *slog.Logger) (string, error) {
 	}
 
 	if err := build.UpdateRepositories(dataDir, opts.tags, sbomHash); err != nil {
-		return "", fmt.Errorf("update repositories: %w", err)
+		return fmt.Errorf("update repositories: %w", err)
 	}
 	if len(opts.tags) > 0 {
 		logger.Info("tagged", "tags", opts.tags, "hash", sbomHash)
 	}
 
-	return sbomHash, nil
+	return nil
 }

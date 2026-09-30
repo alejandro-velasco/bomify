@@ -91,7 +91,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 		if err != nil {
 			return err
 		}
-		if !p.active() {
+		if p.Scanner == "" {
 			continue
 		}
 		sbomHash, err := build.ResolveTag(dataDir, tag)

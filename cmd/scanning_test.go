@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,9 +87,10 @@ func TestSaveScanGate(t *testing.T) {
 		t.Errorf("tarball missing after a passing gate: %v", err)
 	}
 
-	// --fail-on alone gates on the local reports the scan above left.
-	if _, err := runRootCmd(t, baseDir, "save", hookTag, "--fail-on", "low", "--output", archive); !isGateError(err) {
-		t.Errorf("save --fail-on low on local reports: error = %v, want a gate failure", err)
+	// A hook always scans fresh: --fail-on without --scan (and no rule)
+	// is refused rather than gating on the reports already on disk.
+	if _, err := runRootCmd(t, baseDir, "save", hookTag, "--fail-on", "low", "--output", archive); err == nil || isGateError(err) {
+		t.Errorf("save --fail-on without --scan: error = %v, want a request for --scan", err)
 	}
 }
 
@@ -162,36 +161,4 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 	if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--on", "deploy"); err == nil {
 		t.Error("policy create --on deploy: error = nil, want an unknown-hook error")
 	}
-}
-
-// TestBuildScanPlan covers how build picks its plan across tags, and
-// that gating a recorded build keeps its fresh reports even on failure.
-func TestBuildScanPlan(t *testing.T) {
-	baseDir := setUpHookPackage(t)
-	origDataDir := dataDir
-	t.Cleanup(func() { dataDir = origDataDir })
-	dataDir = baseDir
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	if err := security.SetRule(baseDir, security.Rule{Match: "registry.example.com/team", Scanner: "grype", FailOn: "high", On: []string{security.HookBuild}}); err != nil {
-		t.Fatalf("SetRule: %v", err)
-	}
-
-	var flags scanFlags
-	p, err := flags.planForTags([]string{"other.example.com/app:1.0", hookTag}, security.HookBuild, logger)
-	if err != nil || p.Scanner != "grype" || p.Gate.FailOn != security.SeverityHigh {
-		t.Fatalf("planForTags = %+v, %v; want the team rule's plan", p, err)
-	}
-	if p, _ := flags.planForTags([]string{hookTag}, security.HookPush, logger); p.active() {
-		t.Errorf("plan at a hook the rule doesn't list = %+v, want nothing", p)
-	}
-
-	sbomHash, err := build.ResolveTag(baseDir, hookTag)
-	if err != nil {
-		t.Fatalf("ResolveTag: %v", err)
-	}
-	if err := gateLocalPackage(io.Discard, p, sbomHash, 1, logger); !isGateError(err) {
-		t.Errorf("gateLocalPackage: error = %v, want a gate failure", err)
-	}
-	readReport(t, baseDir, hookComponent)
 }

@@ -75,7 +75,7 @@ package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
 threshold instead, if any does, and that rule's stored VEX documents
 always apply alongside --vex, which reads the given file as it is now;
---skip-gate ignores the rule. Reports
+--skip-scan ignores the rule's threshold (the scan still runs). Reports
 are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
@@ -279,13 +279,12 @@ and why. For a one-off, use "bomify security scan --ignore".
 
 "bomify security scan" applies a matching rule's --fail-on when given
 no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-gate.
+--vex of its own, and ignores rules entirely with --skip-scan.
 
 --on (comma-separated or repeatable) also makes a matching package get
 scanned with <scanner> and gated automatically at those lifecycle hooks:
-"build" (after "bomify build" records it), "push" (before "bomify push"
-or "bomify save" sends it anywhere), and "pull" (before "bomify pull"
-or "bomify load" writes anything of it). Without --on, the rule only
+"push" (before "bomify push" or "bomify save" sends it anywhere) and
+"pull" (before "bomify pull" or "bomify load" writes anything of it). Without --on, the rule only
 applies to "bomify security scan". Each of those commands' --scan and
 --fail-on override the rule, and --skip-scan ignores it.`
 
@@ -322,7 +321,7 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
-	cmd.Flags().StringSliceVar(&rule.On, "on", nil, "lifecycle hooks to scan and gate matching packages at automatically: build, push (and save), pull (and load); default none")
+	cmd.Flags().StringSliceVar(&rule.On, "on", nil, "lifecycle hooks to scan and gate matching packages at automatically: push (and save), pull (and load); default none")
 	cmd.Flags().StringArrayVar(&rule.VEX, "vex", nil, "the name of a stored VEX document (see \"bomify security vex add\") exempting vulnerabilities it shows don't affect the package (repeatable)")
 
 	return cmd

@@ -24,32 +24,33 @@ type gateFlags struct {
 	ignore []string
 	vex    []string
 	skip   bool
-	// skipFlag names the skip flag, for messages: "skip-gate" on
-	// "bomify security scan", "skip-scan" on the lifecycle hooks.
-	skipFlag string
 }
 
+// register adds the gate flags to "bomify security scan", whose
+// --skip-scan skips only the gate — the scan is the command itself.
+// --skip-gate, its earlier name, still works as a hidden alias.
 func (f *gateFlags) register(cmd *cobra.Command) {
-	f.registerFlags(cmd, "skip-gate", "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
+	f.registerFlags(cmd, "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
+	cmd.Flags().BoolVar(&f.skip, "skip-gate", false, "")
+	_ = cmd.Flags().MarkHidden("skip-gate")
 }
 
-func (f *gateFlags) registerFlags(cmd *cobra.Command, skipFlag, skipUsage string) {
-	f.skipFlag = skipFlag
+func (f *gateFlags) registerFlags(cmd *cobra.Command, skipUsage string) {
 	cmd.Flags().StringVar(&f.failOn, "fail-on", "", "fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching \"bomify security policy\" rule's")
 	cmd.Flags().StringArrayVar(&f.ignore, "ignore", nil, "a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on")
 	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's")
-	cmd.Flags().BoolVar(&f.skip, skipFlag, false, skipUsage)
+	cmd.Flags().BoolVar(&f.skip, "skip-scan", false, skipUsage)
 }
 
 // validate rejects flag combinations that contradict each other or do
 // nothing.
 func (f *gateFlags) validate() error {
-	// Any of these shape the gate, which the skip flag would silently
+	// Any of these shape the gate, which --skip-scan would silently
 	// throw away.
 	configuresGate := f.failOn != "" || len(f.ignore) > 0 || len(f.vex) > 0
 
 	if f.skip && configuresGate {
-		return fmt.Errorf("--%s cannot be combined with --fail-on, --ignore, or --vex", f.skipFlag)
+		return errors.New("--skip-scan cannot be combined with --fail-on, --ignore, or --vex")
 	}
 	if len(f.ignore) > 0 && f.failOn == "" {
 		return errors.New("--ignore requires --fail-on")
@@ -87,7 +88,7 @@ func matchingScanRule(ref string) (security.Rule, bool, error) {
 // policy rule that applies to it (matched false if none does).
 //
 // Its threshold is decided in this order:
-//  1. The skip flag: nothing fails (with a warning if the rule would
+//  1. --skip-scan: nothing fails (with a warning if the rule would
 //     have).
 //  2. --fail-on (plus --ignore): used as-is.
 //  3. The rule's.
@@ -177,8 +178,8 @@ func checkGate(w io.Writer, logger *slog.Logger, g security.Gate, reports []secu
 }
 
 // scanFlags are the flags that scan a package at a lifecycle hook —
-// build, push/save, pull/load — and gate it: --scan <type>, the gate
-// flags, and --skip-scan.
+// push/save, pull/load — and gate it: --scan <type>, the gate flags,
+// and --skip-scan.
 type scanFlags struct {
 	scanner string
 	gateFlags
@@ -186,7 +187,7 @@ type scanFlags struct {
 
 func (f *scanFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.scanner, "scan", "", "scan the package's components with the bomify-plugin-<type> scanner first (e.g. grype); overrides a matching \"bomify security policy\" rule's scanner")
-	f.registerFlags(cmd, "skip-scan", "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
+	f.registerFlags(cmd, "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
 }
 
 // validate rejects flag combinations that contradict each other.
@@ -198,16 +199,12 @@ func (f *scanFlags) validate() error {
 }
 
 // scanPlan is what a lifecycle hook does for one package: scan it fresh
-// with Scanner (if set), then gate the result (or, with no Scanner, the
-// local reports it already has) on Gate.
+// with Scanner, then gate the result on Gate. A hook always scans fresh
+// — never gating on reports already on disk, or on those a pulled
+// package carries — so a plan with no Scanner does nothing.
 type scanPlan struct {
 	Scanner string
 	Gate    security.Gate
-}
-
-// active reports whether p does anything at all.
-func (p scanPlan) active() bool {
-	return p.Scanner != "" || p.Gate.FailOn != 0
 }
 
 // plan resolves what hook (see security.Hooks) does for the package ref.
@@ -217,6 +214,9 @@ func (p scanPlan) active() bool {
 //     scanned).
 //  2. --scan, else the rule's scanner: scan fresh with it.
 //  3. The gate, from --fail-on, else the rule's threshold (see gateFor).
+//
+// A gate with nothing to scan — --fail-on without --scan, and no rule —
+// is an error rather than a gate on stale or untrusted reports.
 func (f *scanFlags) plan(ref, hook string, logger *slog.Logger) (scanPlan, error) {
 	if err := f.validate(); err != nil {
 		return scanPlan{}, err
@@ -242,42 +242,17 @@ func (f *scanFlags) plan(ref, hook string, logger *slog.Logger) (scanPlan, error
 	if p.Scanner == "" && applies {
 		p.Scanner = rule.Scanner
 	}
+	if p.Scanner == "" && g.FailOn != 0 {
+		return scanPlan{}, errors.New("--fail-on needs --scan <type>: a lifecycle hook always scans fresh")
+	}
 	return p, nil
 }
 
-// planForTags is plan for a build or save of several tags at once: the
-// first tag whose plan does anything decides, or, with no tags, the
-// flags alone.
-func (f *scanFlags) planForTags(tags []string, hook string, logger *slog.Logger) (scanPlan, error) {
-	if len(tags) == 0 {
-		return f.plan("", hook, logger)
-	}
-	for _, tag := range tags {
-		p, err := f.plan(tag, hook, logger)
-		if err != nil || p.active() {
-			return p, err
-		}
-	}
-	return scanPlan{}, nil
-}
-
-// run carries out p against components: a fresh scan with p.Scanner if
-// set — returning its reports, for the caller to keep (see
-// security.WriteReport) — or, with no scanner, the reports already in
-// the data directory. Either way it then applies p.Gate, printing what
-// fails it to w (see checkGate).
+// run scans components fresh with p.Scanner and applies p.Gate to the
+// result, printing what fails it to w (see checkGate). It returns the
+// reports for the caller to keep (see security.WriteReport), even when
+// the gate fails.
 func (p scanPlan) run(w io.Writer, components []cdx.Component, concurrency int, logger *slog.Logger) ([]security.ComponentReport, error) {
-	if p.Scanner == "" {
-		reports, missing, err := security.ReadReports(dataDir, components)
-		if err != nil {
-			return nil, err
-		}
-		if len(missing) > 0 {
-			logger.Warn("gating on local vulnerability reports, but some components have none (never scanned, or unsupported by the scanner); pass --scan to scan them", "components", len(missing))
-		}
-		return nil, checkGate(w, logger, p.Gate, reports)
-	}
-
 	path, err := plugin.Find(plugin.Dir(dataDir), p.Scanner)
 	if err != nil {
 		return nil, err
@@ -301,9 +276,9 @@ func writeReports(reports []security.ComponentReport) error {
 }
 
 // gateLocalPackage runs p against the locally recorded package whose
-// SBOM hashes to sbomHash — as build, push, and save do, before anything
-// leaves the machine — keeping any fresh reports even when the gate
-// fails, so what failed it can be inspected with "bomify package
+// SBOM hashes to sbomHash — as push and save do, before anything leaves
+// the machine — keeping the fresh reports even when the gate fails, so
+// what failed it can be inspected with "bomify package
 // vulnerabilities".
 func gateLocalPackage(w io.Writer, p scanPlan, sbomHash string, concurrency int, logger *slog.Logger) error {
 	bom, err := sbom.Load(build.ManifestPath(dataDir, sbomHash))
@@ -337,13 +312,8 @@ type pullScanner struct {
 
 func (s *pullScanner) scan(_ context.Context, ref string, sbomData []byte) error {
 	p, err := s.flags.plan(ref, security.HookPull, s.logger)
-	if err != nil || !p.active() {
+	if err != nil || p.Scanner == "" {
 		return err
-	}
-	// The reports a pulled package carries are its publisher's, not a
-	// verdict to trust: gating a pull always means scanning it here.
-	if p.Scanner == "" {
-		return errors.New("gating a pull or load needs a fresh scan: pass --scan <type> as well as --fail-on")
 	}
 
 	bom, err := sbom.LoadBytes(sbomData)

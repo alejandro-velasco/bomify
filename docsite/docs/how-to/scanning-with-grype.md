@@ -114,7 +114,7 @@ To set the bar once instead of on every command, record it as a policy
 rule for the packages it applies to. A scan with no `--fail-on` of its
 own uses the most specific matching rule's threshold (rules have no
 ignore list: `--ignore` is only ever a one-off for a single command);
-`--skip-gate` ignores it:
+`--skip-scan` ignores it:
 
 ```sh
 bomify security policy create grype --match registry.example.com/team --fail-on high
@@ -182,16 +182,14 @@ packages inside an image only stops failing once every one of them is
 covered. Reports themselves are unchanged — `bomify package
 vulnerabilities` still shows everything the scanner found.
 
-## 8. Scan automatically on build, push, and pull
+## 8. Scan automatically on push and pull
 
-`bomify build`, `push`, `save`, `pull`, and `load` take the same
-`--scan` and `--fail-on` flags, so the scan and the gate can happen as
-part of the lifecycle rather than as a separate step:
+`bomify push`, `save`, `pull`, and `load` take the same `--scan` and
+`--fail-on` flags, so the scan and the gate can happen as part of the
+lifecycle rather than as a separate step. They always scan fresh, so
+`--fail-on` needs `--scan` (or a policy rule's scanner):
 
 ```sh
-# Record the build, then scan it; a failure keeps the build to inspect
-bomify build sbom.cdx.json --tag myapp:1.0 --scan grype --fail-on high
-
 # Refuse to push anything with a high or critical vulnerability
 bomify push registry.example.com/team/myapp:1.0 --scan grype --fail-on high
 

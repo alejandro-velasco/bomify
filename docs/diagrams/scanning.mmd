@@ -5,7 +5,7 @@ flowchart TD
     classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
     classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
 
-    Start(["bomify build / push / save / pull / load"]) --> When["hook point:<br/>build — after the build is recorded<br/>push, save — before anything is packed<br/>pull, load — after --verify, before anything is written"]
+    Start(["bomify push / save / pull / load"]) --> When["hook point:<br/>push, save — before anything is packed<br/>pull, load — after --verify, before anything is written"]
     When --> Skip{"--skip-scan?"}
 
     Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names this hook)"]
@@ -21,18 +21,14 @@ flowchart TD
     Active -->|"yes"| Scanner{"a scanner?"}
 
     Scanner -->|"yes"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
-    Scanner -->|"no"| IsPull{"pull / load?"}
-
-    IsPull -->|"yes"| NeedScan["fails: gating a pull needs --scan<br/>— a pulled package's reports<br/>are its publisher's, not a verdict"]
-    IsPull -->|"no"| Local["the local reports in<br/>vulnerabilities/<br/>(warn about components with none)"]
+    Scanner -->|"no"| NeedScan["fails: --fail-on needs --scan<br/>— hooks always scan fresh, never<br/>trusting reports already on disk<br/>or a pulled package's own"]
 
     PluginScan --> Gate["gate: vulnerabilities at or above<br/>the threshold, minus --ignore,<br/>minus VEX exemptions (each logged)"]
-    Local --> Gate
 
     Gate --> Left{"anything left?"}
 
-    Left -->|"no"| Continue["carry on:<br/>build — done<br/>push, save — pack, sign, attach fresh reports<br/>pull, load — write the package,<br/>then the fresh reports"]
-    Left -->|"yes"| Failed["print the findings table; the command fails:<br/>build — stays recorded, fresh reports kept<br/>push, save — nothing uploaded or written<br/>pull, load — nothing written"]
+    Left -->|"no"| Continue["carry on:<br/>push, save — pack, sign, attach fresh reports<br/>pull, load — write the package,<br/>then the fresh reports"]
+    Left -->|"yes"| Failed["print the findings table; the command fails:<br/>push, save — nothing uploaded or written<br/>(fresh reports kept locally)<br/>pull, load — nothing written"]
 
     class Start source
     class PluginScan plugin
