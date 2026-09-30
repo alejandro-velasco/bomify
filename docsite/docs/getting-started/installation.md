@@ -4,160 +4,96 @@ icon: lucide/download
 
 # Installation
 
-bomify ships as a single static binary. Install it whichever way fits
-your workflow below, then install the plugins you need with
-[`bomify plugin install`](#install-plugins).
+bomify is a single static binary. Install it, then
+[install the plugins](#install-plugins) you need.
 
 ## Download a release
 
-Every tagged release publishes a ready-to-run `bomify` binary per
-platform — `bomify-<version>-<os>-<arch>` for Linux (amd64/arm64) and
-macOS (amd64/arm64), `bomify-<version>-windows-amd64.exe` for Windows —
-along with a `checksums.txt` covering all of them, on the repository's
-[Releases](https://github.com/alejandro-velasco/bomify/releases) page.
+Each [release](https://github.com/alejandro-velasco/bomify/releases)
+publishes `bomify-<version>-<os>-<arch>` for Linux and macOS (amd64,
+arm64) and `bomify-<version>-windows-amd64.exe`, plus `checksums.txt`.
 
 ### Linux / macOS
 
 ```sh
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')  # linux or darwin
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64) ARCH=amd64 ;;
-  aarch64) ARCH=arm64 ;;
-esac
-
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64) ARCH=arm64 ;; esac
 VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/alejandro-velasco/bomify/releases/latest | grep -oE '[^/]+$')
-BINARY="bomify-${VERSION#v}-${OS}-${ARCH}"  # release tags are v-prefixed (e.g. v1.11.0), binary names aren't (bomify-1.11.0-...)
+BINARY="bomify-${VERSION#v}-${OS}-${ARCH}"   # tags are v-prefixed; binary names aren't
 
 curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/${BINARY}"
 curl -LO "https://github.com/alejandro-velasco/bomify/releases/download/${VERSION}/checksums.txt"
-
-# Verify the download against the published checksum before running anything.
 grep " ${BINARY}\$" checksums.txt | sha256sum -c -
 
-chmod +x "${BINARY}"
-sudo mv "${BINARY}" /usr/local/bin/bomify
+chmod +x "${BINARY}" && sudo mv "${BINARY}" /usr/local/bin/bomify
 ```
 
 ### Windows
 
-Download `bomify-<version>-windows-amd64.exe` from
-[Releases](https://github.com/alejandro-velasco/bomify/releases), rename it
-to `bomify.exe`, and put it in a folder on your `PATH`.
+Download `bomify-<version>-windows-amd64.exe`, rename it `bomify.exe`,
+and put it on your `PATH`.
 
 ## Container image
 
-[`Containerfile`](https://github.com/alejandro-velasco/bomify/blob/main/Containerfile)
-builds an image with `bomify` on `PATH` and every first-party plugin
-preinstalled in its data directory (`/tmp/.bomify/plugins`), published to
-`ghcr.io/alejandro-velasco/bomify`. Its entrypoint is
-`bomify`, so `docker run`/`podman run` arguments are just the CLI arguments
-you'd pass locally:
+`ghcr.io/alejandro-velasco/bomify` has `bomify` as its entrypoint and
+every first-party plugin preinstalled in `/tmp/.bomify/plugins`:
 
 ```sh
 docker run --rm -it \
-  -v "${HOME}/.bomify:/tmp/.bomify" \
-  -v "$(pwd)/sbom.json:/tmp/sbom.json" \
+  -v "${HOME}/.bomify:/tmp/.bomify" -v "$(pwd)/sbom.json:/tmp/sbom.json" \
   --user "$(id -u):$(id -g)" \
-  ghcr.io/alejandro-velasco/bomify:1.11.0 \
-  build /tmp/sbom.json --tag registry.example.com/myapp:1.0
+  ghcr.io/alejandro-velasco/bomify:1.11.0 build /tmp/sbom.json --tag registry.example.com/myapp:1.0
 ```
 
-Mounting your own data directory over `/tmp/.bomify`, as above, replaces
-the preinstalled plugins with whatever is in its `plugins/` directory.
-Install the plugins you need into it from inside the container, so you
-get Linux builds whatever your own OS:
-
-```sh
-docker run --rm -it \
-  -v "${HOME}/.bomify:/tmp/.bomify" \
-  --user "$(id -u):$(id -g)" \
-  ghcr.io/alejandro-velasco/bomify:1.11.0 \
-  plugin install oci
-```
+Mounting your own data directory, as above, replaces the preinstalled
+plugins. Install Linux builds into it from inside the container (`...
+plugin install oci`).
 
 ## Build from source
 
-Requires [Go](https://go.dev) (see `go.mod` for the exact version this
-repository targets).
+Requires [Go](https://go.dev) (version in `go.mod`):
 
 ```sh
-git clone https://github.com/alejandro-velasco/bomify.git
-cd bomify
-make build      # builds ./bin/bomify
-```
-
-To install it onto your `PATH` (Linux/macOS, needs write access to
-`/usr/local/bin`):
-
-```sh
-sudo make install-bin
-```
-
-## Verify it's working
-
-```sh
+git clone https://github.com/alejandro-velasco/bomify.git && cd bomify
+make build              # ./bin/bomify
+sudo make install-bin   # onto PATH
 bomify version
 ```
 
 ## Install plugins
 
-bomify delegates the real work — fetching components, generating SBOMs,
-scanning, signing — to plugins, which you install separately with
-`bomify plugin install`. It downloads each one as a package from
-bomify's plugin registry and places it in `~/.bomify/plugins`, the only
-place bomify looks for plugins. It refuses to install anything nothing
-vouches for, so plugins are installed in two steps.
+Plugins do the real work: fetching components, generating SBOMs,
+scanning, and signing. `bomify plugin install` downloads them into
+`~/.bomify/plugins` and refuses anything nothing vouches for, so the
+first install takes two steps:
 
-**1. Install `sigstore`, pinned by digest.** It's the plugin that
-verifies every other plugin's signature, so nothing can verify it yet —
-instead, install it by the exact digest listed in `plugin-digests.txt`
-on the release you're using, on the repository's
-[Releases](https://github.com/alejandro-velasco/bomify/releases) page:
+1. **Install `sigstore` by digest.** It verifies every other plugin, so
+   nothing can verify it yet. Use its line from `plugin-digests.txt` on
+   your [release](https://github.com/alejandro-velasco/bomify/releases):
 
-```sh
-# The ghcr.io/alejandro-velasco/bomify/plugins/sigstore@sha256:... line from plugin-digests.txt
-bomify plugin install sigstore@sha256:<digest>
-```
+    ```sh
+    bomify plugin install sigstore@sha256:<digest>
+    ```
 
-**2. Trust bomify's release workflow, and install the rest.** Every
-bomify plugin is signed by bomify's release workflow on GitHub Actions;
-this trust rule requires exactly that signer, so each install below is
-signature-verified:
+2. **Trust bomify's release workflow, then install the rest:**
 
-```sh
-bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
-  --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
-  --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
+    ```sh
+    bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
+      --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
+      --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 
-bomify plugin install oci           # container images (and bomify-plugin-docker)
-bomify plugin install helm          # Helm charts, and SBOM generation for them
-bomify plugin install generic       # plain HTTP downloads/uploads
-bomify plugin install grype         # vulnerability scanning
-bomify plugin list
-```
+    bomify plugin install oci       # container images
+    bomify plugin install helm      # Helm charts, and SBOMs for them
+    bomify plugin install generic   # plain HTTP files
+    bomify plugin install grype     # vulnerability scanning
+    bomify plugin list
+    ```
 
-### Without verification (testing and local use only)
-
-For a throwaway environment — trying bomify out, a local test setup, CI
-against a registry you control — you can skip both steps and install
-every plugin with `--verify=false`:
-
-```sh
-bomify plugin install sigstore --verify=false
-bomify plugin install oci      --verify=false
-bomify plugin install helm     --verify=false
-bomify plugin install generic  --verify=false
-bomify plugin install grype    --verify=false
-```
+For a throwaway test environment only, `--verify=false` skips both steps.
 
 !!! warning "Unverified plugins run with your permissions"
-    `--verify=false` installs whatever the registry serves, with no
-    signature check and no requirement that the package vouch for its
-    own checksums. bomify runs plugins as you, so anyone able to publish
-    to the registry — or tamper with what it serves — could run code on
-    your machine. Never use it on a machine or in an environment you
-    care about; use the verified steps above instead.
+    `--verify=false` installs whatever the registry serves. Anyone who can
+    publish to it, or tamper with it, can run code as you.
 
-See [Installing plugins](installing-plugins.md) for what each plugin
-does, version pinning, and how verification works.
+See [Installing plugins](installing-plugins.md) for versions and how
+verification works.

@@ -4,10 +4,9 @@ List installed plugins
 
 ### Synopsis
 
-List prints every plugin installed in <data-dir>/plugins. VERSION and
-SOURCE show the version and package "bomify plugin install" installed
-it from, or "-" for a binary placed there some other way (e.g. "make
-install").
+List prints every plugin in <data-dir>/plugins, with the version and
+package "bomify plugin install" installed it from, or "-" for one placed
+there another way.
 
 ```
 bomify plugin list [flags]

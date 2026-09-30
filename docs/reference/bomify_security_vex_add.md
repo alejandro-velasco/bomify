@@ -4,17 +4,13 @@ Add or replace a VEX document in the managed store
 
 ### Synopsis
 
-Add copies the VEX document at <file> — OpenVEX, CSAF, or CycloneDX
-VEX — into <data-dir>/vex/ under <name>, for "bomify security policy
-create --vex <name>" to refer to. The document is checked first, and
-stored by its content hash: later edits to <file> have no effect until
-it's added again, so a rule's exemptions only ever change when someone
-re-adds its documents, and every scan decision traces back to an exact
-document. Adding under an existing <name> replaces it for every rule
-that uses it.
+Add stores a copy of the VEX document <file> (OpenVEX, CSAF, or
+CycloneDX VEX) under <name>, for "bomify security policy create --vex
+<name>". The document is checked first. Later edits to <file> have no
+effect until it's added again; adding an existing <name> replaces it for
+every rule using it.
 
-"bomify security scan --vex <file>" reads a file directly instead, as
-it is at that moment, without the store.
+"bomify security scan --vex <file>" reads a file directly instead.
 
 ```
 bomify security vex add <name> <file> [flags]

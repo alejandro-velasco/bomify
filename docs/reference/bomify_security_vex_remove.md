@@ -4,10 +4,9 @@ Remove a VEX document from the managed store
 
 ### Synopsis
 
-Remove drops <name> from <data-dir>/vex/, deleting its stored copy
-unless another name refers to the same content. It refuses while any
-"bomify security policy" rule still lists <name>, so no rule is left
-referring to a document that no longer exists.
+Remove deletes <name> from the VEX store, and its stored copy unless
+another name shares it. It refuses while a "bomify security policy" rule
+uses <name>.
 
 ```
 bomify security vex remove <name> [flags]

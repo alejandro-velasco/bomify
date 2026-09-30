@@ -11,24 +11,14 @@ import (
 
 const loadShort = "Load packages from a tarball"
 
-const loadLong = `Load restores every package a "bomify save" tarball contains into the
-data directory, exactly as "bomify pull" would have for each, and
-records each of their tags. Reads from stdin if --input isn't given.
+const loadLong = `Load restores every package in a "bomify save" tarball, as "bomify
+pull" would, and records their tags. It reads stdin unless --input is
+given.
 
-Signature verification works exactly as for "bomify pull": --verify,
-else any "bomify trust" rule matching each tag, checked before
-anything of that package is restored. --insecure-skip-verify bypasses
-a matching trust rule.
-
---scan, --fail-on, and --skip-scan gate each tag before anything of it
-is restored, exactly as "bomify pull" does, as does a "bomify security
-policy" rule listing "pull" in its --on.
-Scanning may need network access, so on an air-gapped machine leave it
-off, or scan before saving instead.
-
---quiet prints only each restored package's pinned reference,
-<repository>@<digest>, one per tag on stdout — no progress bars, and no
-logging but warnings and errors.`
+--verify, --scan, --fail-on, their policy rules, and --quiet work as for
+"bomify pull", applied to each package before anything of it is
+restored. Scanning may need network access; on an air-gapped machine,
+scan before saving instead.`
 
 const loadExample = `  # Load a tarball piped in from stdin
   cat packages.tar | bomify load

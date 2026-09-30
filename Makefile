@@ -112,15 +112,16 @@ docs:
 diagrams:
 	hack/diagrams.sh
 
-# docs-site-sync copies the generated CLI reference into docsite/docs, so
-# there's exactly one source of truth for it, never hand-edited under
-# docsite/. Depends on docs so it's always fresh. (plugins/README.md is
-# included live into docsite/docs/getting-started/installing-plugins.md via
-# a pymdownx.snippets directive instead — no copy needed for that one.)
+# docs-site-sync copies generated files into docsite/docs: the CLI
+# reference, and the rendered diagrams the architecture pages embed (at the
+# same relative path, ../diagrams/, they have in docs/). Depends on docs so
+# the reference is always fresh. Hand-written docs are included live via
+# pymdownx.snippets instead, never copied.
 docs-site-sync: docs
-	rm -rf docsite/docs/usage/reference
-	mkdir -p docsite/docs/usage/reference
+	rm -rf docsite/docs/usage/reference docsite/docs/development/diagrams
+	mkdir -p docsite/docs/usage/reference docsite/docs/development/diagrams
 	cp docs/reference/*.md docsite/docs/usage/reference/
+	cp docs/diagrams/*.svg docsite/docs/development/diagrams/
 
 # docs-site builds the docsite/ Zensical site into docsite/site. Requires
 # zensical (`pip install zensical`).

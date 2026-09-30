@@ -105,6 +105,16 @@ nav = [
   { "Development" = [
       "development/index.md",
       { "Building a plugin" = "development/building-a-plugin.md" },
+      { "Architecture" = [
+          "development/architecture/index.md",
+          { "Data directory" = "development/architecture/data-directory.md" },
+          { "Plugins" = "development/architecture/plugins.md" },
+          { "Security scanning" = "development/architecture/security-scanning.md" },
+          { "Signing and verification" = "development/architecture/signing.md" },
+          { "Plugin installation" = "development/architecture/plugin-installation.md" },
+          { "Builds and tagging" = "development/architecture/builds.md" },
+          { "Push and pull" = "development/architecture/registry.md" },
+      ] },
       { "Component plugin contract" = "development/component-contract.md" },
       { "SBOM generation contract" = "development/sbom-contract.md" },
       { "Security scanning contract" = "development/security-contract.md" },

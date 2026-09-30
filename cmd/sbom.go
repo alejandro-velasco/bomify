@@ -25,18 +25,11 @@ func sbomCmd() *cobra.Command {
 
 const sbomGenerateShort = "Generate an SBOM for a deployment medium via its plugin"
 
-const sbomGenerateLong = `Generate delegates entirely to a "bomify-plugin-<medium>" binary's own
-"sbom generate" subcommand: bomify only locates the plugin in
-<data-dir>/plugins and execs it with every flag after <medium> passed
-through unchanged, wiring stdin/stdout/stderr straight through. bomify's
-own global flags (e.g. --data-dir) must come before <medium>. Unlike the
-component plugin contract ("bomify build"/"bomify distribute"), bomify neither
-parses the plugin's output nor imposes any flags of its own here — see
-plugins/SBOM-CONTRACT.md for the (deliberately minimal) contract a
-plugin must implement, and the plugin's own --help for what it accepts.
-
-Running "bomify-plugin-<medium> sbom generate <flags>" directly is
-exactly equivalent to "bomify sbom generate <medium> <flags>".`
+const sbomGenerateLong = `Generate runs "bomify-plugin-<medium> sbom generate" with every flag
+after <medium> passed through unchanged and stdin, stdout, and stderr
+wired straight through; running the plugin directly is equivalent. See
+the plugin's --help for its flags. bomify's own flags, such as
+--data-dir, must come before <medium>.`
 
 const sbomGenerateExample = `  # Generate an SBOM for a Helm chart
   bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 15.6.0 --values values.yaml`

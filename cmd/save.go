@@ -12,17 +12,13 @@ import (
 
 const saveShort = "Save packages to a tarball"
 
-const saveLong = `Save packages one or more tagged packages into a single tarball — an
-OCI image-layout archive containing each package's manifest and
-components, plus a referrer carrying any local vulnerability reports of
-its components (see "bomify push") — that
-"bomify load" can restore on any machine, with no registry involved. A
-component shared by more than one given tag is stored once. Writes to
-stdout if --output isn't given.
+const saveLong = `Save writes one or more local packages, with their vulnerability
+reports and signatures, to a single tarball (an OCI image layout) that
+"bomify load" can restore anywhere without a registry. Shared components
+are stored once. It writes to stdout unless --output is given.
 
---sign signs each saved package with a signing plugin, exactly as
-"bomify push --sign" would, the signature travelling inside the
-tarball for "bomify load --verify" to check.`
+--sign signs each package as "bomify push --sign" does; the signature
+travels inside the tarball.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar

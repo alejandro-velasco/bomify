@@ -4,31 +4,20 @@ Publish a bomify package to an OCI registry
 
 ### Synopsis
 
-Push packages the SBOM manifest a prior "bomify build" recorded for
-<tag> (and each component it describes) as an OCI artifact, and
-publishes it under <tag>. <tag> is both the local bookkeeping key
-(see "bomify tag" / "bomify packages") and the destination reference.
+Push publishes the local package <tag> as an OCI artifact under <tag>,
+which must be a full registry reference.
 
-Every local vulnerability report from a prior "bomify security scan" of
-the package's components is attached to it as a single OCI referrer,
-rather than as part of the package itself: re-scanning and pushing
-again leaves the package's digest, and so any signature over it,
-unchanged, and just attaches a newer report referrer. Pushing again
-with unchanged reports attaches nothing new. Once attached, all but the
-newest --keep-reports report referrers (default 1; 0 keeps them all)
-are deleted from the registry, each with its own signature. Deletion
-is best-effort: a registry that refuses it (e.g. ghcr.io) only logs a
-warning, and "bomify security prune" can retry it later.
+Local vulnerability reports are attached as a separate OCI referrer, so
+re-scanning and pushing again refreshes them without changing the
+package's digest. Afterwards, all but the newest --keep-reports report
+referrers are deleted (best-effort: "bomify security prune" retries if
+the registry refuses).
 
---sign signs the pushed package with a signing plugin before <tag> is
-updated to point at it, attaching the signature to it as an OCI
-referrer. One signature covers the SBOM and every component; the
-report referrer is signed separately, the same way. See "bomify pull
---verify" and "bomify trust" for checking them.
+--sign signs the package, and its reports separately, before the tag
+moves, so the tag never points at an unsigned package.
 
---quiet prints only the pushed package's pinned reference,
-<repository>@<digest>, on stdout — no progress bars, and no logging but
-warnings and errors — for scripts that go on to publish or pin it.
+--quiet prints only the pinned reference, <repository>@<digest>, with no
+progress or info logging.
 
 ```
 bomify package push <tag> [flags]

@@ -9,29 +9,22 @@ title: bomify
 
 # Overview
 
-## What is Bomify?
+`bomify` builds OCI packages from [CycloneDX](https://cyclonedx.org/)
+SBOMs. It orchestrates; plugins (`bomify-plugin-<kind>`) do the
+type-specific work of fetching, publishing, scanning, and signing.
 
-`bomify` is a CLI that builds OCI packages from [CycloneDX](https://cyclonedx.org/)
-Software Bills of Materials (SBOMs).
+It mirrors Docker and Podman:
 
-Bomify works as an orchestrator, by delegating component specific actions
-to an external plugin binary (i.e. `bomify-plugin-<component-type>`) that knows how to interect with
-that component type's api.
-
-bomify's design deliberately mirrors many OCI container management tools (i.e. Docker, Podman, etc.): 
-
-- A **package** is built from a CycloneDX SBOM the way an **image** is built from a Dockerfile, 
-- A **tag** is a human readable reference to an SBOM Package
-- The `package` subcommand subcommand works fairly similarly to the docker `image` subcommand
-- What Docker/Podman calls **layers** are here the individual **components** an SBOM describes — each pulled independently,
-cached independently, and reused across builds by content hash.
+- A **package** is built from an SBOM the way an image is built from a
+  Dockerfile, and a **tag** names one.
+- `bomify package` works much like `docker image`.
+- Docker's **layers** are bomify's **components**, each pulled, cached,
+  and reused independently by content hash.
 
 !!! warning "Pre-alpha"
 
-    bomify is under active early development. Its CLI flags, data directory
-    layout, and plugin contract can all still change without notice, and
-    there is currently no guarantee of stability or backward compatibility
-    between versions.
+    Flags, the data directory layout, and the plugin contracts may change
+    without notice.
 
 <div class="grid cards" markdown>
 
@@ -39,8 +32,7 @@ cached independently, and reused across builds by content hash.
 
     ---
 
-    Install bomify and its first-party plugins, then build your first
-    package.
+    Install bomify and its plugins, then build a package.
 
     [:octicons-arrow-right-24: Getting started](getting-started/index.md)
 
@@ -48,7 +40,7 @@ cached independently, and reused across builds by content hash.
 
     ---
 
-    Full reference for every command
+    The reference for every command.
 
     [:octicons-arrow-right-24: Usage](usage/index.md)
 
@@ -56,7 +48,7 @@ cached independently, and reused across builds by content hash.
 
     ---
 
-    Build a plugin to extend bomify's functionality.
+    Extend bomify with your own plugin.
 
     [:octicons-arrow-right-24: Building a plugin](development/building-a-plugin.md)
 

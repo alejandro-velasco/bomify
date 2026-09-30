@@ -13,45 +13,24 @@ import (
 
 const pullShort = "Download a bomify package from an OCI registry"
 
-const pullLong = `Pull downloads a bomify package artifact from an OCI registry: its
-config (the aggregate SBOM manifest) and each of its layers (the
-components that SBOM describes), laying them out in the data
-directory exactly as "bomify build" would have. Layers download
-concurrently, each with its own progress bar.
+const pullLong = `Pull downloads a package from an OCI registry into the data directory,
+as if it had been built there, along with the newest vulnerability
+reports attached to it. Reports are advisory: if they can't be fetched
+or verified, the package is still restored, with a warning.
 
-The vulnerability reports of the package's newest report referrer (see
-"bomify push") are restored to
-"<data-dir>/vulnerabilities/<purl-hash>.json", the same path "bomify
-security scan" itself would have written them to. Reports are
-advisory: if they can't be listed, fetched, or verified, the package is
-still restored, and a warning says why its reports weren't.
+--verify requires a signature the named plugin verifies; without it, a
+matching "bomify trust" rule applies. The package is verified before
+anything is written. --insecure-skip-verify bypasses a trust rule.
 
---verify requires the package to carry a signature the named signing
-plugin verifies (see "bomify push --sign"); without it, any "bomify
-trust" rule matching <reference> applies instead. Either way, the
-signature is checked before anything is written to the data
-directory, so a package that fails verification leaves no trace. The
-report referrer's own signature is checked the same way before its
-reports are restored.
---insecure-skip-verify bypasses a matching trust rule.
+--scan <type> --fail-on <severity> scans the package fresh, after
+verification and before anything is written, and refuses it if anything
+is at or above <severity>. The two go together. A matching "bomify
+security policy" rule with --on pull does the same without flags, and
+its stored VEX exempts what it covers; flags override the rule, and
+--skip-scan ignores it. Scanning may need network access.
 
---scan <type> --fail-on <severity> scans the package's components
-fresh — after --verify, before anything is written — and refuses to
-restore it if anything at or above <severity> is found, leaving no
-trace, as a failed verify does; a matching rule's stored VEX documents
-exempt what they cover. The fresh reports replace the ones the package
-carries. The two go together: --fail-on without --scan would gate on
-the publisher's own reports, and --scan without a threshold couldn't
-refuse anything (to just scan, run "bomify security scan" after
-pulling). A "bomify security policy" rule listing "pull" in its --on
-does the same for a matching <reference> without flags, and either
-flag overrides its part of the rule; --skip-scan ignores it. Scanning
-may need network access (e.g. grype's database, or the images it
-scans).
-
---quiet prints only the restored package's pinned reference,
-<repository>@<digest>, on stdout — no progress bars, and no logging but
-warnings and errors.`
+--quiet prints only the package's pinned reference,
+<repository>@<digest>, with no progress or info logging.`
 
 const pullExample = `  # Pull a tagged reference
   bomify pull registry.example.com/myapp:latest

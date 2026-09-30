@@ -30,31 +30,19 @@ func trustCmd() *cobra.Command {
 
 const trustCreateShort = "Create or update a signature verification rule"
 
-const trustCreateLong = `Create adds a rule to <data-dir>/conf/trust.json requiring every
-package whose reference matches --match to carry a signature the
-<verifier> signing plugin (bomify-plugin-<verifier>) verifies before
-"bomify pull" or "bomify load" restore it. --match is a "/"-separated
-prefix of the package's repository — its reference without a tag or
-digest, e.g. "registry.example.com", "registry.example.com/team", or
-"registry.example.com/team/app" — matched at segment boundaries;
-omitting it makes the rule apply to every package. When more than one
-rule matches, the one with the longer --match wins. Running create
-again for the same --match replaces that rule.
+const trustCreateLong = `Create adds a rule requiring packages whose repository starts with
+--match (a "/"-separated prefix; omit it to match every package) to
+carry a signature that bomify-plugin-<verifier> verifies before "bomify
+pull" or "bomify load" restores them. The longest matching --match wins,
+and creating a rule for the same --match replaces it.
 
-Each --option (key=value) is passed through, unparsed, to the plugin's
-"signature verify" — typically naming which key or identity it should
-trust for packages matching this rule.
+--option (key=value) is passed to the plugin's verify unparsed, e.g. the
+key or identity to trust. --key-option (option=name) instead names a key
+from "bomify trust key add"; the plugin receives the stored copy's path
+as that option. The same option can't be given both ways.
 
-Each --key-option (option=name) instead names a public key in the data
-directory's managed key store (see "bomify trust key add"): the plugin
-gets "--option <option>=<path of the stored copy>". The rule then keeps
-working however the original key file moves, travels with the data
-directory, and only changes when someone adds the key again. Which
-option takes a key file is up to the plugin — sigstore's is "key". The
-same option can't be given both ways.
-
-An explicit "--verify" on pull/load takes precedence over every rule,
-and "--insecure-skip-verify" bypasses them.`
+"--verify" on pull or load overrides every rule, and
+"--insecure-skip-verify" bypasses them.`
 
 const trustCreateExample = `  # Require packages from a team's repositories to be signed with its cosign key
   bomify trust create sigstore --match registry.example.com/team --option key=team.pub
@@ -126,9 +114,8 @@ func parseKeyOptions(pairs []string) (map[string]string, error) {
 
 const trustListShort = "List signature verification rules"
 
-const trustListLong = `List prints every rule recorded in <data-dir>/conf/trust.json. MATCH
-prints "*" for a rule that omitted it, meaning it applies to every
-package. KEY-OPTIONS lists each option=name pair naming a stored key.`
+const trustListLong = `List prints every trust rule. "*" in MATCH means every package, and
+KEY-OPTIONS lists each option=name pair naming a stored key.`
 
 const trustListExample = `  # See every configured rule
   bomify trust list`
@@ -222,23 +209,15 @@ func trustKeyCmd() *cobra.Command {
 
 const trustKeyAddShort = "Add or replace a public key in the managed key store"
 
-const trustKeyAddLong = `Add copies the PEM file at <file> into <data-dir>/keys/ under <name>,
-for "bomify trust create --key-option <option>=<name>" to refer to. Only
-public material is accepted: every PEM block must be a CERTIFICATE,
-PUBLIC KEY, or RSA PUBLIC KEY that actually parses. A private key is
-refused, so a signing key is never copied into the data directory by
-mistake (sign with --sign-option instead), and a corrupt or wrong file
-fails here rather than on a later pull. Formats other than X.509-style
-PEM (e.g. an SSH or minisign public key) can't be stored; pass those
-with --option instead.
+const trustKeyAddLong = `Add stores a copy of the public key or certificate <file> under <name>,
+for "bomify trust create --key-option <option>=<name>". Every PEM block
+must be a CERTIFICATE, PUBLIC KEY, or RSA PUBLIC KEY that parses, so
+private keys and corrupt files are refused. For other formats (e.g. SSH
+keys), use --option with a path instead.
 
-The key is stored by its content hash: later edits to <file> have no
-effect until it's added again, so a rule's trust only changes when
-someone re-adds its keys. Adding under an existing <name> replaces it
-for every rule that uses it — e.g. to rotate a key.
-
-"--option key=<path>", on "bomify trust create" and as --verify-option,
-still reads a key file directly, without the store.`
+Later edits to <file> have no effect until it's added again. Adding an
+existing <name> replaces it for every rule using it, which is how to
+rotate a key.`
 
 const trustKeyAddExample = `  # Store the team's cosign public key as "team"
   bomify trust key add team keys/team.pub
@@ -248,19 +227,17 @@ const trustKeyAddExample = `  # Store the team's cosign public key as "team"
 
 const trustKeyListShort = "List the public keys in the managed key store"
 
-const trustKeyListLong = `List prints every key in <data-dir>/keys/: its name, the content hash
-it's stored under, when it was added, and the file it was copied from
-(never read again).`
+const trustKeyListLong = `List prints every stored key: its name, content hash, when it was
+added, and the file it was copied from.`
 
 const trustKeyListExample = `  # See every stored key
   bomify trust key list`
 
 const trustKeyRemoveShort = "Remove a public key from the managed key store"
 
-const trustKeyRemoveLong = `Remove drops <name> from <data-dir>/keys/, deleting its stored copy
-unless another name refers to the same content. It refuses while any
-"bomify trust" rule still refers to <name>, so no rule is left
-referring to a key that no longer exists.`
+const trustKeyRemoveLong = `Remove deletes <name> from the key store, and its stored copy unless
+another name shares it. It refuses while a "bomify trust" rule uses
+<name>.`
 
 const trustKeyRemoveExample = `  # Remove the key stored as "team"
   bomify trust key remove team`

@@ -4,10 +4,8 @@ List built packages
 
 ### Synopsis
 
-Packages lists the packages recorded in
-<data-dir>/package/repositories.json, one row per repository:tag. SIZE
-is the total on-disk size of every component the package's SBOM
-describes (0 for any not pulled yet).
+Packages lists local packages, one row per repository:tag. SIZE is the
+on-disk size of the package's components (0 for any not pulled).
 
 ```
 bomify packages [flags]

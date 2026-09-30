@@ -4,132 +4,68 @@ icon: lucide/puzzle
 
 # Building a plugin
 
-bomify doesn't know how to fetch or publish anything itself — every purl
-type is handled by an external `bomify-plugin-<kind>` binary's **component
-plugin** subcommands. This page is a guided walkthrough for writing one;
-it isn't the spec. The
-[**component plugin contract**](component-contract.md)
-is the authoritative, normative reference for every flag, JSON shape, and
-edge case — read it before you start, and treat anything here that seems to
-disagree with it as this page being out of date, not the other way around.
+This walks through writing a **component plugin**, which fetches and
+publishes one purl type for `bomify build` and `bomify distribute`. The
+[component contract](component-contract.md) is the spec; if this page
+disagrees with it, the contract wins. The other contracts are shorter
+and independent: [SBOM generation](sbom-contract.md),
+[security scanning](security-contract.md), and
+[signing](signing-contract.md).
 
-A `bomify-plugin-<kind>` binary can separately implement any of three
-other, entirely independent contracts — this page's walkthrough
-is specific to component plugins, so see the contract itself directly if
-you're building one of these instead:
+## What a plugin is
 
-- **[SBOM generation plugin contract](sbom-contract.md)** (`sbom
-  generate`) — a much lighter, standalone-runnable contract for building
-  a fresh SBOM from a deployment medium; bomify contributes nothing
-  beyond locating the binary.
-- **[Security scanning plugin contract](security-contract.md)**
-  (`security scan --purl <purl>`) — a similarly lightweight per-call
-  contract (a plugin just answers "what does this purl have"), but
-  bomify itself owns resolving the package, dispatching one call per
-  component, and storing each result as that component's vulnerability
-  report — closer to the component contract in that respect.
-- **[Signing contract](signing-contract.md)** (`signature
-  sign`/`signature verify`) — a plugin just turns a payload file into
-  a signature envelope and back; bomify owns the payload, stores each
-  envelope as an OCI referrer of the package, and decides which
-  packages must be verified.
+A standalone executable, in any language, named `bomify-plugin-<kind>`
+and installed in `~/.bomify/plugins`. `<kind>` is the purl type it
+handles: `pkg:oci/nginx@1.27` needs `bomify-plugin-oci`. Inputs are
+flags; outputs are stdout, stderr, the exit code, and the files it
+writes.
 
-## What a plugin actually is
+It implements three subcommands:
 
-A `bomify-plugin-<kind>` is a standalone executable. It doesn't link against
-bomify or share memory with it — every input arrives as a command-line
-flag, and every output is stdout, stderr, an exit code, or the files it's
-told to write to. This means a plugin can be written in any language; bomify
-only cares that the binary is named `bomify-plugin-<kind>` and is
-installed in its plugins directory, `<data-dir>/plugins`
-(`~/.bomify/plugins` by default) — bomify never looks on `PATH`.
+- **`component pull`** fetches the component `--purl` names into
+  `--output`, reporting its SHA-256 if it can.
+- **`component push`** publishes what `pull` wrote into `--input` to
+  `--remote`.
+- **`component remote`** reports where the component lives, so `bomify
+  distribute` can match it against rules.
 
-`<kind>` comes directly from the purl type of the components it should
-handle — a component with purl `pkg:oci/nginx@1.27` needs a
-`bomify-plugin-oci` installed.
+`pull` and `push` also have a `--check` mode. stdout carries exactly one
+JSON result, stderr one fatal message on failure, and logging goes to
+the `--log` file.
 
-## The subcommands, briefly
+## In Go
 
-A component plugin implements three subcommands, nested under `component`
-— `component pull`, `component push`, and `component remote` — plus an
-optional `--check` mode on `pull`/`push` for verifying an operation would
-succeed without actually doing it. Each has its own required/optional flags
-and JSON result shape, all specified in
-[`COMPONENT-CONTRACT.md`](component-contract.md#commands):
-
-- **`component pull`** fetches the component `--purl` identifies into
-  `--output`, and reports its SHA-256 if it can compute it.
-- **`component push`** publishes whatever a prior `pull` wrote into
-  `--input` to `--remote`.
-- **`component remote`** reports where a component's content currently
-  lives — independent of any specific `--remote` — so `bomify distribute`
-  can match it against a mirroring rule.
-
-Routine logging goes to the file named by `--log`, never to stdout (reserved
-for exactly one JSON result on success) or stderr (reserved for one fatal
-message on failure).
-
-## Using the Go helper library
-
-If you're writing a plugin in Go, [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)
-is a small, importable library implementing the contract's Go-facing side.
-Implement its `plugin.ComponentPlugin` interface — `Pull`, `Push`, and
-`Remote`, each handed a request carrying the parsed flags and a logger
-already writing to `--log` — and `plugin.ComponentCommand` builds the
-whole `component` subcommand tree from it: every flag, the `--check`
-rules, the log file, and printing exactly one JSON result. `plugin.Run`
-then executes it with the contract's exit-code and stderr rules. Use it
-instead of hand-rolling flags, JSON encoding, or log setup; nothing about
-it depends on being inside bomify's own module.
-
-## Worked example: `bomify-plugin-generic`
+Implement [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)'s
+`ComponentPlugin` interface (`Pull`, `Push`, `Remote`, each given the
+parsed flags and a logger writing to `--log`). `plugin.ComponentCommand`
+builds the subcommands, and `plugin.Run` runs them with the contract's
+exit and stderr rules.
 
 [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic)
-is the simplest first-party plugin — a plain HTTP GET on pull, a PUT on
-push — and a reasonable template to start from. Its shape:
+(an HTTP GET on pull, a PUT on push) is the simplest template:
 
 ```
 bomify-plugin-generic/
-├─ main.go              # entrypoint: plugin.Run(cmd.NewRootCmd())
-├─ cmd/
-│  └─ root.go            # a plugin.ComponentPlugin over internal/artifact
-└─ internal/artifact/
-   ├─ resolve.go          # purl -> Ref (the download URL, name, version)
-   └─ transfer.go         # the actual GET/PUT/HEAD logic
+├─ main.go              # plugin.Run(cmd.NewRootCmd())
+├─ cmd/root.go          # a ComponentPlugin over internal/artifact
+└─ internal/artifact/   # purl resolution and the GET/PUT/HEAD logic, no CLI code
 ```
 
-The pattern worth copying: `cmd/root.go` is thin — a `ComponentPlugin`
-whose methods resolve the purl and call into `internal/<pkg>`, plus the
-help text `plugin.ComponentCommand` shows — and all the real logic
-(doing the network call, building the `plugin.Result`) lives in an
-internal package with no cobra/CLI dependency at all. That split is what
-makes each piece independently testable; see
-`internal/artifact/*_test.go` for the tests that result from it.
+Keeping `cmd/` a thin adapter and the logic in `internal/` makes the
+logic easy to test.
 
 ## Checklist
 
-- [ ] Implement `component pull`, `component push`, and `component remote`
-      exactly per
-      [`COMPONENT-CONTRACT.md`](component-contract.md) —
-      required/optional flags, the `Result`/`RemoteResult` JSON shapes, exit
-      codes.
-- [ ] Nothing but the one JSON result on stdout, ever — no progress output,
-      no debug prints.
-- [ ] Route all routine logging through `--log`.
-- [ ] Support `--check` on `pull`/`push` if there's a genuinely inexpensive
-      way to verify the operation would succeed (see `COMPONENT-CONTRACT.md`'s
-      [check mode](component-contract.md#check-mode)
-      section) — and never fall back to the real, mutating operation just
-      to implement it.
-- [ ] Validate your plugin's actual JSON output against
-      [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json)/[`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json)
-      with any off-the-shelf JSON Schema validator.
-- [ ] Name the binary `bomify-plugin-<kind>` and put it in
-      `~/.bomify/plugins` — that's all bomify needs to find it.
-- [ ] To let others `bomify plugin install` it, publish it as a plugin
-      package — see
-      [Publishing a plugin](../getting-started/installing-plugins.md#publishing-a-plugin).
-
-If you're building a plugin bomify ships itself rather than a third-party
-one, also add it to the table in
-[`plugins/README.md`](../getting-started/installing-plugins.md).
+- [ ] Implement all three subcommands exactly per the
+      [contract](component-contract.md).
+- [ ] Print nothing on stdout but the one JSON result, and log only to
+      `--log`.
+- [ ] Support `--check` if there's a cheap check, and never fall back to
+      a real push for it (see [check mode](component-contract.md#check-mode)).
+- [ ] Validate your output against
+      [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json)
+      and [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
+- [ ] To make it installable, publish it as a
+      [plugin package](../getting-started/installing-plugins.md#publishing-a-plugin).
+- [ ] For a first-party plugin, add it to
+      [`plugins/README.md`](../getting-started/installing-plugins.md).

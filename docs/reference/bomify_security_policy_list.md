@@ -4,11 +4,8 @@ List vulnerability scanning policy rules
 
 ### Synopsis
 
-List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
-prints "*" for a rule that omitted it, meaning it applies to every
-package, FAIL-ON prints "-" for a rule that never fails, VEX lists the
-names of each rule's stored VEX documents, and ON the lifecycle hooks
-it scans at automatically ("-" for none).
+List prints every scan policy rule. "*" in MATCH means every package,
+and "-" means no FAIL-ON threshold or no ON hooks.
 
 ```
 bomify security policy list [flags]

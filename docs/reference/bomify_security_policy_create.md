@@ -4,39 +4,23 @@ Create or update a vulnerability scanning policy rule
 
 ### Synopsis
 
-Create adds a rule to <data-dir>/conf/scan.json setting the scanning
-policy for every package whose reference matches --match: the scanning
-plugin (bomify-plugin-<scanner>) that scans it, and — with --fail-on —
-the severity at or above which its vulnerabilities fail the scan.
---match is a
-"/"-separated prefix of the package's repository — its reference
-without a tag or digest, e.g. "registry.example.com",
-"registry.example.com/team", or "registry.example.com/team/app" —
-matched at segment boundaries; omitting it makes the rule apply to
-every package. When more than one rule matches, the one with the
-longer --match wins. Running create again for the same --match
-replaces that rule.
+Create adds a scan policy rule for packages whose repository starts with
+--match (a "/"-separated prefix; omit it to match every package): the
+scanner to use and, with --fail-on, the severity that fails. The longest
+matching --match wins, and creating a rule for the same --match replaces
+it.
 
---vex (repeatable) names a VEX document in the data directory's managed
-store (see "bomify security vex add") whose "not affected"/"fixed"
-statements exempt a matching package's vulnerabilities from --fail-on.
-Rules refer to documents by name, never by path, so a rule keeps
-working however the files it was built from move, and re-adding a
-document under the same name updates every rule using it. Rules have
-no list of bare vulnerability IDs to ignore: a standing exemption
-belongs in a VEX document, which says which component it applies to
-and why. For a one-off, use "bomify security scan --ignore".
+--vex (repeatable) names documents from "bomify security vex add" that
+exempt vulnerabilities. Rules have no ignore list on purpose: a standing
+exemption belongs in VEX, which says which component and why. Use
+"bomify security scan --ignore" for one-offs.
 
-"bomify security scan" applies a matching rule's --fail-on when given
-no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-gate.
+"bomify security scan" uses a matching rule's --fail-on when given none,
+and always applies its VEX.
 
---on pull also makes a matching package get scanned with <scanner> and
-gated automatically by "bomify pull" and "bomify load", before anything
-of it is written; it needs --fail-on, since a scan there only ever
-refuses packages. Without --on, the rule only applies to "bomify
-security scan". Pull's and load's own --scan and --fail-on override the
-rule, and --skip-scan ignores it.
+--on pull also scans and gates matching packages in "bomify pull" and
+"bomify load" before anything is written. It requires --fail-on. Without
+--on, the rule only applies to "bomify security scan".
 
 ```
 bomify security policy create <scanner> [flags]

@@ -45,10 +45,8 @@ func packageCmd() *cobra.Command {
 
 const packagePruneShort = "Remove packages not associated with any tag"
 
-const packagePruneLong = `Prune removes every manifest, layer, and vulnerability report in the
-data directory that isn't reachable from a tag currently recorded in
-repositories.json. A component still used by any tagged package, even
-one also used by an otherwise-unreferenced package, is left alone.`
+const packagePruneLong = `Prune removes every manifest, layer, and vulnerability report that no
+current tag reaches. A component used by any tagged package is kept.`
 
 const packagePruneExample = `  # Remove every untagged manifest, layer, and vulnerability report
   bomify package prune`
@@ -96,10 +94,9 @@ func runPackagePrune(cmd *cobra.Command) error {
 
 const packageManifestShort = "Print a remote package's CycloneDX manifest"
 
-const packageManifestLong = `Manifest fetches <reference> from an OCI registry and writes its
-aggregate CycloneDX SBOM manifest (the artifact's config blob)
-verbatim to stdout, without pulling any of its layers or writing
-anything to the data directory.`
+const packageManifestLong = `Manifest writes the SBOM of the package <reference> in an OCI registry
+to stdout, without pulling its components or touching the data
+directory.`
 
 const packageManifestExample = `  # Print the manifest for a tagged reference
   bomify package manifest registry.example.com/myapp:latest
@@ -243,24 +240,13 @@ func pruneAfterRemove(logger *slog.Logger) error {
 
 const packageVulnerabilitiesShort = "Print a package's component vulnerability reports"
 
-const packageVulnerabilitiesLong = `Vulnerabilities resolves <tag> to a package a prior "bomify build" (or
-"bomify pull"/"bomify load") recorded locally, then writes a JSON array
-to stdout — parsable straight through "jq", unlike the single raw
-document "bomify package manifest" writes — with one element per
-component: its vulnerability report exactly as it sits at
-"<data-dir>/vulnerabilities/<purl-hash>.json" (see "bomify security
-scan"), in the SBOM's own component order. A component with no report
-(never scanned, or scanned by a plugin that doesn't support its purl
-type) is silently skipped, and a purl the SBOM lists more than once is
-only included once.
+const packageVulnerabilitiesLong = `Vulnerabilities prints the vulnerability reports of the local package
+<tag>'s components (from "bomify security scan") as one JSON array on
+stdout, in SBOM order. Components without a report are skipped.
 
---purl narrows this down to specific components; pass it more than
-once for more than one. Without it, every component the SBOM describes
-is considered.
-
-Nothing but that JSON array is ever written to stdout — no log lines,
-so a "--purl" that matches nothing in the SBOM is reported as a
-warning on stderr rather than printed inline.`
+--purl (repeatable) limits it to specific components. Nothing but the
+array goes to stdout; warnings, such as a --purl matching nothing, go
+to stderr.`
 
 const packageVulnerabilitiesExample = `  # Print every component's vulnerability report for a package
   bomify package vulnerabilities myapp:latest

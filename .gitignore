@@ -4,8 +4,10 @@
 *.test
 .DS_Store
 
-# docsite/docs/usage/reference/ is a copy of docs/reference/, made by
-# `make docs-site`/`docs-site-sync`; docsite/site/ is the built static
-# site. Neither is committed — see the docs-site-sync Makefile target.
+# docsite/docs/usage/reference/ and docsite/docs/development/diagrams/ are
+# copies of docs/reference/ and docs/diagrams/*.svg, made by `make
+# docs-site`/`docs-site-sync`; docsite/site/ is the built static site.
+# None is committed — see the docs-site-sync Makefile target.
 /docsite/docs/usage/reference/
+/docsite/docs/development/diagrams/
 /docsite/site/

@@ -4,34 +4,22 @@ Install a plugin from an OCI registry
 
 ### Synopsis
 
-Install downloads the plugin package "<registry>/<name>:<version>"
-(version defaulting to "latest"; "<name>@sha256:..." pins a digest) and
-installs the plugin binaries it carries into <data-dir>/plugins, the
-only place bomify looks for plugins.
+Install downloads the plugin package "<registry>/<name>[:<version>]"
+("latest" by default; "<name>@sha256:..." pins a digest) and installs
+the binary built for this machine into <data-dir>/plugins as
+bomify-plugin-<name>, replacing any earlier install.
 
-A plugin package is an ordinary bomify package whose SBOM describes
-"pkg:bomify-plugin/<kind>" components, typically one per platform
-(distinguished by "os"/"arch" purl qualifiers). Install walks those
-components and installs, as bomify-plugin-<kind>, each one built for
-this machine — replacing any earlier install of the same kind. The
-package itself isn't kept as a local package the way "bomify pull"
-would keep it.
+A plugin is installed only if something vouches for it, checked before
+downloading:
+  - its signature, verified by bomify-plugin-sigstore against
+    --verify-option (e.g. key=<public key>, or certificate-identity
+    and certificate-oidc-issuer) or else the matching "bomify trust"
+    rule; or
+  - a digest pin, which is how bomify-plugin-sigstore itself is
+    installed first, from the digests each release publishes.
 
-By default (--verify), a plugin is only installed if something vouches
-for it, checked before anything is downloaded:
-  - its signature, verified by bomify-plugin-sigstore against the signer
-    named by --verify-option (e.g. key=<public key>, or
-    certificate-identity and certificate-oidc-issuer for a keyless
-    signature), else by the most specific "bomify trust" rule matching
-    it; or
-  - a reference pinned by digest (<name>@sha256:...), which names
-    exactly the content to install — how bomify-plugin-sigstore itself
-    gets installed the first time, from the digest published with each
-    bomify release.
-Anything else is refused. Every plugin binary must also match the
-SHA-256 its component declares in the package's SBOM — an integrity
-check, not proof of who published it. --verify=false installs without
-any of this (a declared checksum that doesn't match still fails).
+Each binary must also match the SHA-256 its SBOM declares. --verify=false
+skips the signature requirement, but not the checksum.
 
 ```
 bomify plugin install <name>[:<version>|@<digest>] [flags]

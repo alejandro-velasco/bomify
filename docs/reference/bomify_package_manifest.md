@@ -4,10 +4,9 @@ Print a remote package's CycloneDX manifest
 
 ### Synopsis
 
-Manifest fetches <reference> from an OCI registry and writes its
-aggregate CycloneDX SBOM manifest (the artifact's config blob)
-verbatim to stdout, without pulling any of its layers or writing
-anything to the data directory.
+Manifest writes the SBOM of the package <reference> in an OCI registry
+to stdout, without pulling its components or touching the data
+directory.
 
 ```
 bomify package manifest <reference> [flags]

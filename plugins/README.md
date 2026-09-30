@@ -1,88 +1,64 @@
 # Plugins
 
-The following are plugins created and supported by the bomify project itself, as opposed to
-third-party plugins a user might install separately. Each subdirectory here
-is a standalone `bomify-plugin-<kind>` binary implementing at least one of the following plugin classes:
+The first-party plugins. Each directory is a standalone
+`bomify-plugin-<kind>` binary implementing one or more contracts:
 
-- **Component plugins**
-(`component push|pull|remote`, specified in
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md))
-- **SBOM generation plugins**
-(`sbom generate`, specified in
-[`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md))
-inspect a deployment medium and build a fresh SBOM for it. 
-- **Security scanning plugins** (`security scan|supported-components`, specified in
-[`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md))
-report the vulnerabilities one component's purl is affected by; `bomify
-security scan` calls the same plugin once per component in a built
-package (concurrently, like `bomify build`/`bomify distribute`) and
-records each result as that component's own vulnerability report.
-- **Signing plugins** (`signature sign|verify|supported-types`, specified in
-[`SIGNING-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md))
-sign a whole package on `bomify push --sign`/`bomify save --sign`, and
-verify it on `bomify pull --verify`/`bomify load --verify` (or when a
-`bomify trust` rule requires it); bomify stores each signature as an OCI
-referrer of the package, so the plugin never touches a registry.
+- **Component** (`component pull|push|remote`,
+  [`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md)):
+  fetches and publishes the components an SBOM describes.
+- **SBOM generation** (`sbom generate`,
+  [`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)):
+  builds an SBOM for a deployment medium.
+- **Security scanning** (`security scan|supported-components`,
+  [`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)):
+  reports the vulnerabilities a purl is affected by.
+- **Signing** (`signature sign|verify|supported-types`,
+  [`SIGNING-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)):
+  signs and verifies whole packages.
 
-| Plugin                                        | Kind     | Backing library                                                                   | Contracts Implemented |
-|------------------------------------------------|----------|-------------------------------------------------------------------------------------|-------------------------|
-| [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)     | `oci`    | [Crane Golang SDK](https://github.com/google/go-containerregistry)   | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
-| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)   | `helm`   | [Helm Golang SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) (Pull/Push, the same code behind the `helm` CLI) | <ul><li>COMPONENT-CONTRACT.md</li><li>SBOM-CONTRACT</li></ul> |
-| [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `generic` | stdlib `net/http` only — a plain GET on pull, PUT on push | <ul><li>COMPONENT-CONTRACT.md</li></ul> |
-| [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | see `security supported-components` | [https://github.com/anchore/grype](Grype Golang SDK) | <ul><li>SECURITY-CONTRACT.md</li></ul> |
-| [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | `sigstore` | [sigstore-go](https://github.com/sigstore/sigstore-go) (Sigstore bundle v0.3) | <ul><li>SIGNING-CONTRACT.md</li></ul> |
+| Plugin | Handles | Built on | Contracts |
+| --- | --- | --- | --- |
+| [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
+| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
+| [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
+| [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, plus images | [grype](https://github.com/anchore/grype) | Security scanning |
+| [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
 ## Installing plugins
 
-bomify only ever looks for a plugin in its plugins directory,
-`<data-dir>/plugins` (`~/.bomify/plugins` by default) — never on `PATH`.
-Plugins are distributed as bomify packages in an OCI registry, and
-`bomify plugin install` puts them there — once verification is set up,
-as described below:
+bomify only looks for plugins in `<data-dir>/plugins`
+(`~/.bomify/plugins` by default), never on `PATH`. Plugins are
+published as bomify packages and installed with `bomify plugin install`:
 
 ```sh
-# Install the latest bomify-plugin-oci
-bomify plugin install oci
-
-# Install a specific version
-bomify plugin install grype:1.12.0
-
-# See what's installed, and where each plugin came from
-bomify plugin list
+bomify plugin install oci             # latest
+bomify plugin install grype:1.12.0    # a specific version
+bomify plugin list                    # what's installed, and from where
 ```
 
-`bomify plugin install <name>` pulls
-`ghcr.io/alejandro-velasco/bomify/plugins/<name>:latest` (`--registry`
-points it at another repository prefix; `<name>:<version>` or
-`<name>@sha256:...` picks a specific one) and installs the plugin binary
-built for your OS and architecture, replacing any earlier install of the
-same plugin.
+`install <name>` pulls `ghcr.io/alejandro-velasco/bomify/plugins/<name>`
+(change the prefix with `--registry`) and installs the binary for your
+OS and architecture, replacing any earlier install.
 
-`bomify plugin install` only installs a plugin something vouches for,
-checked before anything is downloaded:
+It only installs a plugin something vouches for, checked before
+downloading:
 
-- **Its signature**, verified by `bomify-plugin-sigstore` against a
-  signer you trust — from a matching
+- **A signature** verified by `bomify-plugin-sigstore` against a signer
+  you trust, from a matching
   [`bomify trust`](https://alejandro-velasco.github.io/bomify/usage/reference/bomify_trust_create/)
-  rule, or given directly with `--verify-option`: a public key
-  (`key=<public key>`) or a keyless identity
-  (`certificate-identity=...` and `certificate-oidc-issuer=...`).
-- **Or a digest pin**, `<name>@sha256:<digest>`, which names exactly the
-  content to install: every blob pulled is checked against it.
+  rule or `--verify-option` (`key=<public key>`, or
+  `certificate-identity=...` plus `certificate-oidc-issuer=...`).
+- **Or a digest pin**, `<name>@sha256:<digest>`, which every pulled blob
+  is checked against.
 
-Anything else — no signer configured and a tag like `oci` or
-`oci:1.12.0` — is refused rather than installed unauthenticated. Each
-binary must also match the SHA-256 the package's SBOM declares for it,
-but that's an integrity check: it proves the binary is the one the
-package describes, not who published the package. `--verify=false`
-installs without any of this.
+Anything else is refused. Each binary must also match the SHA-256 its
+SBOM declares (integrity, not authenticity). `--verify=false` skips the
+signature check.
 
-bomify's own plugins are signed keyless by its release workflow on
-GitHub Actions, and every release lists each plugin package's pinned
-reference in a `plugin-digests.txt` asset. Since `bomify-plugin-sigstore`
-has nothing to verify its own signature yet, install it by its pinned
-reference from the release you trust, then add a trust rule requiring
-that workflow for everything else:
+bomify's own plugins are signed keyless by its release workflow, and
+each release's `plugin-digests.txt` lists their pinned references. Since
+nothing can verify `bomify-plugin-sigstore` before it's installed,
+install it by digest, then trust the workflow for everything else:
 
 ```sh
 # The .../plugins/sigstore@sha256:... line from the release's plugin-digests.txt
@@ -93,20 +69,17 @@ bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
   --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-Every later `bomify plugin install` from that registry — including
-upgrading `sigstore` itself — then fails unless that workflow signed
-it.
+From then on, installs from that registry, including upgrades of
+`sigstore`, fail unless that workflow signed them.
 
 ## Publishing a plugin
 
-A plugin package is an ordinary bomify package whose SBOM describes
-the plugin's binaries as `pkg:bomify-plugin/<kind>` components — one per
-platform, told apart by `os`/`arch` qualifiers (in `GOOS`/`GOARCH`
-terms). `bomify build` handles these itself rather than through a
-plugin: it copies each binary from the local path (or `file://` URL) in
-the component's `distribution` external reference, resolved against the
-SBOM's own directory. Declare each binary's SHA-256 too — `bomify build`
-checks it, and `bomify plugin install` requires it by default:
+A plugin package is a bomify package whose SBOM lists the binaries as
+`pkg:bomify-plugin/<kind>` components, one per platform, with `os`/`arch`
+qualifiers in `GOOS`/`GOARCH` terms. `bomify build` copies each binary
+from the path (or `file://` URL) in its `distribution` external
+reference, relative to the SBOM. Declare each binary's SHA-256: `build`
+checks it and `install` requires it.
 
 ```json
 {
@@ -126,176 +99,94 @@ checks it, and `bomify plugin install` requires it by default:
 }
 ```
 
-Then build, push, and (ideally) sign it like any other package:
-
 ```sh
 bomify build plugin.cdx.json --tag registry.example.com/plugins/mykind:v1.0.0
 bomify push registry.example.com/plugins/mykind:v1.0.0 --sign sigstore --sign-option key=signing.key
+bomify plugin install mykind:v1.0.0 --registry registry.example.com/plugins --verify-option key=signing.pub
 ```
 
-and install it with
-`bomify plugin install mykind:v1.0.0 --registry registry.example.com/plugins --verify-option key=signing.pub`.
-`install` downloads only the binaries built for the installing
-machine, so one package carrying every platform's build costs nothing
-extra to install.
-
-The first-party plugins are published exactly this way on every
-release, one package per plugin, by `make plugin-packages` (cross-compile
-every plugin and write its SBOM, under `dist/plugin-packages/<kind>/`)
-followed by `make push-plugin-packages` (build and push each, as
-`<version>` and `latest`); see
-[`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages).
+`install` downloads only the installing machine's binary, so one package
+can carry every platform. The first-party plugins are published this
+way by `make plugin-packages` and `make push-plugin-packages` (see
+[`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages)).
 
 ## bomify-plugin-oci
 
-[`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci)
-implements the component contract's `component pull`/`push`/`remote` for
-`pkg:oci/...`/`pkg:docker/...` purls, using the
-[Crane Golang SDK](https://github.com/google/go-containerregistry) to talk
-to OCI registries. It resolves a purl's reference by preferring its `tag`
-qualifier, then a digest-shaped version, then a plain tag, and finally the
-bare repository when there's no version at all; `repository_url` (if
-present) overrides the purl's own namespace/name as the registry address.
+Pulls and pushes `pkg:oci/...` and `pkg:docker/...` images. The
+reference comes from the purl's `tag` qualifier, else a digest-shaped
+version, else a plain tag, else the bare repository; `repository_url`
+overrides the registry address.
 
 ## bomify-plugin-helm
 
-[`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm)
-implements both the component contract and the independent SBOM
-generation contract.
+- **Component**: pulls from HTTP(S) chart repositories
+  (`pkg:helm/<name>@<version>?repository_url=https://...`) and OCI
+  registries (`repository_url=oci://...`). `push` and `push --check`
+  support OCI only, since classic repositories are read-only.
+- **SBOM generation**: renders a chart locally, as `helm template` does,
+  and reports every image it references plus the chart itself. See
+  [its README](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md)
+  for flags and examples.
 
-### Component Pull/Push
-
-`component pull` supports both classic HTTP(S)
-chart repositories (`pkg:helm/<name>@<version>?repository_url=https://...`)
-and OCI registries (`repository_url=oci://...`). Its `component push`
-only supports OCI — Helm's SDK has no upload path for a classic chart
-repository, since those are just static, read-only `index.yaml` listings.
-Its `component push --check` is OCI-only for the same reason, same as
-`push` itself (see
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#check-mode)).
-
-### SBOM Generation
-
-`sbom generate` renders a chart's templates locally via the Helm SDK
-(the same code path as `helm template`, never touching a real cluster)
-and reports every container image it references — plus the chart
-itself — as a CycloneDX SBOM. See
-[its own README](bomify-plugin-helm/README.md) for its flags, manifest
-file, and worked examples, and
-[`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)
-for the contract this and any other SBOM generation plugin must follow.
-
-Note `helm.sh/helm/v4` is a very large dependency (it pulls in most of
-`k8s.io/client-go` transitively), so this plugin's binary is
-correspondingly larger than the others.
+The Helm SDK pulls in much of `k8s.io/client-go`, so this binary is
+larger than the others.
 
 ## bomify-plugin-generic
 
-[`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic)
-handles the package-url spec's own catch-all
-`generic` type: `pkg:generic/<name>@<version>?download_url=<url>`. `pull`
-GETs `download_url` as-is; `push` PUTs the file a prior pull wrote,
-sending it to `--remote` exactly as given (with a correct
-`Content-Length`, not chunked) — useful for destinations like a presigned
-upload URL, where appending anything to `--remote` would invalidate it.
-Its `component push --check` is best-effort only (a HEAD, never a real
-PUT — see its own doc comment on `CheckPush`), since a presigned upload
-URL can't be verified without actually writing to it (see
-[`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#check-mode)).
+Handles `pkg:generic/<name>@<version>?download_url=<url>`: `pull` GETs
+`download_url`; `push` PUTs the file to `--remote` exactly as given
+(with a real `Content-Length`), which suits presigned upload URLs.
+`push --check` only tries a HEAD, since a presigned URL can't be checked
+without writing to it.
 
 ## bomify-plugin-grype
 
-[`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype)
-implements the [security scanning contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)
-(`security scan --purl <purl>` / `security supported-components`) using
-[Anchore's grype](https://github.com/anchore/grype) as a Go library. Most
-purl types (`npm`, `maven`, `apk`, ...) name one specific package, so
-`grype/pkg.Provide` resolves it directly with no cataloging. An
-`oci`/`docker` purl names a whole image instead, so for those two types
-only, the plugin first catalogs it via [Anchore's syft](https://github.com/anchore/syft)
-(the same code path `grype <image>` itself uses), then matches every
-package found.
+Scans with [grype](https://github.com/anchore/grype) as a library. Most
+purl types name one package and are matched directly. An `oci`/`docker`
+purl is an image, so it's cataloged with
+[syft](https://github.com/anchore/syft) first and every package in it is
+matched; each is returned as a component, with `evidence.occurrences`
+showing where syft found it.
 
-### Vulnerability Matching/Conversion
+Matches come from grype's vulnerability database (cached where the
+`grype` CLI caches it) and are converted to CycloneDX by hand. When
+available, `ratings` include the [EPSS](https://www.first.org/epss/)
+score and a [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+flag.
 
-Matches are checked against grype's own vulnerability database (cached
-the same way and location the `grype` CLI uses) and hand-converted into
-CycloneDX `vulnerability` objects — never via grype's own deprecated
-CycloneDX presenter. Each vulnerability's `ratings` also include, when
-grype's database has them, [FIRST's EPSS score](https://www.first.org/epss/)
-and a [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
-flag, as extra `ratings` entries with a free-text `method`
-(`"EPSS"`/`"other"`), the same way grype's own presenter reports them.
-
-### Nested Component Reporting
-
-For `oci`/`docker` scans, every cataloged package is reported as a
-`SecurityResult` component — `bomify security scan` only keeps the ones
-some `affects` actually names as top-level components of the image's
-vulnerability report (the image itself being the report's metadata
-component); a cataloged package nothing was found in doesn't make it
-into the report — with `affects` pointing at the specific package and
-`evidence.occurrences` tracing back to where syft found it — an
-apk/dpkg entry, a `package.json`, a jar on disk, ...
-
-### Supported Components
-
-`security supported-components` lists the purl types grype has a
-dedicated matcher for (`apk`, `deb`, `rpm`, `alpm`, `bitnami`, `npm`,
-`golang`, `maven`, `pypi`, `gem`, `cargo`, `nuget`, `hex`) plus
-`oci`/`docker` — notably not `generic`. 
-
-### Standalone Go Module
-
-Unlike most other plugins here, `bomify-plugin-grype` is **its own Go
-module** ([`plugins/bomify-plugin-grype/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-grype/go.mod)) —
-grype's transitive dependency tree (syft, stereoscope, several cloud
-SDKs, ...) is large enough that folding it into the root `go.mod`/`go.sum`
-would bloat every other build in this repo. It depends on this module's
-own [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)
-via a `replace` directive. `make build`/`test`/`tidy`/`plugins` already
-know to step into this directory separately; see the `plugins` target in
-the [`Makefile`](https://github.com/alejandro-velasco/bomify/blob/main/Makefile).
-A future plugin with a similarly heavy dependency should consider the
-same pattern.
+`supported-components` lists the types grype has a matcher for (`apk`,
+`deb`, `rpm`, `alpm`, `bitnami`, `npm`, `golang`, `maven`, `pypi`, `gem`,
+`cargo`, `nuget`, `hex`) plus `oci`/`docker`, but not `generic`.
 
 ## bomify-plugin-sigstore
 
-[`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore)
-implements the [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
-using [sigstore-go](https://github.com/sigstore/sigstore-go), producing
-standard v0.3 Sigstore bundles (artifact type
-`application/vnd.dev.sigstore.bundle.v0.3+json`), in one of two modes:
+Signs and verifies with [sigstore-go](https://github.com/sigstore/sigstore-go),
+producing v0.3 Sigstore bundles
+(`application/vnd.dev.sigstore.bundle.v0.3+json`):
 
-- **Key pair:** `--sign-option key=signing.key` to sign,
-  `--verify-option key=signing.pub` to verify. Any PEM key pair works —
-  one from OpenSSL (plain or password-protected PKCS#8) or from
-  `cosign generate-key-pair` — with an encrypted key's password read
-  from `SIGSTORE_PASSWORD`. Nothing is uploaded to a transparency log
-  and no network access is needed, which suits private registries and
-  air-gapped `save`/`load` transfers. See the
-  [signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/)
-  for the commands.
-- **Keyless:** with no `key`, signing exchanges an OIDC identity token
-  for a short-lived [Fulcio](https://github.com/sigstore/fulcio)
-  certificate and logs the signature in
-  [Rekor](https://github.com/sigstore/rekor). The token comes from
-  `SIGSTORE_ID_TOKEN` (or `--sign-option identity-token=...`), from
-  wherever you get one — typically a CI system's own OIDC provider, e.g.
-  GitHub Actions' with `permissions: id-token: write`, so a workflow
-  signs as itself with no secrets at all. It must be issued for the
-  `sigstore` audience, and only lasts minutes, so fetch it right before
-  signing.
-  Verifying requires the signer's `certificate-identity` (or
-  `certificate-identity-regexp`) and `certificate-oidc-issuer` (or
-  `-regexp`) — for a GitHub Actions workflow,
-  `https://github.com/<owner>/<repo>/.github/workflows/<file>@<ref>` and
-  `https://token.actions.githubusercontent.com` — and fetches Sigstore's
-  public trusted root, so it needs network access.
+- **Key pair**: `--sign-option key=signing.key`, `--verify-option
+  key=signing.pub`. Any PEM pair works (OpenSSL, plain or encrypted
+  PKCS#8, or `cosign generate-key-pair`); an encrypted key's password
+  comes from `SIGSTORE_PASSWORD`. Fully offline, which suits private
+  registries and air-gapped `save`/`load`. See the
+  [signing how-to](https://alejandro-velasco.github.io/bomify/how-to/signing-and-verifying-packages/).
+- **Keyless**: with no `key`, signing trades an OIDC token
+  (`SIGSTORE_ID_TOKEN` or `--sign-option identity-token=...`, audience
+  `sigstore`) for a short-lived [Fulcio](https://github.com/sigstore/fulcio)
+  certificate and logs to [Rekor](https://github.com/sigstore/rekor).
+  In GitHub Actions, `permissions: id-token: write` lets a workflow sign
+  as itself. Tokens last minutes, so fetch one right before signing.
+  Verifying needs `certificate-identity` (or `-regexp`) and
+  `certificate-oidc-issuer` (or `-regexp`), and network access to
+  Sigstore's trusted root.
 
-`key` can't be combined with the keyless options, and any other option
-is rejected rather than ignored. Like
-`bomify-plugin-grype`, it's its own Go module
-([`plugins/bomify-plugin-sigstore/go.mod`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-sigstore/go.mod)),
-since sigstore-go's dependency tree (TUF, protobuf specs, cloud
-credential providers, ...) is too heavy for the root module.
+`key` can't be combined with keyless options, and unknown options are
+rejected.
+
+## Separate Go modules
+
+`bomify-plugin-grype` and `bomify-plugin-sigstore` are their own Go
+modules, since their dependency trees would bloat every other build. They
+use this repo's `pkg/plugin` through a `replace` directive, and the
+`Makefile` builds, tests, and tidies them separately. A plugin with
+similarly heavy dependencies should do the same.

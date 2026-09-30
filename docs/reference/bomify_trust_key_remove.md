@@ -4,10 +4,9 @@ Remove a public key from the managed key store
 
 ### Synopsis
 
-Remove drops <name> from <data-dir>/keys/, deleting its stored copy
-unless another name refers to the same content. It refuses while any
-"bomify trust" rule still refers to <name>, so no rule is left
-referring to a key that no longer exists.
+Remove deletes <name> from the key store, and its stored copy unless
+another name shares it. It refuses while a "bomify trust" rule uses
+<name>.
 
 ```
 bomify trust key remove <name> [flags]
