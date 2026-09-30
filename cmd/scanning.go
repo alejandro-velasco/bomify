@@ -23,37 +23,39 @@ type gateFlags struct {
 	ignore []string
 	vex    []string
 	skip   bool
+	// skipFlag names the skip flag, for messages: "skip-gate" on
+	// "bomify security scan", where only the gate can be skipped — the
+	// scan is the command itself — and "skip-scan" on pull and load,
+	// where it skips both.
+	skipFlag string
 }
 
-// register adds the gate flags to "bomify security scan", whose
-// --skip-scan skips only the gate — the scan is the command itself.
-// --skip-gate, its earlier name, still works as a hidden alias. Only
-// this explicit scan takes the one-off exemptions --ignore and --vex;
-// pull and load rely on a rule's stored VEX instead.
+// register adds the gate flags to "bomify security scan". Only this
+// explicit scan takes the one-off exemptions --ignore and --vex; pull
+// and load rely on a rule's stored VEX instead.
 func (f *gateFlags) register(cmd *cobra.Command) {
-	f.registerThreshold(cmd, "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
+	f.registerThreshold(cmd, "skip-gate", "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
 	cmd.Flags().StringArrayVar(&f.ignore, "ignore", nil, "a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on")
 	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's")
-	cmd.Flags().BoolVar(&f.skip, "skip-gate", false, "")
-	_ = cmd.Flags().MarkHidden("skip-gate")
 }
 
-// registerThreshold adds --fail-on and --skip-scan, the gate flags every
-// scanning command takes.
-func (f *gateFlags) registerThreshold(cmd *cobra.Command, skipUsage string) {
+// registerThreshold adds --fail-on and the command's skip flag, named
+// skipFlag.
+func (f *gateFlags) registerThreshold(cmd *cobra.Command, skipFlag, skipUsage string) {
+	f.skipFlag = skipFlag
 	cmd.Flags().StringVar(&f.failOn, "fail-on", "", "fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching \"bomify security policy\" rule's")
-	cmd.Flags().BoolVar(&f.skip, "skip-scan", false, skipUsage)
+	cmd.Flags().BoolVar(&f.skip, skipFlag, false, skipUsage)
 }
 
 // validate rejects flag combinations that contradict each other or do
 // nothing.
 func (f *gateFlags) validate() error {
-	// Any of these shape the gate, which --skip-scan would silently
+	// Any of these shape the gate, which the skip flag would silently
 	// throw away.
 	configuresGate := f.failOn != "" || len(f.ignore) > 0 || len(f.vex) > 0
 
 	if f.skip && configuresGate {
-		return errors.New("--skip-scan cannot be combined with --fail-on, --ignore, or --vex")
+		return fmt.Errorf("--%s cannot be combined with --fail-on, --ignore, or --vex", f.skipFlag)
 	}
 	if len(f.ignore) > 0 && f.failOn == "" {
 		return errors.New("--ignore requires --fail-on")
@@ -91,7 +93,7 @@ func matchingScanRule(ref string) (security.Rule, bool, error) {
 // policy rule that applies to it (matched false if none does).
 //
 // Its threshold is decided in this order:
-//  1. --skip-scan: nothing fails (with a warning if the rule would
+//  1. The skip flag: nothing fails (with a warning if the rule would
 //     have).
 //  2. --fail-on (plus --ignore): used as-is.
 //  3. The rule's.
@@ -189,7 +191,7 @@ type scanFlags struct {
 
 func (f *scanFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.scanner, "scan", "", "scan the package's components with the bomify-plugin-<type> scanner before anything is written (e.g. grype), refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's scanner")
-	f.registerThreshold(cmd, "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
+	f.registerThreshold(cmd, "skip-scan", "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
 }
 
 // validate rejects flag combinations that contradict each other.

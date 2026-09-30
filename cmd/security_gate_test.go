@@ -75,12 +75,13 @@ func TestSecurityScanAppliesPolicy(t *testing.T) {
 	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "critical"); err != nil {
 		t.Errorf("--fail-on critical over a rule: error = %v, want none", err)
 	}
-	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-scan"); err != nil {
-		t.Errorf("--skip-scan: error = %v, want none", err)
-	}
-	// --skip-gate, the flag's earlier name, still works as a hidden alias.
 	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate"); err != nil {
 		t.Errorf("--skip-gate: error = %v, want none", err)
+	}
+	// Only pull and load take --skip-scan: an explicit scan can't skip
+	// itself.
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-scan"); err == nil {
+		t.Error("security scan --skip-scan: error = nil, want an unknown-flag error")
 	}
 }
 
@@ -90,7 +91,7 @@ func TestSecurityScanGateFlagValidation(t *testing.T) {
 	for _, args := range [][]string{
 		{"--fail-on", "severe"},
 		{"--ignore", "CVE-HIGH"},
-		{"--skip-scan", "--fail-on", "high"},
+		{"--skip-gate", "--fail-on", "high"},
 	} {
 		if _, err := runRootCmd(t, baseDir, append([]string{"security", "scan", "grype", gatedTag}, args...)...); err == nil || errors.As(err, new(*security.GateError)) {
 			t.Errorf("%v: error = %v, want a flag error", args, err)
@@ -159,8 +160,8 @@ func TestSecurityScanVEX(t *testing.T) {
 	if !errors.As(err, &gateErr) || len(gateErr.Findings) != 1 || gateErr.Findings[0].ID != "CVE-LOW" {
 		t.Errorf("--fail-on low --vex: error = %v, want just CVE-LOW", err)
 	}
-	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-scan", "--vex", vex); err == nil {
-		t.Error("--skip-scan --vex: error = nil, want a flag error")
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate", "--vex", vex); err == nil {
+		t.Error("--skip-gate --vex: error = nil, want a flag error")
 	}
 	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "high", "--vex", filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Error("missing --vex file: error = nil, want one")

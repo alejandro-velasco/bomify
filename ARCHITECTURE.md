@@ -334,8 +334,7 @@ it, so ratings with no severity (the EPSS and CISA KEV scores
 gate applies to `<tag>` the same way `signature.Policy` decides which
 signer must verify a package:
 
-1. `--skip-scan` (hidden alias `--skip-gate`): nothing fails
-   (warning if a rule would have).
+1. `--skip-gate`: nothing fails (warning if a rule would have).
 2. `--fail-on` (plus `--ignore`): used as its threshold.
 3. The most specific `conf/scan.json` rule matching `<tag>`'s
    repository (`security.Resolve`). Rules deliberately carry no list of

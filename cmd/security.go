@@ -75,7 +75,7 @@ package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
 threshold instead, if any does, and that rule's stored VEX documents
 always apply alongside --vex, which reads the given file as it is now;
---skip-scan ignores the rule's threshold (the scan still runs). Reports
+--skip-gate ignores the rule's threshold (the scan still runs). Reports
 are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
@@ -279,7 +279,7 @@ and why. For a one-off, use "bomify security scan --ignore".
 
 "bomify security scan" applies a matching rule's --fail-on when given
 no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-scan.
+--vex of its own, and ignores rules entirely with --skip-gate.
 
 --on pull also makes a matching package get scanned with <scanner> and
 gated automatically by "bomify pull" and "bomify load", before anything

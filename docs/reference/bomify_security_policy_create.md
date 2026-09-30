@@ -29,7 +29,7 @@ and why. For a one-off, use "bomify security scan --ignore".
 
 "bomify security scan" applies a matching rule's --fail-on when given
 no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-scan.
+--vex of its own, and ignores rules entirely with --skip-gate.
 
 --on pull also makes a matching package get scanned with <scanner> and
 gated automatically by "bomify pull" and "bomify load", before anything

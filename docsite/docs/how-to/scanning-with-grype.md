@@ -114,7 +114,7 @@ To set the bar once instead of on every command, record it as a policy
 rule for the packages it applies to. A scan with no `--fail-on` of its
 own uses the most specific matching rule's threshold (rules have no
 ignore list: `--ignore` is only ever a one-off for a single command);
-`--skip-scan` ignores it:
+`--skip-gate` ignores it:
 
 ```sh
 bomify security policy create grype --match registry.example.com/team --fail-on high

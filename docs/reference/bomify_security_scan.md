@@ -43,7 +43,7 @@ package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
 threshold instead, if any does, and that rule's stored VEX documents
 always apply alongside --vex, which reads the given file as it is now;
---skip-scan ignores the rule's threshold (the scan still runs). Reports
+--skip-gate ignores the rule's threshold (the scan still runs). Reports
 are written either way.
 
 ```
@@ -70,7 +70,7 @@ bomify security scan <type> <tag> [flags]
       --fail-on string       fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                 help for scan
       --ignore stringArray   a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
-      --skip-scan            never fail on vulnerabilities, even if a "bomify security policy" rule matching the package says to
+      --skip-gate            never fail on vulnerabilities, even if a "bomify security policy" rule matching the package says to
       --vex stringArray      an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
 ```
 
