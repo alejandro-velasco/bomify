@@ -30,8 +30,8 @@ Also relevant:
   parses (SBOM generation has none). Glob for the current set.
 - [`plugins/README.md`](../../../plugins/README.md): the first-party
   plugins.
-- [`ARCHITECTURE.md`](../../../ARCHITECTURE.md): how the contracts fit
-  into bomify.
+- [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):
+  how the contracts fit into bomify.
 
 ## Workflow
 

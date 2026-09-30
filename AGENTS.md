@@ -15,7 +15,7 @@ Keep every doc, command description, and code comment tight:
 - Say each thing once, where it belongs, and link to it elsewhere.
 - Lead with what the reader needs; add rationale only where a choice
   isn't obvious.
-- Go into detail only in reference material: ARCHITECTURE.md for
+- Go into detail only in reference material: `docs/architecture/` for
   internals, the plugin contracts for plugin authors.
 - A command's `Long` text covers what it does and non-obvious flag
   interactions; the docs site covers workflows.
@@ -24,9 +24,9 @@ Keep every doc, command description, and code comment tight:
 
 In the same change that makes a doc inaccurate:
 
-- **ARCHITECTURE.md**: update it for changes to the data directory,
-  plugin architecture, build/tag bookkeeping, push/pull, save/load, or
-  credentials.
+- **`docs/architecture/`**: update the matching page for changes to the
+  data directory, plugins, build/tag bookkeeping, push/pull, save/load,
+  or credentials.
 - **Diagrams**: edit `docs/diagrams/*.mmd`, never the `.svg`, then run
   `make diagrams` and commit both.
 - **CLI reference**: `docs/reference/` is generated. After changing a
@@ -43,17 +43,21 @@ never turn them into separate copies:
 
 - `usage/reference/` is copied from `docs/reference/` by `make
   docs-site-sync`.
-- `getting-started/installing-plugins.md` and
-  `development/{component,sbom,security,signing}-contract.md` are
-  one-line wrappers that include `plugins/README.md` and the
-  `plugins/*-CONTRACT.md` files via `pymdownx.snippets`. Edit the
-  sources, and keep links in them absolute GitHub URLs, since they
-  render from a different directory. (`development/building-a-plugin.md`
-  may link to the in-site contract pages.)
+- `getting-started/installing-plugins.md`,
+  `development/{component,sbom,security,signing}-contract.md`, and
+  `development/architecture/*.md` are one-line wrappers that include
+  `plugins/README.md`, the `plugins/*-CONTRACT.md` files, and
+  `docs/architecture/*.md` via `pymdownx.snippets`. Edit the sources.
+  Since they render from a different directory, links in them to other
+  repo files must be absolute GitHub URLs. The exceptions: links between
+  architecture pages, and their `../diagrams/*.svg` images, which `make
+  docs-site-sync` copies to the same relative path. (Other docsite pages
+  may link to the in-site contract and architecture pages.)
+- A new architecture page needs a wrapper and a `nav` entry.
 
 Update the command list in `docsite/zensical.toml`'s `nav` when a
 command is added, removed, or renamed. Everything else in
-`docsite/docs/` is hand-written; link to ARCHITECTURE.md and the
+`docsite/docs/` is hand-written; link to `docs/architecture/` and the
 contracts rather than restating them.
 
 ## Opening pull requests

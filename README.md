@@ -108,7 +108,7 @@ hands each to a `bomify-plugin-<kind>` binary in `~/.bomify/plugins`.
 [SBOM generation](plugins/SBOM-CONTRACT.md),
 [security scanning](plugins/SECURITY-CONTRACT.md), or
 [signing](plugins/SIGNING-CONTRACT.md) contracts. See
-[ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together.
+[`docs/architecture`](docs/architecture) for how it fits together.
 
 ## License
 

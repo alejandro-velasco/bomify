@@ -1,6 +1,6 @@
 // Package layout is the single source of truth for where everything lives
-// inside a bomify data directory (see ARCHITECTURE.md's "Data directory"
-// section). Every other package derives its paths from here rather than
+// inside a bomify data directory (see docs/architecture/data-directory.md).
+// Every other package derives its paths from here rather than
 // joining directory names itself, so the layout can only ever change in
 // one place.
 //

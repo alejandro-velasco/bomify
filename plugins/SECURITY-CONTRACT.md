@@ -125,7 +125,7 @@ Reports are keyed by purl alone, so packages sharing a component share
 its report, and the newest scan replaces it. On push or save, reports
 travel as an OCI referrer, so re-scanning never changes the package
 digest (see
-[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#reports-in-a-registry)).
+[the architecture docs](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/security-scanning.md#reports-in-a-registry)).
 
 ## What bomify handles
 

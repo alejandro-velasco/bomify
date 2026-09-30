@@ -12,7 +12,7 @@ install grype`.
 
 See [`bomify security scan`](../usage/reference/bomify_security_scan.md)
 for every flag, and
-[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#security-scanning)
+[the architecture docs](../development/architecture/security-scanning.md)
 for how it works.
 
 ## 1. Scan a package

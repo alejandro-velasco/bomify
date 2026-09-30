@@ -109,7 +109,7 @@ stored copy>`, so a plugin always gets a file path.
 The plugin owns its trust material. bomify only decides whether a
 package is signed or verified, and by which plugin: `--sign`/`--verify`,
 else (for verification) the most specific trust rule (see
-[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#signing--verification)).
+[the architecture docs](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/signing.md)).
 
 ## Standard streams
 

@@ -12,7 +12,7 @@ skipped with a warning.
 
 `bomify-plugin-sigstore` is the first-party signing plugin (`bomify
 plugin install sigstore`). See
-[ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#signing--verification)
+[the architecture docs](../development/architecture/signing.md)
 for how it works and
 [plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#bomify-plugin-sigstore)
 for its options.
