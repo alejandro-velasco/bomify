@@ -1,110 +1,68 @@
 # Security scanning plugin contract
 
-This is the specification for the subprocess contract between `bomify`
-and a `bomify-plugin-<type>` binary's **security scanning** subcommands,
-`security scan` and `security supported-components`, which `bomify
-security scan <type> <tag>` delegates to — the latter once, the former
-once per (supported) component in that built package's SBOM,
-concurrently. It's an
-entirely independent contract from the
-[component plugin contract](COMPONENT-CONTRACT.md) and the
-[SBOM generation plugin contract](SBOM-CONTRACT.md) — a plugin binary
-may implement any, all, or none of the three, and implementing one owes
-nothing to the others.
+The spec for a `bomify-plugin-<type>` binary's **security scanning**
+subcommands, `security scan` and `security supported-components`, which
+`bomify security scan <type> <tag>` (and a scan on `pull`/`load`) call.
+It's independent of the
+[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
+[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
+and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+contracts.
 
-`<type>` here is different from `<kind>` in the other two contracts: it
-names the **scanning tool itself** (e.g. `grype`, `trivy`), not a purl
-type or a deployment medium. Any scanner can in principle scan any
-component regardless of its purl type, so `<type>` identifies *which
-engine* to run — the same one, for every component in the SBOM — not
-*what's being scanned*.
+Here `<type>` names the scanning tool (e.g. `grype`, `trivy`), not a
+purl type: one scanner handles every component in a package.
+
+Go plugins should implement `pkg/plugin`'s `SecurityPlugin` interface and
+use `plugin.SecurityCommand`, which provides both subcommands, their
+flags, and output.
 
 ## Naming and discovery
 
-Identical to the [component contract's](COMPONENT-CONTRACT.md#naming-and-discovery):
-a plugin for scanning tool `<type>` must be named exactly
-`bomify-plugin-<type>` (`bomify-plugin-<type>.exe` on Windows) and
-installed in `<data-dir>/plugins`. `bomify security scan <type> ...` looks up
-`bomify-plugin-<type>` the same way `bomify build`/`bomify distribute`
-look up a component plugin, and never invokes it by any other name or
-location.
+As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#naming-and-discovery):
+`bomify-plugin-<type>` (`.exe` on Windows), installed in
+`<data-dir>/plugins`.
 
 ## What bomify does
 
-Unlike the SBOM generation contract, bomify does real orchestration
-work here, much closer to the component contract's `pull`/`push`
-dispatch:
+1. Resolves `<tag>` to a local package and walks its SBOM.
+2. Calls `security supported-components` once, and skips every component
+   whose purl type isn't listed.
+3. Calls `security scan --purl <purl>` once per remaining component, up
+   to `--concurrency` at a time.
+4. Writes each result as that component's [report](#reports).
 
-1. **Resolve** `<tag>` to a package already built (or pulled/loaded)
-   locally, and walk every component its SBOM describes.
-2. **Find** `bomify-plugin-<type>` in `<data-dir>/plugins` once — the same binary
-   scans every component, regardless of purl type.
-3. **Query** that binary's `security supported-components` once, to
-   learn which component purl types and scan categories it supports —
-   see [SupportedComponentsResult](#supportedcomponentsresult). A
-   component whose purl type isn't in the reported list is skipped
-   entirely; it's never sent to `security scan` at all.
-4. **Delegate**, once per remaining component, up to `--concurrency` at
-   a time (mirroring `bomify build`/`bomify distribute`'s own flag):
-   call `security scan --purl <purl>` and parse its JSON result.
-5. **Record** each component's result as that component's own
-   vulnerability report — see [Reports](#reports) — shared by every
-   package describing the same purl.
-
-A plugin never opens the package's SBOM itself, and `security scan`
-never sees any component but the one named by the `--purl` it was given
-for that invocation — bomify owns the SBOM, the dispatch, the
-concurrency, and the reports.
+The plugin never sees the SBOM or any component but the one it's asked
+about.
 
 ## Commands
-
-A security scanning plugin must implement exactly two subcommands,
-nested under `security`:
 
 ```
 bomify-plugin-<type> security scan --purl <purl>
 bomify-plugin-<type> security supported-components
 ```
 
-### `security scan`
+- **`security scan`**: `--purl` (required) is the component to scan; the
+  plugin derives everything from it. On success, print one
+  [`SecurityResult`](#securityresult) and exit `0`.
+- **`security supported-components`**: no flags. On success, print one
+  [`SupportedComponentsResult`](#supportedcomponentsresult) and exit
+  `0`. It must always report the same thing.
 
-| Flag | Required | Meaning |
-| --- | --- | --- |
-| `--purl` | yes | *The component's package URL. The plugin derives everything it needs to know about what to scan from this string.* |
-
-On success, the plugin must print a single `SecurityResult` JSON object
-(see [SecurityResult](#securityresult)) to stdout and exit `0`.
-
-### `security supported-components`
-
-Takes no flags. Reports which component purl types and scan categories
-this plugin supports — bomify calls this once per `bomify security
-scan` invocation, never once per component, to decide which components
-are even worth dispatching to `security scan` (step 3 above).
-
-On success, the plugin must print a single `SupportedComponentsResult`
-JSON object (see [SupportedComponentsResult](#supportedcomponentsresult))
-to stdout and exit `0`. It must be a pure function of nothing at all —
-the same plugin binary always reports the same capabilities.
-
-Unlike the component contract, neither subcommand takes `--output`/
-`--input`, `--check`, or `--log`/`--log-color` — a security
-scanning plugin only ever answers "what does this purl have" and "what
-do you support", nothing else. Routine logging is the plugin's own
-business; write it straight to stderr if you want it, there's no
-`--log` file to route it through.
+There's no `--check`, `--output`/`--input`, or `--log`/`--log-color`.
 
 ## Standard streams
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one JSON value, printed only on success — a `SecurityResult` object for `scan`, a `SupportedComponentsResult` object for `supported-components`. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails accordingly (that component's scan, or the whole invocation for `supported-components`) if it isn't exactly that. |
-| stderr | A single, short, human-readable fatal error message, written only on failure (non-zero exit). bomify captures this and appends it verbatim to the error it reports; a single component's `scan` failure fails the whole `bomify security scan`, exactly like a failed `pull` fails the whole `bomify build` — and a failing `supported-components` call fails it before any component is even scanned. Like stdout, this is not a place for routine logging — though unlike the component contract, there's no `--log` file to route logging through instead, so a plugin may write its own diagnostics to stderr directly as long as nothing but the one fatal message appears there on failure. |
-| exit code | `0` on success (with valid JSON on stdout). Any non-zero value on failure. |
+| stdout | Exactly one JSON result, only on success. Nothing else, ever. |
+| stderr | Diagnostics are allowed, but on failure it must hold only one short fatal message, which bomify appends to its error. |
+| exit code | `0` on success; non-zero on failure. |
+
+A failed `scan` fails the whole `bomify security scan`, as a failed
+`pull` fails `build`. A failed `supported-components` fails it before
+anything is scanned.
 
 ## SecurityResult
-
-The single JSON object a plugin prints to stdout on success:
 
 ```json
 {
@@ -112,7 +70,6 @@ The single JSON object a plugin prints to stdout on success:
     {
       "bom-ref": "CVE-2024-12345",
       "id": "CVE-2024-12345",
-      "description": "...",
       "ratings": [{ "severity": "high" }],
       "affects": [{ "ref": "pkg:npm/left-pad@1.3.0" }]
     }
@@ -123,134 +80,56 @@ The single JSON object a plugin prints to stdout on success:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` the scanned `--purl` is affected by. |
-| `components` | array | no | Every CycloneDX `component` the plugin found while unpacking the scanned `--purl` into smaller pieces to scan it at all — see below. Omit entirely (or leave empty) if the plugin scanned the purl directly, with nothing to unpack. |
+| `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` affecting `--purl`. Empty means nothing was found; that's a valid result, not an error. |
+| `components` | array | no | CycloneDX `component`s the plugin unpacked `--purl` into to scan it (e.g. the packages inside an image). Omit if it scanned the purl directly. |
 
-An empty `vulnerabilities` array reports that nothing was found — just
-as meaningful a result as a populated one, and not an error.
+**The plugin sets `affects`; bomify never changes it.**
 
-Each vulnerability is a regular
-[CycloneDX `vulnerability`](https://cyclonedx.org/docs/) object; there
-is no bomify-specific field beyond the two top-level keys themselves.
-**The plugin — not bomify — sets `affects`.** Two cases:
+- Scanned directly: `affects` is one entry, the `--purl` given.
+- Unpacked: `affects` names the affected pieces by their `bom-ref` from
+  `components`, never the top-level purl. A vulnerability affecting
+  several pieces lists them all in one object.
 
-- **Scanning the purl directly** (`components` is empty/omitted): set
-  `affects` to a single entry referencing that same purl string back
-  (`{"ref": "<the --purl you were given>"}`). There's nothing smaller
-  to attribute the finding to.
-- **Unpacking the purl into pieces** (`components` is non-empty, e.g.
-  cataloging a container image's contents): set `affects` to reference
-  the specific piece(s) — by their own `bom-ref`, from `components` —
-  actually affected, never the top-level purl itself. The same
-  vulnerability affecting more than one piece gets multiple `affects`
-  entries in one vulnerability object, not a duplicated one.
+Give each vulnerability a stable `bom-ref` (its ID works) and each
+component a stable `bom-ref` (its purl works). Report every piece you
+unpacked, not just affected ones; bomify filters them.
 
-bomify never sets or overwrites `affects` itself; see
-[Reports](#reports) below for what it does instead. Setting a stable
-`bom-ref` per vulnerability (the vulnerability's own ID is a reasonable
-choice) is still recommended, so a consumer of the report can refer to a
-finding unambiguously.
-
-Each entry in `components` is a regular
-[CycloneDX `component`](https://cyclonedx.org/docs/) object, with a
-stable `bom-ref` of the plugin's own choosing (a purl, if the piece has
-one, is a reasonable choice — see `pkg:npm/lodash@4.17.15` above). A
-plugin should still report every piece it unpacked, not just the
-affected ones — bomify itself is the one that narrows the list down to
-just what's affected when it writes the report (see
-[Reports](#reports) below), and it can only do that filtering starting
-from the full list.
-
-A machine-readable version of this schema is published at
-[`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
-
-Go plugins should build this as a `plugin.SecurityResult` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
-`plugin.SecurityPlugin`'s `Scan`: `plugin.SecurityCommand` builds both
-`security` subcommands around that interface, flags and output
-included. Otherwise, print it with `plugin.Print` rather than
-hand-rolling the JSON encoding.
+Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
 
 ## SupportedComponentsResult
 
-The single JSON object a plugin's `security supported-components`
-subcommand prints to stdout on success:
-
 ```json
-{
-  "types": ["oci", "helm", "generic"],
-  "scans": ["sca"]
-}
+{ "types": ["oci", "helm", "generic"], "scans": ["sca"] }
 ```
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `types` | array of strings | yes, non-empty | Every component purl type (e.g. `oci`, `helm`, `npm`, `generic` — the same names `plugin.Detect` derives from a purl) this plugin knows how to scan. A component whose purl type isn't in this list is never sent to `security scan`. |
-| `scans` | array of strings | yes | The categories of scan this plugin performs, e.g. `sca` (software composition analysis), `sast` (static analysis). Purely informational today — bomify logs it, but doesn't yet act on it — so use whatever names are meaningful for your plugin. |
+| `types` | array of strings | yes, non-empty | Purl types the plugin can scan (`oci`, `npm`, ...). Components of other types are never sent to `scan`. |
+| `scans` | array of strings | yes | Scan categories (e.g. `sca`, `sast`). Informational: bomify only logs them. |
 
-A machine-readable version of this schema is published at
-[`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-components-result.schema.json).
-
-Go plugins should build this as a `plugin.SupportedComponentsResult`
-(see [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
-`plugin.SecurityPlugin`'s `SupportedComponents`, or print it with
-`plugin.Print`, rather than hand-rolling the JSON encoding.
+Schema: [`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-components-result.schema.json).
 
 ## Reports
 
-bomify writes every scanned component's result, unmodified, as its own
-CycloneDX document — a vulnerability report — at
-`<data-dir>/vulnerabilities/<purl-hash>.json`, keyed by the same hash of
-the component's purl as its pull manifest and layer directory:
+bomify writes each result as a CycloneDX document at
+`<data-dir>/vulnerabilities/<purl-hash>.json`:
 
-- The report's `metadata.component` is the scanned component itself,
-  with its `bom-ref` set to its purl (so a directly-scanned component's
-  `affects`, which name that purl, resolve within the report).
-- The report's top-level `components` are whichever of the plugin's
-  reported `components` some vulnerability's `affects` actually names —
-  empty for a component scanned directly (e.g. an `npm` or `pypi`
-  purl), and, for one that wasn't (e.g. the packages cataloged inside
-  an `oci`/`docker` image, which stays the report's metadata
-  component), only the unpacked pieces something was actually found
-  in, not the full inventory the plugin reported.
-- The report's `vulnerabilities` are exactly the `vulnerabilities` the
-  plugin reported. bomify never sets, rewrites, merges, or reorders
-  them, `affects` included.
-- The report's `metadata.timestamp` is when bomify ran the scan, and its
-  `metadata.tools` names the plugin (`<type>`) that ran it.
+- `metadata.component` is the scanned component, `bom-ref` set to its
+  purl, so a directly scanned component's `affects` resolve.
+- `components` are only the unpacked pieces some `affects` names.
+- `vulnerabilities` are exactly what the plugin reported, unmodified.
+- `metadata.timestamp` and `metadata.tools` record when and by which
+  plugin it was scanned.
 
-Because a report is keyed by purl alone, a component shared by two
-packages shares one report: scanning either package replaces it with
-that newest scan's result. Nothing in a report depends on which
-package's SBOM the component was scanned from.
-
-When the package is pushed or saved, bomify attaches its reports to it
-as an OCI referrer rather than as part of the package, so a re-scan
-never changes the package's digest (see
+Reports are keyed by purl alone, so packages sharing a component share
+its report, and the newest scan replaces it. On push or save, reports
+travel as an OCI referrer, so re-scanning never changes the package
+digest (see
 [ARCHITECTURE.md](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md#reports-in-a-registry)).
 
-This is entirely bomify's responsibility; a plugin never sees another
-component's result, or where (or whether) its own gets stored.
+## What bomify handles
 
-## What a plugin does *not* need to handle
-
-- No `--check` mode, caching, or concurrency control of its own —
-  bomify owns concurrency (`--concurrency`) and invokes `security scan`
-  fresh for every component; a plugin never needs to remember anything
-  between invocations or deduplicate anything itself.
-- No filtering of components by type — bomify does that itself, using
-  `security supported-components`'s answer, before ever calling
-  `security scan`; a plugin doesn't need to validate or reject a purl
-  type it doesn't support, since it will simply never be asked about
-  one.
-- No knowledge of the package it came from, or any other component's
-  result — bomify writes each component's report itself. A plugin does still set its
-  own findings' `affects`, since only it knows what its own result is
-  actually about — see [SecurityResult](#securityresult).
-- No coordination with this binary's own component or SBOM generation
-  subcommands (if it has any) — the three contracts must not depend on
-  each other's behavior or state.
-
-`security scan` should be a pure function of `--purl`: given the same
-one, do the same thing. `security supported-components` should be a
-pure function of nothing at all.
+Concurrency, filtering by type, and storing results are bomify's job.
+Each call is fresh, the plugin is never asked about an unsupported type,
+and it needs no knowledge of the package or other components. Don't
+depend on the binary's other contracts, if it has any.

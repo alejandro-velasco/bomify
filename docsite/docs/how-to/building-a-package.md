@@ -4,17 +4,13 @@ icon: lucide/package
 
 # Building a package
 
-`bomify build` reads a CycloneDX SBOM and pulls every component it
-describes through the plugin matching that component's purl type,
-then records the SBOM itself as this build's manifest so later
-commands (`push`, `distribute`, `tag`, `packages`) can find it. See
-[bomify build](../usage/reference/bomify_build.md) for the full flag
-reference.
+`bomify build` pulls every component a CycloneDX SBOM describes, through
+the plugin for each component's purl type, and records the SBOM as the
+build.
 
 ## 1. Start from an SBOM
 
-Each component needs a [package URL](https://github.com/package-url/purl-spec)
-bomify can resolve to a plugin kind:
+Each component needs a [purl](https://github.com/package-url/purl-spec):
 
 ```json title="sbom.json"
 {
@@ -37,54 +33,28 @@ bomify can resolve to a plugin kind:
 }
 ```
 
-You don't have to write one by hand — see
-[Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md)
-for one way to generate one instead.
+Or [generate one from a Helm chart](building-an-sbom-from-a-helm-chart.md).
 
-## 2. Check it first, without downloading anything
+## 2. Check it without downloading
 
 ```sh
 bomify build sbom.json --check
 ```
 
-`--check` asks each component's plugin to confirm it's pullable and
-authorized — an inexpensive existence/auth check, not a real
-download — and skips recording a build, since nothing was actually
-pulled. Useful in CI before committing to a real build, or after
-editing an SBOM by hand.
+Each plugin cheaply confirms its component is reachable and authorized.
+Nothing is recorded.
 
-## 3. Build and tag it
+## 3. Build and tag
 
 ```sh
-bomify build sbom.json --tag myapp:1.0 --tag myapp:latest
+bomify build sbom.json --tag myapp:1.0 --tag myapp:latest --concurrency 4
 ```
 
-`--tag` is repeatable, so one build can be reachable under several
-names at once. Pull components concurrently while you're at it:
+A component whose SHA-256 doesn't match the SBOM fails the build.
 
-```sh
-bomify build sbom.json --tag myapp:1.0 --concurrency 4
-```
-
-Each pulled component is checked against its SBOM-declared SHA-256; a
-mismatch fails the build.
-
-## 4. Find it again later
+## 4. Find it later
 
 ```sh
 bomify packages
+bomify tag myapp:1.0 myapp:v1.0.1   # another name, no rebuild
 ```
-
-Add another tag pointing at the same build, without rebuilding or
-re-pulling anything:
-
-```sh
-bomify tag myapp:1.0 myapp:v1.0.1
-```
-
-## Next steps
-
-- [Distributing a package](distributing-a-package.md) to publish what
-  you just built.
-- [Saving packages for airgapped environments](saving-packages-for-airgapped-environments.md)
-  if the destination has no registry access at all.

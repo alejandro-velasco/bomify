@@ -5,116 +5,42 @@ description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> bi
 
 # bomify plugins
 
-A `bomify-plugin-<kind>` is a standalone executable bomify shells out to.
-It can implement any, all, or none of four entirely independent
-contracts — determine which one your task concerns before reading further,
-since they don't share requirements:
+A `bomify-plugin-<kind>` binary can implement any of four independent
+contracts. Work out which one your task concerns, then read that
+contract **in full**; it's authoritative. Don't restate it in code
+comments or rely on memory of it, since the contracts keep growing.
 
-- **Component plugins** (`component pull`/`component push`/`component
-  remote`, one per purl type) — the full subprocess contract, naming and
-  discovery, every subcommand and its flags, stdout/stderr/exit-code
-  rules, each JSON result shape, the SHA-256 hash, logging via
-  `--log`, and what a plugin does *not* need to handle — is specified in
-  [`plugins/COMPONENT-CONTRACT.md`](../../../plugins/COMPONENT-CONTRACT.md).
-- **SBOM generation plugins** (`sbom generate`, one per deployment
-  medium) — a deliberately much lighter contract, standalone-runnable
-  and unrelated to the component contract's flags/JSON/logging/caching
-  machinery — specified in
-  [`plugins/SBOM-CONTRACT.md`](../../../plugins/SBOM-CONTRACT.md).
-- **Security scanning plugins** (`security scan --purl <purl>` and
-  `security supported-components`, one per scanning tool — e.g. `grype`,
-  not a purl type or deployment medium) — closer in shape to the
-  component contract than to SBOM generation: bomify itself loads the
-  built package's SBOM, queries `supported-components` once to decide
-  which components are even worth scanning, dispatches one `scan` call
-  per remaining component (concurrently, like `bomify build`/`bomify
-  distribute`), and writes each call's JSON result as that component's
-  own vulnerability report — specified in
-  [`plugins/SECURITY-CONTRACT.md`](../../../plugins/SECURITY-CONTRACT.md).
-- **Signing plugins** (`signature sign`/`signature verify`/`signature
-  supported-types`, one per signing scheme — e.g. `sigstore`) — a plugin
-  only turns a payload file into a signature envelope and back; bomify
-  owns the payload, stores each envelope as an OCI referrer of the
-  package itself, and decides which packages must be verified —
-  specified in
-  [`plugins/SIGNING-CONTRACT.md`](../../../plugins/SIGNING-CONTRACT.md).
+| Contract | Subcommands | Spec |
+| --- | --- | --- |
+| Component | `component pull/push/remote` | [`COMPONENT-CONTRACT.md`](../../../plugins/COMPONENT-CONTRACT.md) |
+| SBOM generation | `sbom generate` | [`SBOM-CONTRACT.md`](../../../plugins/SBOM-CONTRACT.md) |
+| Security scanning | `security scan/supported-components` | [`SECURITY-CONTRACT.md`](../../../plugins/SECURITY-CONTRACT.md) |
+| Signing | `signature sign/verify/supported-types` | [`SIGNING-CONTRACT.md`](../../../plugins/SIGNING-CONTRACT.md) |
 
-Treat whichever applies as authoritative; do not re-derive or paraphrase
-any contract here or in code comments — read it directly, in full,
-before implementing or changing plugin behavior. Don't assume a contract's
-subcommands/flags/behavior stop at whatever an older skim or memory of it
-suggested — re-read the contract file itself; each has grown before (the
-component contract gained `remote` and `--check` after starting as just
-`pull`/`push`) and will likely again.
+Also relevant:
 
-Other places to check, depending on the task — these follow a pattern, so
-don't treat the examples below as an exhaustive list if a contract
-has grown since:
-
-- [`plugins/README.md`](../../../plugins/README.md) — the list of
-  first-party plugins and their backing libraries. Add a row here when
-  adding a new plugin.
-- `plugins/*.schema.json` (currently
-  [`result.schema.json`](../../../plugins/result.schema.json),
-  [`remote-result.schema.json`](../../../plugins/remote-result.schema.json),
-  [`security-result.schema.json`](../../../plugins/security-result.schema.json),
-  [`supported-components-result.schema.json`](../../../plugins/supported-components-result.schema.json),
-  [`sign-result.schema.json`](../../../plugins/sign-result.schema.json),
-  [`verify-result.schema.json`](../../../plugins/verify-result.schema.json),
-  and
-  [`supported-signature-types-result.schema.json`](../../../plugins/supported-signature-types-result.schema.json))
-  — one machine-readable JSON Schema per bomify-parsed JSON shape a
-  contract defines. SBOM generation is the one class with no schema
-  here at all, since bomify never parses its output (a regular
-  CycloneDX document, validated against CycloneDX's own schema
-  instead). Glob for the current set rather than assuming these seven
-  are the only ones. Update the matching schema file whenever a result
-  shape changes, and add a new one if a contract grows a new JSON
-  shape.
-- [`pkg/plugin`](../../../pkg/plugin) — the Go library implementing the
-  Go-facing side of any contract bomify itself parses JSON from:
-  importable from any Go module, one struct/type per JSON shape
-  (`Result`/`Hash`/`RemoteResult` for the component contract,
-  `SecurityResult`/`SupportedComponentsResult` for the security scanning
-  contract, `SignResult`/`VerifyResult`/`SupportedSignatureTypesResult`
-  for the signing contract) plus `Print` to emit any of them, and one
-  interface + command builder per contract (`ComponentPlugin`/
-  `ComponentCommand`, `SecurityPlugin`/`SecurityCommand`,
-  `SigningPlugin`/`SignatureCommand`) that implements the contract's
-  flags, validation, logging, and output around a plugin's own logic;
-  `NewRootCommand`/`Run` wire up the binary itself. A contract change to
-  flags or output belongs in these builders, not in each plugin. Check
-  the package itself for its current exported symbols rather than
-  trusting a memorized list — a Go-based plugin, first- or third-party,
-  should use these instead of hand-rolling flags, JSON encoding, or log
-  setup. Nothing comparable exists for SBOM generation plugins, by
-  design.
-- [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) — how all four plugin
-  contracts fit into bomify's design as a whole.
+- [`pkg/plugin`](../../../pkg/plugin): the Go library for plugins. It has
+  one type per JSON result plus `Print`, and one interface and command
+  builder per contract (`ComponentCommand`, `SecurityCommand`,
+  `SignatureCommand`, plus `NewRootCommand`/`Run`) that implement the
+  flags, validation, logging, and output. Contract changes to flags or
+  output belong in these builders, not in each plugin. Check the package
+  for its current API. SBOM generation has no equivalent, by design.
+- `plugins/*.schema.json`: one JSON Schema per result shape bomify
+  parses (SBOM generation has none). Glob for the current set.
+- [`plugins/README.md`](../../../plugins/README.md): the first-party
+  plugins.
+- [`ARCHITECTURE.md`](../../../ARCHITECTURE.md): how the contracts fit
+  into bomify.
 
 ## Workflow
 
-1. Read the relevant contract file in full before writing or changing
-   plugin code — don't rely on memory or a summary of it. Read every
-   subcommand's section, not just the ones you think are relevant; a
-   flag-driven mode (like the component contract's `--check`) can change
-   another subcommand's requirements (e.g. which flags are conditionally
-   optional).
-2. Implement/update the plugin to match it exactly: every subcommand the
-   contract currently defines, its flags and modes, and the JSON result
-   shape(s) it must print — an exact structured shape for the component
-   security scanning, and signing contracts (`Result`/`RemoteResult`,
-   `SecurityResult`/`SupportedComponentsResult`, or
-   `SignResult`/`VerifyResult`/`SupportedSignatureTypesResult`
-   respectively), free-form
-   (by convention a CycloneDX document) for SBOM generation only.
-3. If the change is a breaking change or adds a new requirement to a
-   contract itself, update `COMPONENT-CONTRACT.md`, `SBOM-CONTRACT.md`,
-   `SECURITY-CONTRACT.md`, or `SIGNING-CONTRACT.md` (and any `plugins/*.schema.json` whose
-   shape changed, adding a new one if it grew a new JSON shape) in the
-   same pass, and verify every existing first-party plugin under
-   `plugins/` still conforms.
-4. If adding a new plugin, add it to the table in `plugins/README.md`.
-
-See also [AGENTS.md](../../../AGENTS.md) for the repo-wide rules this skill
-supports.
+1. Read the whole contract, every subcommand: a mode like `--check` can
+   change another subcommand's requirements.
+2. Implement it exactly: every subcommand, flag, mode, and result shape.
+3. For a breaking change or new requirement, update the contract and any
+   affected schema (adding one for a new result shape) in the same
+   change, and check every first-party plugin still conforms. Never let
+   a change to one contract imply another.
+4. For a new first-party plugin, or a change to a plugin's main
+   features, update `plugins/README.md`.

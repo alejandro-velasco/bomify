@@ -4,123 +4,61 @@ Instructions for AI coding agents working in this repository.
 
 ## Load local skills
 
-Before starting work, check for and load any local skills defined for this
-repo: `.claude/skills/`, `.github/skills/`, and `skills/` (in that order,
-wherever present). These encode project-specific workflows and take
-precedence over generic defaults.
+Before starting, load any local skills in `.claude/skills/`,
+`.github/skills/`, and `skills/`. They take precedence over generic
+defaults.
 
-## Keep ARCHITECTURE.md current
+## Writing documentation
 
-After making a change, check whether it affects anything
-[ARCHITECTURE.md](ARCHITECTURE.md) describes — the plugin architecture, the
-data directory layout, build/tag bookkeeping, push/pull, save/load, or
-credentials. If the change makes any part of that document inaccurate,
-update ARCHITECTURE.md in the same pass rather than leaving it to go stale.
+Keep every doc, command description, and code comment tight:
 
-## Diagrams are Mermaid sources, not SVGs
+- Say each thing once, where it belongs, and link to it elsewhere.
+- Lead with what the reader needs; add rationale only where a choice
+  isn't obvious.
+- Go into detail only in reference material: ARCHITECTURE.md for
+  internals, the plugin contracts for plugin authors.
+- A command's `Long` text covers what it does and non-obvious flag
+  interactions; the docs site covers workflows.
 
-ARCHITECTURE.md embeds diagrams as `.svg` files rendered from the Mermaid
-sources under `docs/diagrams/*.mmd`. Never hand-edit an `.svg` directly:
-edit the corresponding `.mmd` source, then regenerate every diagram with
-`make diagrams`. Commit both the updated `.mmd` and its regenerated `.svg`.
+## Keep docs in sync with code
 
-## Regenerate the CLI reference after flag/arg changes
+In the same change that makes a doc inaccurate:
 
-[docs/reference/](docs/reference) is generated, not hand-written. Any time a
-change touches a command's flags, arguments, or `Short`/`Long` description,
-run `make docs` in the same pass and commit the regenerated files — never
-hand-edit anything under `docs/reference/`.
+- **ARCHITECTURE.md**: update it for changes to the data directory,
+  plugin architecture, build/tag bookkeeping, push/pull, save/load, or
+  credentials.
+- **Diagrams**: edit `docs/diagrams/*.mmd`, never the `.svg`, then run
+  `make diagrams` and commit both.
+- **CLI reference**: `docs/reference/` is generated. After changing a
+  command's flags, arguments, or `Short`/`Long`, run `make docs` and
+  commit the result; never hand-edit it.
+- **README.md**: keep it to how to run the tool and its main features.
+- **Plugin docs**: follow the `bomify-plugins` skill.
 
 ## The docs site (`docsite/`)
 
-[`docsite/`](docsite) is a [Zensical](https://zensical.org) site published to
-GitHub Pages (`.github/workflows/docs-site.yml`). Several of its pages
-source from a doc that lives elsewhere in the repo — never hand-edit any
-of them into a second, separately-worded copy of the same content:
+A [Zensical](https://zensical.org) site published to GitHub Pages
+(`.github/workflows/docs-site.yml`). Some pages come from elsewhere;
+never turn them into separate copies:
 
-- `usage/reference/` is a copy of [`docs/reference/`](docs/reference),
-  made by `make docs-site`/`docs-site-sync` — regenerate the source with
-  `make docs`, as already documented above, and re-run `docs-site-sync`
-  to pick it up. Never hand-edit files under `usage/reference/` directly.
-- `getting-started/installing-plugins.md`, `development/component-contract.md`,
-  `development/sbom-contract.md`, `development/security-contract.md`, and
-  `development/signing-contract.md`
-  are thin wrapper pages (front matter for a nav icon, plus one line)
-  that include
-  [`plugins/README.md`](plugins/README.md),
-  [`plugins/COMPONENT-CONTRACT.md`](plugins/COMPONENT-CONTRACT.md),
-  [`plugins/SBOM-CONTRACT.md`](plugins/SBOM-CONTRACT.md),
-  [`plugins/SECURITY-CONTRACT.md`](plugins/SECURITY-CONTRACT.md), and
-  [`plugins/SIGNING-CONTRACT.md`](plugins/SIGNING-CONTRACT.md) live via
-  a `pymdownx.snippets` directive (e.g. `--8<-- "plugins/README.md"`,
-  resolved against the `base_path` set in `docsite/zensical.toml`) rather
-  than a copy — edit the source files themselves, never the wrapper
-  pages. Keep their links absolute GitHub URLs, not repo-relative, since
-  the include is rendered from a different directory than the original
-  file (`docsite/docs/development/building-a-plugin.md` is the one place
-  it's correct to link to `component-contract.md`/`sbom-contract.md`/
-  `security-contract.md`/`signing-contract.md` in-site instead, since
-  those pages only exist inside `docsite/`).
+- `usage/reference/` is copied from `docs/reference/` by `make
+  docs-site-sync`.
+- `getting-started/installing-plugins.md` and
+  `development/{component,sbom,security,signing}-contract.md` are
+  one-line wrappers that include `plugins/README.md` and the
+  `plugins/*-CONTRACT.md` files via `pymdownx.snippets`. Edit the
+  sources, and keep links in them absolute GitHub URLs, since they
+  render from a different directory. (`development/building-a-plugin.md`
+  may link to the in-site contract pages.)
 
-The one part of `docsite/` that does need hand-maintenance is the command
-list in [`docsite/zensical.toml`](docsite/zensical.toml)'s `nav` — update it
-when a command is added, removed, or renamed. Everything else under
-`docsite/docs/` is hand-written prose; keep it pointing at (not copying)
-`ARCHITECTURE.md`, `plugins/COMPONENT-CONTRACT.md`, etc. the same way it does today,
-rather than restating their content.
-
-## Keep README.md current
-
-[README.md](README.md) should stay high level: how to run the tool and its
-main features. If a change affects either of those, update README.md in the
-same pass — but don't let it grow into a place for implementation detail;
-that belongs in ARCHITECTURE.md or the relevant plugins doc instead.
+Update the command list in `docsite/zensical.toml`'s `nav` when a
+command is added, removed, or renamed. Everything else in
+`docsite/docs/` is hand-written; link to ARCHITECTURE.md and the
+contracts rather than restating them.
 
 ## Opening pull requests
 
-When a PR needs to be written for this repo:
-
-- Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) as
-  the body — fill in its sections rather than writing an ad hoc description.
-- Title the PR in Conventional Commits style (`<type>[(scope)]: <description>`),
-  with the type and scope matching the actual scope of the code change.
-- Never merge the PR. Always stop once it's opened and leave merging to a
-  human.
-
-## Keep plugin docs current
-
-bomify's plugin contract is actually four entirely independent
-contracts a `bomify-plugin-<kind>` binary can implement — the
-**component plugin** contract (`component pull`/`component push`/
-`component remote`), the **SBOM generation plugin** contract (`sbom
-generate`), the **security scanning plugin** contract (`security
-scan`), and the **signing plugin** contract (`signature sign`/
-`signature verify`). Keep whichever you're changing current, and never
-let a change to one imply the others:
-
-- Keep [plugins/README.md](plugins/README.md) current if making any high
-  level changes to plugins, affecting their main features.
-- Keep [plugins/COMPONENT-CONTRACT.md](plugins/COMPONENT-CONTRACT.md) current if making any
-  breaking changes or adding new requirements to the component contract.
-- Keep [plugins/SBOM-CONTRACT.md](plugins/SBOM-CONTRACT.md) current if
-  making any breaking changes or adding new requirements to the SBOM
-  generation contract.
-- Keep [plugins/SECURITY-CONTRACT.md](plugins/SECURITY-CONTRACT.md)
-  current if making any breaking changes or adding new requirements to
-  the security scanning contract.
-- Keep [plugins/SIGNING-CONTRACT.md](plugins/SIGNING-CONTRACT.md)
-  current if making any breaking changes or adding new requirements to
-  the signing contract.
-- Always update [plugins/result.schema.json](plugins/result.schema.json)
-  if updating the component plugin result schema, or
-  [plugins/security-result.schema.json](plugins/security-result.schema.json)/
-  [plugins/supported-components-result.schema.json](plugins/supported-components-result.schema.json)
-  if updating either security scanning result schema, or
-  [plugins/sign-result.schema.json](plugins/sign-result.schema.json)/
-  [plugins/verify-result.schema.json](plugins/verify-result.schema.json)/
-  [plugins/supported-signature-types-result.schema.json](plugins/supported-signature-types-result.schema.json)
-  if updating a signing result schema (SBOM generation
-  plugins have no bomify-specific result schema at all — see
-  SBOM-CONTRACT.md — since bomify never parses their output).
-- If breaking changes or updates are made to the plugins, ensure the
-  plugins still abide by whichever plugin contract(s) they implement.
+- Fill in [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md).
+- Title it in Conventional Commits style (`<type>[(scope)]: <description>`),
+  matching the change's actual scope.
+- Never merge it; leave that to a human.

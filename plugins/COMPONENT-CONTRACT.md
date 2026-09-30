@@ -1,60 +1,42 @@
 # Component plugin contract
 
-This is the authoritative specification for the subprocess contract between
-`bomify` and a `bomify-plugin-<kind>` binary's **component plugin**
-subcommands (`component pull`/`component push`/`component remote`),
-which `bomify build` and `bomify distribute` delegate to. It's aimed at
-anyone writing a plugin, first- or third-party. The Go types referenced
-below (`plugin.Result`, `plugin.Hash`, `plugin.RemoteResult`) live in
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) — a small library, importable from any Go
-module. A Go-based plugin should implement its `plugin.ComponentPlugin`
-interface and let `plugin.ComponentCommand` build the `component`
-subcommands from it: that implements every flag, the `--check` rules,
-the `--log` logger, and the stdout/stderr/exit-code rules below, so the
-plugin itself only fetches and publishes. See also [`README.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md) for the list of
-first-party plugins and [`ARCHITECTURE.md`](https://github.com/alejandro-velasco/bomify/blob/main/ARCHITECTURE.md) for how
-this contract fits into bomify's design as a whole.
+The authoritative spec for a `bomify-plugin-<kind>` binary's **component
+plugin** subcommands (`component pull`, `component push`, `component
+remote`), which `bomify build` and `bomify distribute` call. It's
+independent of the
+[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
+[security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md),
+and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+contracts; a binary can implement any combination.
 
-A `bomify-plugin-<kind>` binary may separately implement the entirely
-independent [SBOM generation plugin contract](SBOM-CONTRACT.md) (its
-`sbom generate` subcommand) and/or
-[security scanning plugin contract](SECURITY-CONTRACT.md) (its
-`security scan` subcommand) — the three contracts share nothing, and a
-plugin author only needs to read this document to implement component
-support.
+Go plugins should use
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin):
+implement its `ComponentPlugin` interface and `plugin.ComponentCommand`
+provides every flag, the `--check` rules, the `--log` logger, and the
+output rules below.
 
-A plugin is a standalone executable. It does not link against bomify, share
-memory with it, or receive anything over stdin — every input arrives as a
-command-line flag, and every output is either the process's stdout, stderr,
-exit code, or the files it's told to write to.
+A plugin is a standalone executable. Every input is a command-line flag;
+every output is stdout, stderr, the exit code, or the files it's told to
+write.
 
 ## Naming and discovery
 
-A plugin for purl type `<kind>` (e.g. `oci`, `helm`, `npm`) must be:
+A plugin for purl type `<kind>` (e.g. `oci`, `helm`, `npm`) is named
+`bomify-plugin-<kind>` (`.exe` on Windows) and installed in
+`<data-dir>/plugins` (`~/.bomify/plugins` by default), usually with
+`bomify plugin install` (see
+[plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#installing-plugins)).
+bomify never searches `PATH`.
 
-- named exactly `bomify-plugin-<kind>` (`bomify-plugin-<kind>.exe` on
-  Windows)
-- installed in bomify's plugins directory, `<data-dir>/plugins`
-  (`~/.bomify/plugins` by default) — normally by `bomify plugin install`
-  (see [plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#installing-plugins)),
-  though any executable placed there by that name works. bomify never
-  looks for a plugin on `PATH`.
-
-bomify determines `<kind>` directly from the SBOM component's purl type
-(e.g. a component with purl `pkg:oci/nginx@1.27` needs `bomify-plugin-oci`
-installed) and never invokes a plugin by any other name or location. The
-one purl type bomify never dispatches to a plugin is `bomify-plugin`
-itself: a `pkg:bomify-plugin/...` component *is* a plugin binary, which
-bomify handles on its own (see
-[plugins/README.md](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#publishing-a-plugin)),
-so no `bomify-plugin-bomify-plugin` is ever needed.
+`<kind>` is the component purl's type: `pkg:oci/nginx@1.27` needs
+`bomify-plugin-oci`. The exception is `pkg:bomify-plugin/...`, a plugin
+binary bomify handles itself (see
+[publishing a plugin](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#publishing-a-plugin)).
 
 ## Commands
 
-A component plugin must implement exactly three subcommands, nested under
-`component`: `component pull`, `component push`, and `component remote`.
-All three take the flags below; italicized flags are shared by all of
-them.
+All three subcommands take `--purl`, `--log`, and `--log-color` (see
+[Logging](#logging)).
 
 ### `component pull`
 
@@ -62,19 +44,15 @@ them.
 bomify-plugin-<kind> component pull --purl <purl> --output <dir> --log <path> --log-color <bool>
 ```
 
-Fetches or builds the component `--purl` identifies and writes it into
-`--output`.
+Fetch or build the component `--purl` identifies into `--output`.
 
 | Flag | Required | Meaning |
 | --- | --- | --- |
-| `--purl` | yes | *The component's package URL. The plugin derives everything it needs to know about what to fetch from this string.* |
-| `--output` | only when `--check` is false | Directory to write the pulled artifact into. bomify creates this directory before invoking the plugin — the plugin may assume it already exists and is empty, and should write directly into it (a single file, or a directory tree — whatever shape suits the artifact). Not passed at all when `--check=true`, since nothing is written. |
-| `--check` | no | *See [Check mode](#check-mode). Defaults to `false`.* |
-| `--log` | yes | *See [Logging](#logging).* |
-| `--log-color` | yes | *See [Logging](#logging).* |
+| `--purl` | yes | The component's package URL. Everything the plugin needs to know comes from it. |
+| `--output` | unless `--check` | Directory to write the artifact into. bomify creates it, empty, beforehand. Write a single file or a tree, whatever suits the artifact. Not passed with `--check=true`. |
+| `--check` | no | See [Check mode](#check-mode). Default `false`. |
 
-On success, the plugin must print a single `Result` JSON object (see
-[Result](#result)) to stdout and exit `0`.
+On success, print one [`Result`](#result) and exit `0`.
 
 ### `component push`
 
@@ -82,19 +60,16 @@ On success, the plugin must print a single `Result` JSON object (see
 bomify-plugin-<kind> component push --purl <purl> --input <dir> --remote <endpoint> --log <path> --log-color <bool>
 ```
 
-Publishes the artifact a prior `pull` wrote into `--input` to `--remote`.
+Publish what a prior `pull` wrote into `--input` to `--remote`.
 
 | Flag | Required | Meaning |
 | --- | --- | --- |
-| `--purl` | yes | *Same purl as the `pull` that produced `--input`'s contents.* |
-| `--input` | only when `--check` is false | Directory a prior `pull` (with the same `--purl`) wrote the artifact into. bomify guarantees this directory exists and holds exactly what that `pull` produced — never invoking `push` without a preceding successful `pull` for the same purl, unless `--check=true`, in which case `--input` isn't passed at all and no prior `pull` is required. |
-| `--remote` | yes | Destination to publish to — the shape of this string is entirely kind-specific (a registry/repository prefix, a plain URL, etc.); document it in your plugin's own `--help`/README. |
-| `--check` | no | *See [Check mode](#check-mode). Defaults to `false`.* |
-| `--log` | yes | *See [Logging](#logging).* |
-| `--log-color` | yes | *See [Logging](#logging).* |
+| `--purl` | yes | Same purl as the `pull` that filled `--input`. |
+| `--input` | unless `--check` | Directory a successful `pull` for the same purl wrote into, exactly as it left it. Not passed with `--check=true`, and no prior `pull` is needed then. |
+| `--remote` | yes | Where to publish. Its shape is up to the plugin (a registry prefix, a URL, ...); document it in `--help`. |
+| `--check` | no | See [Check mode](#check-mode). Default `false`. |
 
-On success, the plugin must print a single `Result` JSON object to stdout
-and exit `0`. `hash` is meaningless for a push result and should be left
+On success, print one [`Result`](#result) and exit `0`. Leave `hash`
 unset.
 
 ### `component remote`
@@ -103,85 +78,49 @@ unset.
 bomify-plugin-<kind> component remote --purl <purl> --log <path> --log-color <bool>
 ```
 
-Reports where the component `--purl` identifies comes from or is
-published under — its registry, repository, or source location — without
-fetching or publishing anything. bomify uses this to match `--purl`
-against a `bomify distribute` rule scoped by origin (`bomify distribution
-create`'s `--match`), not just by plugin kind, and — when that rule's
-`--match` is non-empty — as the basis for a mirror substitution: the
-part of `remote` past the matched prefix is preserved and handed back to
-`push` as part of `--remote`, so a matched rule redirects a component
-without collapsing everything under it onto one shared destination. See
-[RemoteResult](#remoteresult) for exactly what shape `remote` must
-report for that substitution to come out right.
+Report where the component comes from or is published under, without
+fetching or publishing anything. `bomify distribute` matches this against
+a rule's `--match` and, for a non-empty match, keeps whatever follows
+the matched prefix when building the `--remote` it passes to `push`, so
+a mirror rule preserves each component's path.
 
-| Flag | Required | Meaning |
-| --- | --- | --- |
-| `--purl` | yes | *The component's package URL. The plugin derives its answer entirely from this string — `remote` never touches the network, a registry, or any local files.* |
-| `--log` | yes | *See [Logging](#logging).* |
-| `--log-color` | yes | *See [Logging](#logging).* |
+On success, print one [`RemoteResult`](#remoteresult) and exit `0`.
 
-On success, the plugin must print a single `RemoteResult` JSON object (see
-[RemoteResult](#remoteresult)) to stdout and exit `0`.
-
-`remote` must be a pure function of `--purl`: unlike `pull`/`push`, it
-never touches the data directory, is never skipped or cached by bomify,
-and may be invoked far more often per purl than `pull`/`push` ever are.
+`remote` must be a pure function of `--purl`: no network, registry, or
+files. bomify may call it any number of times and never caches it.
 
 ## Check mode
 
-Passing `--check=true` to `pull` or `push` asks the plugin to verify
-that a real `pull`/`push` would succeed — the artifact exists and the
-caller is authorized to fetch it (`pull`), or the destination is
-reachable and the caller is authorized to write to it (`push`) —
-without actually transferring the artifact's content. `--output`
-(`pull`) / `--input` (`push`) are not passed at all in this mode, since
-nothing is written or read; a plugin must not require them when
-`--check=true`.
+`--check=true` on `pull`/`push` asks the plugin to confirm a real
+transfer would succeed (the artifact exists and is readable, or the
+destination is reachable and writable) without transferring content.
+`--output`/`--input` aren't passed; don't require them.
 
-A plugin should exhaust every inexpensive option before falling back to
-anything approximating the real operation:
+Use the cheapest check available: a manifest HEAD, a resolve, a small
+index fetch. For `pull --check`, a full pull is an acceptable last
+resort. For `push --check`, a real write never is, since it can have
+side effects (consuming a single-use presigned URL, overwriting
+something); report whatever partial check was possible instead, as
+`bomify-plugin-generic` does.
 
-- Prefer a manifest/metadata HEAD or resolve, a small index/listing
-  fetch, or similar — something whose cost doesn't scale with the
-  artifact's size.
-- For `pull --check`, actually performing a full `pull` is an acceptable
-  (if undesirable) last resort when no cheaper verification exists.
-- For `push --check`, a real, mutating write is **never** acceptable as
-  a fallback — unlike a redundant `pull`, a redundant `push` can have
-  real side effects (consuming a single-use destination like a
-  presigned upload URL, or overwriting something the caller didn't
-  intend to touch yet). If nothing cheaper is available, report
-  whatever partial verification was possible (e.g. reachability, but
-  not authorization) rather than actually writing — see
-  `bomify-plugin-generic`'s `push --check` for exactly this tradeoff.
-
-On success, print a single `Result` JSON object (the same shape as a
-normal `pull`/`push`) to stdout and exit `0`; on failure, exit non-zero
-with the usual one-line stderr message. `hash` may still be populated if
-the check happens to learn it for free (e.g. a registry HEAD returning a
-digest) — same optional, best-effort rules as a normal `pull`. See
-[Result](#result) for how `outputPath`'s meaning broadens in this mode.
+Print one `Result` on success, or exit non-zero with a one-line stderr
+message. `hash` may be set if the check learns it for free (e.g. a
+registry HEAD returning a digest).
 
 ## Standard streams
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one `Result` or `RemoteResult` JSON object (depending on the subcommand), printed only on success. Nothing else may ever be written here — no progress output, no debug prints, nothing. bomify parses stdout as JSON and fails the whole operation if it isn't exactly that. |
-| stderr | A single, short, human-readable fatal error message, written only on failure (non-zero exit). bomify captures this and appends it verbatim to the error it reports. Like stdout, this is not a place for routine logging. |
-| exit code | `0` on success (with valid JSON on stdout). Any non-zero value on failure. |
+| stdout | Exactly one `Result` or `RemoteResult`, only on success. Nothing else, ever: bomify fails if stdout isn't that one JSON object. |
+| stderr | One short fatal error message, only on failure. bomify appends it to its own error. |
+| exit code | `0` on success; non-zero on failure. |
 
-A plugin's own routine/diagnostic logging — anything you'd otherwise be
-tempted to write to stdout or stderr — must go to the file named by
-`--log` instead. See [Logging](#logging).
+Everything else goes to the `--log` file.
 
 ## Result
 
-The single JSON object a plugin prints to stdout on success. bomify parses
-this straight into a Go struct, where a missing key and a key present with
-its zero value are indistinguishable — so `hash` may be omitted entirely,
-or present as `{}` or with both fields set; all three are equally valid
-and bomify treats them identically:
+Printed by `pull` and `push`. A missing key and a zero value are
+equivalent, so `hash` may be absent, `{}`, or fully set.
 
 ```json
 {
@@ -191,42 +130,27 @@ and bomify treats them identically:
 }
 ```
 
-```json
-{ "outputPath": "path/to/artifact/or/remote/reference" }
-```
-
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `outputPath` | string | yes | For `pull`: the local path the artifact was written to (normally just `--output`, echoed back). For `push`: the reference the artifact was published under at `--remote` (e.g. `<remote>/<name>:<version>`). For either subcommand with `--check=true`: no path was written to or read from, so report whatever identifies the artifact/destination that was checked instead (e.g. the resolved registry reference or download URL). |
-| `message` | string | no | A short, human-readable summary of what happened (e.g. `"pulled nginx:1.27"`). Purely informational — bomify logs it but never parses it. |
-| `hash` | object | no | The pulled artifact's SHA-256 (see [Hashes](#hashes)). Only meaningful for `pull`; leave both of its fields unset for `push`, and for `pull` when the plugin can't compute it — never guess. |
-| `hash.algorithm` | string | present only together with `hash.value` | Always exactly `SHA-256`, the CycloneDX name of the one algorithm bomify uses. |
-| `hash.value` | string | present only together with `hash.algorithm` | The digest itself, hex-encoded. Case doesn't matter (bomify compares case-insensitively), but lowercase is the convention every first-party plugin follows. |
+| `outputPath` | string | yes | `pull`: the path written (normally `--output`). `push`: the reference published (e.g. `<remote>/<name>:<version>`). `--check`: whatever identifies what was checked (a resolved reference, a download URL). |
+| `message` | string | no | Short human-readable summary. Logged, never parsed. |
+| `hash` | object | no | The pulled artifact's SHA-256 (see [Hashes](#hashes)). `pull` only; unset for `push`, and when it can't be computed. Never guess. |
+| `hash.algorithm` | string | with `hash.value` | Always `SHA-256`. |
+| `hash.value` | string | with `hash.algorithm` | Hex digest. Compared case-insensitively; lowercase by convention. |
 
-Go plugins should build this as a `plugin.Result` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) and return it from their
-`ComponentPlugin`, which prints it — or print it with `plugin.Print`
-rather than hand-rolling the JSON encoding.
-
-A machine-readable version of this schema, suitable for validating a
-plugin's actual stdout output with any off-the-shelf JSON Schema
-validator, is published at
-[`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json).
+Schema: [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json).
 
 ### Hashes
 
-bomify verifies every pulled component against the SHA-256 its SBOM
-declares, and keys its whole data directory by SHA-256, so that's the one
-algorithm a plugin ever reports: `hash.algorithm` is always `SHA-256`
-(`plugin.HashAlgorithm`; `plugin.NewHash` builds a `Hash` from a hex
-digest), and `hash.value` the hex-encoded digest of what `pull` wrote to
-`--output`. A plugin that can't compute it — e.g. a `--check` that
-learns nothing about the content — omits `hash` rather than erroring.
+bomify checks every pulled component against the SHA-256 its SBOM
+declares and keys its data directory by SHA-256, so that's the only
+algorithm a plugin reports (`plugin.NewHash` builds one from a hex
+digest). If a plugin can't compute it, it omits `hash` rather than
+failing.
 
 ## RemoteResult
 
-The single JSON object a plugin's `remote` subcommand prints to stdout on
-success:
+Printed by `remote`:
 
 ```json
 { "remote": "docker.io/library" }
@@ -234,81 +158,43 @@ success:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `remote` | string | yes | Where this component comes from or is published under, in whatever shape is meaningful for this plugin's kind (a registry/namespace address, a source URL, etc.). |
+| `remote` | string | yes | Where the component comes from or is published under, in the plugin's own shape (registry namespace, URL, ...). |
 
-`remote` must be reported in **the same shape your plugin's own `push`
-expects `--remote` to arrive in** — because a matched `bomify distribute`
-rule can hand `push` back a `--remote` built directly from what `remote`
-reported (see `remote`'s [Commands](#commands) entry above for the mirror
-substitution this enables). Concretely:
+Report `remote` in the shape your `push` expects `--remote` in, since a
+distribution rule can hand it back as `--remote`:
 
-- If `push` appends the component's own name/tag onto `--remote` itself
-  (as every first-party plugin's OCI/Helm-style `push` does), `remote`
-  must **not** include that trailing name — report only the
-  registry/namespace it lives under (e.g. `docker.io/library`, not
-  `docker.io/library/nginx`), exactly as `bomify-plugin-oci` does.
-- If `push` instead treats `--remote` as the exact, complete destination
-  with nothing appended (as `bomify-plugin-generic`'s does, since a
-  presigned upload URL can't tolerate anything appended to it), `remote`
-  should be that same complete address, unabridged.
+- If `push` appends the component's name/tag to `--remote` (as the OCI
+  and Helm plugins do), leave that off: `docker.io/library`, not
+  `docker.io/library/nginx`.
+- If `push` uses `--remote` as the complete destination (as
+  `bomify-plugin-generic` does, since a presigned URL can't be appended
+  to), report the complete address.
 
-The only thing bomify relies on structurally, either way, is that two
-components sharing a common origin (e.g. the same registry namespace)
-report a `remote` sharing a common `/`-separated prefix, since that's
-what a `bomify distribute` rule's `--match` compares against, and what
-gets substituted out of it on a match.
+Components with a common origin must report values sharing a common
+`/`-separated prefix; that's what rules match and substitute.
 
-Go plugins should build this as a `plugin.RemoteResult` (see
-[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)) — `plugin.ComponentCommand` does, from
-the string a `ComponentPlugin`'s `Remote` returns — or print it with
-`plugin.Print` rather than hand-rolling the JSON encoding.
-
-A machine-readable version of this schema is published at
-[`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
+Schema: [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
 
 ## Logging
 
-A plugin must never write its own routine logging to stdout (reserved for
-the `Result`/`RemoteResult` JSON) or stderr (reserved for a single fatal
-message on failure). Instead:
+- `--log <path>`: a file bomify creates empty right before the call.
+  Append your log lines to it unconditionally. bomify streams it to its
+  stdout under `--verbose` and deletes it when the plugin exits, so it's
+  not a durable log.
+- `--log-color <bool>`: whether ANSI colors are allowed in the log.
+  bomify decides from its own stdout; don't detect it yourself.
 
-- `--log <path>` names a file, created empty by bomify immediately before
-  the plugin starts, that the plugin should open (for appending) and write
-  its own leveled/diagnostic log lines to. bomify streams this file live
-  to its own stdout while the plugin runs, but only when running with
-  `--verbose` — so a plugin should write to it unconditionally and let
-  bomify decide whether anything downstream actually sees it.
-- This file is **not persistent**: bomify deletes it again once the
-  plugin exits, regardless of outcome. It exists solely to make live
-  streaming possible, not as a durable log a plugin can rely on
-  surviving.
-- `--log-color <bool>` (`true`/`false`) tells the plugin whether it's safe
-  to include ANSI color escape codes in the lines it writes to `--log`.
-  bomify sets this based on whether *its own* stdout is a real terminal —
-  a plugin should never make that determination itself, since it has no
-  visibility into what bomify's stdout is ultimately connected to.
+`plugin.ComponentCommand` hands each call a ready-made `*slog.Logger` for
+this (`plugin.OpenLog` opens one directly), in bomify's own log format.
 
-Go plugins built on `plugin.ComponentCommand` get a ready-made
-`*slog.Logger` for this in every request (`plugin.OpenLog(logPath,
-logColor)` in [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin) opens one directly), in the same format
-bomify's own CLI logging uses, rather than constructing one by hand.
+## What bomify handles
 
-## What a plugin does *not* need to handle
+Caching, concurrency, and state are bomify's job:
 
-All caching, concurrency control, and state tracking across invocations is
-bomify's responsibility, not the plugin's:
+- Each invocation is fresh; nothing needs remembering between calls.
+- bomify decides when a `pull` can be skipped and prevents concurrent
+  pulls of the same purl.
+- `--output`/`--input` are always in the state described above.
 
-- A plugin is invoked fresh for every `pull`/`push`/`remote`; it never
-  needs to remember anything between invocations.
-- bomify — not the plugin — decides when a `pull` can be skipped because
-  an equivalent one already succeeded, and guards against two concurrent
-  `pull`s for the same purl racing each other.
-- `--output`/`--input` directories are always exactly what this contract
-  describes above; a plugin never needs to defend against a partially
-  written or unexpected directory state.
-
-A plugin should be a pure function of its flags: given the same `--purl`
-(and, for `push`, the same `--input`), do the same thing, and leave
-anything more stateful than that to bomify. `remote` is the purest of the
-three — given the same `--purl`, it must always report the same `remote`,
-independent of anything on disk, the network, or a prior `pull`/`push`.
+Given the same flags, a plugin should do the same thing. `remote` in
+particular must always report the same value for the same `--purl`.
