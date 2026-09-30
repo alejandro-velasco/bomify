@@ -214,7 +214,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
-	github.com/openvex/go-vex v0.2.8 // indirect
+	github.com/openvex/go-vex v0.2.9 // indirect
 	github.com/pandatix/go-cvss v0.6.4 // indirect
 	github.com/pborman/indent v1.2.1 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
