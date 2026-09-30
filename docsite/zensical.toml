@@ -59,6 +59,10 @@ nav = [
           { "bomify security policy create" = "usage/reference/bomify_security_policy_create.md" },
           { "bomify security policy list" = "usage/reference/bomify_security_policy_list.md" },
           { "bomify security policy remove" = "usage/reference/bomify_security_policy_remove.md" },
+          { "bomify security vex" = "usage/reference/bomify_security_vex.md" },
+          { "bomify security vex add" = "usage/reference/bomify_security_vex_add.md" },
+          { "bomify security vex list" = "usage/reference/bomify_security_vex_list.md" },
+          { "bomify security vex remove" = "usage/reference/bomify_security_vex_remove.md" },
       ] },
       { "bomify tag" = "usage/reference/bomify_tag.md" },
       { "bomify trust" = [

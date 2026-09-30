@@ -34,9 +34,16 @@ or above the given severity (info, low, medium, high, or critical),
 printing a table of them to stderr; a vulnerability's severity is the
 highest any of its ratings gives it, and one rated only "none" or
 "unknown" never fails. --ignore (repeatable) exempts specific
-vulnerability IDs for this scan only. Without --fail-on, the most
+vulnerability IDs for this scan only. --vex (repeatable) names an
+OpenVEX, CSAF, or CycloneDX VEX document: a vulnerability it says doesn't
+affect the component it was found in ("not_affected", "false_positive")
+or was fixed there ("fixed", "resolved") doesn't fail the scan, and is
+logged as exempted instead. For a vulnerability found in an image, every
+package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
-threshold instead, if any does; --skip-gate ignores that rule. Reports
+threshold instead, if any does, and that rule's stored VEX documents
+always apply alongside --vex, which reads the given file as it is now;
+--skip-gate ignores the rule. Reports
 are written either way.
 
 ```
@@ -60,10 +67,11 @@ bomify security scan <type> <tag> [flags]
 
 ```
   -c, --concurrency int      number of components to scan concurrently (default 1)
-      --fail-on string       fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule
+      --fail-on string       fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                 help for scan
       --ignore stringArray   a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
       --skip-gate            never fail on vulnerabilities, even if a "bomify security policy" rule matching the package says to
+      --vex stringArray      an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
 ```
 
 ### Options inherited from parent commands

@@ -60,16 +60,21 @@ func severityOf(s cdx.Severity) Severity {
 }
 
 // Gate is a vulnerability threshold: a package fails it when any of its
-// reports names a vulnerability at FailOn or above that isn't in Ignore.
-// A zero FailOn gates nothing.
+// reports names a vulnerability at FailOn or above that isn't in Ignore
+// and that VEX doesn't exempt. A zero FailOn gates nothing.
 type Gate struct {
 	FailOn Severity
 	// Ignore lists vulnerability IDs (e.g. "CVE-2024-1234") never to fail
-	// on, however severe — accepted risks, false positives.
+	// on, however severe — a one-off, for a single command.
 	Ignore []string
+	// VEX, if set, exempts any vulnerability its statements show doesn't
+	// affect the component it was found in, or was fixed there (see
+	// VEX.exempts).
+	VEX *VEX
 }
 
-// Finding is one vulnerability that failed a Gate, in one component.
+// Finding is one vulnerability at or above a Gate's threshold, in one
+// component.
 type Finding struct {
 	ID       string
 	Severity Severity
@@ -79,28 +84,46 @@ type Finding struct {
 	Purl string
 }
 
+// Suppressed is a Finding a VEX statement exempted from failing a Gate,
+// and the statement that did.
+type Suppressed struct {
+	Finding
+	Statement SourcedStatement
+}
+
+// Evaluation is the outcome of evaluating reports against a Gate.
+type Evaluation struct {
+	// Findings failed the gate.
+	Findings []Finding
+	// Suppressed would have, but VEX exempted them.
+	Suppressed []Suppressed
+}
+
 // ComponentReport is one component's vulnerability report.
 type ComponentReport struct {
 	Component cdx.Component
 	Report    *cdx.BOM
 }
 
-// Evaluate returns every vulnerability in reports that fails g, most
-// severe first (then by purl, then ID), at most once per component. A
-// vulnerability's severity is the highest any of its ratings gives it;
-// ratings that carry no severity (e.g. EPSS or CISA KEV scores) don't
-// count either way.
-func (g Gate) Evaluate(reports []ComponentReport) []Finding {
+// Evaluate returns every vulnerability in reports that fails g, and every
+// one VEX exempted from failing it, each most severe first (then by
+// purl, then ID), at most once per component. A vulnerability's severity
+// is the highest any of its ratings gives it; ratings that carry no
+// severity (e.g. EPSS or CISA KEV scores) don't count either way.
+func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
+	var e Evaluation
 	if g.FailOn == 0 {
-		return nil
+		return e
 	}
 
-	var findings []Finding
 	seen := map[[2]string]bool{}
 	for _, r := range reports {
 		if r.Report == nil || r.Report.Vulnerabilities == nil {
 			continue
 		}
+		// Built once per report, since every vulnerability in it resolves
+		// its "affects" against the same components.
+		purlByRef := purlsByBOMRef(componentsOf(r.Report.Components))
 		for _, vuln := range *r.Report.Vulnerabilities {
 			if slices.Contains(g.Ignore, vuln.ID) {
 				continue
@@ -114,18 +137,26 @@ func (g Gate) Evaluate(reports []ComponentReport) []Finding {
 				continue
 			}
 			seen[key] = true
-			findings = append(findings, Finding{ID: vuln.ID, Severity: sev, Purl: r.Component.PackageURL})
+			finding := Finding{ID: vuln.ID, Severity: sev, Purl: r.Component.PackageURL}
+			if statement, ok := g.VEX.exempts(r.Component, purlByRef, vuln); ok {
+				e.Suppressed = append(e.Suppressed, Suppressed{Finding: finding, Statement: statement})
+				continue
+			}
+			e.Findings = append(e.Findings, finding)
 		}
 	}
 
-	slices.SortFunc(findings, func(a, b Finding) int {
-		return cmp.Or(
-			cmp.Compare(b.Severity, a.Severity),
-			strings.Compare(a.Purl, b.Purl),
-			strings.Compare(a.ID, b.ID),
-		)
-	})
-	return findings
+	slices.SortFunc(e.Findings, compareFindings)
+	slices.SortFunc(e.Suppressed, func(a, b Suppressed) int { return compareFindings(a.Finding, b.Finding) })
+	return e
+}
+
+func compareFindings(a, b Finding) int {
+	return cmp.Or(
+		cmp.Compare(b.Severity, a.Severity),
+		strings.Compare(a.Purl, b.Purl),
+		strings.Compare(a.ID, b.ID),
+	)
 }
 
 func highestSeverity(vuln cdx.Vulnerability) Severity {
@@ -154,11 +185,11 @@ func (e *GateError) Error() string {
 	return fmt.Sprintf("%d %s at or above %s", len(e.Findings), noun, e.FailOn)
 }
 
-// Check evaluates reports against g, returning a *GateError if anything
-// fails it.
-func (g Gate) Check(reports []ComponentReport) error {
-	if findings := g.Evaluate(reports); len(findings) > 0 {
-		return &GateError{FailOn: g.FailOn, Findings: findings}
+// Err returns a *GateError if anything failed the gate e came from, or
+// nil.
+func (e Evaluation) Err(failOn Severity) error {
+	if len(e.Findings) > 0 {
+		return &GateError{FailOn: failOn, Findings: e.Findings}
 	}
 	return nil
 }

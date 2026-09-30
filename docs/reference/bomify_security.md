@@ -22,4 +22,5 @@ Security scanning commands
 * [bomify security policy](bomify_security_policy.md)	 - Manage vulnerability scanning policy rules
 * [bomify security prune](bomify_security_prune.md)	 - Delete stale vulnerability report referrers of a package in a registry
 * [bomify security scan](bomify_security_scan.md)	 - Scan a built package's components for vulnerabilities via a security scanning plugin
+* [bomify security vex](bomify_security_vex.md)	 - Manage the VEX documents scan policy rules refer to
 

@@ -125,6 +125,63 @@ bomify security scan grype registry.example.com/team/myapp:1.0   # fails on high
 See [bomify security policy create](../usage/reference/bomify_security_policy_create.md)
 for how `--match` works.
 
+## 7. Record accepted vulnerabilities with VEX
+
+When you've established that a vulnerability doesn't affect your
+package — the vulnerable code isn't reachable, say — record that in a
+VEX document rather than ignoring the ID, so the reason and the exact
+component it applies to are written down. bomify reads OpenVEX,
+CSAF VEX, and CycloneDX VEX. For example, an OpenVEX document (`myapp.openvex.json`):
+
+```json
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://example.com/vex/myapp-1",
+  "author": "Security Team",
+  "timestamp": "2026-09-29T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": { "name": "CVE-2024-1234" },
+      "products": [
+        {
+          "@id": "pkg:oci/myapp@1.0",
+          "subcomponents": [{ "@id": "pkg:apk/alpine/openssl@3.1.0-r0" }]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path"
+    }
+  ]
+}
+```
+
+Pass it straight to a scan, which reads the file as it is:
+
+```sh
+bomify security scan grype myapp:1.0 --fail-on high --vex myapp.openvex.json
+```
+
+Or, to apply it to every scan of some packages, store it under a name
+and attach that name to a policy rule. The store keeps its own copy, so
+the rule keeps working wherever the file goes; after editing the
+document, add it again under the same name to update every rule using
+it:
+
+```sh
+bomify security vex add myapp myapp.openvex.json
+bomify security policy create grype --match registry.example.com/team --fail-on high --vex myapp
+bomify security vex list
+```
+
+`not_affected` and `fixed` statements exempt the vulnerability for the
+component (and, if given, subcomponent) they name — a purl with no
+version covers every version of that package; each exemption is
+logged with its justification. A vulnerability found in several
+packages inside an image only stops failing once every one of them is
+covered. Reports themselves are unchanged — `bomify package
+vulnerabilities` still shows everything the scanner found.
+
 ## Next steps
 
 - [Distributing a package](distributing-a-package.md) once you're
