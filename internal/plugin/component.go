@@ -11,19 +11,14 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
-// HashAlgorithm is the one hash algorithm bomify verifies components
-// with, and the only one a component plugin reports (see
-// plugins/COMPONENT-CONTRACT.md): the data directory is keyed by SHA-256
-// throughout, so supporting any other would buy nothing.
-const HashAlgorithm = pluginlib.HashAlgorithm
-
 // Pull invokes the plugin binary's "pull" subcommand, which fetches or
 // builds component and writes it into componentDir's directory. Pull
 // clears that directory (if it already exists) and recreates it empty
 // before invoking the plugin — see the package doc comment for why it
 // might not already be empty — and removes it again if the plugin fails.
 //
-// The plugin reports the pulled artifact's SHA-256 (see HashAlgorithm).
+// The plugin reports the pulled artifact's SHA-256 (see
+// pluginlib.HashAlgorithm).
 // If component declares its own SHA-256 in its SBOM metadata, Pull
 // verifies the two match —
 // removing dir and failing on a mismatch for a pull this call just

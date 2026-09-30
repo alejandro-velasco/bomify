@@ -96,7 +96,7 @@ func PullBinary(component cdx.Component, sbomDir, baseDir string) (*pluginlib.Re
 		return &pluginlib.Result{
 			OutputPath: dst,
 			Message:    "copied plugin binary from " + src,
-			Hash:       pluginlib.Hash{Algorithm: HashAlgorithm, Value: sum},
+			Hash:       pluginlib.NewHash(sum),
 		}, nil
 	})
 }
@@ -115,7 +115,7 @@ func CheckBinary(component cdx.Component, sbomDir string) (*pluginlib.Result, er
 		return nil, err
 	}
 
-	result := &pluginlib.Result{Message: "plugin binary found at " + src, Hash: pluginlib.Hash{Algorithm: HashAlgorithm, Value: sum}}
+	result := &pluginlib.Result{Message: "plugin binary found at " + src, Hash: pluginlib.NewHash(sum)}
 	if err := verifyHash(component, result); err != nil {
 		return nil, err
 	}
@@ -162,7 +162,8 @@ func localPath(raw, sbomDir string) (string, error) {
 	return raw, nil
 }
 
-// HashFile returns path's SHA-256 (see HashAlgorithm), hex-encoded.
+// HashFile returns path's SHA-256 (see pluginlib.HashAlgorithm),
+// hex-encoded.
 func HashFile(path string) (string, error) {
 	h := sha256.New()
 	f, err := os.Open(path)
@@ -178,7 +179,7 @@ func HashFile(path string) (string, error) {
 }
 
 // copyHashed copies src to dst (executable), returning its SHA-256 (see
-// HashAlgorithm), hex-encoded.
+// pluginlib.HashAlgorithm), hex-encoded.
 func copyHashed(src, dst string) (string, error) {
 	h := sha256.New()
 	in, err := os.Open(src)

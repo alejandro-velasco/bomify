@@ -131,16 +131,16 @@ func readManifest(path string) (Manifest, error) {
 	return m, nil
 }
 
-// manifestHash returns the HashAlgorithm Hash m's component declares, or
-// the zero Hash if it declares none.
+// manifestHash returns the SHA-256 m's component declares, or the zero
+// Hash if it declares none.
 func manifestHash(m Manifest) pluginlib.Hash {
 	if m.Component.Hashes == nil {
 		return pluginlib.Hash{}
 	}
 
 	for _, h := range *m.Component.Hashes {
-		if h.Algorithm == HashAlgorithm {
-			return pluginlib.Hash{Algorithm: h.Algorithm, Value: h.Value}
+		if h.Algorithm == pluginlib.HashAlgorithm {
+			return pluginlib.NewHash(h.Value)
 		}
 	}
 
