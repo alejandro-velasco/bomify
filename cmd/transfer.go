@@ -126,11 +126,11 @@ func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "attach this VEX document to the package: a name from \"bomify security vex add\", or a file (repeatable)")
 }
 
-// transferOptions is transferFlags.transferOptions plus the signer --sign
-// describes and the VEX documents --vex names, each attached to the
-// package.
+// transferOptions is transferFlags.transferOptions plus the signer and
+// attester --sign describes and the VEX documents --vex names, each
+// attached to the package.
 func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
-	signer, err := f.sign.signer(logger)
+	signer, attester, err := f.sign.signers(logger)
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
@@ -147,6 +147,6 @@ func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) 
 	}
 
 	opts, done := f.transferFlags.transferOptions(cmd)
-	opts.Sign, opts.Attach = signer, attach
+	opts.Sign, opts.Attest, opts.Attach = signer, attester, attach
 	return opts, done, nil
 }

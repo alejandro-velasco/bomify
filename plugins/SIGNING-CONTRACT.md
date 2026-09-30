@@ -56,7 +56,7 @@ produces it identically at sign and verify time. A plugin may parse it
 ## Commands
 
 ```
-bomify-plugin-<kind> signature sign            --payload <file> --reference <ref> [--option <key>=<value>]...
+bomify-plugin-<kind> signature sign            --payload <file> --reference <ref> [--payload-type <type>] [--option <key>=<value>]...
 bomify-plugin-<kind> signature verify          --payload <file> --envelope <file> --media-type <mt> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature supported-types
 ```
@@ -67,9 +67,27 @@ bomify-plugin-<kind> signature supported-types
 | --- | --- | --- |
 | `--payload` | yes | The [payload](#payload) file to sign. |
 | `--reference` | yes | The reference being published. Informational; use it to pick an identity, or ignore it. |
+| `--payload-type` | no | Sign `--payload` as the payload of a DSSE envelope of this type, instead of a signature over its raw bytes. See [Attestations](#attestations). |
 | `--option` | no, repeatable | A `key=value` from `--sign-option`. See [Options](#options). |
 
 On success, print one [`SignResult`](#signresult) and exit `0`.
+
+### Attestations
+
+With `--payload-type`, `--payload` is a document to attest, such as an
+in-toto statement (`application/vnd.in-toto+json`) of a package's build
+provenance, rather than the [payload](#payload) above. Sign it as a
+[DSSE](https://github.com/secure-systems-lab/dsse) envelope with that
+payload type, in your ecosystem's usual form, so its own tools can
+verify it (e.g. a Sigstore bundle holding a DSSE envelope, which cosign
+and `gh attestation verify` read). Return any annotations those tools
+use to find it (e.g. Sigstore's `dev.sigstore.bundle.content` and
+`dev.sigstore.bundle.predicateType`). A plugin that can't produce DSSE
+must fail.
+
+bomify stores an attestation as a referrer of the package like a
+signature, annotated `land.bomify.attestation.predicateType`, and never
+passes it to `signature verify` as a package signature.
 
 ### `signature verify`
 

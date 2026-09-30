@@ -57,6 +57,12 @@ func Reports(dataDir string) string { return filepath.Join(dataDir, "vulnerabili
 // vulnerability report of the component whose PurlHash is hash.
 func Report(dataDir, hash string) string { return filepath.Join(Reports(dataDir), hash+".json") }
 
+// Provenance returns "<dataDir>/provenance/<sbomHash>.json", the build
+// provenance "bomify build --provenance" recorded for that build.
+func Provenance(dataDir, sbomHash string) string {
+	return filepath.Join(dataDir, "provenance", sbomHash+".json")
+}
+
 // ComponentLayer is Layer for the component with purl.
 func ComponentLayer(dataDir, purl string) string { return Layer(dataDir, PurlHash(purl)) }
 

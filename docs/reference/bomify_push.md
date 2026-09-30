@@ -16,6 +16,10 @@ the registry refuses).
 --sign signs the package, and its reports separately, before the tag
 moves, so the tag never points at an unsigned package.
 
+Provenance recorded by "bomify build --provenance" is attached as an
+in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
+without it.
+
 --vex (repeatable) attaches a VEX document, a name from "bomify security
 vex add" or a file, as its own referrer; one already attached isn't
 added again. A pull's gate honors it only when the pull verifies

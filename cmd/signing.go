@@ -23,19 +23,28 @@ func (f *signFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.options, "sign-option", nil, "a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)")
 }
 
-// signer returns the transfer.Signer f describes, or nil if --sign wasn't
-// given.
-func (f *signFlags) signer(logger *slog.Logger) (transfer.Signer, error) {
+// signers returns the transfer.Signer and transfer.Attester f describes,
+// both from the same --sign plugin, or nils if --sign wasn't given.
+func (f *signFlags) signers(logger *slog.Logger) (transfer.Signer, transfer.Attester, error) {
 	if f.plugin == "" {
 		if len(f.options) > 0 {
-			return nil, fmt.Errorf("--sign-option given without --sign")
+			return nil, nil, fmt.Errorf("--sign-option given without --sign")
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err := validateOptions("--sign-option", f.options); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return signature.NewSigner(layout.Plugins(dataDir), signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
+	p := signature.Plugin{Kind: f.plugin, Options: f.options}
+	signer, err := signature.NewSigner(layout.Plugins(dataDir), p, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	attester, err := signature.NewAttester(layout.Plugins(dataDir), p, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	return signer, attester, nil
 }
 
 // verifyFlags are the --verify/--verify-option/--insecure-skip-verify
