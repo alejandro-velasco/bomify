@@ -129,7 +129,7 @@ func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 // options is transferFlags.options plus the signer --sign describes and
 // the VEX documents --vex names, each attached to the package.
 func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
-	signer, err := f.sign.signer(logger)
+	signer, attester, err := f.sign.signers(logger)
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
@@ -143,6 +143,6 @@ func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfe
 	}
 
 	opts, done := f.transferFlags.options(cmd)
-	opts.Sign, opts.Attach = signer, attach
+	opts.Sign, opts.Attest, opts.Attach = signer, attester, attach
 	return opts, done, nil
 }

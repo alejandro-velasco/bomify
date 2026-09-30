@@ -52,6 +52,7 @@ func sign() {
 	fs := flag.NewFlagSet("sign", flag.ExitOnError)
 	payload := fs.String("payload", "", "")
 	ref := fs.String("reference", "", "")
+	payloadType := fs.String("payload-type", "", "")
 	var options optionFlags
 	fs.Var(&options, "option", "")
 	fs.Parse(os.Args[3:])
@@ -62,7 +63,9 @@ func sign() {
 	key := option(options, "key")
 	data := read(*payload)
 
-	envelope, _ := json.Marshal(map[string]string{"key": key, "mac": mac(key, data)})
+	// With --payload-type, the "envelope" records it, standing in for a
+	// DSSE envelope, so tests can tell an attestation from a signature.
+	envelope, _ := json.Marshal(map[string]string{"key": key, "mac": mac(key, data), "payloadType": *payloadType})
 	print(map[string]any{
 		"artifactType": ArtifactType,
 		"mediaType":    MediaType,

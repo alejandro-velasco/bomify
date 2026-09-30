@@ -180,6 +180,11 @@ producing v0.3 Sigstore bundles
   `certificate-oidc-issuer` (or `-regexp`), and network access to
   Sigstore's trusted root.
 
+With `--payload-type` (see
+[Attestations](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#attestations)),
+it signs a DSSE envelope instead, in the bundle format cosign and `gh
+attestation verify` read.
+
 `key` can't be combined with keyless options, and unknown options are
 rejected.
 

@@ -29,6 +29,12 @@ type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, 
 // failed Scanner leaves nothing behind in the data directory either.
 type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbom []byte) error
 
+// Attester signs statement, an in-toto statement about the package Push
+// has just packed into target (its manifest, subject), as a DSSE
+// attestation, and pushes it into target as a referrer of subject carrying
+// annotations. Push calls it, like Signer, before tagging ref.
+type Attester func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error)
+
 // Options are what Push, Pull, and Save/Load take beyond what to
 // transfer: how, and the optional steps to run around a package.
 type Options struct {
@@ -43,6 +49,9 @@ type Options struct {
 	Sign   Signer
 	Verify Verifier
 	Scan   Scanner
+	// Attest signs the package's build provenance, if it has any; without
+	// it, provenance is attached unsigned.
+	Attest Attester
 
 	// Attach are documents Push attaches to every package it pushes, each
 	// as its own referrer, signed like the package (see transfer.Attach).

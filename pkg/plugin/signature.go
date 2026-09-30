@@ -26,8 +26,13 @@ type SigningPlugin interface {
 
 // SignRequest is one "signature sign" invocation.
 type SignRequest struct {
-	Payload   []byte
-	Reference string
+	Payload []byte
+	// PayloadType, if set, asks for a DSSE envelope over Payload with this
+	// payload type (e.g. "application/vnd.in-toto+json" for an in-toto
+	// attestation) instead of a signature over the raw payload. A plugin
+	// that can't produce one must fail.
+	PayloadType string
+	Reference   string
 	// Options are the --option values, each "key=value", unparsed.
 	Options []string
 }
@@ -77,6 +82,7 @@ func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 	}
 	sign.Flags().StringVar(&signPayload, "payload", "", "file holding the payload to sign (required)")
 	sign.Flags().StringVar(&signReq.Reference, "reference", "", "reference of the package being signed (required)")
+	sign.Flags().StringVar(&signReq.PayloadType, "payload-type", "", "sign the payload as a DSSE envelope of this payload type, e.g. application/vnd.in-toto+json")
 	sign.Flags().StringArrayVar(&signReq.Options, "option", nil, optionUsage)
 	for _, name := range []string{"payload", "reference"} {
 		_ = sign.MarkFlagRequired(name)

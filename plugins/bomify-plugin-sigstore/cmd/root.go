@@ -30,7 +30,7 @@ func (signer) Sign(ctx context.Context, req pluginlib.SignRequest) (pluginlib.Si
 	if err != nil {
 		return pluginlib.SignResult{}, err
 	}
-	envelope, err := sigstore.Sign(ctx, req.Payload, opts)
+	envelope, err := sigstore.Sign(ctx, req.Payload, req.PayloadType, opts)
 	if err != nil {
 		return pluginlib.SignResult{}, err
 	}
@@ -38,6 +38,7 @@ func (signer) Sign(ctx context.Context, req pluginlib.SignRequest) (pluginlib.Si
 		ArtifactType: sigstore.BundleMediaType,
 		MediaType:    sigstore.BundleMediaType,
 		Envelope:     envelope,
+		Annotations:  sigstore.BundleAnnotations(req.Payload, req.PayloadType),
 	}, nil
 }
 

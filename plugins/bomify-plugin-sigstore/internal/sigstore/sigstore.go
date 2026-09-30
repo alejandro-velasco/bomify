@@ -14,6 +14,7 @@ package sigstore
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -34,8 +35,11 @@ import (
 const BundleMediaType = "application/vnd.dev.sigstore.bundle.v0.3+json"
 
 // Sign signs payload — with the private key opts names, or keyless if it
-// names none — returning the resulting Sigstore bundle as JSON.
-func Sign(ctx context.Context, payload []byte, opts Options) ([]byte, error) {
+// names none — returning the resulting Sigstore bundle as JSON. With a
+// payloadType, the bundle holds a DSSE envelope over payload of that type
+// (e.g. an in-toto attestation) rather than a signature over the raw
+// bytes.
+func Sign(ctx context.Context, payload []byte, payloadType string, opts Options) ([]byte, error) {
 	var (
 		kp         sign.Keypair
 		bundleOpts = sign.BundleOptions{Context: ctx}
@@ -58,12 +62,39 @@ func Sign(ctx context.Context, payload []byte, opts Options) ([]byte, error) {
 		kp = ephemeral
 	}
 
-	pb, err := sign.Bundle(&sign.PlainData{Data: payload}, kp, bundleOpts)
+	var content sign.Content = &sign.PlainData{Data: payload}
+	if payloadType != "" {
+		content = &sign.DSSEData{Data: payload, PayloadType: payloadType}
+	}
+	pb, err := sign.Bundle(content, kp, bundleOpts)
 	if err != nil {
 		return nil, fmt.Errorf("sign: %w", err)
 	}
 
 	return protojson.Marshal(pb)
+}
+
+// inTotoPayloadType is the DSSE payload type of an in-toto statement.
+const inTotoPayloadType = "application/vnd.in-toto+json"
+
+// BundleAnnotations returns the referrer annotations Sigstore's own tools
+// (cosign, gh attestation) use to find an attestation bundle: that it
+// holds a DSSE envelope and, for an in-toto statement, its predicate
+// type. A plain signature (no payloadType) needs none.
+func BundleAnnotations(payload []byte, payloadType string) map[string]string {
+	if payloadType == "" {
+		return nil
+	}
+	annotations := map[string]string{"dev.sigstore.bundle.content": "dsse-envelope"}
+	if payloadType == inTotoPayloadType {
+		var statement struct {
+			PredicateType string `json:"predicateType"`
+		}
+		if json.Unmarshal(payload, &statement) == nil && statement.PredicateType != "" {
+			annotations["dev.sigstore.bundle.predicateType"] = statement.PredicateType
+		}
+	}
+	return annotations
 }
 
 // keylessBundleOptions points opts at the public-good Sigstore instance's

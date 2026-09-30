@@ -111,6 +111,7 @@ nav = [
           { "Plugins" = "development/architecture/plugins.md" },
           { "Security scanning" = "development/architecture/security-scanning.md" },
           { "Signing and verification" = "development/architecture/signing.md" },
+          { "Build provenance" = "development/architecture/provenance.md" },
           { "Plugin installation" = "development/architecture/plugin-installation.md" },
           { "Builds and tagging" = "development/architecture/builds.md" },
           { "Push and pull" = "development/architecture/registry.md" },
