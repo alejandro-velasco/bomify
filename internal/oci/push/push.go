@@ -82,10 +82,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("push config: %w", err)
 	}
 
-	var components []cdx.Component
-	if bom.Components != nil {
-		components = *bom.Components
-	}
+	components := sbom.Components(bom.Components)
 
 	// Layers are slotted by component index rather than appended as each
 	// upload finishes: completion order varies from run to run, and the

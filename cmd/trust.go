@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
@@ -214,16 +213,13 @@ func formatKeyOptions(keyOptions map[string]string) string {
 const trustKeyShort = "Manage the public keys trust rules refer to"
 
 func trustKeyCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "key",
-		Short: trustKeyShort,
-	}
-
-	cmd.AddCommand(trustKeyAddCmd())
-	cmd.AddCommand(trustKeyListCmd())
-	cmd.AddCommand(trustKeyRemoveCmd())
-
-	return cmd
+	return storeCommand{
+		use: "key", short: trustKeyShort, path: "trust key", noun: "key",
+		add: signature.AddKey, list: signature.ListKeys, remove: signature.RemoveKey,
+		addHelp:    commandHelp{trustKeyAddShort, trustKeyAddLong, trustKeyAddExample},
+		listHelp:   commandHelp{trustKeyListShort, trustKeyListLong, trustKeyListExample},
+		removeHelp: commandHelp{trustKeyRemoveShort, trustKeyRemoveLong, trustKeyRemoveExample},
+	}.command()
 }
 
 const trustKeyAddShort = "Add or replace a public key in the managed key store"
@@ -252,24 +248,6 @@ const trustKeyAddExample = `  # Store the team's cosign public key as "team"
   # Rotate it: every rule using "team" now trusts the new key
   bomify trust key add team keys/team-2026.pub`
 
-func trustKeyAddCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "add <name> <file>",
-		Short:   trustKeyAddShort,
-		Long:    trustKeyAddLong,
-		Example: trustKeyAddExample,
-		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entry, err := signature.AddKey(dataDir, args[0], args[1])
-			if err != nil {
-				return fmt.Errorf("trust key add: %w", err)
-			}
-			logging.FromContext(cmd.Context()).Info("key stored", "name", entry.Name, "sha256", entry.SHA256, "source", entry.Source)
-			return nil
-		},
-	}
-}
-
 const trustKeyListShort = "List the public keys in the managed key store"
 
 const trustKeyListLong = `List prints every key in <data-dir>/keys/: its name, the content hash
@@ -278,28 +256,6 @@ it's stored under, when it was added, and the file it was copied from
 
 const trustKeyListExample = `  # See every stored key
   bomify trust key list`
-
-func trustKeyListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Short:   trustKeyListShort,
-		Long:    trustKeyListLong,
-		Example: trustKeyListExample,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entries, err := signature.ListKeys(dataDir)
-			if err != nil {
-				return err
-			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSHA256\tADDED\tSOURCE")
-			for _, e := range entries {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.SHA256[:12], e.Added, e.Source)
-			}
-			return w.Flush()
-		},
-	}
-}
 
 const trustKeyRemoveShort = "Remove a public key from the managed key store"
 
@@ -310,19 +266,3 @@ referring to a key that no longer exists.`
 
 const trustKeyRemoveExample = `  # Remove the key stored as "team"
   bomify trust key remove team`
-
-func trustKeyRemoveCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "remove <name>",
-		Short:   trustKeyRemoveShort,
-		Long:    trustKeyRemoveLong,
-		Example: trustKeyRemoveExample,
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := signature.RemoveKey(dataDir, args[0]); err != nil {
-				return fmt.Errorf("trust key remove: %w", err)
-			}
-			return nil
-		},
-	}
-}

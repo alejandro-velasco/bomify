@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
 // Severity is a vulnerability severity bomify can gate on, ordered from
@@ -123,7 +124,7 @@ func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 		}
 		// Built once per report, since every vulnerability in it resolves
 		// its "affects" against the same components.
-		purlByRef := purlsByBOMRef(componentsOf(r.Report.Components))
+		purlByRef := purlsByBOMRef(sbom.Components(r.Report.Components))
 		for _, vuln := range *r.Report.Vulnerabilities {
 			if slices.Contains(g.Ignore, vuln.ID) {
 				continue

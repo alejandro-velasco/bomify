@@ -8,7 +8,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
@@ -148,10 +147,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	if err != nil {
 		return fmt.Errorf("load sbom: %w", err)
 	}
-	var components []cdx.Component
-	if bom.Components != nil {
-		components = *bom.Components
-	}
+	components := sbom.Components(bom.Components)
 	logger.Info("loaded sbom", "path", sbomPath, "components", len(components), "concurrency", opts.concurrency)
 
 	reports, err := security.Scan(path, opts.scanType, components, opts.concurrency, logger)
@@ -416,16 +412,13 @@ func securityPolicyRemoveCmd() *cobra.Command {
 const securityVEXShort = "Manage the VEX documents scan policy rules refer to"
 
 func securityVEXCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "vex",
-		Short: securityVEXShort,
-	}
-
-	cmd.AddCommand(securityVEXAddCmd())
-	cmd.AddCommand(securityVEXListCmd())
-	cmd.AddCommand(securityVEXRemoveCmd())
-
-	return cmd
+	return storeCommand{
+		use: "vex", short: securityVEXShort, path: "security vex", noun: "VEX document",
+		add: security.AddVEX, list: security.ListVEX, remove: security.RemoveVEX,
+		addHelp:    commandHelp{securityVEXAddShort, securityVEXAddLong, securityVEXAddExample},
+		listHelp:   commandHelp{securityVEXListShort, securityVEXListLong, securityVEXListExample},
+		removeHelp: commandHelp{securityVEXRemoveShort, securityVEXRemoveLong, securityVEXRemoveExample},
+	}.command()
 }
 
 const securityVEXAddShort = "Add or replace a VEX document in the managed store"
@@ -448,24 +441,6 @@ const securityVEXAddExample = `  # Store the team's OpenVEX document as "team"
   # After editing it, add it again to update every rule using "team"
   bomify security vex add team vex/team.openvex.json`
 
-func securityVEXAddCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "add <name> <file>",
-		Short:   securityVEXAddShort,
-		Long:    securityVEXAddLong,
-		Example: securityVEXAddExample,
-		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entry, err := security.AddVEX(dataDir, args[0], args[1])
-			if err != nil {
-				return fmt.Errorf("security vex add: %w", err)
-			}
-			logging.FromContext(cmd.Context()).Info("VEX document stored", "name", entry.Name, "sha256", entry.SHA256, "source", entry.Source)
-			return nil
-		},
-	}
-}
-
 const securityVEXListShort = "List the VEX documents in the managed store"
 
 const securityVEXListLong = `List prints every document in <data-dir>/vex/: its name, the content
@@ -474,28 +449,6 @@ from (never read again).`
 
 const securityVEXListExample = `  # See every stored VEX document
   bomify security vex list`
-
-func securityVEXListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Short:   securityVEXListShort,
-		Long:    securityVEXListLong,
-		Example: securityVEXListExample,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			entries, err := security.ListVEX(dataDir)
-			if err != nil {
-				return err
-			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSHA256\tADDED\tSOURCE")
-			for _, e := range entries {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.SHA256[:12], e.Added, e.Source)
-			}
-			return w.Flush()
-		},
-	}
-}
 
 const securityVEXRemoveShort = "Remove a VEX document from the managed store"
 
@@ -506,19 +459,3 @@ referring to a document that no longer exists.`
 
 const securityVEXRemoveExample = `  # Remove the document stored as "team"
   bomify security vex remove team`
-
-func securityVEXRemoveCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "remove <name>",
-		Short:   securityVEXRemoveShort,
-		Long:    securityVEXRemoveLong,
-		Example: securityVEXRemoveExample,
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := security.RemoveVEX(dataDir, args[0]); err != nil {
-				return fmt.Errorf("security vex remove: %w", err)
-			}
-			return nil
-		},
-	}
-}

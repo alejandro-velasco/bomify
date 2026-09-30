@@ -212,11 +212,7 @@ func markComponents(baseDir, sbomHash string, kept map[string]bool) (ok bool) {
 	if err != nil {
 		return false
 	}
-	if bom.Components == nil {
-		return true
-	}
-
-	for _, component := range *bom.Components {
+	for _, component := range sbom.Components(bom.Components) {
 		kept[layout.PurlHash(component.PackageURL)] = true
 	}
 	return true

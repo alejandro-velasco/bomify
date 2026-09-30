@@ -235,10 +235,10 @@ func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string,
 // no components indexes nothing.
 func indexComponentsByPurl(bom *cdx.BOM) map[string]cdx.Component {
 	index := map[string]cdx.Component{}
-	if bom == nil || bom.Components == nil {
+	if bom == nil {
 		return index
 	}
-	for _, c := range *bom.Components {
+	for _, c := range sbom.Components(bom.Components) {
 		if c.PackageURL != "" {
 			index[c.PackageURL] = c
 		}

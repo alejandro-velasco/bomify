@@ -29,13 +29,9 @@ func PackageSize(baseDir, sbomHash string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("parse manifest %s: %w", sbomHash, err)
 	}
-	if bom.Components == nil {
-		return 0, nil
-	}
-
 	seen := map[string]bool{}
 	var total int64
-	for _, component := range *bom.Components {
+	for _, component := range sbom.Components(bom.Components) {
 		hash := layout.PurlHash(component.PackageURL)
 		if seen[hash] {
 			continue

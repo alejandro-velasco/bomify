@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"slices"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -277,10 +276,7 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 	if err != nil {
 		return fmt.Errorf("parse sbom: %w", err)
 	}
-	var components []cdx.Component
-	if bom.Components != nil {
-		components = *bom.Components
-	}
+	components := sbom.Components(bom.Components)
 
 	path, err := plugin.Find(layout.Plugins(dataDir), scanner)
 	if err != nil {

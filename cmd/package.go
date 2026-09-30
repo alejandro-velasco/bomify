@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
@@ -314,10 +313,7 @@ func runPackageVulnerabilities(cmd *cobra.Command, opts *packageVulnerabilitiesO
 		return fmt.Errorf("load sbom: %w", err)
 	}
 
-	var components []cdx.Component
-	if bom.Components != nil {
-		components = *bom.Components
-	}
+	components := sbom.Components(bom.Components)
 
 	wantPurls := make(map[string]bool, len(opts.purls))
 	for _, purl := range opts.purls {

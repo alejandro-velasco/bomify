@@ -32,16 +32,8 @@ func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn 
 		name = bom.Metadata.Component.Name
 	}
 
-	componentCount := 0
-	if bom.Components != nil {
-		componentCount = len(*bom.Components)
-	}
-
-	logger.Info("loaded sbom", "name", name, "components", componentCount, "concurrency", concurrency)
-
-	if bom.Components == nil {
-		return nil
-	}
+	components := sbom.Components(bom.Components)
+	logger.Info("loaded sbom", "name", name, "components", len(components), "concurrency", concurrency)
 
 	if concurrency < 1 {
 		concurrency = 1
@@ -50,7 +42,7 @@ func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn 
 	var g errgroup.Group
 	g.SetLimit(concurrency)
 
-	for _, component := range *bom.Components {
+	for _, component := range components {
 		g.Go(func() error {
 			log := logger.With("component", component.Name, "version", component.Version)
 			if err := fn(component, log); err != nil {

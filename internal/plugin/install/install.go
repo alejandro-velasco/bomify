@@ -173,25 +173,23 @@ func selectBinaries(bom *cdx.BOM, goos, goarch string) ([]candidate, error) {
 	seen := map[string]bool{}
 	var platforms []string
 
-	if bom.Components != nil {
-		for _, component := range *bom.Components {
-			b, ok, err := plugin.ParseBinary(component)
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				continue
-			}
-			platforms = append(platforms, platformOf(b))
-			if !b.Matches(goos, goarch) {
-				continue
-			}
-			if seen[b.Kind] {
-				return nil, fmt.Errorf("more than one bomify-plugin component for %q matches %s/%s", b.Kind, goos, goarch)
-			}
-			seen[b.Kind] = true
-			selected = append(selected, candidate{component: component, binary: b})
+	for _, component := range sbom.Components(bom.Components) {
+		b, ok, err := plugin.ParseBinary(component)
+		if err != nil {
+			return nil, err
 		}
+		if !ok {
+			continue
+		}
+		platforms = append(platforms, platformOf(b))
+		if !b.Matches(goos, goarch) {
+			continue
+		}
+		if seen[b.Kind] {
+			return nil, fmt.Errorf("more than one bomify-plugin component for %q matches %s/%s", b.Kind, goos, goarch)
+		}
+		seen[b.Kind] = true
+		selected = append(selected, candidate{component: component, binary: b})
 	}
 
 	if len(selected) == 0 {
