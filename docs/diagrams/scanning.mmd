@@ -5,11 +5,11 @@ flowchart TD
     classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
     classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
 
-    Start(["bomify push / save / pull / load"]) --> When["hook point:<br/>push, save — before anything is packed<br/>pull, load — after --verify, before anything is written"]
+    Start(["bomify pull / load"]) --> When["after --verify,<br/>before anything is written"]
     When --> Skip{"--skip-scan?"}
 
-    Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names this hook)"]
-    Skip -->|"no"| Rule{"a scan.json rule matches the<br/>reference, and its --on names<br/>this hook?"}
+    Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names pull)"]
+    Skip -->|"no"| Rule{"a scan.json rule matches the<br/>reference, and its --on names<br/>pull?"}
 
     Rule -->|"yes, most specific wins"| UseRule["the rule's scanner, threshold,<br/>and stored VEX — --scan and<br/>--fail-on override them,<br/>--vex adds to the VEX"]
     Rule -->|"no"| UseFlags["flags only:<br/>--scan, --fail-on,<br/>--ignore, --vex"]
@@ -27,8 +27,8 @@ flowchart TD
 
     Gate --> Left{"anything left?"}
 
-    Left -->|"no"| Continue["carry on:<br/>push, save — pack, sign, attach fresh reports<br/>pull, load — write the package,<br/>then the fresh reports"]
-    Left -->|"yes"| Failed["print the findings table; the command fails:<br/>push, save — nothing uploaded or written<br/>(fresh reports kept locally)<br/>pull, load — nothing written"]
+    Left -->|"no"| Continue["carry on: write the package,<br/>then the fresh reports"]
+    Left -->|"yes"| Failed["print the findings table;<br/>the command fails —<br/>nothing written"]
 
     class Start source
     class PluginScan plugin

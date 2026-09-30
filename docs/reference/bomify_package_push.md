@@ -26,14 +26,6 @@ referrer. One signature covers the SBOM and every component; the
 report referrer is signed separately, the same way. See "bomify pull
 --verify" and "bomify trust" for checking them.
 
---scan <type> scans the package's components fresh before anything is
-uploaded — the reports it writes are the ones the package then carries
-— and --fail-on <severity> (with --ignore and --vex) refuses to push it
-if anything at or above it is found; --fail-on needs --scan, since a
-push always scans fresh. A "bomify security policy" rule listing "push"
-in its --on does the same for a matching <tag> without flags;
---skip-scan ignores it.
-
 --quiet prints only the pushed package's pinned reference,
 <repository>@<digest>, on stdout — no progress bars, and no logging but
 warnings and errors — for scripts that go on to publish or pin it.
@@ -65,16 +57,11 @@ bomify package push <tag> [flags]
 
 ```
   -c, --concurrency int           number of layers to upload concurrently (default 3)
-      --fail-on string            fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                      help for push
-      --ignore stringArray        a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
       --keep-reports int          number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all) (default 1)
   -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
-      --scan string               scan the package's components with the bomify-plugin-<type> scanner first (e.g. grype); overrides a matching "bomify security policy" rule's scanner
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
-      --skip-scan                 don't scan or gate at all, even if a "bomify security policy" rule matching the package says to
-      --vex stringArray           an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
 ```
 
 ### Options inherited from parent commands

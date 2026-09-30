@@ -182,26 +182,30 @@ packages inside an image only stops failing once every one of them is
 covered. Reports themselves are unchanged — `bomify package
 vulnerabilities` still shows everything the scanner found.
 
-## 8. Scan automatically on push and pull
+## 8. Gate what you push, and what you pull
 
-`bomify push`, `save`, `pull`, and `load` take the same `--scan` and
-`--fail-on` flags, so the scan and the gate can happen as part of the
-lifecycle rather than as a separate step. They always scan fresh, so
-`--fail-on` needs `--scan` (or a policy rule's scanner):
+Before pushing, just run the scan with a threshold first — `&&` stops
+the push if it fails, and the push carries the fresh reports:
 
 ```sh
-# Refuse to push anything with a high or critical vulnerability
-bomify push registry.example.com/team/myapp:1.0 --scan grype --fail-on high
+bomify security scan grype registry.example.com/team/myapp:1.0 --fail-on high \
+  && bomify push registry.example.com/team/myapp:1.0
+```
 
-# Scan a package fresh before restoring it; a failure writes nothing
+Pulling is different: scanning afterwards would only gate once the
+package is already on disk. `bomify pull` and `bomify load` take
+`--scan` and `--fail-on` to scan a package fresh *before* anything of
+it is written — a failure leaves nothing behind:
+
+```sh
 bomify pull registry.example.com/team/myapp:1.0 --scan grype --fail-on high
 ```
 
-To do it without flags, list the hooks in a policy rule with `--on`.
+To do it for every pull without flags, add `--on pull` to a policy rule.
 A rule without `--on` only applies to `bomify security scan`:
 
 ```sh
-bomify security policy create grype --match registry.example.com/team --fail-on high --on push,pull
+bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
 ```
 
 `--skip-scan` skips a rule's automatic scan for one command. Scanning

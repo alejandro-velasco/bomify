@@ -34,20 +34,19 @@ type Rule struct {
 	// which is what VEX records.
 	VEX []string `json:"vex,omitempty"`
 	// On lists the lifecycle hooks (see Hooks) at which a matching
-	// package is scanned with Scanner and gated on FailOn automatically:
-	// "push" (and save), "pull" (and load). Empty means none — the rule
-	// then only applies to "bomify security scan".
+	// package is scanned with Scanner and gated on FailOn automatically.
+	// Only "pull" (which covers load too) exists: it's the one place a
+	// hook does what running "bomify security scan" separately can't —
+	// refuse a package before anything of it is written. Empty means
+	// none; the rule then only applies to "bomify security scan".
 	On []string `json:"on,omitempty"`
 }
 
 // The lifecycle hooks a Rule can name in On.
-const (
-	HookPush = "push"
-	HookPull = "pull"
-)
+const HookPull = "pull"
 
 // Hooks lists every hook a Rule can name in On.
-var Hooks = []string{HookPush, HookPull}
+var Hooks = []string{HookPull}
 
 // AppliesOn reports whether r scans packages automatically at hook.
 func (r Rule) AppliesOn(hook string) bool {

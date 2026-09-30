@@ -16,10 +16,6 @@ stdout if --output isn't given.
 "bomify push --sign" would, the signature travelling inside the
 tarball for "bomify load --verify" to check.
 
---scan, --fail-on, --ignore, --vex, and --skip-scan gate each tag
-before anything is written, exactly as "bomify push" does, as does a
-"bomify security policy" rule listing "push" in its --on.
-
 ```
 bomify save <tag>... [flags]
 ```
@@ -44,15 +40,10 @@ bomify save <tag>... [flags]
 
 ```
   -c, --concurrency int           number of layers to archive concurrently (default 3)
-      --fail-on string            fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                      help for save
-      --ignore stringArray        a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
   -o, --output string             write the tarball here instead of stdout
-      --scan string               scan the package's components with the bomify-plugin-<type> scanner first (e.g. grype); overrides a matching "bomify security policy" rule's scanner
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
-      --skip-scan                 don't scan or gate at all, even if a "bomify security policy" rule matching the package says to
-      --vex stringArray           an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's
 ```
 
 ### Options inherited from parent commands

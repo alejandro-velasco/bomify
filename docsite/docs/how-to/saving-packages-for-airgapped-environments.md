@@ -78,8 +78,6 @@ cat myapp.tar | bomify load
 - [Distributing a package](distributing-a-package.md) once it's
   loaded, if the airgapped environment has its own internal registry.
 - [Scanning a package's components with grype](scanning-with-grype.md)
-  before you save (or with `bomify save --scan grype --fail-on high`,
-  which refuses to save anything that fails) — any report a scan
-  already produced travels with
+  before you save — any report a scan already produced travels with
   the package automatically, so there's no need for network access on
   the far side to fetch it later.

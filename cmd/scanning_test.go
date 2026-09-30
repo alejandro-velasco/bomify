@@ -20,8 +20,8 @@ var hookComponent = cdx.Component{Type: cdx.ComponentTypeLibrary, Name: "a", Ver
 const hookTag = "registry.example.com/team/app:1.0"
 
 // setUpHookPackage records hookTag in a fresh data directory — its SBOM
-// and a pulled layer, everything save needs — with the fake scanner
-// installed as "grype".
+// and a pulled layer, everything save needs to produce a tarball for
+// the load tests — with the fake scanner installed as "grype".
 func setUpHookPackage(t *testing.T) string {
 	t.Helper()
 	baseDir := t.TempDir()
@@ -63,35 +63,6 @@ func saveHookPackage(t *testing.T) string {
 func isGateError(err error) bool {
 	var gateErr *security.GateError
 	return errors.As(err, &gateErr)
-}
-
-func TestSaveScanGate(t *testing.T) {
-	baseDir := setUpHookPackage(t)
-	archive := filepath.Join(t.TempDir(), "app.tar")
-
-	// A failing gate stops the save before the tarball is even created,
-	// but keeps the fresh report to inspect.
-	_, err := runRootCmd(t, baseDir, "save", hookTag, "--scan", "grype", "--fail-on", "high", "--output", archive)
-	if !isGateError(err) {
-		t.Fatalf("save --fail-on high: error = %v, want a gate failure", err)
-	}
-	if _, err := os.Stat(archive); !os.IsNotExist(err) {
-		t.Errorf("tarball written despite a failing gate: err = %v", err)
-	}
-	readReport(t, baseDir, hookComponent)
-
-	if _, err := runRootCmd(t, baseDir, "save", hookTag, "--scan", "grype", "--fail-on", "critical", "--output", archive); err != nil {
-		t.Fatalf("save --fail-on critical: %v", err)
-	}
-	if _, err := os.Stat(archive); err != nil {
-		t.Errorf("tarball missing after a passing gate: %v", err)
-	}
-
-	// A hook always scans fresh: --fail-on without --scan (and no rule)
-	// is refused rather than gating on the reports already on disk.
-	if _, err := runRootCmd(t, baseDir, "save", hookTag, "--fail-on", "low", "--output", archive); err == nil || isGateError(err) {
-		t.Errorf("save --fail-on without --scan: error = %v, want a request for --scan", err)
-	}
 }
 
 func TestLoadScanGate(t *testing.T) {
@@ -158,7 +129,7 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 		t.Errorf("load --fail-on critical over a rule on pull: %v", err)
 	}
 
-	for _, hook := range []string{"deploy", "build"} {
+	for _, hook := range []string{"deploy", "build", "push"} {
 		if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--on", hook); err == nil {
 			t.Errorf("policy create --on %s: error = nil, want an unknown-hook error", hook)
 		}

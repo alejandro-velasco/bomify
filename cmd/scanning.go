@@ -11,7 +11,6 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
@@ -177,9 +176,9 @@ func checkGate(w io.Writer, logger *slog.Logger, g security.Gate, reports []secu
 	return err
 }
 
-// scanFlags are the flags that scan a package at a lifecycle hook —
-// push/save, pull/load — and gate it: --scan <type>, the gate flags,
-// and --skip-scan.
+// scanFlags are the flags that scan a package at the pull hook — pull
+// and load — and gate it before anything is written: --scan <type>, the
+// gate flags, and --skip-scan.
 type scanFlags struct {
 	scanner string
 	gateFlags
@@ -273,28 +272,6 @@ func writeReports(reports []security.ComponentReport) error {
 		}
 	}
 	return nil
-}
-
-// gateLocalPackage runs p against the locally recorded package whose
-// SBOM hashes to sbomHash — as push and save do, before anything leaves
-// the machine — keeping the fresh reports even when the gate fails, so
-// what failed it can be inspected with "bomify package
-// vulnerabilities".
-func gateLocalPackage(w io.Writer, p scanPlan, sbomHash string, concurrency int, logger *slog.Logger) error {
-	bom, err := sbom.Load(build.ManifestPath(dataDir, sbomHash))
-	if err != nil {
-		return fmt.Errorf("load sbom: %w", err)
-	}
-	var components []cdx.Component
-	if bom.Components != nil {
-		components = *bom.Components
-	}
-
-	reports, gateErr := p.run(w, components, concurrency, logger)
-	if err := writeReports(reports); err != nil {
-		return errors.Join(gateErr, err)
-	}
-	return gateErr
 }
 
 // pullScanner is the transfer.Scanner pull and load run for each

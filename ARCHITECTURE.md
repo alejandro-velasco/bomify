@@ -397,47 +397,44 @@ the gate, so a failing package's reports are still there to inspect.
 A failure prints a table of every offending vulnerability (severity,
 ID, component purl) to stderr and exits non-zero.
 
-#### Scanning at lifecycle hooks
+#### Scanning on pull
 
-The same scan and gate also run as part of the package lifecycle, the
-way signing does, at two hooks (`security.Hooks`): **push** (before
-`bomify push` or `bomify save` sends it anywhere) and **pull** (before
-`bomify pull` or `bomify load` writes anything of it). There's no build
-hook: `bomify build` followed by `bomify security scan --fail-on` does
-the same, since the build is recorded either way. Each of those
-commands takes
-`--scan <type>`, the gate flags, and `--skip-scan` (`cmd/scanning.go`'s
-`scanFlags`), and resolves a `scanPlan` — a scanner, and a gate — for
-each package:
+The same scan and gate can also run as part of `bomify pull` and
+`bomify load`, before anything of the package is written. That's the
+one place a lifecycle hook does something running `bomify security
+scan` separately can't: `security scan` needs the package on disk, so
+pulling and then scanning only gates after everything has landed. The
+other points are left to the separate command on purpose — `bomify
+build` or `push`/`save`, then `bomify security scan <type> <tag>
+--fail-on <severity>` (`&&`-chained in CI) does the same with no extra
+flags on those commands.
+
+`pull` and `load` take `--scan <type>`, the gate flags, and
+`--skip-scan` (`cmd/scanning.go`'s `scanFlags`), and resolve a
+`scanPlan` — a scanner, and a gate — for each package:
 
 1. `--skip-scan`: nothing (warning if a rule would have scanned).
 2. `--scan`, else the matching scan policy rule's scanner — but only a
-   rule whose `on` lists that hook (`security.Rule.AppliesOn`). A rule
+   rule whose `on` lists `pull` (`security.Rule.AppliesOn`). A rule
    with no `on` still applies to `bomify security scan`, and nowhere
-   else, so rules only scan automatically where they say so.
+   else, so rules only scan pulls where they say so.
 3. The gate exactly as for `bomify security scan` (see above), with
-   the same hook condition on the rule.
+   the same condition on the rule.
 
-A hook always scans fresh (`security.Scan`), and never gates on
-reports already on disk or on those a pulled package carries — the
-latter are the publisher's, never taken as a verdict. So a gate needs a
-scanner: `--fail-on` without `--scan`, and no rule, is an error. Where
-each hook runs decides what a failure leaves behind:
+The package is always scanned fresh (`security.Scan`), never gated on
+the reports it carries — those are its publisher's, never taken as a
+verdict — so `--fail-on` without `--scan`, and no rule, is an error.
 
-- **push/save** scan before anything is packed, so a failure uploads
-  (or writes) nothing; the fresh reports are the ones the pushed
-  package then carries (see [Reports in a
-  registry](#reports-in-a-registry)).
-- **pull/load** run as a third transfer hook, `transfer.Hooks.Scan`,
-  alongside `Sign` and `Verify`: `pull.PullLayers` fetches the
-  package's SBOM into memory after verifying it and hands it to the
-  hook before writing anything, so a failure leaves nothing behind, as
-  a failed verify does. The fresh reports are written after the
-  package's own, replacing what its publisher attached. Scanning may
-  need network access, which is why nothing scans at pull unless asked
-  to.
+The scan runs as a third transfer hook, `transfer.Hooks.Scan`,
+alongside `Sign` and `Verify`: `pull.PullLayers` fetches the package's
+SBOM into memory after verifying it and hands it to the hook before
+writing anything, so a failure leaves nothing behind, as a failed
+verify does. The fresh reports are written after the package's own,
+replacing what its publisher attached. Scanning may need network access
+(e.g. grype's database, or the images it scans), which is why nothing
+scans on pull unless asked to.
 
-![Scanning at lifecycle hooks](docs/diagrams/scanning.svg)
+![Scanning on pull](docs/diagrams/scanning.svg)
 
 *Source: [`docs/diagrams/scanning.mmd`](docs/diagrams/scanning.mmd)*
 

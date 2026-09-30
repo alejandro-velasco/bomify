@@ -281,12 +281,11 @@ and why. For a one-off, use "bomify security scan --ignore".
 no --fail-on of its own, always applies its VEX documents alongside any
 --vex of its own, and ignores rules entirely with --skip-scan.
 
---on (comma-separated or repeatable) also makes a matching package get
-scanned with <scanner> and gated automatically at those lifecycle hooks:
-"push" (before "bomify push" or "bomify save" sends it anywhere) and
-"pull" (before "bomify pull" or "bomify load" writes anything of it). Without --on, the rule only
-applies to "bomify security scan". Each of those commands' --scan and
---fail-on override the rule, and --skip-scan ignores it.`
+--on pull also makes a matching package get scanned with <scanner> and
+gated automatically by "bomify pull" and "bomify load", before anything
+of it is written. Without --on, the rule only applies to "bomify
+security scan". Pull's and load's own --scan and --fail-on override the
+rule, and --skip-scan ignores it.`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
@@ -295,8 +294,8 @@ const securityPolicyCreateExample = `  # Fail any scan of a team's packages on h
   bomify security vex add team team.openvex.json
   bomify security policy create grype --match registry.example.com/team --fail-on high --vex team
 
-  # ...and scan and gate them automatically before they're pushed or pulled
-  bomify security policy create grype --match registry.example.com/team --fail-on high --on push,pull
+  # ...and scan and gate them automatically before they're pulled or loaded
+  bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
 
   # Scan every other package with grype, never failing
   bomify security policy create grype`
@@ -321,7 +320,7 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
-	cmd.Flags().StringSliceVar(&rule.On, "on", nil, "lifecycle hooks to scan and gate matching packages at automatically: push (and save), pull (and load); default none")
+	cmd.Flags().StringSliceVar(&rule.On, "on", nil, "lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none")
 	cmd.Flags().StringArrayVar(&rule.VEX, "vex", nil, "the name of a stored VEX document (see \"bomify security vex add\") exempting vulnerabilities it shows don't affect the package (repeatable)")
 
 	return cmd
