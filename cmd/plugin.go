@@ -221,7 +221,7 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return &signature.Policy{Verifier: signature.Plugin{Kind: pluginVerifier, Options: opts.verifyOptions}}, nil
 	}
 
-	rules, err := signature.Read(dataDir)
+	rules, err := signature.ReadResolved(dataDir)
 	if err != nil {
 		return nil, err
 	}

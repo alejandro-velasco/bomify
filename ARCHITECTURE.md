@@ -44,8 +44,10 @@ distribution create`) — a fallback for any component not given a matching
 `conf/trust.json` records signature verification rules (see
 [Signing & verification](#signing--verification) and `bomify trust
 create`) — which packages `bomify pull`/`bomify load` must verify, and
-with which signing plugin, whenever `--verify` isn't given. Its `match`
-is ranked most-specific-first on `/` segment boundaries, exactly like a
+with which signing plugin and options, whenever `--verify` isn't given.
+A rule's options are either plain `key=value` pairs or `keyOptions`
+naming stored keys (see `keys/` below). Its `match` is ranked
+most-specific-first on `/` segment boundaries, exactly like a
 distribution rule's (both share [`internal/prefix`](internal/prefix)).
 
 `conf/scan.json` records vulnerability scanning policy rules (see
@@ -82,16 +84,26 @@ component shared by two packages shares one report, just as it shares
 one pulled layer. It lives in its own directory rather than
 `manifests/`, since unlike a pull manifest it's replaced on every scan.
 
-`vex/` is the managed store of VEX documents scan policy rules refer to
-(`bomify security vex add|list|remove`, [`internal/security`](internal/security)'s
-`vexstore.go`): each document an immutable copy at
-`vex/<sha256>.vex`, keyed by its content hash, and `vex/index.json`
-mapping each name to one. Rules name documents rather than pointing at
-files, so they keep working however the originals move, and travel
-with the data directory; re-adding a name is the only way its content
-changes. A copy is deleted once no name refers to it, and a name can't
-be removed while a rule still lists it. `bomify security scan --vex
-<path>` bypasses the store entirely, reading the file as it is.
+`vex/` and `keys/` are managed stores of material rules refer to by
+name, both built on [`internal/namedstore`](internal/namedstore): each
+entry an immutable copy at `<store>/<sha256><ext>`, keyed by its
+content hash, and `<store>/index.json` mapping each name to one. Rules
+name entries rather than pointing at files, so they keep working
+however the originals move, and travel with the data directory;
+re-adding a name is the only way its content changes (e.g. rotating a
+key). A copy is deleted once no name refers to it, and a name can't be
+removed while a rule still uses it.
+
+- `vex/` (`<sha256>.vex`) holds the VEX documents scan policy rules
+  list (`bomify security vex add|list|remove`). `bomify security scan
+  --vex <path>` bypasses it, reading the file as it is.
+- `keys/` (`<sha256>.pem`) holds the public keys and certificates trust
+  rules' key options name (`bomify trust key add|list|remove`). Only
+  public material is accepted: a file containing any `PRIVATE KEY` PEM
+  block is refused, so signing keys never end up in the data directory.
+  `--option key=<path>`, on `bomify trust create` and as
+  `--verify-option`, still reads a key file directly, without the
+  store.
 
 `plugins/` holds every installed plugin binary, `bomify-plugin-<kind>`
 (`.exe` on Windows) — the only place bomify ever looks for one
@@ -474,7 +486,11 @@ unchanged:
   matching rule, with a warning). An explicit `--verify` replaces
   `trust.json` outright for that command (its plugin and
   `--verify-option`s are used, a matching rule's are not), and rules
-  only apply when no flag is given. If one must, bomify lists the
+  only apply when no flag is given. A rule's key options are resolved
+  as rules are read (`signature.ReadResolved`): each `option → key
+  name` becomes a plain `option=<path of the stored copy>`, so the
+  plugin sees exactly what it would for `--option`. If one must, bomify
+  lists the
   manifest's referrers (`registry.Referrers` — the Referrers API or its
   tag-schema fallback against a registry, the layout's own graph for a
   tarball), keeps those whose artifact type the plugin's `signature

@@ -1,4 +1,6 @@
-package security
+// Package fsutil holds small filesystem helpers shared across bomify's
+// data directory code.
+package fsutil
 
 import (
 	"errors"
@@ -7,9 +9,11 @@ import (
 	"path/filepath"
 )
 
-// writeFileAtomic writes data to path via a temp file renamed into
-// place, so a reader never sees a partial file.
-func writeFileAtomic(path string, data []byte) error {
+// WriteFileAtomic writes data to path via a temp file renamed into
+// place, so a reader never sees a partial file. path's directory is
+// created if needed, and the file ends up 0644, like the rest of the
+// data directory.
+func WriteFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)

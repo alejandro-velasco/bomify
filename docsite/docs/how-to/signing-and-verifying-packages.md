@@ -112,6 +112,24 @@ overrides the rules, and `--insecure-skip-verify` bypasses them (with a
 warning). See [bomify trust create](../usage/reference/bomify_trust_create.md)
 for the full reference.
 
+To keep the rule from depending on where `signing.pub` lives, store the
+public key under a name and point the rule at that instead. bomify
+keeps its own copy in the data directory, so the rule keeps working if
+the file moves, and rotating the key is just adding it again under the
+same name:
+
+```sh
+bomify trust key add team signing.pub
+bomify trust create sigstore --match registry.example.com/team --key-option key=team
+bomify trust key list
+
+# Later, rotate: every rule using "team" now trusts the new key
+bomify trust key add team signing-2027.pub
+```
+
+Only public keys and certificates can be stored — `bomify trust key
+add` refuses a private key, which stays wherever you sign from.
+
 ## 5. Sign and verify offline tarballs
 
 `save` and `load` take the same flags. The signature travels inside

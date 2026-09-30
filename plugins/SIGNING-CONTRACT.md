@@ -121,6 +121,12 @@ reject a key it doesn't recognize rather than ignore it, since a
 mistyped verification option silently ignored could weaken what gets
 checked.
 
+A trust rule can also name a key in bomify's own key store rather than
+a file (`bomify trust create --key-option key=<name>`). bomify turns
+that into an ordinary option before calling the plugin —
+`--option key=<path of bomify's stored copy>` — so a plugin needs
+nothing extra to support it: it receives a file path either way.
+
 A plugin owns its own trust material. bomify only decides *whether* a
 package must be signed or verified, and *which plugin* does it: an
 explicit `--sign`/`--verify` flag, else (for verification) the

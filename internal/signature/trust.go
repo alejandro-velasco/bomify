@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
@@ -27,6 +28,13 @@ type Rule struct {
 	// Verifier's "signature verify" — e.g. which key or identity to
 	// trust for packages matching this rule.
 	Options []string `json:"options,omitempty"`
+	// KeyOptions maps a plugin option name to the name of a key in the
+	// data directory's managed key store (see AddKey): each is passed as
+	// "--option <option>=<path of the stored copy>" (see
+	// ResolveKeyOptions). bomify never interprets option names, so which
+	// option takes a key file is up to the plugin — e.g. sigstore's
+	// "key".
+	KeyOptions map[string]string `json:"keyOptions,omitempty"`
 }
 
 // Config is the "<baseDir>/conf/trust.json" record: an unordered list of
@@ -60,16 +68,29 @@ func Read(baseDir string) (Config, error) {
 	return config, nil
 }
 
-// SetRule adds or replaces the rule for match in baseDir's trust.json.
-func SetRule(baseDir, match, verifier string, options []string) error {
+// SetRule adds or replaces the rule for rule.Match in baseDir's
+// trust.json, after checking every key its KeyOptions names is in
+// baseDir's managed key store, and that no option is given both as a
+// plain option and as a key option.
+func SetRule(baseDir string, rule Rule) error {
+	for option := range rule.KeyOptions {
+		for _, plain := range rule.Options {
+			if strings.HasPrefix(plain, option+"=") {
+				return fmt.Errorf("option %q given both as --option and as --key-option", option)
+			}
+		}
+	}
+	if _, err := keyOptionArgs(baseDir, rule.KeyOptions); err != nil {
+		return err
+	}
+
 	config, err := Read(baseDir)
 	if err != nil {
 		return err
 	}
 
-	rule := Rule{Match: match, Verifier: verifier, Options: options}
 	for i := range config {
-		if config[i].Match == match {
+		if config[i].Match == rule.Match {
 			config[i] = rule
 			return writeConfig(baseDir, config)
 		}
