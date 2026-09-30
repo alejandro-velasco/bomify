@@ -291,3 +291,39 @@ func readPayload(t *testing.T, manifest ocispec.Descriptor) string {
 	}
 	return string(data)
 }
+
+// TestVerifySkipsAttestations covers an attestation signed with the same
+// plugin, and so the same artifact type, as a package signature: even
+// one whose statement is byte-for-byte the signing payload must never
+// count as the package's signature.
+func TestVerifySkipsAttestations(t *testing.T) {
+	installFakeSigner(t)
+	store := newStore(t)
+	manifest := pushPackage(t, store, "app:v1", "app")
+
+	payloadFile, cleanup, err := writePayload(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	payload, err := os.ReadFile(payloadFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attest, err := NewAttester(pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=secret"}}, discardLogger())
+	if err != nil {
+		t.Fatalf("NewAttester: %v", err)
+	}
+	referrer, err := attest(context.Background(), store, "app:v1", manifest, payload, map[string]string{transfer.AnnotationAttestation: "https://example.com/predicate"})
+	if err != nil {
+		t.Fatalf("attest: %v", err)
+	}
+	if referrer.ArtifactType == "" {
+		t.Fatalf("attestation referrer = %+v", referrer)
+	}
+
+	if _, err := verify(store, "app:v1", manifest, "secret"); err == nil || !strings.Contains(err.Error(), "no signature") {
+		t.Fatalf("Verify error = %v, want the attestation ignored", err)
+	}
+}

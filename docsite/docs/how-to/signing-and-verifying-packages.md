@@ -131,3 +131,18 @@ bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore \
   --verify-option certificate-identity=https://github.com/my-org/myapp/.github/workflows/publish.yml@refs/heads/main \
   --verify-option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
+
+## 7. Attach build provenance
+
+Record SLSA provenance when you build, and it's attached to the package
+as an in-toto attestation on push or save, signed with `--sign`:
+
+```sh
+bomify build sbom.json --tag ghcr.io/my-org/myapp:1.0 --provenance
+bomify push ghcr.io/my-org/myapp:1.0 --sign sigstore
+```
+
+With `bomify-plugin-sigstore`, it's a Sigstore bundle attestation
+stored as an OCI referrer, the format cosign's bundle support and `gh
+attestation verify` read. bomify doesn't check provenance on pull. See
+[Build provenance](../development/architecture/provenance.md).

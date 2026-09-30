@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
 
@@ -46,7 +47,7 @@ func writeKeyPair(t *testing.T, password string) (privPath, pubPath string) {
 func TestKeySignThenVerify(t *testing.T) {
 	priv, pub := writeKeyPair(t, "")
 
-	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	envelope, err := Sign(context.Background(), payload, "", Options{OptionKey: priv})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -67,12 +68,12 @@ func TestEncryptedKey(t *testing.T) {
 	priv, pub := writeKeyPair(t, "hunter2")
 
 	t.Setenv(passwordEnv, "wrong")
-	if _, err := Sign(context.Background(), payload, Options{OptionKey: priv}); err == nil {
+	if _, err := Sign(context.Background(), payload, "", Options{OptionKey: priv}); err == nil {
 		t.Fatalf("Sign with the wrong %s: nil, want error", passwordEnv)
 	}
 
 	t.Setenv(passwordEnv, "hunter2")
-	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	envelope, err := Sign(context.Background(), payload, "", Options{OptionKey: priv})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestVerifyWrongKeyFails(t *testing.T) {
 	priv, _ := writeKeyPair(t, "")
 	_, otherPub := writeKeyPair(t, "")
 
-	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	envelope, err := Sign(context.Background(), payload, "", Options{OptionKey: priv})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestVerifyWrongKeyFails(t *testing.T) {
 func TestVerifyTamperedPayloadFails(t *testing.T) {
 	priv, pub := writeKeyPair(t, "")
 
-	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	envelope, err := Sign(context.Background(), payload, "", Options{OptionKey: priv})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestVerifyMalformedEnvelopeFails(t *testing.T) {
 func TestKeylessSignNeedsToken(t *testing.T) {
 	t.Setenv(idTokenEnv, "")
 
-	_, err := Sign(context.Background(), payload, Options{})
+	_, err := Sign(context.Background(), payload, "", Options{})
 	if err == nil || !strings.Contains(err.Error(), idTokenEnv) {
 		t.Fatalf("Sign without a key or token: %v, want an error naming %s", err, idTokenEnv)
 	}
@@ -126,7 +127,7 @@ func TestKeylessSignNeedsToken(t *testing.T) {
 
 func TestKeylessVerifyNeedsIdentity(t *testing.T) {
 	priv, _ := writeKeyPair(t, "")
-	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	envelope, err := Sign(context.Background(), payload, "", Options{OptionKey: priv})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -186,5 +187,40 @@ func TestIdentityTokenPrecedence(t *testing.T) {
 	}
 	if token := (Options{OptionIdentityToken: "option-token"}).identityToken(); token != "option-token" {
 		t.Errorf("identityToken() = %q, want the option to win", token)
+	}
+}
+
+// TestKeySignDSSE covers signing an in-toto statement as an attestation:
+// the bundle holds a DSSE envelope over the statement rather than a plain
+// signature, and the annotations Sigstore's tools look for name it.
+func TestKeySignDSSE(t *testing.T) {
+	priv, _ := writeKeyPair(t, "")
+	statement := []byte(`{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"app","digest":{"sha256":"ab"}}],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}`)
+
+	envelope, err := Sign(context.Background(), statement, inTotoPayloadType, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	var b bundle.Bundle
+	if err := b.UnmarshalJSON(envelope); err != nil {
+		t.Fatalf("parse bundle: %v", err)
+	}
+	dsse := b.GetDsseEnvelope()
+	if dsse == nil {
+		t.Fatalf("bundle has no DSSE envelope:\n%s", envelope)
+	}
+	if dsse.GetPayloadType() != inTotoPayloadType || string(dsse.GetPayload()) != string(statement) {
+		t.Errorf("DSSE payload = %q (%s), want the statement as %s", dsse.GetPayload(), dsse.GetPayloadType(), inTotoPayloadType)
+	}
+	if len(dsse.GetSignatures()) == 0 {
+		t.Error("DSSE envelope has no signatures")
+	}
+
+	annotations := BundleAnnotations(statement, inTotoPayloadType)
+	if annotations["dev.sigstore.bundle.content"] != "dsse-envelope" || annotations["dev.sigstore.bundle.predicateType"] != "https://slsa.dev/provenance/v1" {
+		t.Errorf("annotations = %v", annotations)
+	}
+	if BundleAnnotations(payload, "") != nil {
+		t.Error("a plain signature should need no annotations")
 	}
 }

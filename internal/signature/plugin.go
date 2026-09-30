@@ -7,13 +7,18 @@ import (
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// signPayload invokes the signing plugin's "signature sign" over the payload in
-// payloadFile, on behalf of the package being published as ref (see
+// signPayload invokes the signing plugin's "signature sign" over the
+// payload in payloadFile, as a DSSE envelope of payloadType if given, on
+// behalf of the package being published as ref (see
 // plugins/SIGNING-CONTRACT.md). Each of options ("key=value") is passed
 // through, unparsed, as its own --option flag.
-func signPayload(path, payloadFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
-	logger.Debug("signing", "path", path, "reference", ref)
-	args := append([]string{"signature", "sign", "--payload", payloadFile, "--reference", ref}, optionArgs(options)...)
+func signPayload(path, payloadFile, payloadType, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
+	logger.Debug("signing", "path", path, "reference", ref, "payloadType", payloadType)
+	args := []string{"signature", "sign", "--payload", payloadFile, "--reference", ref}
+	if payloadType != "" {
+		args = append(args, "--payload-type", payloadType)
+	}
+	args = append(args, optionArgs(options)...)
 	return plugin.Invoke[pluginlib.SignResult](path, args...)
 }
 

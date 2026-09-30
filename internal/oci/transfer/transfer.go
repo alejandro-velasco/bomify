@@ -53,6 +53,11 @@ const VulnerabilityReportMediaType = "application/vnd.bomify.component.vulnerabi
 // its digest — and so every signature over it — unchanged by a re-scan.
 const VulnerabilityReportsArtifactType = "application/vnd.bomify.vulnerabilities.v1+json"
 
+// AnnotationAttestation marks a referrer as an attestation about a
+// package, rather than the package's own signature, naming its in-toto
+// predicate type. Signature verification skips these.
+const AnnotationAttestation = "land.bomify.attestation.predicateType"
+
 // VEXArtifactType identifies an OCI referrer of a bomify package carrying
 // one VEX document its publisher attached (see Attach and
 // internal/security).
