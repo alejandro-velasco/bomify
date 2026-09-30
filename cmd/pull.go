@@ -8,10 +8,7 @@ import (
 	"oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
-	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
 const pullShort = "Download a bomify package from an OCI registry"
@@ -72,10 +69,7 @@ const pullExample = `  # Pull a tagged reference
   pinned=$(bomify pull registry.example.com/myapp:latest --quiet)`
 
 type pullOptions struct {
-	concurrency int
-	verify      verifyFlags
-	scan        scanFlags
-	quiet       bool
+	restoreFlags
 }
 
 func pullCmd() *cobra.Command {
@@ -95,48 +89,29 @@ func pullCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to download concurrently")
-	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
-	opts.verify.register(cmd)
-	opts.scan.register(cmd)
+	opts.register(cmd, "download", "print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 
 	return cmd
 }
 
 func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
-	logger := logging.FromContext(cmd.Context())
-	if opts.quiet {
-		logger = logging.WarningsOnly(logger)
-	}
-
-	verifier, err := opts.verify.verifier(dataDir, logger)
+	r, err := opts.start(cmd)
 	if err != nil {
 		return err
 	}
-	if err := opts.scan.validate(); err != nil {
-		return err
-	}
-	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
+	logger := r.logger
 
 	repo, err := newRepository(ref)
 	if err != nil {
 		return err
 	}
 
-	var progress pull.ProgressFunc
-	if !opts.quiet {
-		mb := newMultiBar(cmd.OutOrStderr())
-		defer mb.Wait()
-		progress = newProgressFunc(mb)
-	}
-
-	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanHook.scan})
+	result, err := pull.Pull(cmd.Context(), repo, ref, dataDir, r.opts)
 	if err != nil {
+		r.done()
 		return err
 	}
-	// Written after the package's own reports, so a fresh scan replaces
-	// what the publisher attached.
-	if err := writeReports(scanHook.collected); err != nil {
+	if err := r.finish(); err != nil {
 		return err
 	}
 
@@ -153,9 +128,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		logger.Debug("pulled by digest, not recording a tag", "ref", ref)
 	}
 
-	if opts.quiet {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(ref), result.ManifestDigest)
-	}
+	opts.printPinned(cmd, ref, result.ManifestDigest)
 	return nil
 }
 

@@ -28,10 +28,30 @@ type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, 
 // directory either.
 type Scanner func(ctx context.Context, ref string, sbom []byte) error
 
-// Hooks are the optional steps Push and Pull run around a package: Sign
-// when pushing, Verify and then Scan when pulling. Any may be nil.
-type Hooks struct {
+// Options are what Push, Pull, and Save/Load take beyond what to
+// transfer: how, and the optional steps to run around a package.
+type Options struct {
+	// Concurrency bounds how many layers transfer at once; values less
+	// than 1 are treated as 1.
+	Concurrency int
+	// Progress reports each blob's transfer; nil reports nothing.
+	Progress ProgressFunc
+
+	// Sign is called when pushing; Verify and then Scan when pulling. Any
+	// may be nil.
 	Sign   Signer
 	Verify Verifier
 	Scan   Scanner
+}
+
+// WithDefaults returns o with Concurrency at least 1 and a non-nil
+// Progress, so callers can use both unconditionally.
+func (o Options) WithDefaults() Options {
+	if o.Concurrency < 1 {
+		o.Concurrency = 1
+	}
+	if o.Progress == nil {
+		o.Progress = Discard
+	}
+	return o
 }

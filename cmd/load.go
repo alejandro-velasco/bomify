@@ -6,10 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
 const loadShort = "Load packages from a tarball"
@@ -49,11 +46,8 @@ const loadExample = `  # Load a tarball piped in from stdin
   bomify load --input packages.tar --quiet`
 
 type loadOptions struct {
-	input       string
-	concurrency int
-	verify      verifyFlags
-	scan        scanFlags
-	quiet       bool
+	restoreFlags
+	input string
 }
 
 func loadCmd() *cobra.Command {
@@ -74,53 +68,34 @@ func loadCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&opts.input, "input", "i", "", "read the tarball from here instead of stdin")
-	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to restore concurrently")
-	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only each restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
-	opts.verify.register(cmd)
-	opts.scan.register(cmd)
+	opts.register(cmd, "restore", "print only each restored package's pinned reference (<repository>@<digest>), with no progress or informational logging")
 
 	return cmd
 }
 
 func runLoad(cmd *cobra.Command, opts *loadOptions) error {
-	logger := logging.FromContext(cmd.Context())
-	if opts.quiet {
-		logger = logging.WarningsOnly(logger)
-	}
-
-	verifier, err := opts.verify.verifier(dataDir, logger)
-	if err != nil {
-		return err
-	}
-	if err := opts.scan.validate(); err != nil {
-		return err
-	}
-	scanHook := &pullScanHook{flags: &opts.scan, w: cmd.ErrOrStderr(), concurrency: opts.concurrency, logger: logger}
-
-	r := cmd.InOrStdin()
+	in := cmd.InOrStdin()
 	if opts.input != "" {
 		f, err := os.Open(opts.input)
 		if err != nil {
 			return fmt.Errorf("open %s: %w", opts.input, err)
 		}
 		defer f.Close()
-		r = f
+		in = f
 	}
 
-	var progress transfer.ProgressFunc
-	if !opts.quiet {
-		mb := newMultiBar(cmd.ErrOrStderr())
-		defer mb.Wait()
-		progress = newProgressFunc(mb)
-	}
-
-	loaded, err := save.Load(cmd.Context(), dataDir, r, opts.concurrency, progress, transfer.Hooks{Verify: verifier, Scan: scanHook.scan})
+	r, err := opts.start(cmd)
 	if err != nil {
 		return err
 	}
-	// Written after the packages' own reports, so a fresh scan replaces
-	// what the publisher attached.
-	if err := writeReports(scanHook.collected); err != nil {
+	logger := r.logger
+
+	loaded, err := save.Load(cmd.Context(), dataDir, in, r.opts)
+	if err != nil {
+		r.done()
+		return err
+	}
+	if err := r.finish(); err != nil {
 		return err
 	}
 
@@ -130,9 +105,8 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 		if l.ReportsSkipped != nil {
 			logger.Warn("vulnerability reports not restored", "tag", l.Tag, "error", l.ReportsSkipped)
 		}
-		if opts.quiet {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(l.Tag), l.ManifestDigest)
-		} else {
+		opts.printPinned(cmd, l.Tag, l.ManifestDigest)
+		if !opts.quiet {
 			fmt.Fprintln(cmd.OutOrStdout(), "Loaded:", l.Tag)
 		}
 	}

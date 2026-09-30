@@ -85,10 +85,7 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 		}
 
 		purl := component.PackageURL
-		label := purl
-		if label == "" {
-			label = purlHash
-		}
+		label := transfer.Label(purl, purlHash)
 		desc, err := transfer.PushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
 		if err != nil {
 			return ocispec.Descriptor{}, nil, false, fmt.Errorf("push vulnerability report %s: %w", label, err)

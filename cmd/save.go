@@ -8,7 +8,6 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
 const saveShort = "Save packages to a tarball"
@@ -38,9 +37,8 @@ const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest --output packages.tar --sign sigstore --sign-option key=cosign.key`
 
 type saveOptions struct {
-	output      string
-	concurrency int
-	sign        signFlags
+	publishFlags
+	output string
 }
 
 func saveCmd() *cobra.Command {
@@ -62,8 +60,7 @@ func saveCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the tarball here instead of stdout")
-	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 3, "number of layers to archive concurrently")
-	opts.sign.register(cmd)
+	opts.register(cmd, "archive", "")
 
 	return cmd
 }
@@ -71,7 +68,9 @@ func saveCmd() *cobra.Command {
 func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	logger := logging.FromContext(cmd.Context())
 
-	signer, err := opts.sign.signer(logger)
+	// Resolved before creating --output, so a bad --sign leaves no empty
+	// tarball behind.
+	transferOpts, done, err := opts.options(cmd, logger)
 	if err != nil {
 		return err
 	}
@@ -80,17 +79,15 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 	if opts.output != "" {
 		f, err := os.Create(opts.output)
 		if err != nil {
+			done()
 			return fmt.Errorf("create %s: %w", opts.output, err)
 		}
 		defer f.Close()
 		w = f
 	}
 
-	mb := newMultiBar(cmd.ErrOrStderr())
-	progress := newProgressFunc(mb)
-
-	err = save.Save(cmd.Context(), dataDir, tags, w, opts.concurrency, progress, transfer.Hooks{Sign: signer})
-	mb.Wait()
+	err = save.Save(cmd.Context(), dataDir, tags, w, transferOpts)
+	done()
 	if err != nil {
 		return err
 	}

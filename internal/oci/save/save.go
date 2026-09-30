@@ -30,11 +30,11 @@ import (
 // self-contained archive Load can restore from later, on this machine or
 // any other, with no registry involved. Shared components (the same purl
 // pulled by more than one of the given tags) are stored once. Layers
-// upload concurrently within each tag, bounded by concurrency. A non-nil
-// hooks.Sign signs each tag's package as push.Push would (see
+// upload concurrently within each tag, bounded by opts.Concurrency. A
+// non-nil opts.Sign signs each tag's package as push.Push would (see
 // transfer.Signer), its signature travelling inside the tarball as an
 // OCI referrer.
-func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) error {
+func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, opts transfer.Options) error {
 	if len(tags) == 0 {
 		return fmt.Errorf("no tags to save")
 	}
@@ -55,7 +55,7 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, concu
 		if err != nil {
 			return err
 		}
-		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, concurrency, progress, hooks); err != nil {
+		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, opts); err != nil {
 			return fmt.Errorf("package %s: %w", tag, err)
 		}
 	}
@@ -82,10 +82,10 @@ type Loaded struct {
 // Load extracts r — an OCI image-layout tarball Save produced — and
 // restores every tag it contains into baseDir exactly as `bomify pull`
 // would have for each, recording each in repositories.json. Returns the
-// tags it found and restored. hooks.Verify and hooks.Scan are applied to
+// tags it found and restored. opts.Verify and opts.Scan are applied to
 // each tag before anything of it is restored, exactly as pull.Pull
 // applies them.
-func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) ([]Loaded, error) {
+func Load(ctx context.Context, baseDir string, r io.Reader, opts transfer.Options) ([]Loaded, error) {
 	stageDir, err := os.MkdirTemp("", "bomify-load-*")
 	if err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
@@ -111,7 +111,7 @@ func Load(ctx context.Context, baseDir string, r io.Reader, concurrency int, pro
 
 	loaded := make([]Loaded, 0, len(tags))
 	for _, tag := range tags {
-		result, err := pull.Pull(ctx, store, tag, baseDir, concurrency, progress, hooks)
+		result, err := pull.Pull(ctx, store, tag, baseDir, opts)
 		if err != nil {
 			return nil, fmt.Errorf("restore %s: %w", tag, err)
 		}

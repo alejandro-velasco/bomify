@@ -80,7 +80,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, transfer.Hooks{})
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, transfer.Hooks{})
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -193,7 +193,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, 2, nil, transfer.Hooks{})
+	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, 2, nil, transfer.Hooks{})
+	pullResult, err := pull.Pull(ctx, store, tag, pulledDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -261,7 +261,7 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 
-	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{}); err == nil {
+	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1}); err == nil {
 		t.Fatal("Push() error = nil, want error for a component never built locally")
 	}
 }
@@ -342,7 +342,7 @@ func TestPushAttachesReportsAsReferrer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, n, nil, transfer.Hooks{})
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: n})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}
@@ -403,7 +403,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		return nil
 	}
 
-	first, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{Sign: sign})
+	first, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1, Sign: sign})
 	if err != nil {
 		t.Fatalf("first Push() error = %v", err)
 	}
@@ -411,7 +411,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		t.Fatalf("signed %v, want the package manifest then its report referrer", signed)
 	}
 
-	again, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	again, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("second Push() error = %v", err)
 	}
@@ -420,7 +420,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	}
 
 	writeReport(t, baseDir, singleFileComponent, "CVE-NEW", "2026-02-01T00:00:00Z")
-	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("third Push() error = %v", err)
 	}
@@ -437,7 +437,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	if _, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 	got, err := os.ReadFile(layout.ComponentReport(pulledDir, singleFileComponent.PackageURL))
@@ -463,7 +463,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 	ctx := context.Background()
-	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -476,7 +476,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 	}
 
 	pulledDir := t.TempDir()
-	result, err := pull.Pull(ctx, store, "test", pulledDir, 1, nil, transfer.Hooks{Verify: verify})
+	result, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 1, Verify: verify})
 	if err != nil {
 		t.Fatalf("Pull() error = %v, want the package restored anyway", err)
 	}
@@ -586,7 +586,7 @@ func TestPushIsDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, 1, nil, transfer.Hooks{})
+		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}

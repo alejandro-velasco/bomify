@@ -60,7 +60,7 @@ func pushFixture(t *testing.T, sbomBytes []byte, layerContents map[string][]byte
 				// and ":"), so this also exercises layerFilename's fallback
 				// to the digest for an unsafe title.
 				ocispec.AnnotationTitle: purl,
-				AnnotationPurl:          purl,
+				transfer.AnnotationPurl: purl,
 			},
 		}
 		if err := store.Push(ctx, desc, bytesReader(data)); err != nil {
@@ -123,7 +123,7 @@ func TestPullRestoresConfigAndLayers(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result, err := Pull(context.Background(), store, tag, dataDir, 2, progress, transfer.Hooks{})
+	result, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 2, Progress: progress})
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -207,7 +207,7 @@ func TestPullRejectsNonSHA256Digest(t *testing.T) {
 		t.Fatalf("tag manifest: %v", err)
 	}
 
-	_, err = Pull(ctx, store, "test", t.TempDir(), 1, nil, transfer.Hooks{})
+	_, err = Pull(ctx, store, "test", t.TempDir(), transfer.Options{Concurrency: 1})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want error for non-sha256 digest")
 	}
@@ -284,7 +284,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -296,7 +296,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 		return transfer.Discard(name, size)
 	}
 
-	result1, err := Pull(ctx, store, tag, dataDir, 1, progress, transfer.Hooks{})
+	result1, err := Pull(ctx, store, tag, dataDir, transfer.Options{Concurrency: 1, Progress: progress})
 	if err != nil {
 		t.Fatalf("first Pull() error = %v", err)
 	}
@@ -314,7 +314,7 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	atomic.StoreInt32(&progressCalls, 0)
 
-	result2, err := Pull(ctx, store, tag, dataDir, 1, progress, transfer.Hooks{})
+	result2, err := Pull(ctx, store, tag, dataDir, transfer.Options{Concurrency: 1, Progress: progress})
 	if err != nil {
 		t.Fatalf("second Pull() error = %v", err)
 	}
@@ -376,7 +376,7 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	}
 
 	tag = "test"
-	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestPullRecordsComponentManifest(t *testing.T) {
 	store, tag := pushComponentFixture(t, component, []byte("image contents"))
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
@@ -452,7 +452,7 @@ func TestPullBackfillsComponentManifestForPreexistingLayer(t *testing.T) {
 		t.Fatalf("write preexisting layer file: %v", err)
 	}
 
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
@@ -477,7 +477,7 @@ func TestPullFailedVerifyWritesNothing(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Verify: verify}); err == nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1, Verify: verify}); err == nil {
 		t.Fatal("Pull() error = nil, want the verifier's error")
 	}
 
@@ -516,7 +516,7 @@ func TestPullFailedScanWritesNothing(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Scan: scan}); err == nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1, Scan: scan}); err == nil {
 		t.Fatal("Pull() error = nil, want the scanner's error")
 	}
 	if scannedRef != tag {
@@ -536,7 +536,7 @@ func TestPullFailedScanWritesNothing(t *testing.T) {
 
 	// A scanner that passes lets the pull go ahead as usual.
 	pass := func(context.Context, string, []byte) error { return nil }
-	if _, err := Pull(context.Background(), store, tag, dataDir, 1, nil, transfer.Hooks{Scan: pass}); err != nil {
+	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1, Scan: pass}); err != nil {
 		t.Errorf("Pull() with a passing scanner: %v", err)
 	}
 }

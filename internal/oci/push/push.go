@@ -58,19 +58,13 @@ type Result struct {
 // report (see internal/security), if any, is attached as one OCI referrer
 // of that manifest rather than as part of it (see security.Attach), so
 // re-scanning never changes the package's digest. Layers upload
-// concurrently, bounded by concurrency (values less than 1 are treated
-// as 1). A non-nil hooks.Sign is called with the packed manifest — and then
+// concurrently, bounded by opts.Concurrency. A non-nil opts.Sign is called with the packed manifest — and then
 // with the report referrer, if one was attached — before ref is tagged
 // (see transfer.Signer), so a signing failure never leaves ref pointing
 // at an unsigned package.
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, concurrency int, progress transfer.ProgressFunc, hooks transfer.Hooks) (Result, error) {
-	sign := hooks.Sign
-	if progress == nil {
-		progress = transfer.Discard
-	}
-	if concurrency < 1 {
-		concurrency = 1
-	}
+func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
+	opts = opts.WithDefaults()
+	sign, concurrency, progress := opts.Sign, opts.Concurrency, opts.Progress
 
 	manifestPath := layout.Manifest(baseDir, sbomHash)
 	data, err := os.ReadFile(manifestPath)
@@ -217,33 +211,15 @@ func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string,
 		},
 	}
 
-	// See transfer.PushBytes for why this check matters beyond just efficiency:
-	// content/oci.Store (unlike a remote registry) rejects a re-push of a
-	// digest it already has, which a shared component across more than
-	// one tag in the same Save call would otherwise trigger.
-	if exists, err := target.Exists(ctx, desc); err != nil {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("check layer %s: %w", desc.Digest, err)
-	} else if exists {
-		return desc, Layer{Purl: purl, Hash: hash}, nil
-	}
-
 	f, err := os.Open(tarPath)
 	if err != nil {
 		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("open %s: %w", tarPath, err)
 	}
 	defer f.Close()
 
-	label := purl
-	if label == "" {
-		label = hash
+	if err := transfer.PushBlob(ctx, target, desc, f, transfer.Label(purl, hash), progress); err != nil {
+		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("push layer: %w", err)
 	}
-	pw := progress(label, size)
-	defer pw.Close()
-
-	if err := target.Push(ctx, desc, io.TeeReader(f, pw)); err != nil {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("push layer %s: %w", desc.Digest, err)
-	}
-
 	return desc, Layer{Purl: purl, Hash: hash}, nil
 }
 

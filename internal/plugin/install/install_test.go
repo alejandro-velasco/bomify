@@ -18,7 +18,6 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
-	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
@@ -116,7 +115,7 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, 1, nil, transfer.Hooks{}); err != nil {
+	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	return store
@@ -197,7 +196,7 @@ type fetchRecorder struct {
 }
 
 func (r *fetchRecorder) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
-	if purl := desc.Annotations[pull.AnnotationPurl]; purl != "" {
+	if purl := desc.Annotations[transfer.AnnotationPurl]; purl != "" {
 		r.purls = append(r.purls, purl)
 	}
 	return r.ReadOnlyTarget.Fetch(ctx, desc)
