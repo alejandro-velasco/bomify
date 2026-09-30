@@ -1,6 +1,7 @@
 package signature
 
 import (
+	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -33,11 +34,12 @@ func ListKeys(baseDir string) ([]StoredKey, error) {
 
 // AddKey copies the PEM file at path into baseDir's managed key store
 // under name, replacing whatever name referred to before. Only public
-// material is accepted — public keys and certificates — since trust
-// rules only ever verify: a file containing any PRIVATE KEY block is
-// refused, so a signing key is never copied into the data directory by
-// mistake. The copy is content-addressed, so later edits to path don't
-// reach the store until it's added again.
+// material is accepted — public keys and certificates, each of which
+// must actually parse (see checkPublicPEM) — since trust rules only ever
+// verify: a signing key is never copied into the data directory by
+// mistake, and a corrupt or wrong file fails here rather than on some
+// later pull. The copy is content-addressed, so later edits to path
+// don't reach the store until it's added again.
 func AddKey(baseDir, name, path string) (StoredKey, error) {
 	store := keyStore(baseDir)
 	if err := namedstore.ValidateName(store.Kind, name); err != nil {
@@ -53,9 +55,12 @@ func AddKey(baseDir, name, path string) (StoredKey, error) {
 	return store.Add(name, path, data)
 }
 
-// checkPublicPEM requires data to be PEM with at least one block, none
-// of them a private key of any kind (PKCS#8, EC, RSA, encrypted, or
-// Sigstore's own).
+// checkPublicPEM requires data to be PEM with at least one block, every
+// one of them public material that parses: an X.509 certificate, a
+// PKIX public key (RSA, ECDSA, Ed25519), or a PKCS#1 RSA public key.
+// Anything else is refused — an allowlist, so an unfamiliar label fails
+// closed, and a private key is caught even if mislabeled "PUBLIC KEY"
+// (it won't parse as one).
 func checkPublicPEM(data []byte) error {
 	var blocks int
 	for rest := data; ; {
@@ -64,10 +69,26 @@ func checkPublicPEM(data []byte) error {
 		if block == nil {
 			break
 		}
-		if strings.Contains(block.Type, "PRIVATE KEY") {
-			return fmt.Errorf("contains a %q block: only public keys and certificates can be stored; keep private keys out of the data directory and sign with --sign-option instead", block.Type)
-		}
 		blocks++
+
+		if strings.Contains(block.Type, "PRIVATE KEY") {
+			return fmt.Errorf("block %d is a %q: only public keys and certificates can be stored; keep private keys out of the data directory and sign with --sign-option instead", blocks, block.Type)
+		}
+
+		var err error
+		switch block.Type {
+		case "CERTIFICATE":
+			_, err = x509.ParseCertificate(block.Bytes)
+		case "PUBLIC KEY":
+			_, err = x509.ParsePKIXPublicKey(block.Bytes)
+		case "RSA PUBLIC KEY":
+			_, err = x509.ParsePKCS1PublicKey(block.Bytes)
+		default:
+			return fmt.Errorf("block %d is a %q: only CERTIFICATE, PUBLIC KEY, and RSA PUBLIC KEY blocks can be stored", blocks, block.Type)
+		}
+		if err != nil {
+			return fmt.Errorf("block %d (%s) doesn't parse: %w", blocks, block.Type, err)
+		}
 	}
 	if blocks == 0 {
 		return fmt.Errorf("not a PEM file")

@@ -99,8 +99,12 @@ removed while a rule still uses it.
   --vex <path>` bypasses it, reading the file as it is.
 - `keys/` (`<sha256>.pem`) holds the public keys and certificates trust
   rules' key options name (`bomify trust key add|list|remove`). Only
-  public material is accepted: a file containing any `PRIVATE KEY` PEM
-  block is refused, so signing keys never end up in the data directory.
+  public material is accepted, as an allowlist: every PEM block must be
+  a `CERTIFICATE`, `PUBLIC KEY` (PKIX), or `RSA PUBLIC KEY` (PKCS#1)
+  that actually parses. So signing keys never end up in the data
+  directory — even one mislabeled as public, since it won't parse as
+  one — and a corrupt or wrong file fails at `add` rather than on a
+  later pull.
   `--option key=<path>`, on `bomify trust create` and as
   `--verify-option`, still reads a key file directly, without the
   store.

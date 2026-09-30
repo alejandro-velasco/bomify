@@ -128,7 +128,8 @@ bomify trust key add team signing-2027.pub
 ```
 
 Only public keys and certificates can be stored — `bomify trust key
-add` refuses a private key, which stays wherever you sign from.
+add` checks that each one parses, and refuses a private key, which
+stays wherever you sign from.
 
 ## 5. Sign and verify offline tarballs
 

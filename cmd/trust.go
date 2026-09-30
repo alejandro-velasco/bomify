@@ -229,10 +229,13 @@ const trustKeyAddShort = "Add or replace a public key in the managed key store"
 
 const trustKeyAddLong = `Add copies the PEM file at <file> into <data-dir>/keys/ under <name>,
 for "bomify trust create --key-option <option>=<name>" to refer to. Only
-public material is accepted — public keys and certificates: a file
-containing any private key is refused, so a signing key is never
-copied into the data directory by mistake (sign with --sign-option
-instead).
+public material is accepted: every PEM block must be a CERTIFICATE,
+PUBLIC KEY, or RSA PUBLIC KEY that actually parses. A private key is
+refused, so a signing key is never copied into the data directory by
+mistake (sign with --sign-option instead), and a corrupt or wrong file
+fails here rather than on a later pull. Formats other than X.509-style
+PEM (e.g. an SSH or minisign public key) can't be stored; pass those
+with --option instead.
 
 The key is stored by its content hash: later edits to <file> have no
 effect until it's added again, so a rule's trust only changes when

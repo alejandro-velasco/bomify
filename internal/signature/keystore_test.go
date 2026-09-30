@@ -5,12 +5,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // writeKeyPEM writes a fresh ECDSA key to dir as PEM — the public half
@@ -176,5 +179,61 @@ func TestVerifyWithStoredKey(t *testing.T) {
 	}
 	if err := verifierFor()(); err == nil {
 		t.Error("verify after rotating the stored key: nil, want an error")
+	}
+}
+
+// TestCheckPublicPEM covers the allowlist: each block must be a
+// certificate or public key that actually parses; anything else —
+// including a private key under a public label — is refused.
+func TestCheckPublicPEM(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pkix, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	pkcs8, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal private key: %v", err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour)}
+	cert, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+
+	encode := func(blocks ...*pem.Block) []byte {
+		var out []byte
+		for _, b := range blocks {
+			out = append(out, pem.EncodeToMemory(b)...)
+		}
+		return out
+	}
+
+	for name, tt := range map[string]struct {
+		data []byte
+		ok   bool
+	}{
+		"PKIX public key":       {encode(&pem.Block{Type: "PUBLIC KEY", Bytes: pkix}), true},
+		"certificate":           {encode(&pem.Block{Type: "CERTIFICATE", Bytes: cert}), true},
+		"PKCS#1 RSA public key": {encode(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: x509.MarshalPKCS1PublicKey(&rsaKey.PublicKey)}), true},
+		"key plus certificate":  {encode(&pem.Block{Type: "PUBLIC KEY", Bytes: pkix}, &pem.Block{Type: "CERTIFICATE", Bytes: cert}), true},
+
+		"private key":                 {encode(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8}), false},
+		"private key labeled public":  {encode(&pem.Block{Type: "PUBLIC KEY", Bytes: pkcs8}), false},
+		"public key then private key": {encode(&pem.Block{Type: "PUBLIC KEY", Bytes: pkix}, &pem.Block{Type: "EC PRIVATE KEY", Bytes: pkcs8}), false},
+		"unfamiliar label":            {encode(&pem.Block{Type: "EC PARAMETERS", Bytes: []byte{0x06, 0x08}}), false},
+		"corrupt public key":          {encode(&pem.Block{Type: "PUBLIC KEY", Bytes: []byte("garbage")}), false},
+		"not PEM":                     {[]byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA user@host"), false},
+	} {
+		if err := checkPublicPEM(tt.data); (err == nil) != tt.ok {
+			t.Errorf("%s: checkPublicPEM() error = %v, want ok = %v", name, err, tt.ok)
+		}
 	}
 }
