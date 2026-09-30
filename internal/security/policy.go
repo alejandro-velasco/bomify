@@ -22,16 +22,19 @@ type Rule struct {
 	Scanner string `json:"scanner"`
 	// FailOn is the severity (see ParseSeverity) at or above which a
 	// matching package fails its scan. Empty never fails it.
-	//
-	// There's deliberately no list of vulnerability IDs to ignore here:
-	// a standing exemption should say why it's safe and which component
-	// it applies to, which is what a VEX document is for, not an
-	// unexplained ID in local config. --ignore on a single scan is the
-	// one-off escape hatch.
 	FailOn string `json:"failOn,omitempty"`
+	// VEX names documents in the data directory's managed VEX store (see
+	// AddVEX and ResolveVEX) whose statements exempt a matching package's
+	// vulnerabilities from FailOn — names, not paths, so a rule keeps
+	// meaning the same thing wherever the files it was built from end up.
+	// There's deliberately no list of bare vulnerability IDs to ignore: a
+	// standing exemption should say which component it applies to and why,
+	// which is what VEX records.
+	VEX []string `json:"vex,omitempty"`
 }
 
-// Gate returns r's FailOn as a Gate.
+// Gate returns r's FailOn as a Gate, with no VEX loaded (see
+// Rule.VEX).
 func (r Rule) Gate() (Gate, error) {
 	if r.FailOn == "" {
 		return Gate{}, nil
@@ -75,9 +78,13 @@ func ReadConfig(baseDir string) (Config, error) {
 }
 
 // SetRule adds or replaces the rule for rule.Match in baseDir's
-// scan.json, after checking its FailOn parses.
+// scan.json, after checking its FailOn parses and every VEX document it
+// names is in baseDir's managed VEX store.
 func SetRule(baseDir string, rule Rule) error {
 	if _, err := rule.Gate(); err != nil {
+		return err
+	}
+	if _, err := ResolveVEX(baseDir, rule.VEX); err != nil {
 		return err
 	}
 

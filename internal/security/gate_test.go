@@ -68,7 +68,7 @@ func TestGateEvaluate(t *testing.T) {
 	}
 
 	g := Gate{FailOn: SeverityHigh, Ignore: []string{"CVE-IGNORED"}}
-	got := g.Evaluate(reports)
+	got := g.Evaluate(reports).Findings
 	want := []Finding{
 		{ID: "CVE-MIXED", Severity: SeverityCritical, Purl: "pkg:npm/a@1"},
 		{ID: "CVE-HIGH", Severity: SeverityHigh, Purl: "pkg:npm/b@1"},
@@ -77,27 +77,27 @@ func TestGateEvaluate(t *testing.T) {
 		t.Errorf("Evaluate() = %+v, want %+v", got, want)
 	}
 
-	if got := (Gate{FailOn: SeverityMedium}).Evaluate(reports[:1]); len(got) != 2 {
+	if got := (Gate{FailOn: SeverityMedium}).Evaluate(reports[:1]).Findings; len(got) != 2 {
 		t.Errorf("Evaluate(medium) = %+v, want CVE-MIXED and CVE-SCORES", got)
 	}
-	if got := (Gate{}).Evaluate(reports); got != nil {
+	if got := (Gate{}).Evaluate(reports).Findings; got != nil {
 		t.Errorf("zero Gate Evaluate() = %+v, want nothing", got)
 	}
 }
 
-func TestGateCheck(t *testing.T) {
+func TestEvaluationErr(t *testing.T) {
 	reports := []ComponentReport{reportFor("pkg:npm/a@1", vuln("CVE-1", cdx.SeverityHigh))}
 
-	err := Gate{FailOn: SeverityHigh}.Check(reports)
+	err := Gate{FailOn: SeverityHigh}.Evaluate(reports).Err(SeverityHigh)
 	var gateErr *GateError
 	if !errors.As(err, &gateErr) || len(gateErr.Findings) != 1 {
-		t.Fatalf("Check() = %v, want a GateError with one finding", err)
+		t.Fatalf("Err() = %v, want a GateError with one finding", err)
 	}
 	if want := "1 vulnerability at or above high"; err.Error() != want {
 		t.Errorf("Error() = %q, want %q", err.Error(), want)
 	}
 
-	if err := (Gate{FailOn: SeverityCritical}).Check(reports); err != nil {
-		t.Errorf("Check(critical) = %v, want nil", err)
+	if err := (Gate{FailOn: SeverityCritical}).Evaluate(reports).Err(SeverityCritical); err != nil {
+		t.Errorf("Err(critical) = %v, want nil", err)
 	}
 }

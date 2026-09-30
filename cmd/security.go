@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -28,6 +29,7 @@ func securityCmd() *cobra.Command {
 	cmd.AddCommand(securityScanCmd())
 	cmd.AddCommand(securityPruneCmd())
 	cmd.AddCommand(securityPolicyCmd())
+	cmd.AddCommand(securityVEXCmd())
 
 	return cmd
 }
@@ -64,9 +66,16 @@ or above the given severity (info, low, medium, high, or critical),
 printing a table of them to stderr; a vulnerability's severity is the
 highest any of its ratings gives it, and one rated only "none" or
 "unknown" never fails. --ignore (repeatable) exempts specific
-vulnerability IDs for this scan only. Without --fail-on, the most
+vulnerability IDs for this scan only. --vex (repeatable) names an
+OpenVEX, CSAF, or CycloneDX VEX document: a vulnerability it says doesn't
+affect the component it was found in ("not_affected", "false_positive")
+or was fixed there ("fixed", "resolved") doesn't fail the scan, and is
+logged as exempted instead. For a vulnerability found in an image, every
+package it affects there must be exempted. Without --fail-on, the most
 specific "bomify security policy" rule matching <tag> decides the
-threshold instead, if any does; --skip-gate ignores that rule. Reports
+threshold instead, if any does, and that rule's stored VEX documents
+always apply alongside --vex, which reads the given file as it is now;
+--skip-gate ignores the rule. Reports
 are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
@@ -156,7 +165,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		logger.Debug("report written", "purl", r.Component.PackageURL, "path", reportPath)
 	}
 
-	return checkGate(cmd.ErrOrStderr(), gate, reports)
+	return checkGate(cmd.ErrOrStderr(), logger, gate, reports)
 }
 
 const securityPruneShort = "Delete stale vulnerability report referrers of a package in a registry"
@@ -258,13 +267,26 @@ every package. When more than one rule matches, the one with the
 longer --match wins. Running create again for the same --match
 replaces that rule.
 
+--vex (repeatable) names a VEX document in the data directory's managed
+store (see "bomify security vex add") whose "not affected"/"fixed"
+statements exempt a matching package's vulnerabilities from --fail-on.
+Rules refer to documents by name, never by path, so a rule keeps
+working however the files it was built from move, and re-adding a
+document under the same name updates every rule using it. Rules have
+no list of bare vulnerability IDs to ignore: a standing exemption
+belongs in a VEX document, which says which component it applies to
+and why. For a one-off, use "bomify security scan --ignore".
+
 "bomify security scan" applies a matching rule's --fail-on when given
-no --fail-on of its own, and ignores rules entirely with --skip-gate.
-Rules have no list of vulnerabilities to ignore: exempt a one-off with
-"bomify security scan --ignore" instead.`
+no --fail-on of its own, always applies its VEX documents alongside any
+--vex of its own, and ignores rules entirely with --skip-gate.`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
+
+  # ...exempting whatever the team's VEX document shows doesn't affect it
+  bomify security vex add team team.openvex.json
+  bomify security policy create grype --match registry.example.com/team --fail-on high --vex team
 
   # Scan every other package with grype, never failing
   bomify security policy create grype`
@@ -289,6 +311,7 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
+	cmd.Flags().StringArrayVar(&rule.VEX, "vex", nil, "the name of a stored VEX document (see \"bomify security vex add\") exempting vulnerabilities it shows don't affect the package (repeatable)")
 
 	return cmd
 }
@@ -297,7 +320,8 @@ const securityPolicyListShort = "List vulnerability scanning policy rules"
 
 const securityPolicyListLong = `List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
 prints "*" for a rule that omitted it, meaning it applies to every
-package, and FAIL-ON prints "-" for a rule that never fails.`
+package, FAIL-ON prints "-" for a rule that never fails, and VEX lists
+the names of each rule's stored VEX documents.`
 
 const securityPolicyListExample = `  # See every configured rule
   bomify security policy list`
@@ -326,13 +350,13 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON")
+	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tVEX")
 	for _, rule := range rules {
 		failOn := rule.FailOn
 		if failOn == "" {
 			failOn = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","))
 	}
 
 	return w.Flush()
@@ -369,4 +393,114 @@ func securityPolicyRemoveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&match, "match", "", "the rule's match prefix, exactly as \"bomify security policy list\" prints it (empty for a rule with no --match)")
 
 	return cmd
+}
+
+const securityVEXShort = "Manage the VEX documents scan policy rules refer to"
+
+func securityVEXCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "vex",
+		Short: securityVEXShort,
+	}
+
+	cmd.AddCommand(securityVEXAddCmd())
+	cmd.AddCommand(securityVEXListCmd())
+	cmd.AddCommand(securityVEXRemoveCmd())
+
+	return cmd
+}
+
+const securityVEXAddShort = "Add or replace a VEX document in the managed store"
+
+const securityVEXAddLong = `Add copies the VEX document at <file> — OpenVEX, CSAF, or CycloneDX
+VEX — into <data-dir>/vex/ under <name>, for "bomify security policy
+create --vex <name>" to refer to. The document is checked first, and
+stored by its content hash: later edits to <file> have no effect until
+it's added again, so a rule's exemptions only ever change when someone
+re-adds its documents, and every scan decision traces back to an exact
+document. Adding under an existing <name> replaces it for every rule
+that uses it.
+
+"bomify security scan --vex <file>" reads a file directly instead, as
+it is at that moment, without the store.`
+
+const securityVEXAddExample = `  # Store the team's OpenVEX document as "team"
+  bomify security vex add team vex/team.openvex.json
+
+  # After editing it, add it again to update every rule using "team"
+  bomify security vex add team vex/team.openvex.json`
+
+func securityVEXAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "add <name> <file>",
+		Short:   securityVEXAddShort,
+		Long:    securityVEXAddLong,
+		Example: securityVEXAddExample,
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			entry, err := security.AddVEX(dataDir, args[0], args[1])
+			if err != nil {
+				return fmt.Errorf("security vex add: %w", err)
+			}
+			logging.FromContext(cmd.Context()).Info("VEX document stored", "name", entry.Name, "sha256", entry.SHA256, "source", entry.Source)
+			return nil
+		},
+	}
+}
+
+const securityVEXListShort = "List the VEX documents in the managed store"
+
+const securityVEXListLong = `List prints every document in <data-dir>/vex/: its name, the content
+hash it's stored under, when it was added, and the file it was copied
+from (never read again).`
+
+const securityVEXListExample = `  # See every stored VEX document
+  bomify security vex list`
+
+func securityVEXListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Short:   securityVEXListShort,
+		Long:    securityVEXListLong,
+		Example: securityVEXListExample,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			entries, err := security.ListVEX(dataDir)
+			if err != nil {
+				return err
+			}
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
+			fmt.Fprintln(w, "NAME\tSHA256\tADDED\tSOURCE")
+			for _, e := range entries {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.SHA256[:12], e.Added, e.Source)
+			}
+			return w.Flush()
+		},
+	}
+}
+
+const securityVEXRemoveShort = "Remove a VEX document from the managed store"
+
+const securityVEXRemoveLong = `Remove drops <name> from <data-dir>/vex/, deleting its stored copy
+unless another name refers to the same content. It refuses while any
+"bomify security policy" rule still lists <name>, so no rule is left
+referring to a document that no longer exists.`
+
+const securityVEXRemoveExample = `  # Remove the document stored as "team"
+  bomify security vex remove team`
+
+func securityVEXRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <name>",
+		Short:   securityVEXRemoveShort,
+		Long:    securityVEXRemoveLong,
+		Example: securityVEXRemoveExample,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := security.RemoveVEX(dataDir, args[0]); err != nil {
+				return fmt.Errorf("security vex remove: %w", err)
+			}
+			return nil
+		},
+	}
 }

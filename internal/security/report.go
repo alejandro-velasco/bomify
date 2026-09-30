@@ -9,7 +9,6 @@ package security
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -103,11 +102,6 @@ func NewReport(component cdx.Component, result pluginlib.SecurityResult, scanner
 // reader — or a crash mid-write — never sees a partial report. It
 // returns the report's path.
 func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (string, error) {
-	dir := ReportsDir(baseDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create vulnerabilities directory: %w", err)
-	}
-
 	var buf bytes.Buffer
 	enc := cdx.NewBOMEncoder(&buf, cdx.BOMFileFormatJSON)
 	enc.SetEscapeHTML(false)
@@ -117,25 +111,8 @@ func WriteReport(baseDir string, component cdx.Component, report *cdx.BOM) (stri
 	}
 
 	path := ReportPath(baseDir, plugin.PurlHash(component))
-
-	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
-	if err != nil {
-		return "", fmt.Errorf("create temp report: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		tmp.Close()
-		return "", fmt.Errorf("write temp report: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("close temp report: %w", err)
-	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
-		return "", fmt.Errorf("chmod temp report: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return "", fmt.Errorf("write report %s: %w", path, err)
+	if err := writeFileAtomic(path, buf.Bytes()); err != nil {
+		return "", fmt.Errorf("write report: %w", err)
 	}
 
 	return path, nil

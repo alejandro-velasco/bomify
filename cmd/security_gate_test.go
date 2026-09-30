@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -123,5 +125,115 @@ func TestSecurityPolicyCreateListRemove(t *testing.T) {
 	}
 	if _, err := runRootCmd(t, baseDir, "security", "policy", "remove", "--match", "registry.example.com/team"); err == nil {
 		t.Error("policy remove of a missing rule succeeded")
+	}
+}
+
+// writeOpenVEX writes an OpenVEX document stating CVE-HIGH doesn't
+// affect pkg:generic/a@1.0, returning its path.
+func writeOpenVEX(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "a.openvex.json")
+	doc := `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"x","timestamp":"2026-01-01T00:00:00Z",
+		"statements":[{"vulnerability":{"name":"CVE-HIGH"},"products":[{"@id":"pkg:generic/a@1.0"}],
+		"status":"not_affected","justification":"vulnerable_code_not_in_execute_path"}]}`
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatalf("write VEX: %v", err)
+	}
+	return path
+}
+
+func TestSecurityScanVEX(t *testing.T) {
+	baseDir, _ := setUpGatedPackage(t)
+	vex := writeOpenVEX(t)
+
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "high", "--vex", vex); err != nil {
+		t.Errorf("--vex clearing CVE-HIGH: error = %v, want none", err)
+	}
+	// VEX only exempts what it names: CVE-LOW still fails a low bar.
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "low", "--vex", vex)
+	if !errors.As(err, &gateErr) || len(gateErr.Findings) != 1 || gateErr.Findings[0].ID != "CVE-LOW" {
+		t.Errorf("--fail-on low --vex: error = %v, want just CVE-LOW", err)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate", "--vex", vex); err == nil {
+		t.Error("--skip-gate --vex: error = nil, want a flag error")
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "high", "--vex", filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Error("missing --vex file: error = nil, want one")
+	}
+}
+
+func TestSecurityPolicyVEX(t *testing.T) {
+	baseDir, _ := setUpGatedPackage(t)
+	vex := writeOpenVEX(t)
+
+	// Rules refer to stored documents by name, never by path.
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--fail-on", "high", "--vex", vex); err == nil {
+		t.Error("policy create --vex <path>: error = nil, want an unknown-name error")
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "vex", "add", "team", vex); err != nil {
+		t.Fatalf("vex add: %v", err)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--match", "registry.example.com/team", "--fail-on", "high", "--vex", "team"); err != nil {
+		t.Fatalf("policy create --vex team: %v", err)
+	}
+
+	// The stored copy is what counts: the original can go away.
+	if err := os.Remove(vex); err != nil {
+		t.Fatalf("remove original: %v", err)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag); err != nil {
+		t.Errorf("rule with stored VEX: error = %v, want none", err)
+	}
+	// An explicit --fail-on replaces the rule's threshold, but its VEX
+	// still applies.
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "low")
+	if !errors.As(err, &gateErr) || len(gateErr.Findings) != 1 || gateErr.Findings[0].ID != "CVE-LOW" {
+		t.Errorf("--fail-on low over a rule with VEX: error = %v, want just CVE-LOW", err)
+	}
+
+	out, err := runRootCmd(t, baseDir, "security", "policy", "list")
+	if err != nil || !strings.Contains(out, "team") {
+		t.Errorf("policy list = %q, %v; want the VEX name listed", out, err)
+	}
+
+	// A document a rule still uses can't be removed.
+	if _, err := runRootCmd(t, baseDir, "security", "vex", "remove", "team"); err == nil {
+		t.Error("vex remove of a document in use: error = nil, want one")
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "remove", "--match", "registry.example.com/team"); err != nil {
+		t.Fatalf("policy remove: %v", err)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "vex", "remove", "team"); err != nil {
+		t.Errorf("vex remove: %v", err)
+	}
+}
+
+func TestSecurityVEXAddListRemove(t *testing.T) {
+	baseDir := t.TempDir()
+	vex := writeOpenVEX(t)
+
+	if _, err := runRootCmd(t, baseDir, "security", "vex", "add", "team", vex); err != nil {
+		t.Fatalf("vex add: %v", err)
+	}
+	out, err := runRootCmd(t, baseDir, "security", "vex", "list")
+	if err != nil || !strings.Contains(out, "team") || !strings.Contains(out, vex) {
+		t.Errorf("vex list = %q, %v; want the name and source", out, err)
+	}
+
+	bad := filepath.Join(t.TempDir(), "spdx.json")
+	if err := os.WriteFile(bad, []byte(`{"spdxVersion":"SPDX-2.3"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, args := range [][]string{
+		{"add", "other", bad},                                   // not VEX
+		{"add", "other", filepath.Join(t.TempDir(), "missing")}, // no such file
+		{"add", "has space", vex},                               // bad name
+		{"remove", "missing"},                                   // no such name
+	} {
+		if _, err := runRootCmd(t, baseDir, append([]string{"security", "vex"}, args...)...); err == nil {
+			t.Errorf("vex %v: error = nil, want one", args)
+		}
 	}
 }

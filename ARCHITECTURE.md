@@ -51,9 +51,10 @@ distribution rule's (both share [`internal/prefix`](internal/prefix)).
 `conf/scan.json` records vulnerability scanning policy rules (see
 [Vulnerability gating](#vulnerability-gating) and `bomify security
 policy create`) — for packages matching each rule, the scanning plugin
-to use and the severity at or above which a scan fails. Its `match` is
-ranked exactly like `trust.json`'s, through the same
-[`internal/prefix`](internal/prefix).
+to use, the severity at or above which a scan fails, and the names of
+the stored VEX documents (see `vex/` below) that exempt
+vulnerabilities from it. Its `match` is ranked exactly like
+`trust.json`'s, through the same [`internal/prefix`](internal/prefix).
 
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
@@ -80,6 +81,17 @@ hash as that component's pull manifest and layers directory — so a
 component shared by two packages shares one report, just as it shares
 one pulled layer. It lives in its own directory rather than
 `manifests/`, since unlike a pull manifest it's replaced on every scan.
+
+`vex/` is the managed store of VEX documents scan policy rules refer to
+(`bomify security vex add|list|remove`, [`internal/security`](internal/security)'s
+`vexstore.go`): each document an immutable copy at
+`vex/<sha256>.vex`, keyed by its content hash, and `vex/index.json`
+mapping each name to one. Rules name documents rather than pointing at
+files, so they keep working however the originals move, and travel
+with the data directory; re-adding a name is the only way its content
+changes. A copy is deleted once no name refers to it, and a name can't
+be removed while a rule still lists it. `bomify security scan --vex
+<path>` bypasses the store entirely, reading the file as it is.
 
 `plugins/` holds every installed plugin binary, `bomify-plugin-<kind>`
 (`.exe` on Windows) — the only place bomify ever looks for one
@@ -294,8 +306,9 @@ as a warning instead.
 A scan can also fail the command, rather than just record reports.
 `security.Gate` (`internal/security/gate.go`) is a severity threshold —
 `info` < `low` < `medium` < `high` < `critical` — plus a list of
-vulnerability IDs to ignore; a package fails it when any report names
-a vulnerability at or above the threshold that isn't ignored. A
+vulnerability IDs to ignore and, optionally, VEX statements; a package
+fails it when any report names a vulnerability at or above the
+threshold that's neither ignored nor exempted by VEX. A
 vulnerability's severity is the highest its CycloneDX `ratings` give
 it, so ratings with no severity (the EPSS and CISA KEV scores
 `bomify-plugin-grype` adds) never count either way, and one rated only
@@ -306,14 +319,59 @@ gate applies to `<tag>` the same way `signature.Policy` decides which
 signer must verify a package:
 
 1. `--skip-gate`: nothing fails (warning if a rule would have).
-2. `--fail-on` (plus `--ignore`): used as-is; no rule is consulted.
+2. `--fail-on` (plus `--ignore`): used as its threshold.
 3. The most specific `conf/scan.json` rule matching `<tag>`'s
-   repository (`security.Resolve`) — a threshold only. Rules
-   deliberately carry no list of vulnerabilities to ignore: a standing
-   exemption belongs in a VEX document, which records which component
-   it applies to and why, not as an unexplained ID in local config.
-   `--ignore` exempts IDs for a single command only.
+   repository (`security.Resolve`). Rules deliberately carry no list of
+   vulnerability IDs to ignore: a standing exemption belongs in a VEX
+   document, which records which component it applies to and why, not
+   as an unexplained ID in local config. `--ignore` exempts IDs for a
+   single command only.
 4. Nothing matched: nothing fails.
+
+VEX documents are evidence rather than policy, so they add up instead
+of overriding each other: the matching rule's stored documents (see
+`vex/` under [Data directory](#data-directory)), then `--vex`'s files,
+apply whichever of the above set the threshold.
+
+##### VEX
+
+`security.LoadVEX` (`internal/security/vex.go`) holds every statement
+as [go-vex](https://github.com/openvex/go-vex)'s OpenVEX model, the
+reference OpenVEX implementation (grype builds on it too), whatever
+format it came from. go-vex reads OpenVEX (JSON or YAML, any version)
+and CSAF VEX itself. CycloneDX VEX — a CycloneDX JSON BOM whose
+vulnerabilities carry an `analysis` — is converted into the same
+statements: `not_affected`/`false_positive` become `not_affected`,
+`resolved`/`resolved_with_pedigree` become `fixed`, `exploitable`
+becomes `affected`, and `in_triage` becomes `under_investigation`. Its
+`affects` refs may be bom-refs or BOM-Links, which resolve to purls
+through the document's own components. `not_affected` and `fixed`
+exempt a vulnerability; `affected` and `under_investigation` don't.
+
+A finding is exempted only if **every** piece it affects is. Each
+`affects` entry in the report is one target (the component itself, for
+a directly scanned purl; each affected package, for an image), and a
+statement covers a target when its product is that target or the
+scanned component, and — if it names subcomponents — the target is one
+of them. So "not affected in the image" clears the vulnerability
+everywhere inside it, while "not affected in openssl" leaves it
+standing if it also affects zlib there. Matching itself is go-vex's
+(`Statement.Matches`), including its purl rules: a statement's purl
+with no version matches every version, and qualifiers only need to
+match when the statement gives them, so a statement written as
+`pkg:apk/alpine/openssl@3.1.0-r0` still matches a report's
+`...@3.1.0-r0?arch=x86_64`. Vulnerability IDs match through a
+statement's aliases and a report's `references` alike (e.g. a GHSA and
+its CVE). Where statements disagree,
+the last applicable one wins: documents in the order given, and OpenVEX
+statements by timestamp. An `analysis` already in the report (one a
+scanner recorded) counts first, as the earliest statement.
+
+Exemptions are never silent: each is logged with the statement's
+status, justification, and source document — a `--vex` file's path, or
+a stored document's `vex/<sha256>.vex` copy. Reports themselves are
+never changed by VEX — they stay the raw scan result, and VEX only
+decides what fails.
 
 The scan itself is `security.Scan`, which returns each component's
 report rather than writing it, so the caller decides whether and when
