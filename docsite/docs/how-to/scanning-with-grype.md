@@ -92,6 +92,37 @@ notably not `generic`, since there's no image or package to look up
 for it) is skipped automatically, and gets no report; you don't need to
 filter the SBOM yourself first.
 
+## 6. Fail on severe vulnerabilities
+
+By default a scan only records reports. `--fail-on` makes it exit
+non-zero — e.g. to stop a CI pipeline — if anything found is at or
+above a severity (`info`, `low`, `medium`, `high`, or `critical`),
+printing a table of what failed it to stderr. Reports are still
+written either way:
+
+```sh
+bomify security scan grype myapp:1.0 --fail-on high
+
+# Accept a specific vulnerability rather than lowering the bar
+bomify security scan grype myapp:1.0 --fail-on high --ignore CVE-2024-1234
+```
+
+A vulnerability counts at the highest severity any of its ratings
+gives it; one grype couldn't rate (`unknown`) never fails a scan.
+
+To set the bar once instead of on every command, record it as a policy
+rule for the packages it applies to. A scan with no `--fail-on` of its
+own uses the most specific matching rule; `--skip-gate` ignores it:
+
+```sh
+bomify security policy create grype --match registry.example.com/team --fail-on high
+bomify security policy list
+bomify security scan grype registry.example.com/team/myapp:1.0   # fails on high+
+```
+
+See [bomify security policy create](../usage/reference/bomify_security_policy_create.md)
+for how `--match` works.
+
 ## Next steps
 
 - [Distributing a package](distributing-a-package.md) once you're

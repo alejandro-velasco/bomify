@@ -1,11 +1,28 @@
-## bomify security
+## bomify security policy list
 
-Security scanning commands
+List vulnerability scanning policy rules
+
+### Synopsis
+
+List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
+prints "*" for a rule that omitted it, meaning it applies to every
+package, and FAIL-ON prints "-" for a rule that never fails.
+
+```
+bomify security policy list [flags]
+```
+
+### Examples
+
+```
+  # See every configured rule
+  bomify security policy list
+```
 
 ### Options
 
 ```
-  -h, --help   help for security
+  -h, --help   help for list
 ```
 
 ### Options inherited from parent commands
@@ -18,8 +35,5 @@ Security scanning commands
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
 * [bomify security policy](bomify_security_policy.md)	 - Manage vulnerability scanning policy rules
-* [bomify security prune](bomify_security_prune.md)	 - Delete stale vulnerability report referrers of a package in a registry
-* [bomify security scan](bomify_security_scan.md)	 - Scan a built package's components for vulnerabilities via a security scanning plugin
 

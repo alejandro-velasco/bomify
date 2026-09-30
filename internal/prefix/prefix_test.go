@@ -32,3 +32,20 @@ func TestSegments(t *testing.T) {
 		}
 	}
 }
+
+func TestRepository(t *testing.T) {
+	tests := []struct{ ref, want string }{
+		{"registry.example.com/team/app:v1", "registry.example.com/team/app"},
+		{"registry.example.com/team/app", "registry.example.com/team/app"},
+		{"registry.example.com:5000/app:v1", "registry.example.com:5000/app"},
+		{"registry.example.com:5000/app", "registry.example.com:5000/app"},
+		{"registry.example.com/app@sha256:abcd", "registry.example.com/app"},
+		{"registry.example.com/app:v1@sha256:abcd", "registry.example.com/app"},
+		{"myapp:v1", "myapp"},
+	}
+	for _, tt := range tests {
+		if got := Repository(tt.ref); got != tt.want {
+			t.Errorf("Repository(%q) = %q, want %q", tt.ref, got, tt.want)
+		}
+	}
+}

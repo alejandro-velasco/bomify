@@ -29,6 +29,15 @@ found are the report's top-level components, and each vulnerability's
 "affects" names the specific piece(s) affected. See
 plugins/SECURITY-CONTRACT.md for the full contract.
 
+--fail-on makes the scan exit non-zero if any vulnerability found is at
+or above the given severity (info, low, medium, high, or critical),
+printing a table of them to stderr; a vulnerability's severity is the
+highest any of its ratings gives it, and one rated only "none" or
+"unknown" never fails. --ignore (repeatable) exempts specific
+vulnerability IDs. Without --fail-on, the most specific "bomify
+security policy" rule matching <tag> decides instead, if any does;
+--skip-gate ignores that rule. Reports are written either way.
+
 ```
 bomify security scan <type> <tag> [flags]
 ```
@@ -41,13 +50,19 @@ bomify security scan <type> <tag> [flags]
 
   # Scan up to 4 components concurrently
   bomify security scan grype myapp:latest --concurrency 4
+
+  # Fail on anything high or critical, except one accepted CVE
+  bomify security scan grype myapp:latest --fail-on high --ignore CVE-2024-1234
 ```
 
 ### Options
 
 ```
-  -c, --concurrency int   number of components to scan concurrently (default 1)
-  -h, --help              help for scan
+  -c, --concurrency int      number of components to scan concurrently (default 1)
+      --fail-on string       fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule
+  -h, --help                 help for scan
+      --ignore stringArray   a vulnerability ID never to fail on (repeatable); requires --fail-on
+      --skip-gate            never fail on vulnerabilities, even if a "bomify security policy" rule matching the package says to
 ```
 
 ### Options inherited from parent commands

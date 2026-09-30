@@ -9,7 +9,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/save"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
 const loadShort = "Load packages from a tarball"
@@ -114,7 +114,7 @@ func runLoad(cmd *cobra.Command, opts *loadOptions) error {
 			logger.Warn("vulnerability reports not restored", "tag", l.Tag, "error", l.ReportsSkipped)
 		}
 		if opts.quiet {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(l.Tag), l.ManifestDigest)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(l.Tag), l.ManifestDigest)
 		} else {
 			fmt.Fprintln(cmd.OutOrStdout(), "Loaded:", l.Tag)
 		}

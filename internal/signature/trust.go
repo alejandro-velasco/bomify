@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
@@ -98,10 +97,10 @@ func RemoveRule(baseDir, match string) error {
 }
 
 // Resolve picks the rule in rules whose Match is the most specific (most
-// "/"-separated segments) prefix of ref's repository (see Repository),
+// "/"-separated segments) prefix of ref's repository (see prefix.Repository),
 // reporting ok=false if none matches.
 func Resolve(rules Config, ref string) (rule Rule, ok bool) {
-	repository := Repository(ref)
+	repository := prefix.Repository(ref)
 
 	best := -1
 	for _, candidate := range rules {
@@ -113,21 +112,6 @@ func Resolve(rules Config, ref string) (rule Rule, ok bool) {
 		}
 	}
 	return rule, ok
-}
-
-// Repository strips ref's digest ("@sha256:...") and tag (":v1", only
-// when it follows the last "/", so a registry port isn't mistaken for
-// one), leaving just the repository a trust rule matches against. It
-// deliberately doesn't require ref to be fully qualified, since `bomify
-// save`/`bomify load` tags needn't name a registry at all.
-func Repository(ref string) string {
-	if i := strings.Index(ref, "@"); i >= 0 {
-		ref = ref[:i]
-	}
-	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
-		ref = ref[:i]
-	}
-	return ref
 }
 
 // Policy decides which plugin, if any, must verify a given package

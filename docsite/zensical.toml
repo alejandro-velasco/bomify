@@ -55,6 +55,10 @@ nav = [
           { "bomify security" = "usage/reference/bomify_security.md" },
           { "bomify security scan" = "usage/reference/bomify_security_scan.md" },
           { "bomify security prune" = "usage/reference/bomify_security_prune.md" },
+          { "bomify security policy" = "usage/reference/bomify_security_policy.md" },
+          { "bomify security policy create" = "usage/reference/bomify_security_policy_create.md" },
+          { "bomify security policy list" = "usage/reference/bomify_security_policy_list.md" },
+          { "bomify security policy remove" = "usage/reference/bomify_security_policy_remove.md" },
       ] },
       { "bomify tag" = "usage/reference/bomify_tag.md" },
       { "bomify trust" = [

@@ -10,7 +10,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
-	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 )
 
 const pullShort = "Download a bomify package from an OCI registry"
@@ -128,7 +128,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	}
 
 	if opts.quiet {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(ref), result.ManifestDigest)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(ref), result.ManifestDigest)
 	}
 	return nil
 }

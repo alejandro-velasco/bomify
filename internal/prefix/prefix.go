@@ -1,8 +1,8 @@
 // Package prefix implements the "/"-separated, segment-boundary prefix
 // matching that bomify's rule files share: conf/distribution.json's
 // Match against a component's origin (see internal/distribution), and
-// conf/trust.json's Match against a package reference (see
-// internal/signature).
+// conf/trust.json's and conf/scan.json's Match against a package
+// reference (see internal/signature and internal/security).
 package prefix
 
 import "strings"
@@ -54,4 +54,19 @@ func Normalize(address string) string {
 		address = address[i+len("://"):]
 	}
 	return strings.Trim(address, "/")
+}
+
+// Repository strips ref's digest ("@sha256:...") and tag (":v1", only
+// when it follows the last "/", so a registry port isn't mistaken for
+// one), leaving just the repository a package rule matches against. It
+// deliberately doesn't require ref to be fully qualified, since `bomify
+// save`/`bomify load` tags needn't name a registry at all.
+func Repository(ref string) string {
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		ref = ref[:i]
+	}
+	return ref
 }

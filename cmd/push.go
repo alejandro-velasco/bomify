@@ -13,8 +13,8 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/security"
-	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 const pushShort = "Publish a bomify package to an OCI registry"
@@ -130,7 +130,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
 	if opts.quiet {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", signature.Repository(tag), result.ManifestDigest)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(tag), result.ManifestDigest)
 	}
 	return nil
 }
