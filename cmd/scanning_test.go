@@ -158,7 +158,9 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 		t.Errorf("load --fail-on critical over a rule on pull: %v", err)
 	}
 
-	if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--on", "deploy"); err == nil {
-		t.Error("policy create --on deploy: error = nil, want an unknown-hook error")
+	for _, hook := range []string{"deploy", "build"} {
+		if _, err := runRootCmd(t, destDir, "security", "policy", "create", "grype", "--on", hook); err == nil {
+			t.Errorf("policy create --on %s: error = nil, want an unknown-hook error", hook)
+		}
 	}
 }
