@@ -22,24 +22,25 @@ type Rule struct {
 	Scanner string `json:"scanner"`
 	// FailOn is the severity (see ParseSeverity) at or above which a
 	// matching package fails its scan. Empty never fails it.
+	//
+	// There's deliberately no list of vulnerability IDs to ignore here:
+	// a standing exemption should say why it's safe and which component
+	// it applies to, which is what a VEX document is for, not an
+	// unexplained ID in local config. --ignore on a single scan is the
+	// one-off escape hatch.
 	FailOn string `json:"failOn,omitempty"`
-	// Ignore lists vulnerability IDs never to fail a matching package
-	// on.
-	Ignore []string `json:"ignore,omitempty"`
 }
 
-// Gate returns r's FailOn/Ignore as a Gate.
+// Gate returns r's FailOn as a Gate.
 func (r Rule) Gate() (Gate, error) {
-	g := Gate{Ignore: r.Ignore}
 	if r.FailOn == "" {
-		return g, nil
+		return Gate{}, nil
 	}
 	sev, err := ParseSeverity(r.FailOn)
 	if err != nil {
 		return Gate{}, fmt.Errorf("scan rule %q: %w", r.Match, err)
 	}
-	g.FailOn = sev
-	return g, nil
+	return Gate{FailOn: sev}, nil
 }
 
 // Config is the "<baseDir>/conf/scan.json" record: an unordered list of

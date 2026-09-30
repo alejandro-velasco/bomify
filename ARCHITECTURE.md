@@ -308,7 +308,11 @@ signer must verify a package:
 1. `--skip-gate`: nothing fails (warning if a rule would have).
 2. `--fail-on` (plus `--ignore`): used as-is; no rule is consulted.
 3. The most specific `conf/scan.json` rule matching `<tag>`'s
-   repository (`security.Resolve`).
+   repository (`security.Resolve`) — a threshold only. Rules
+   deliberately carry no list of vulnerabilities to ignore: a standing
+   exemption belongs in a VEX document, which records which component
+   it applies to and why, not as an unexplained ID in local config.
+   `--ignore` exempts IDs for a single command only.
 4. Nothing matched: nothing fails.
 
 The scan itself is `security.Scan`, which returns each component's

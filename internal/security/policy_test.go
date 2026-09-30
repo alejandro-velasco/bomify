@@ -41,7 +41,7 @@ func TestSetAndRemoveRule(t *testing.T) {
 	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "high"}); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "critical", Ignore: []string{"CVE-1"}}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "critical"}); err != nil {
 		t.Fatalf("SetRule (replace): %v", err)
 	}
 	if err := SetRule(baseDir, Rule{Scanner: "grype", FailOn: "severe"}); err == nil {
@@ -52,12 +52,12 @@ func TestSetAndRemoveRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}
-	if len(config) != 1 || config[0].FailOn != "critical" || len(config[0].Ignore) != 1 {
+	if len(config) != 1 || config[0].FailOn != "critical" {
 		t.Fatalf("config = %+v, want the one replaced rule", config)
 	}
 
 	g, err := config[0].Gate()
-	if err != nil || g.FailOn != SeverityCritical || g.Ignore[0] != "CVE-1" {
+	if err != nil || g.FailOn != SeverityCritical {
 		t.Errorf("Gate() = %+v, %v", g, err)
 	}
 

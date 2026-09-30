@@ -21,7 +21,7 @@ type gateFlags struct {
 
 func (f *gateFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.failOn, "fail-on", "", "fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching \"bomify security policy\" rule")
-	cmd.Flags().StringArrayVar(&f.ignore, "ignore", nil, "a vulnerability ID never to fail on (repeatable); requires --fail-on")
+	cmd.Flags().StringArrayVar(&f.ignore, "ignore", nil, "a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on")
 	cmd.Flags().BoolVar(&f.skip, "skip-gate", false, "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
 }
 

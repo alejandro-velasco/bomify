@@ -103,7 +103,7 @@ written either way:
 ```sh
 bomify security scan grype myapp:1.0 --fail-on high
 
-# Accept a specific vulnerability rather than lowering the bar
+# Accept a specific vulnerability, for this scan only
 bomify security scan grype myapp:1.0 --fail-on high --ignore CVE-2024-1234
 ```
 
@@ -112,7 +112,9 @@ gives it; one grype couldn't rate (`unknown`) never fails a scan.
 
 To set the bar once instead of on every command, record it as a policy
 rule for the packages it applies to. A scan with no `--fail-on` of its
-own uses the most specific matching rule; `--skip-gate` ignores it:
+own uses the most specific matching rule's threshold (rules have no
+ignore list: `--ignore` is only ever a one-off for a single command);
+`--skip-gate` ignores it:
 
 ```sh
 bomify security policy create grype --match registry.example.com/team --fail-on high

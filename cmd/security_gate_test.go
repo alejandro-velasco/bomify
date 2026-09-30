@@ -95,7 +95,7 @@ func TestSecurityScanGateFlagValidation(t *testing.T) {
 func TestSecurityPolicyCreateListRemove(t *testing.T) {
 	baseDir := t.TempDir()
 
-	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--match", "registry.example.com/team", "--fail-on", "high", "--ignore", "CVE-1"); err != nil {
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--match", "registry.example.com/team", "--fail-on", "high"); err != nil {
 		t.Fatalf("policy create: %v", err)
 	}
 	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype"); err != nil {
@@ -105,14 +105,14 @@ func TestSecurityPolicyCreateListRemove(t *testing.T) {
 		t.Error("policy create accepted an invalid --fail-on")
 	}
 	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--ignore", "CVE-1"); err == nil {
-		t.Error("policy create accepted --ignore without --fail-on")
+		t.Error("policy create accepted --ignore, which rules don't have")
 	}
 
 	out, err := runRootCmd(t, baseDir, "security", "policy", "list")
 	if err != nil {
 		t.Fatalf("policy list: %v", err)
 	}
-	for _, want := range []string{"MATCH", "registry.example.com/team", "high", "CVE-1", "*"} {
+	for _, want := range []string{"MATCH", "registry.example.com/team", "high", "*", "-"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("policy list output missing %q:\n%s", want, out)
 		}

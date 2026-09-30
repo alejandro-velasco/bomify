@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -65,9 +64,10 @@ or above the given severity (info, low, medium, high, or critical),
 printing a table of them to stderr; a vulnerability's severity is the
 highest any of its ratings gives it, and one rated only "none" or
 "unknown" never fails. --ignore (repeatable) exempts specific
-vulnerability IDs. Without --fail-on, the most specific "bomify
-security policy" rule matching <tag> decides instead, if any does;
---skip-gate ignores that rule. Reports are written either way.`
+vulnerability IDs for this scan only. Without --fail-on, the most
+specific "bomify security policy" rule matching <tag> decides the
+threshold instead, if any does; --skip-gate ignores that rule. Reports
+are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
   bomify security scan grype myapp:latest
@@ -249,7 +249,7 @@ const securityPolicyCreateLong = `Create adds a rule to <data-dir>/conf/scan.jso
 policy for every package whose reference matches --match: the scanning
 plugin (bomify-plugin-<scanner>) that scans it, and — with --fail-on —
 the severity at or above which its vulnerabilities fail the scan.
---ignore (repeatable) exempts specific vulnerability IDs. --match is a
+--match is a
 "/"-separated prefix of the package's repository — its reference
 without a tag or digest, e.g. "registry.example.com",
 "registry.example.com/team", or "registry.example.com/team/app" —
@@ -258,15 +258,16 @@ every package. When more than one rule matches, the one with the
 longer --match wins. Running create again for the same --match
 replaces that rule.
 
-"bomify security scan" applies a matching rule's --fail-on and --ignore
-when given no --fail-on of its own, and ignores rules entirely with
---skip-gate.`
+"bomify security scan" applies a matching rule's --fail-on when given
+no --fail-on of its own, and ignores rules entirely with --skip-gate.
+Rules have no list of vulnerabilities to ignore: exempt a one-off with
+"bomify security scan --ignore" instead.`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
 
-  # ...except one accepted CVE
-  bomify security policy create grype --match registry.example.com/team --fail-on high --ignore CVE-2024-1234`
+  # Scan every other package with grype, never failing
+  bomify security policy create grype`
 
 func securityPolicyCreateCmd() *cobra.Command {
 	var rule security.Rule
@@ -279,9 +280,6 @@ func securityPolicyCreateCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rule.Scanner = args[0]
-			if len(rule.Ignore) > 0 && rule.FailOn == "" {
-				return fmt.Errorf("security policy create: --ignore requires --fail-on")
-			}
 			if err := security.SetRule(dataDir, rule); err != nil {
 				return fmt.Errorf("security policy create: %w", err)
 			}
@@ -291,7 +289,6 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
-	cmd.Flags().StringArrayVar(&rule.Ignore, "ignore", nil, "a vulnerability ID never to fail on (repeatable)")
 
 	return cmd
 }
@@ -329,13 +326,13 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tIGNORE")
+	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON")
 	for _, rule := range rules {
 		failOn := rule.FailOn
 		if failOn == "" {
 			failOn = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn, strings.Join(rule.Ignore, ","))
+		fmt.Fprintf(w, "%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn)
 	}
 
 	return w.Flush()

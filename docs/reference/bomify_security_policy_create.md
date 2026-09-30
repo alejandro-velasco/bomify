@@ -8,7 +8,7 @@ Create adds a rule to <data-dir>/conf/scan.json setting the scanning
 policy for every package whose reference matches --match: the scanning
 plugin (bomify-plugin-<scanner>) that scans it, and — with --fail-on —
 the severity at or above which its vulnerabilities fail the scan.
---ignore (repeatable) exempts specific vulnerability IDs. --match is a
+--match is a
 "/"-separated prefix of the package's repository — its reference
 without a tag or digest, e.g. "registry.example.com",
 "registry.example.com/team", or "registry.example.com/team/app" —
@@ -17,9 +17,10 @@ every package. When more than one rule matches, the one with the
 longer --match wins. Running create again for the same --match
 replaces that rule.
 
-"bomify security scan" applies a matching rule's --fail-on and --ignore
-when given no --fail-on of its own, and ignores rules entirely with
---skip-gate.
+"bomify security scan" applies a matching rule's --fail-on when given
+no --fail-on of its own, and ignores rules entirely with --skip-gate.
+Rules have no list of vulnerabilities to ignore: exempt a one-off with
+"bomify security scan --ignore" instead.
 
 ```
 bomify security policy create <scanner> [flags]
@@ -31,17 +32,16 @@ bomify security policy create <scanner> [flags]
   # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
 
-  # ...except one accepted CVE
-  bomify security policy create grype --match registry.example.com/team --fail-on high --ignore CVE-2024-1234
+  # Scan every other package with grype, never failing
+  bomify security policy create grype
 ```
 
 ### Options
 
 ```
-      --fail-on string       fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails
-  -h, --help                 help for create
-      --ignore stringArray   a vulnerability ID never to fail on (repeatable)
-      --match string         apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
+      --fail-on string   fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails
+  -h, --help             help for create
+      --match string     apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
 ```
 
 ### Options inherited from parent commands
