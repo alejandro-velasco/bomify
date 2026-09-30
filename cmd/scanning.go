@@ -82,7 +82,7 @@ func (f *gateFlags) gate(ref string, logger *slog.Logger) (security.Gate, error)
 // matchingScanRule returns the most specific scan policy rule matching
 // ref, if any.
 func matchingScanRule(ref string) (security.Rule, bool, error) {
-	rules, err := security.ReadConfig(dataDir)
+	rules, err := security.Read(dataDir)
 	if err != nil {
 		return security.Rule{}, false, err
 	}

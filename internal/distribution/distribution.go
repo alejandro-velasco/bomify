@@ -5,14 +5,12 @@
 package distribution
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 )
 
 // Rule is one entry in "<baseDir>/conf/distribution.json": the remote
@@ -46,30 +44,17 @@ type Rule struct {
 // instead of silently reading back as an empty rule set.
 type Config []Rule
 
-// ConfigPath returns the deterministic path of baseDir's distribution.json.
-func ConfigPath(baseDir string) string {
-	return filepath.Join(baseDir, "conf", "distribution.json")
+func distributionFile(baseDir string) rules.File[Rule] {
+	return rules.File[Rule]{
+		Path: layout.DistributionConfig(baseDir),
+		Key:  func(r Rule) string { return fmt.Sprintf("type=%q match=%q", r.Type, r.Match) },
+	}
 }
 
-// Read reads and parses baseDir's distribution.json, returning an empty
-// Config if it doesn't exist yet.
+// Read reads baseDir's distribution.json, returning an empty Config if
+// it doesn't exist yet.
 func Read(baseDir string) (Config, error) {
-	path := ConfigPath(baseDir)
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return Config{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	return config, nil
+	return distributionFile(baseDir).Read()
 }
 
 // SetRule adds or updates the rule for (ruleType, match) in
@@ -77,40 +62,14 @@ func Read(baseDir string) (Config, error) {
 // there. Calling it again for the same (ruleType, match) pair overwrites
 // its endpoint; otherwise a new rule is appended.
 func SetRule(baseDir, ruleType, match, endpoint string) error {
-	config, err := Read(baseDir)
-	if err != nil {
-		return err
-	}
-
-	for i, rule := range config {
-		if rule.Type == ruleType && rule.Match == match {
-			config[i].Endpoint = endpoint
-			return writeConfig(baseDir, config)
-		}
-	}
-
-	config = append(config, Rule{Type: ruleType, Match: match, Endpoint: endpoint})
-
-	return writeConfig(baseDir, config)
+	return distributionFile(baseDir).Set(Rule{Type: ruleType, Match: match, Endpoint: endpoint})
 }
 
 // RemoveRule removes the rule for (ruleType, match) from
 // "<baseDir>/conf/distribution.json", returning an error if no such rule
 // exists.
 func RemoveRule(baseDir, ruleType, match string) error {
-	config, err := Read(baseDir)
-	if err != nil {
-		return err
-	}
-
-	for i, rule := range config {
-		if rule.Type == ruleType && rule.Match == match {
-			config = append(config[:i], config[i+1:]...)
-			return writeConfig(baseDir, config)
-		}
-	}
-
-	return fmt.Errorf("no such rule: type=%q match=%q", ruleType, match)
+	return distributionFile(baseDir).Remove(Rule{Type: ruleType, Match: match})
 }
 
 // Resolve picks the best rule in rules for a component of the given kind
@@ -134,40 +93,26 @@ func RemoveRule(baseDir, ruleType, match string) error {
 // no Match (a type-only or catch-all rule) has no prefix to subtract, so
 // its Endpoint is returned bare — the plugin's own push logic decides
 // what to publish under it, exactly as if --remote had named it directly.
-func Resolve(rules Config, kind, origin string) (destination string, ok bool) {
+func Resolve(config Config, kind, origin string) (destination string, ok bool) {
 	origin = prefix.Normalize(origin)
 
-	var best *Rule
-	bestSegments := -1
-	bestTyped := false
-
-	for i, rule := range rules {
-		if rule.Type != "" && rule.Type != kind {
-			continue
+	// A rule wins if it's more specific (more Match segments), or it ties
+	// on specificity but narrows by Type where the other doesn't.
+	best, ok := rules.Best(config, func(r Rule) (int, bool) {
+		if r.Type != "" && r.Type != kind {
+			return 0, false
 		}
-		if !prefix.Matches(origin, rule.Match) {
-			continue
+		segments, ok := rules.PrefixScore(origin, r.Match)
+		score := 2 * segments
+		if r.Type != "" {
+			score++
 		}
-
-		segments := prefix.Segments(rule.Match)
-		typed := rule.Type != ""
-
-		// A rule wins if it's more specific (more Match segments), or it
-		// ties on specificity but narrows by Type where the current best
-		// doesn't.
-		moreSpecific := segments > bestSegments
-		tiebreakOnType := segments == bestSegments && typed && !bestTyped
-		if best == nil || moreSpecific || tiebreakOnType {
-			best = &rules[i]
-			bestSegments = segments
-			bestTyped = typed
-		}
-	}
-
-	if best == nil {
+		return score, ok
+	})
+	if !ok {
 		return "", false
 	}
-	return mirror(*best, origin), true
+	return mirror(best, origin), true
 }
 
 // mirror returns what rule resolves to for origin: its bare Endpoint if
@@ -188,27 +133,4 @@ func mirror(rule Rule, origin string) string {
 	}
 
 	return strings.TrimSuffix(rule.Endpoint, "/") + "/" + remainder
-}
-
-// writeConfig writes config to baseDir's distribution.json.
-func writeConfig(baseDir string, config Config) error {
-	path := ConfigPath(baseDir)
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create conf directory: %w", err)
-	}
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(config); err != nil {
-		return fmt.Errorf("marshal distribution config: %w", err)
-	}
-
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-
-	return nil
 }

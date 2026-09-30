@@ -15,6 +15,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
@@ -353,18 +354,18 @@ func securityPolicyListCmd() *cobra.Command {
 }
 
 func runSecurityPolicyList(cmd *cobra.Command) error {
-	rules, err := security.ReadConfig(dataDir)
+	config, err := security.Read(dataDir)
 	if err != nil {
 		return err
 	}
 
 	// Display order only — unrelated to the specificity ranking used
 	// when rules are matched against a reference.
-	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
+	sort.SliceStable(config, func(i, j int) bool { return config[i].Match < config[j].Match })
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON\tVEX\tON")
-	for _, rule := range rules {
+	for _, rule := range config {
 		failOn := rule.FailOn
 		if failOn == "" {
 			failOn = "-"
@@ -373,7 +374,7 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 		if on == "" {
 			on = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","), on)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", rules.Display(rule.Match), rule.Scanner, failOn, strings.Join(rule.VEX, ","), on)
 	}
 
 	return w.Flush()
