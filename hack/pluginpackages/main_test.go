@@ -87,7 +87,7 @@ func TestWriteSBOMIsWhatBomifyBuilds(t *testing.T) {
 		}
 		delete(want, b)
 
-		if _, err := plugin.CheckBinary(c, pkgDir, cdx.HashAlgoSHA256); err != nil {
+		if _, err := plugin.CheckBinary(c, pkgDir); err != nil {
 			t.Errorf("%s: bomify build would reject it: %v", c.PackageURL, err)
 		}
 	}
