@@ -13,6 +13,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/plugin/install"
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
@@ -242,7 +243,7 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 	if !verifierInstalled {
 		return nil, fmt.Errorf("can't verify %s: %s isn't installed, and nothing else vouches for it — install it pinned by digest first (%s@sha256:<digest>, digests are published with each bomify release), pin this package by digest, or pass --verify=false to install it unverified", ref, plugin.BinaryName(pluginVerifier), pluginVerifier)
 	}
-	return nil, fmt.Errorf("can't verify %s: no signer is configured for it — pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), run \"bomify trust create %s --match %s --option ...\" with the same options, pin it by digest, or pass --verify=false to install it unverified", ref, pluginVerifier, signature.Repository(ref))
+	return nil, fmt.Errorf("can't verify %s: no signer is configured for it — pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), run \"bomify trust create %s --match %s --option ...\" with the same options, pin it by digest, or pass --verify=false to install it unverified", ref, pluginVerifier, prefix.Repository(ref))
 }
 
 // isDigestReference reports whether ref names its package by digest

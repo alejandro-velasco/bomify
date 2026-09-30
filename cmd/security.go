@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
-	"time"
+	"sort"
+	"text/tabwriter"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -13,6 +13,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -26,6 +27,7 @@ func securityCmd() *cobra.Command {
 
 	cmd.AddCommand(securityScanCmd())
 	cmd.AddCommand(securityPruneCmd())
+	cmd.AddCommand(securityPolicyCmd())
 
 	return cmd
 }
@@ -55,18 +57,32 @@ scanned component itself; for a component the plugin had to unpack to
 scan at all (e.g. cataloging an OCI image's contents), the pieces it
 found are the report's top-level components, and each vulnerability's
 "affects" names the specific piece(s) affected. See
-plugins/SECURITY-CONTRACT.md for the full contract.`
+plugins/SECURITY-CONTRACT.md for the full contract.
+
+--fail-on makes the scan exit non-zero if any vulnerability found is at
+or above the given severity (info, low, medium, high, or critical),
+printing a table of them to stderr; a vulnerability's severity is the
+highest any of its ratings gives it, and one rated only "none" or
+"unknown" never fails. --ignore (repeatable) exempts specific
+vulnerability IDs for this scan only. Without --fail-on, the most
+specific "bomify security policy" rule matching <tag> decides the
+threshold instead, if any does; --skip-gate ignores that rule. Reports
+are written either way.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
   bomify security scan grype myapp:latest
 
   # Scan up to 4 components concurrently
-  bomify security scan grype myapp:latest --concurrency 4`
+  bomify security scan grype myapp:latest --concurrency 4
+
+  # Fail on anything high or critical, except one accepted CVE
+  bomify security scan grype myapp:latest --fail-on high --ignore CVE-2024-1234`
 
 type securityScanOptions struct {
 	scanType    string
 	tag         string
 	concurrency int
+	gate        gateFlags
 }
 
 func securityScanCmd() *cobra.Command {
@@ -80,7 +96,7 @@ func securityScanCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.scanType, opts.tag = args[0], args[1]
-			if err := runSecurityScan(opts, logging.FromContext(cmd.Context())); err != nil {
+			if err := runSecurityScan(cmd, opts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("security scan: %w", err)
 			}
 			return nil
@@ -94,12 +110,19 @@ func securityScanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 1, "number of components to scan concurrently")
+	opts.gate.register(cmd)
 
 	return cmd
 }
 
-func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
+func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog.Logger) error {
 	sbomHash, err := build.ResolveTag(dataDir, opts.tag)
+	if err != nil {
+		return err
+	}
+
+	// Resolved before scanning, so a bad flag or rule fails fast.
+	gate, err := opts.gate.gate(opts.tag, logger)
 	if err != nil {
 		return err
 	}
@@ -109,53 +132,31 @@ func runSecurityScan(opts *securityScanOptions, logger *slog.Logger) error {
 		return err
 	}
 
-	capabilities, err := plugin.SupportedComponents(path, logger)
+	sbomPath := build.ManifestPath(dataDir, sbomHash)
+	bom, err := sbom.Load(sbomPath)
+	if err != nil {
+		return fmt.Errorf("load sbom: %w", err)
+	}
+	var components []cdx.Component
+	if bom.Components != nil {
+		components = *bom.Components
+	}
+	logger.Info("loaded sbom", "path", sbomPath, "components", len(components), "concurrency", opts.concurrency)
+
+	reports, err := security.Scan(path, opts.scanType, components, opts.concurrency, logger)
 	if err != nil {
 		return err
 	}
-	logger.Info("plugin capabilities", "types", capabilities.Types, "scans", capabilities.Scans)
-	supportedTypes := make(map[string]bool, len(capabilities.Types))
-	for _, t := range capabilities.Types {
-		supportedTypes[t] = true
-	}
 
-	// The same purl listed twice in one SBOM maps to the same report, so
-	// only its first occurrence is scanned.
-	var claimed sync.Map
-
-	if err := forEachComponent(build.ManifestPath(dataDir, sbomHash), logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
-		kind, err := plugin.Detect(component)
-		if err != nil {
-			log.Warn("skipping component: cannot determine its kind", "error", err)
-			return nil
-		}
-		if !supportedTypes[kind] {
-			log.Info("skipping component: unsupported by this scanner", "kind", kind)
-			return nil
-		}
-
-		purlHash := plugin.PurlHash(component)
-		if _, dup := claimed.LoadOrStore(purlHash, true); dup {
-			log.Debug("skipping component: purl already scanned", "purl", component.PackageURL)
-			return nil
-		}
-
-		result, err := plugin.Scan(path, component, log)
+	for _, r := range reports {
+		reportPath, err := security.WriteReport(dataDir, r.Component, r.Report)
 		if err != nil {
 			return err
 		}
-
-		reportPath, err := security.WriteReport(dataDir, component, security.NewReport(component, result, opts.scanType, time.Now()))
-		if err != nil {
-			return err
-		}
-		log.Info("scan complete", "vulnerabilities", len(result.Vulnerabilities), "components", len(result.Components), "report", reportPath)
-		return nil
-	}); err != nil {
-		return err
+		logger.Debug("report written", "purl", r.Component.PackageURL, "path", reportPath)
 	}
 
-	return nil
+	return checkGate(cmd.ErrOrStderr(), gate, reports)
 }
 
 const securityPruneShort = "Delete stale vulnerability report referrers of a package in a registry"
@@ -225,4 +226,147 @@ func runSecurityPrune(ctx context.Context, ref string, keep int, logger *slog.Lo
 		logger.Info("nothing to prune", "reference", ref)
 	}
 	return nil
+}
+
+const securityPolicyShort = "Manage vulnerability scanning policy rules"
+
+func securityPolicyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "policy",
+		Short: securityPolicyShort,
+	}
+
+	cmd.AddCommand(securityPolicyCreateCmd())
+	cmd.AddCommand(securityPolicyListCmd())
+	cmd.AddCommand(securityPolicyRemoveCmd())
+
+	return cmd
+}
+
+const securityPolicyCreateShort = "Create or update a vulnerability scanning policy rule"
+
+const securityPolicyCreateLong = `Create adds a rule to <data-dir>/conf/scan.json setting the scanning
+policy for every package whose reference matches --match: the scanning
+plugin (bomify-plugin-<scanner>) that scans it, and — with --fail-on —
+the severity at or above which its vulnerabilities fail the scan.
+--match is a
+"/"-separated prefix of the package's repository — its reference
+without a tag or digest, e.g. "registry.example.com",
+"registry.example.com/team", or "registry.example.com/team/app" —
+matched at segment boundaries; omitting it makes the rule apply to
+every package. When more than one rule matches, the one with the
+longer --match wins. Running create again for the same --match
+replaces that rule.
+
+"bomify security scan" applies a matching rule's --fail-on when given
+no --fail-on of its own, and ignores rules entirely with --skip-gate.
+Rules have no list of vulnerabilities to ignore: exempt a one-off with
+"bomify security scan --ignore" instead.`
+
+const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
+  bomify security policy create grype --match registry.example.com/team --fail-on high
+
+  # Scan every other package with grype, never failing
+  bomify security policy create grype`
+
+func securityPolicyCreateCmd() *cobra.Command {
+	var rule security.Rule
+
+	cmd := &cobra.Command{
+		Use:     "create <scanner>",
+		Short:   securityPolicyCreateShort,
+		Long:    securityPolicyCreateLong,
+		Example: securityPolicyCreateExample,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rule.Scanner = args[0]
+			if err := security.SetRule(dataDir, rule); err != nil {
+				return fmt.Errorf("security policy create: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&rule.Match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
+	cmd.Flags().StringVar(&rule.FailOn, "fail-on", "", "fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails")
+
+	return cmd
+}
+
+const securityPolicyListShort = "List vulnerability scanning policy rules"
+
+const securityPolicyListLong = `List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
+prints "*" for a rule that omitted it, meaning it applies to every
+package, and FAIL-ON prints "-" for a rule that never fails.`
+
+const securityPolicyListExample = `  # See every configured rule
+  bomify security policy list`
+
+func securityPolicyListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Short:   securityPolicyListShort,
+		Long:    securityPolicyListLong,
+		Example: securityPolicyListExample,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSecurityPolicyList(cmd)
+		},
+	}
+}
+
+func runSecurityPolicyList(cmd *cobra.Command) error {
+	rules, err := security.ReadConfig(dataDir)
+	if err != nil {
+		return err
+	}
+
+	// Display order only — unrelated to the specificity ranking used
+	// when rules are matched against a reference.
+	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Match < rules[j].Match })
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "MATCH\tSCANNER\tFAIL-ON")
+	for _, rule := range rules {
+		failOn := rule.FailOn
+		if failOn == "" {
+			failOn = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", wildcardOr(rule.Match), rule.Scanner, failOn)
+	}
+
+	return w.Flush()
+}
+
+const securityPolicyRemoveShort = "Remove a vulnerability scanning policy rule"
+
+const securityPolicyRemoveLong = `Remove drops the rule matching --match exactly (as "bomify security
+policy list" prints it) from <data-dir>/conf/scan.json.`
+
+const securityPolicyRemoveExample = `  # Remove the rule for a team's repositories
+  bomify security policy remove --match registry.example.com/team
+
+  # Remove the rule applying to every package (no --match)
+  bomify security policy remove`
+
+func securityPolicyRemoveCmd() *cobra.Command {
+	var match string
+
+	cmd := &cobra.Command{
+		Use:     "remove",
+		Short:   securityPolicyRemoveShort,
+		Long:    securityPolicyRemoveLong,
+		Example: securityPolicyRemoveExample,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := security.RemoveRule(dataDir, match); err != nil {
+				return fmt.Errorf("security policy remove: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&match, "match", "", "the rule's match prefix, exactly as \"bomify security policy list\" prints it (empty for a rule with no --match)")
+
+	return cmd
 }

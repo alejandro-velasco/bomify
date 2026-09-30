@@ -48,6 +48,13 @@ with which signing plugin, whenever `--verify` isn't given. Its `match`
 is ranked most-specific-first on `/` segment boundaries, exactly like a
 distribution rule's (both share [`internal/prefix`](internal/prefix)).
 
+`conf/scan.json` records vulnerability scanning policy rules (see
+[Vulnerability gating](#vulnerability-gating) and `bomify security
+policy create`) — for packages matching each rule, the scanning plugin
+to use and the severity at or above which a scan fails. Its `match` is
+ranked exactly like `trust.json`'s, through the same
+[`internal/prefix`](internal/prefix).
+
 Two independent things share the flat `manifests/` directory and the same
 `<hash>.json` naming scheme, distinguished only by which hash space they're
 keyed on:
@@ -281,6 +288,39 @@ more than once contributes only one element.
 the whole package. Nothing but that array ever reaches stdout — no log
 line, not even for a `--purl` matching nothing, which goes to stderr
 as a warning instead.
+
+#### Vulnerability gating
+
+A scan can also fail the command, rather than just record reports.
+`security.Gate` (`internal/security/gate.go`) is a severity threshold —
+`info` < `low` < `medium` < `high` < `critical` — plus a list of
+vulnerability IDs to ignore; a package fails it when any report names
+a vulnerability at or above the threshold that isn't ignored. A
+vulnerability's severity is the highest its CycloneDX `ratings` give
+it, so ratings with no severity (the EPSS and CISA KEV scores
+`bomify-plugin-grype` adds) never count either way, and one rated only
+`none`/`unknown`, or not rated at all, never fails a gate.
+
+`bomify security scan` (`cmd/scanning.go`'s `gateFlags`) decides which
+gate applies to `<tag>` the same way `signature.Policy` decides which
+signer must verify a package:
+
+1. `--skip-gate`: nothing fails (warning if a rule would have).
+2. `--fail-on` (plus `--ignore`): used as-is; no rule is consulted.
+3. The most specific `conf/scan.json` rule matching `<tag>`'s
+   repository (`security.Resolve`) — a threshold only. Rules
+   deliberately carry no list of vulnerabilities to ignore: a standing
+   exemption belongs in a VEX document, which records which component
+   it applies to and why, not as an unexplained ID in local config.
+   `--ignore` exempts IDs for a single command only.
+4. Nothing matched: nothing fails.
+
+The scan itself is `security.Scan`, which returns each component's
+report rather than writing it, so the caller decides whether and when
+to keep them; `security scan` writes every report first, then checks
+the gate, so a failing package's reports are still there to inspect.
+A failure prints a table of every offending vulnerability (severity,
+ID, component purl) to stderr and exits non-zero.
 
 #### Reports in a registry
 
