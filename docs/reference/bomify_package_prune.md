@@ -4,10 +4,8 @@ Remove packages not associated with any tag
 
 ### Synopsis
 
-Prune removes every manifest, layer, and vulnerability report in the
-data directory that isn't reachable from a tag currently recorded in
-repositories.json. A component still used by any tagged package, even
-one also used by an otherwise-unreferenced package, is left alone.
+Prune removes every manifest, layer, and vulnerability report that no
+current tag reaches. A component used by any tagged package is kept.
 
 ```
 bomify package prune [flags]

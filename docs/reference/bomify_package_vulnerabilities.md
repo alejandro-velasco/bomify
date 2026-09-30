@@ -4,24 +4,13 @@ Print a package's component vulnerability reports
 
 ### Synopsis
 
-Vulnerabilities resolves <tag> to a package a prior "bomify build" (or
-"bomify pull"/"bomify load") recorded locally, then writes a JSON array
-to stdout — parsable straight through "jq", unlike the single raw
-document "bomify package manifest" writes — with one element per
-component: its vulnerability report exactly as it sits at
-"<data-dir>/vulnerabilities/<purl-hash>.json" (see "bomify security
-scan"), in the SBOM's own component order. A component with no report
-(never scanned, or scanned by a plugin that doesn't support its purl
-type) is silently skipped, and a purl the SBOM lists more than once is
-only included once.
+Vulnerabilities prints the vulnerability reports of the local package
+<tag>'s components (from "bomify security scan") as one JSON array on
+stdout, in SBOM order. Components without a report are skipped.
 
---purl narrows this down to specific components; pass it more than
-once for more than one. Without it, every component the SBOM describes
-is considered.
-
-Nothing but that JSON array is ever written to stdout — no log lines,
-so a "--purl" that matches nothing in the SBOM is reported as a
-warning on stderr rather than printed inline.
+--purl (repeatable) limits it to specific components. Nothing but the
+array goes to stdout; warnings, such as a --purl matching nothing, go
+to stderr.
 
 ```
 bomify package vulnerabilities <tag> [flags]

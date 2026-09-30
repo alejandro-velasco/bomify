@@ -36,7 +36,7 @@ type gateFlags struct {
 func (f *gateFlags) register(cmd *cobra.Command) {
 	f.registerThreshold(cmd, "skip-gate", "never fail on vulnerabilities, even if a \"bomify security policy\" rule matching the package says to")
 	cmd.Flags().StringArrayVar(&f.ignore, "ignore", nil, "a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on")
-	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "an OpenVEX, CSAF, or CycloneDX VEX document whose not-affected/fixed statements exempt vulnerabilities from failing (repeatable); added to a matching rule's")
+	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "a VEX document (OpenVEX, CSAF, or CycloneDX) exempting what it marks not affected or fixed (repeatable); applied with a matching rule's")
 }
 
 // registerThreshold adds --fail-on and the command's skip flag, named
@@ -190,7 +190,7 @@ type scanFlags struct {
 }
 
 func (f *scanFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.scanner, "scan", "", "scan the package's components with the bomify-plugin-<type> scanner before anything is written (e.g. grype), refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's scanner")
+	cmd.Flags().StringVar(&f.scanner, "scan", "", "scan the package with this scanner (e.g. grype) before anything is written, refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's")
 	f.registerThreshold(cmd, "skip-scan", "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
 }
 

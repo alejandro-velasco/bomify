@@ -16,25 +16,15 @@ import (
 
 const distributeShort = "Publish a locally available package to a remote endpoint"
 
-const distributeLong = `Distribute resolves <tag> to the SBOM manifest a prior "bomify build" or
-"bomify pull" recorded for it (see "bomify tag" / "bomify packages")
-and publishes each component that SBOM describes to a remote
-endpoint.
+const distributeLong = `Distribute publishes each component of the package <tag> to its own
+remote endpoint, as opposed to "bomify push", which publishes the
+package as one artifact.
 
-The endpoint used is chosen per component: pass one or more --remote
-kind=endpoint flags (e.g. --remote oci=registry.example.com --remote
-helm=charts.example.com/helm) for a quick one-off override by plugin
-kind. A kind with no matching --remote falls back to the rules in the
-data directory's conf/distribution.json (see "bomify distribution
-create"). A rule scoped with --match acts as a mirror: it doesn't just
-pick an endpoint, it carries over whatever of the component's origin
-came after the matched prefix, so distinct repositories under that
-prefix still land at distinct destinations under the mirror instead of
-all colliding on one endpoint.
+Each component's endpoint is the --remote given for its plugin kind,
+else the best matching rule from "bomify distribution create".
 
---check verifies push permission to every component's resolved remote —
-an inexpensive check each plugin performs itself, without publishing
-anything.`
+--check verifies push permission to every resolved endpoint without
+publishing anything.`
 
 const distributeExample = `  # Distribute myapp:latest using the rules from "bomify distribution create"
   bomify distribute myapp:latest

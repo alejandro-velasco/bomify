@@ -37,47 +37,23 @@ func securityCmd() *cobra.Command {
 
 const securityScanShort = "Scan a built package's components for vulnerabilities via a security scanning plugin"
 
-const securityScanLong = `Scan resolves <tag> to a package a prior "bomify build" (or "bomify
-pull"/"bomify load") recorded locally, then scans every component that
-package's SBOM describes through a single "bomify-plugin-<type>" binary —
-<type> names the scanning tool itself (e.g. "grype"), not a purl type or
-deployment medium, since any scanner can in principle scan any component.
+const securityScanLong = `Scan scans every component of the local package <tag> with
+bomify-plugin-<type> (a scanner such as grype) and writes one CycloneDX
+vulnerability report per component to <data-dir>/vulnerabilities/,
+shared by every package containing that component. Components of purl
+types the scanner doesn't support are skipped.
 
-bomify first asks the plugin, once, which component purl types and scan
-categories it supports ("security supported-components"). Any component
-whose purl type isn't in that list is skipped; every other component is
-scanned via "security scan --purl <purl>", once per component, up to
---concurrency at a time: the same per-component, concurrent dispatch
-"bomify build"/"bomify distribute" use, just for scanning instead of
-pulling/pushing.
+--fail-on exits non-zero if any vulnerability is at or above the given
+severity (info, low, medium, high, critical), and prints them to stderr.
+Reports are written either way.
+  --ignore (repeatable) exempts vulnerability IDs for this scan only.
+  --vex (repeatable) reads an OpenVEX, CSAF, or CycloneDX VEX file; a
+  vulnerability it marks not affected or fixed doesn't fail the scan.
+  For an image, every affected package in it must be exempted.
 
-Each component's result is written as its own CycloneDX vulnerability
-report, <data-dir>/vulnerabilities/<purl-hash>.json — keyed by the same
-purl hash as that component's pull manifest and layer, so a component
-shared by two packages shares one report too, and scanning either
-package refreshes it for both. A report's metadata component is the
-scanned component itself; for a component the plugin had to unpack to
-scan at all (e.g. cataloging an OCI image's contents), the pieces it
-found are the report's top-level components, and each vulnerability's
-"affects" names the specific piece(s) affected. See
-plugins/SECURITY-CONTRACT.md for the full contract.
-
---fail-on makes the scan exit non-zero if any vulnerability found is at
-or above the given severity (info, low, medium, high, or critical),
-printing a table of them to stderr; a vulnerability's severity is the
-highest any of its ratings gives it, and one rated only "none" or
-"unknown" never fails. --ignore (repeatable) exempts specific
-vulnerability IDs for this scan only. --vex (repeatable) names an
-OpenVEX, CSAF, or CycloneDX VEX document: a vulnerability it says doesn't
-affect the component it was found in ("not_affected", "false_positive")
-or was fixed there ("fixed", "resolved") doesn't fail the scan, and is
-logged as exempted instead. For a vulnerability found in an image, every
-package it affects there must be exempted. Without --fail-on, the most
-specific "bomify security policy" rule matching <tag> decides the
-threshold instead, if any does, and that rule's stored VEX documents
-always apply alongside --vex, which reads the given file as it is now;
---skip-gate ignores the rule's threshold (the scan still runs). Reports
-are written either way.`
+Without --fail-on, the most specific matching "bomify security policy"
+rule sets the threshold. The rule's stored VEX always applies alongside
+--vex. --skip-gate ignores the rule's threshold.`
 
 const securityScanExample = `  # Scan the package tagged myapp:latest for vulnerabilities with grype
   bomify security scan grype myapp:latest
@@ -169,16 +145,12 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 const securityPruneShort = "Delete stale vulnerability report referrers of a package in a registry"
 
 const securityPruneLong = `Prune deletes all but the newest --keep vulnerability report referrers
-attached to the package <ref> resolves to in its registry, each along
-with anything referring to it in turn (typically its signature). The
-package itself, its own signatures, and anything else attached to it are
-left alone.
+of the package <ref> in its registry, each with its signature. Nothing
+else attached to the package is touched.
 
-"bomify push" already does this after attaching new reports (see its
---keep-reports); prune is for retrying that when it couldn't, or for
-cleaning up a package without pushing it again. Unlike push, prune fails
-if any stale referrer couldn't be deleted — e.g. because the registry
-refuses manifest deletes altogether.`
+"bomify push" already prunes; use this to retry when the registry
+refused, or to clean up without pushing. Unlike push, prune fails if
+any deletion fails.`
 
 const securityPruneExample = `  # Keep only the newest vulnerability reports of a pushed package
   bomify security prune registry.example.com/myapp:latest
@@ -252,39 +224,23 @@ func securityPolicyCmd() *cobra.Command {
 
 const securityPolicyCreateShort = "Create or update a vulnerability scanning policy rule"
 
-const securityPolicyCreateLong = `Create adds a rule to <data-dir>/conf/scan.json setting the scanning
-policy for every package whose reference matches --match: the scanning
-plugin (bomify-plugin-<scanner>) that scans it, and — with --fail-on —
-the severity at or above which its vulnerabilities fail the scan.
---match is a
-"/"-separated prefix of the package's repository — its reference
-without a tag or digest, e.g. "registry.example.com",
-"registry.example.com/team", or "registry.example.com/team/app" —
-matched at segment boundaries; omitting it makes the rule apply to
-every package. When more than one rule matches, the one with the
-longer --match wins. Running create again for the same --match
-replaces that rule.
+const securityPolicyCreateLong = `Create adds a scan policy rule for packages whose repository starts with
+--match (a "/"-separated prefix; omit it to match every package): the
+scanner to use and, with --fail-on, the severity that fails. The longest
+matching --match wins, and creating a rule for the same --match replaces
+it.
 
---vex (repeatable) names a VEX document in the data directory's managed
-store (see "bomify security vex add") whose "not affected"/"fixed"
-statements exempt a matching package's vulnerabilities from --fail-on.
-Rules refer to documents by name, never by path, so a rule keeps
-working however the files it was built from move, and re-adding a
-document under the same name updates every rule using it. Rules have
-no list of bare vulnerability IDs to ignore: a standing exemption
-belongs in a VEX document, which says which component it applies to
-and why. For a one-off, use "bomify security scan --ignore".
+--vex (repeatable) names documents from "bomify security vex add" that
+exempt vulnerabilities. Rules have no ignore list on purpose: a standing
+exemption belongs in VEX, which says which component and why. Use
+"bomify security scan --ignore" for one-offs.
 
-"bomify security scan" applies a matching rule's --fail-on when given
-no --fail-on of its own, always applies its VEX documents alongside any
---vex of its own, and ignores rules entirely with --skip-gate.
+"bomify security scan" uses a matching rule's --fail-on when given none,
+and always applies its VEX.
 
---on pull also makes a matching package get scanned with <scanner> and
-gated automatically by "bomify pull" and "bomify load", before anything
-of it is written; it needs --fail-on, since a scan there only ever
-refuses packages. Without --on, the rule only applies to "bomify
-security scan". Pull's and load's own --scan and --fail-on override the
-rule, and --skip-scan ignores it.`
+--on pull also scans and gates matching packages in "bomify pull" and
+"bomify load" before anything is written. It requires --fail-on. Without
+--on, the rule only applies to "bomify security scan".`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
   bomify security policy create grype --match registry.example.com/team --fail-on high
@@ -327,11 +283,8 @@ func securityPolicyCreateCmd() *cobra.Command {
 
 const securityPolicyListShort = "List vulnerability scanning policy rules"
 
-const securityPolicyListLong = `List prints every rule recorded in <data-dir>/conf/scan.json. MATCH
-prints "*" for a rule that omitted it, meaning it applies to every
-package, FAIL-ON prints "-" for a rule that never fails, VEX lists the
-names of each rule's stored VEX documents, and ON the lifecycle hooks
-it scans at automatically ("-" for none).`
+const securityPolicyListLong = `List prints every scan policy rule. "*" in MATCH means every package,
+and "-" means no FAIL-ON threshold or no ON hooks.`
 
 const securityPolicyListExample = `  # See every configured rule
   bomify security policy list`
@@ -413,17 +366,13 @@ func securityVEXCmd() *cobra.Command {
 
 const securityVEXAddShort = "Add or replace a VEX document in the managed store"
 
-const securityVEXAddLong = `Add copies the VEX document at <file> — OpenVEX, CSAF, or CycloneDX
-VEX — into <data-dir>/vex/ under <name>, for "bomify security policy
-create --vex <name>" to refer to. The document is checked first, and
-stored by its content hash: later edits to <file> have no effect until
-it's added again, so a rule's exemptions only ever change when someone
-re-adds its documents, and every scan decision traces back to an exact
-document. Adding under an existing <name> replaces it for every rule
-that uses it.
+const securityVEXAddLong = `Add stores a copy of the VEX document <file> (OpenVEX, CSAF, or
+CycloneDX VEX) under <name>, for "bomify security policy create --vex
+<name>". The document is checked first. Later edits to <file> have no
+effect until it's added again; adding an existing <name> replaces it for
+every rule using it.
 
-"bomify security scan --vex <file>" reads a file directly instead, as
-it is at that moment, without the store.`
+"bomify security scan --vex <file>" reads a file directly instead.`
 
 const securityVEXAddExample = `  # Store the team's OpenVEX document as "team"
   bomify security vex add team vex/team.openvex.json
@@ -433,19 +382,17 @@ const securityVEXAddExample = `  # Store the team's OpenVEX document as "team"
 
 const securityVEXListShort = "List the VEX documents in the managed store"
 
-const securityVEXListLong = `List prints every document in <data-dir>/vex/: its name, the content
-hash it's stored under, when it was added, and the file it was copied
-from (never read again).`
+const securityVEXListLong = `List prints every stored VEX document: its name, content hash, when it
+was added, and the file it was copied from.`
 
 const securityVEXListExample = `  # See every stored VEX document
   bomify security vex list`
 
 const securityVEXRemoveShort = "Remove a VEX document from the managed store"
 
-const securityVEXRemoveLong = `Remove drops <name> from <data-dir>/vex/, deleting its stored copy
-unless another name refers to the same content. It refuses while any
-"bomify security policy" rule still lists <name>, so no rule is left
-referring to a document that no longer exists.`
+const securityVEXRemoveLong = `Remove deletes <name> from the VEX store, and its stored copy unless
+another name shares it. It refuses while a "bomify security policy" rule
+uses <name>.`
 
 const securityVEXRemoveExample = `  # Remove the document stored as "team"
   bomify security vex remove team`

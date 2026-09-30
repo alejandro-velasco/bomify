@@ -5,16 +5,12 @@ Delete stale vulnerability report referrers of a package in a registry
 ### Synopsis
 
 Prune deletes all but the newest --keep vulnerability report referrers
-attached to the package <ref> resolves to in its registry, each along
-with anything referring to it in turn (typically its signature). The
-package itself, its own signatures, and anything else attached to it are
-left alone.
+of the package <ref> in its registry, each with its signature. Nothing
+else attached to the package is touched.
 
-"bomify push" already does this after attaching new reports (see its
---keep-reports); prune is for retrying that when it couldn't, or for
-cleaning up a package without pushing it again. Unlike push, prune fails
-if any stale referrer couldn't be deleted — e.g. because the registry
-refuses manifest deletes altogether.
+"bomify push" already prunes; use this to retry when the registry
+refused, or to clean up without pushing. Unlike push, prune fails if
+any deletion fails.
 
 ```
 bomify security prune <ref> [flags]

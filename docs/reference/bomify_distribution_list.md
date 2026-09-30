@@ -4,10 +4,9 @@ List remote-endpoint rules
 
 ### Synopsis
 
-List prints every rule recorded in <data-dir>/conf/distribution.json,
-most specific first — see "bomify distribution create" for how rules
-are matched and ranked. TYPE or MATCH prints "*" for a rule that
-omitted it, meaning it matches any kind or any origin there.
+List prints every distribution rule, sorted by type and match. "*"
+means the rule matches any kind or origin there; see "bomify
+distribution create" for how rules are ranked.
 
 ```
 bomify distribution list [flags]

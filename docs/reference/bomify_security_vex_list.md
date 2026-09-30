@@ -4,9 +4,8 @@ List the VEX documents in the managed store
 
 ### Synopsis
 
-List prints every document in <data-dir>/vex/: its name, the content
-hash it's stored under, when it was added, and the file it was copied
-from (never read again).
+List prints every stored VEX document: its name, content hash, when it
+was added, and the file it was copied from.
 
 ```
 bomify security vex list [flags]

@@ -4,9 +4,8 @@ List the public keys in the managed key store
 
 ### Synopsis
 
-List prints every key in <data-dir>/keys/: its name, the content hash
-it's stored under, when it was added, and the file it was copied from
-(never read again).
+List prints every stored key: its name, content hash, when it was
+added, and the file it was copied from.
 
 ```
 bomify trust key list [flags]

@@ -4,9 +4,8 @@ List signature verification rules
 
 ### Synopsis
 
-List prints every rule recorded in <data-dir>/conf/trust.json. MATCH
-prints "*" for a rule that omitted it, meaning it applies to every
-package. KEY-OPTIONS lists each option=name pair naming a stored key.
+List prints every trust rule. "*" in MATCH means every package, and
+KEY-OPTIONS lists each option=name pair naming a stored key.
 
 ```
 bomify trust list [flags]

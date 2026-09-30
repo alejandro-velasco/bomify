@@ -4,31 +4,19 @@ Create or update a signature verification rule
 
 ### Synopsis
 
-Create adds a rule to <data-dir>/conf/trust.json requiring every
-package whose reference matches --match to carry a signature the
-<verifier> signing plugin (bomify-plugin-<verifier>) verifies before
-"bomify pull" or "bomify load" restore it. --match is a "/"-separated
-prefix of the package's repository — its reference without a tag or
-digest, e.g. "registry.example.com", "registry.example.com/team", or
-"registry.example.com/team/app" — matched at segment boundaries;
-omitting it makes the rule apply to every package. When more than one
-rule matches, the one with the longer --match wins. Running create
-again for the same --match replaces that rule.
+Create adds a rule requiring packages whose repository starts with
+--match (a "/"-separated prefix; omit it to match every package) to
+carry a signature that bomify-plugin-<verifier> verifies before "bomify
+pull" or "bomify load" restores them. The longest matching --match wins,
+and creating a rule for the same --match replaces it.
 
-Each --option (key=value) is passed through, unparsed, to the plugin's
-"signature verify" — typically naming which key or identity it should
-trust for packages matching this rule.
+--option (key=value) is passed to the plugin's verify unparsed, e.g. the
+key or identity to trust. --key-option (option=name) instead names a key
+from "bomify trust key add"; the plugin receives the stored copy's path
+as that option. The same option can't be given both ways.
 
-Each --key-option (option=name) instead names a public key in the data
-directory's managed key store (see "bomify trust key add"): the plugin
-gets "--option <option>=<path of the stored copy>". The rule then keeps
-working however the original key file moves, travels with the data
-directory, and only changes when someone adds the key again. Which
-option takes a key file is up to the plugin — sigstore's is "key". The
-same option can't be given both ways.
-
-An explicit "--verify" on pull/load takes precedence over every rule,
-and "--insecure-skip-verify" bypasses them.
+"--verify" on pull or load overrides every rule, and
+"--insecure-skip-verify" bypasses them.
 
 ```
 bomify trust create <verifier> [flags]

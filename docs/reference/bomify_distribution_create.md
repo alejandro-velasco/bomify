@@ -4,26 +4,18 @@ Create or update a remote-endpoint rule
 
 ### Synopsis
 
-Create adds a rule to <data-dir>/conf/distribution.json, the file
-"bomify distribute" falls back to for any component not given a
-matching --remote. A rule matches a component by --type (a plugin
-kind, e.g. "oci" or "helm") and/or --match (a "/"-separated prefix of
-the component's origin — its plugin's own report of where it comes
-from, e.g. "docker.io", "docker.io/myorg", or "docker.io/myorg/myrepo");
-either or both can be omitted to widen the rule, down to a single
-catch-all rule matching everything. When more than one rule matches a
-component, the one with the longer --match wins, and a matching --type
-breaks a tie between two equally specific matches. Running create
-again for the same --type/--match pair overwrites its endpoint.
+Create adds a rule that "bomify distribute" uses for components not
+given a matching --remote.
 
-A rule with a non-empty --match acts as a mirror, not just a lookup: whatever
-of the component's origin comes after the matched prefix is carried
-over onto <endpoint>, so distinct repositories under that prefix still
-land at distinct destinations instead of all colliding on one endpoint
-(e.g. --match docker.io/myorg against origin docker.io/myorg/app
-resolves to <endpoint>/app). A rule with no --match has nothing to
-carry over, so <endpoint> is used exactly as given — it's up to the
-component's own plugin to decide what to publish under it.
+A rule matches by --type (a plugin kind, e.g. "oci"), --match (a
+"/"-separated prefix of the component's origin, e.g. "docker.io/myorg"),
+both, or neither (a catch-all). The longest --match wins, and a matching
+--type breaks ties. Creating a rule again for the same --type and
+--match replaces its endpoint.
+
+A rule with --match mirrors: the rest of the origin after the prefix is
+appended to <endpoint>, so docker.io/myorg/app resolves to
+<endpoint>/app. Without --match, <endpoint> is used as given.
 
 ```
 bomify distribution create <endpoint> [flags]
