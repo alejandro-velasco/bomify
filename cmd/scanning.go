@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -266,20 +267,26 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 		return nil
 	}
 
-	scanner := f.scanner
-	if scanner == "" && applies {
-		scanner = rule.Scanner
+	// --scan wins over the rule's scanner, which only counts if the rule
+	// applies on pull.
+	var ruleScanner string
+	if applies {
+		ruleScanner = rule.Scanner
 	}
+	scanner := cmp.Or(f.scanner, ruleScanner)
+
 	gate, err := f.gateFor(ref, rule, applies, s.logger)
 	if err != nil {
 		return err
 	}
+
+	scans, gates := scanner != "", gate.FailOn != 0
 	switch {
-	case scanner == "" && gate.FailOn == 0:
+	case !scans && !gates:
 		return nil
-	case scanner == "":
+	case !scans:
 		return errors.New("--fail-on needs --scan <type>: a pull always scans fresh, never trusting the reports a package carries")
-	case gate.FailOn == 0:
+	case !gates:
 		return errors.New("--scan needs --fail-on (or a matching rule's threshold) to refuse anything; to just scan, run \"bomify security scan\" after pulling")
 	}
 
