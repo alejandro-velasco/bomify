@@ -9,8 +9,8 @@ reports and signatures, to a single tarball (an OCI image layout) that
 "bomify load" can restore anywhere without a registry. Shared components
 are stored once. It writes to stdout unless --output is given.
 
---sign signs each package as "bomify push --sign" does; the signature
-travels inside the tarball.
+--sign and --vex work as for "bomify push"; signatures and VEX travel
+inside the tarball.
 
 ```
 bomify package save <tag>... [flags]
@@ -40,6 +40,7 @@ bomify package save <tag>... [flags]
   -o, --output string             write the tarball here instead of stdout
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --vex stringArray           attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
 ```
 
 ### Options inherited from parent commands

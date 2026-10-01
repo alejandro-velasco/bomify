@@ -49,6 +49,9 @@ type Result struct {
 	// Manifest (see security.Attach), or the zero Descriptor if no
 	// component had a local report.
 	ReportsReferrer ocispec.Descriptor
+	// Attached are the referrers this push attached for opts.Attach — none
+	// for a document the package already carried.
+	Attached []ocispec.Descriptor
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
@@ -58,10 +61,12 @@ type Result struct {
 // report (see internal/security), if any, is attached as one OCI referrer
 // of that manifest rather than as part of it (see security.Attach), so
 // re-scanning never changes the package's digest. Layers upload
-// concurrently, bounded by opts.Concurrency. A non-nil opts.Sign is called with the packed manifest — and then
-// with the report referrer, if one was attached — before ref is tagged
-// (see transfer.Signer), so a signing failure never leaves ref pointing
-// at an unsigned package.
+// concurrently, bounded by opts.Concurrency. Each of opts.Attach is
+// attached as a referrer of its own too (see transfer.Attach). A non-nil
+// opts.Sign is called with the packed manifest — and then with every
+// referrer this push attached — before ref is tagged (see
+// transfer.Signer), so a signing failure never leaves ref pointing at an
+// unsigned package.
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
 	opts = opts.WithDefaults()
 	sign, concurrency, progress := opts.Sign, opts.Concurrency, opts.Progress
@@ -141,6 +146,22 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		for _, report := range attached {
 			result.VulnerabilityReports = append(result.VulnerabilityReports, Layer{Purl: report.Purl, Hash: report.Hash})
 		}
+	}
+
+	for _, a := range opts.Attach {
+		referrer, attached, err := transfer.Attach(ctx, target, manifestDesc, a, progress)
+		if err != nil {
+			return Result{}, fmt.Errorf("attach %s: %w", a.Name, err)
+		}
+		if !attached {
+			continue
+		}
+		if sign != nil {
+			if err := sign(ctx, target, ref, referrer); err != nil {
+				return Result{}, fmt.Errorf("sign %s of %s: %w", a.Name, ref, err)
+			}
+		}
+		result.Attached = append(result.Attached, referrer)
 	}
 
 	if err := target.Tag(ctx, manifestDesc, ref); err != nil {

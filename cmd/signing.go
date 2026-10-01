@@ -53,27 +53,26 @@ func (f *verifyFlags) register(cmd *cobra.Command) {
 	cmd.MarkFlagsMutuallyExclusive("verify", "insecure-skip-verify")
 }
 
-// verifier returns the transfer.Verifier enforcing f together with
-// baseDir's trust rules (see signature.Policy).
-func (f *verifyFlags) verifier(baseDir string, logger *slog.Logger) (transfer.Verifier, error) {
+// policy returns the signature.Policy f describes together with
+// baseDir's trust rules.
+func (f *verifyFlags) policy(baseDir string) (signature.Policy, error) {
 	if f.plugin == "" && len(f.options) > 0 {
-		return nil, fmt.Errorf("--verify-option given without --verify")
+		return signature.Policy{}, fmt.Errorf("--verify-option given without --verify")
 	}
 	if err := validateOptions("--verify-option", f.options); err != nil {
-		return nil, err
+		return signature.Policy{}, err
 	}
 
 	rules, err := signature.ReadResolved(baseDir)
 	if err != nil {
-		return nil, err
+		return signature.Policy{}, err
 	}
 
-	policy := signature.Policy{
+	return signature.Policy{
 		Verifier: signature.Plugin{Kind: f.plugin, Options: f.options},
 		Rules:    rules,
 		Skip:     f.skip,
-	}
-	return signature.NewVerifier(layout.Plugins(baseDir), policy, logger), nil
+	}, nil
 }
 
 // validateOptions requires every one of options to be "key=value", with

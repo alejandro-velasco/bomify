@@ -6,9 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
+	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // transferFlags are the flags every command moving whole packages shares:
@@ -36,10 +39,10 @@ func (f *transferFlags) logger(cmd *cobra.Command) *slog.Logger {
 	return logger
 }
 
-// options returns the transfer.Options f describes, rendering progress
-// bars on stderr unless --quiet. Call done once the transfer ends, so the
-// bars settle before anything else is written.
-func (f *transferFlags) options(cmd *cobra.Command) (opts transfer.Options, done func()) {
+// transferOptions returns the transfer.Options f describes, rendering
+// progress bars on stderr unless --quiet. Call done once the transfer
+// ends, so the bars settle before anything else is written.
+func (f *transferFlags) transferOptions(cmd *cobra.Command) (opts transfer.Options, done func()) {
 	opts.Concurrency = f.concurrency
 	if f.quiet {
 		return opts, func() {}
@@ -85,16 +88,17 @@ type restore struct {
 func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 	logger := f.logger(cmd)
 
-	verifier, err := f.verify.verifier(dataDir, logger)
+	policy, err := f.verify.policy(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	if err := f.scan.validate(); err != nil {
 		return nil, err
 	}
-	scan := &pullScanHook{flags: &f.scan, w: cmd.ErrOrStderr(), concurrency: f.concurrency, logger: logger}
+	verifier := signature.NewVerifier(layout.Plugins(dataDir), policy, logger)
+	scan := &pullScanHook{flags: &f.scan, w: cmd.ErrOrStderr(), concurrency: f.concurrency, logger: logger, policy: policy, verify: verifier}
 
-	opts, done := f.options(cmd)
+	opts, done := f.transferOptions(cmd)
 	opts.Verify, opts.Scan = verifier, scan.scan
 	return &restore{logger: logger, opts: opts, scan: scan, done: done}, nil
 }
@@ -108,24 +112,41 @@ func (r *restore) finish() error {
 }
 
 // publishFlags are the flags push and save share: transferFlags, plus
-// signing each package as it's packed.
+// signing each package as it's packed and the VEX documents to attach to
+// it.
 type publishFlags struct {
 	transferFlags
 	sign signFlags
+	vex  []string
 }
 
 func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 	f.transferFlags.register(cmd, verb, quietUsage)
 	f.sign.register(cmd)
+	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "attach this VEX document to the package: a name from \"bomify security vex add\", or a file (repeatable)")
 }
 
-// options is transferFlags.options plus the signer --sign describes.
-func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
+// transferOptions is transferFlags.transferOptions plus the signer --sign
+// describes and the VEX documents --vex names, each attached to the
+// package.
+func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
 	signer, err := f.sign.signer(logger)
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
-	opts, done := f.transferFlags.options(cmd)
-	opts.Sign = signer
+	if len(f.vex) > 0 && signer == nil {
+		logger.Warn("attaching VEX without --sign: pulls only apply a package's VEX when they verify its signature, so this VEX will be ignored", "documents", len(f.vex))
+	}
+	var attach []transfer.Attachment
+	for _, arg := range f.vex {
+		doc, err := security.ReadVEX(dataDir, arg)
+		if err != nil {
+			return transfer.Options{}, nil, fmt.Errorf("--vex %s: %w", arg, err)
+		}
+		attach = append(attach, doc.Attachment())
+	}
+
+	opts, done := f.transferFlags.transferOptions(cmd)
+	opts.Sign, opts.Attach = signer, attach
 	return opts, done, nil
 }

@@ -13,13 +13,16 @@ import (
 )
 
 // Severity is a vulnerability severity bomify can gate on, ordered from
-// least to most severe. The zero value is no severity at all: a
-// vulnerability rated only "none" or "unknown", or not rated, never
-// reaches any threshold.
+// least to most severe.
 type Severity int
 
 const (
-	SeverityInfo Severity = iota + 1
+	// SeverityNone is no severity at all, the zero value. As a
+	// vulnerability's severity (rated only "none" or "unknown", or not
+	// rated), it never reaches a threshold; as a Gate's FailOn, nothing
+	// fails.
+	SeverityNone Severity = iota
+	SeverityInfo
 	SeverityLow
 	SeverityMedium
 	SeverityHigh
@@ -34,7 +37,7 @@ var severityNames = map[Severity]string{
 	SeverityCritical: "critical",
 }
 
-// String returns s's CycloneDX name, or "none" for the zero value.
+// String returns s's CycloneDX name, or "none" for SeverityNone.
 func (s Severity) String() string {
 	if name, ok := severityNames[s]; ok {
 		return name
@@ -50,11 +53,11 @@ func ParseSeverity(s string) (Severity, error) {
 			return sev, nil
 		}
 	}
-	return 0, fmt.Errorf("unknown severity %q (want one of info, low, medium, high, critical)", s)
+	return SeverityNone, fmt.Errorf("unknown severity %q (want one of info, low, medium, high, critical)", s)
 }
 
 // severityOf maps a CycloneDX rating severity onto Severity; "none",
-// "unknown", and anything unrecognized map to the zero value.
+// "unknown", and anything unrecognized map to SeverityNone.
 func severityOf(s cdx.Severity) Severity {
 	sev, _ := ParseSeverity(string(s))
 	return sev
@@ -62,7 +65,7 @@ func severityOf(s cdx.Severity) Severity {
 
 // Gate is a vulnerability threshold: a package fails it when any of its
 // reports names a vulnerability at FailOn or above that isn't in Ignore
-// and that VEX doesn't exempt. A zero FailOn gates nothing.
+// and that VEX doesn't exempt. A FailOn of SeverityNone gates nothing.
 type Gate struct {
 	FailOn Severity
 	// Ignore lists vulnerability IDs (e.g. "CVE-2024-1234") never to fail
@@ -113,7 +116,7 @@ type ComponentReport struct {
 // severity (e.g. EPSS or CISA KEV scores) don't count either way.
 func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 	var e Evaluation
-	if g.FailOn == 0 {
+	if g.FailOn == SeverityNone {
 		return e
 	}
 
@@ -161,7 +164,7 @@ func compareFindings(a, b Finding) int {
 }
 
 func highestSeverity(vuln cdx.Vulnerability) Severity {
-	var highest Severity
+	highest := SeverityNone
 	if vuln.Ratings == nil {
 		return highest
 	}

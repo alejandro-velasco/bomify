@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,12 +9,16 @@ import (
 	"log/slog"
 	"slices"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // gateFlags are the --fail-on/--ignore/--vex flags, plus a skip flag,
@@ -120,7 +125,7 @@ func (f *gateFlags) gateFor(ref string, rule security.Rule, matched bool, logger
 	}
 
 	if f.skip {
-		if g.FailOn != 0 {
+		if g.FailOn != security.SeverityNone {
 			logger.Warn("skipping vulnerability gate required by scan policy", "reference", ref, "match", rule.Match, "failOn", rule.FailOn)
 		}
 		return security.Gate{}, nil
@@ -148,14 +153,14 @@ func (f *gateFlags) flagGate() (security.Gate, error) {
 
 // loadVEX loads ruleVEX's documents (stored copies' paths), then --vex's — so a --vex statement
 // wins over a rule's where they disagree — or returns nil if there are
-// none. With no threshold (failOn 0) nothing can fail anyway, so it
+// none. With no threshold (SeverityNone) nothing can fail anyway, so it
 // warns that the documents won't change anything.
 func (f *gateFlags) loadVEX(ruleVEX []string, failOn security.Severity, ref string, logger *slog.Logger) (*security.VEX, error) {
-	paths := append(slices.Clone(ruleVEX), f.vex...)
+	paths := slices.Concat(ruleVEX, f.vex)
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	if failOn == 0 {
+	if failOn == security.SeverityNone {
 		logger.Warn("VEX given, but no --fail-on or scan policy threshold applies, so nothing can fail", "reference", ref)
 	}
 	return security.LoadVEX(paths)
@@ -223,6 +228,11 @@ type pullScanHook struct {
 	concurrency int
 	logger      *slog.Logger
 	collected   []security.ComponentReport
+	// policy and verify are the pull's signature verification: VEX the
+	// package's publisher attached counts only where they verify it (see
+	// security.PublishedVEX).
+	policy signature.Policy
+	verify transfer.Verifier
 }
 
 // scan decides, for the package ref, whether to scan it and what gates
@@ -231,13 +241,15 @@ type pullScanHook struct {
 //  1. --skip-scan: nothing (with a warning if the rule would have
 //     scanned).
 //  2. --scan, else the rule's scanner.
-//  3. The gate, from --fail-on, else the rule's threshold (see gateFor).
+//  3. The gate, from --fail-on, else the rule's threshold (see gateFor),
+//     plus VEX the package's publisher attached, when this pull verifies
+//     it (see security.PublishedVEX).
 //
 // It then scans fresh and gates. A scan here is only ever a gate, so a
 // scanner with no threshold, or a threshold with no scanner, is an error
 // rather than a scan that can't refuse anything or a gate on the
 // publisher's own reports.
-func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) error {
+func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbomData []byte) error {
 	f := s.flags
 	if err := f.validate(); err != nil {
 		return err
@@ -255,22 +267,36 @@ func (s *pullScanHook) scan(_ context.Context, ref string, sbomData []byte) erro
 		return nil
 	}
 
-	scanner := f.scanner
-	if scanner == "" && applies {
-		scanner = rule.Scanner
+	// --scan wins over the rule's scanner, which only counts if the rule
+	// applies on pull.
+	var ruleScanner string
+	if applies {
+		ruleScanner = rule.Scanner
 	}
+	scanner := cmp.Or(f.scanner, ruleScanner)
+
 	gate, err := f.gateFor(ref, rule, applies, s.logger)
 	if err != nil {
 		return err
 	}
+
+	scans, gates := scanner != "", gate.FailOn != security.SeverityNone
 	switch {
-	case scanner == "" && gate.FailOn == 0:
+	case !scans && !gates:
 		return nil
-	case scanner == "":
+	case !scans:
 		return errors.New("--fail-on needs --scan <type>: a pull always scans fresh, never trusting the reports a package carries")
-	case gate.FailOn == 0:
+	case !gates:
 		return errors.New("--scan needs --fail-on (or a matching rule's threshold) to refuse anything; to just scan, run \"bomify security scan\" after pulling")
 	}
+
+	// The publisher's VEX applies first, so the rule's stored VEX wins where
+	// they disagree.
+	verify := s.verify
+	if !s.policy.Verifies(ref) {
+		verify = nil
+	}
+	gate.VEX = security.CombineVEX(security.PublishedVEX(ctx, target, ref, manifest, verify, s.logger), gate.VEX)
 
 	bom, err := sbom.LoadBytes(sbomData)
 	if err != nil {

@@ -128,3 +128,11 @@ func (p Policy) For(ref string, logger *slog.Logger) (Plugin, bool) {
 	}
 	return Plugin{}, false
 }
+
+// Verifies reports whether ref must carry a verified signature at all —
+// what For decides, without logging — so a caller can tell a package
+// that verified from one nothing asked to verify.
+func (p Policy) Verifies(ref string) bool {
+	_, ok := p.For(ref, slog.New(slog.DiscardHandler))
+	return ok
+}

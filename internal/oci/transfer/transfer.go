@@ -53,6 +53,16 @@ const VulnerabilityReportMediaType = "application/vnd.bomify.component.vulnerabi
 // its digest — and so every signature over it — unchanged by a re-scan.
 const VulnerabilityReportsArtifactType = "application/vnd.bomify.vulnerabilities.v1+json"
 
+// VEXArtifactType identifies an OCI referrer of a bomify package carrying
+// one VEX document its publisher attached (see Attach and
+// internal/security).
+const VEXArtifactType = "application/vnd.bomify.vex.v1+json"
+
+// VEXDocumentMediaType identifies a VEX referrer's one layer: the
+// document itself, in whichever format it was written (OpenVEX, CSAF, or
+// CycloneDX VEX, told apart by content).
+const VEXDocumentMediaType = "application/vnd.bomify.vex.document.v1"
+
 // ProgressFunc is called once per blob (the config, then each layer) before
 // it starts transferring, naming it and giving its total size in bytes. The
 // returned writer receives the raw bytes as they're transferred, for

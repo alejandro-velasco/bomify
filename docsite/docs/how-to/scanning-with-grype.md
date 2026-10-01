@@ -134,3 +134,16 @@ bomify security policy create grype --match registry.example.com/team --fail-on 
 
 Reports travel with pushed and saved packages. Re-scanning and pushing
 again refreshes them without changing the package's digest.
+
+## 6. Publish VEX with a package
+
+Attach your VEX documents (a stored name or a file) when you publish, so
+the statements travel with the package:
+
+```sh
+bomify push registry.example.com/team/myapp:1.0 --sign sigstore --sign-option key=cosign.key --vex myapp
+```
+
+A consumer's `--scan --fail-on` pull honors them only if the pull
+verifies signatures and each document's own signature verifies, so sign
+them. The consumer's own VEX wins where the two disagree.

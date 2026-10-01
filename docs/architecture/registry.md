@@ -14,8 +14,8 @@ OCI artifact (artifact type `application/vnd.bomify.package.v1+json`):
   `land.bomify.purl`. `transfer.WriteTar` zeroes mtimes and uid/gid, so
   the digest depends only on names, modes, and content; otherwise
   re-pushing a component bomify had pulled would re-upload it.
-- **Signatures** and the **report referrer** are OCI referrers, so
-  neither changes the package digest.
+- **Signatures**, the **report referrer**, and **VEX referrers** are OCI
+  referrers, so none changes the package digest.
 
 ![Package layout in a registry](../diagrams/registry-layout.svg)
 

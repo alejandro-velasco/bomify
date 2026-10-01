@@ -3,8 +3,10 @@ package security
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
@@ -59,33 +61,62 @@ var cdxStatuses = map[cdx.ImpactAnalysisState]vex.Status{
 	cdx.IASInTriage:             vex.StatusUnderInvestigation,
 }
 
-// LoadVEX reads every document in paths, in order: OpenVEX (JSON or
+// VEXDocument is a VEX document's content and a name for it: its path,
+// a stored name, or where a package's publisher attached it. The name
+// labels the document's statements (see SourcedStatement).
+type VEXDocument struct {
+	Name string
+	Data []byte
+}
+
+// LoadVEX reads every document in paths, in order, as LoadVEXDocuments
+// does, each named by its path.
+func LoadVEX(paths []string) (*VEX, error) {
+	docs := make([]VEXDocument, 0, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("load VEX %s: %w", path, err)
+		}
+		docs = append(docs, VEXDocument{Name: path, Data: data})
+	}
+	return LoadVEXDocuments(docs)
+}
+
+// LoadVEXDocuments reads every one of docs, in order: OpenVEX (JSON or
 // YAML, any version) and CSAF are read by go-vex; CycloneDX VEX — a
 // CycloneDX JSON BOM whose vulnerabilities carry an analysis — is
 // converted into the same statements. When several statements cover the
 // same vulnerability in the same component, the last one wins:
 // documents in the order given, and, within an OpenVEX document,
 // statements by timestamp.
-func LoadVEX(paths []string) (*VEX, error) {
+func LoadVEXDocuments(docs []VEXDocument) (*VEX, error) {
 	v := &VEX{}
-	for _, path := range paths {
-		statements, err := loadStatements(path)
+	for _, doc := range docs {
+		statements, err := loadStatements(doc.Data)
 		if err != nil {
-			return nil, fmt.Errorf("load VEX %s: %w", path, err)
+			return nil, fmt.Errorf("load VEX %s: %w", doc.Name, err)
 		}
 		for _, s := range statements {
-			v.statements = append(v.statements, SourcedStatement{Statement: s, Source: path})
+			v.statements = append(v.statements, SourcedStatement{Statement: s, Source: doc.Name})
 		}
 	}
 	return v, nil
 }
 
-func loadStatements(path string) ([]vex.Statement, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+// CombineVEX returns the statements of first and then of then, so that
+// where they disagree then's win. Either may be nil.
+func CombineVEX(first, then *VEX) *VEX {
+	if first == nil {
+		return then
 	}
+	if then == nil {
+		return first
+	}
+	return &VEX{statements: append(slices.Clone(first.statements), then.statements...)}
+}
 
+func loadStatements(data []byte) ([]vex.Statement, error) {
 	var probe struct {
 		BOMFormat string `json:"bomFormat"`
 	}
@@ -93,7 +124,19 @@ func loadStatements(path string) ([]vex.Statement, error) {
 		return cycloneDXStatements(data)
 	}
 
-	doc, err := vex.Open(path)
+	// go-vex only detects a document's format (OpenVEX versions, YAML,
+	// CSAF) when opening a file.
+	f, err := os.CreateTemp("", "bomify-vex-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(f.Name())
+	_, writeErr := f.Write(data)
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		return nil, fmt.Errorf("write temp file: %w", err)
+	}
+
+	doc, err := vex.Open(f.Name())
 	if err != nil {
 		return nil, fmt.Errorf("neither CycloneDX VEX nor a document go-vex reads (OpenVEX, CSAF): %w", err)
 	}
