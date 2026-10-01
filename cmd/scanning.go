@@ -240,7 +240,9 @@ type pullScanHook struct {
 //  1. --skip-scan: nothing (with a warning if the rule would have
 //     scanned).
 //  2. --scan, else the rule's scanner.
-//  3. The gate, from --fail-on, else the rule's threshold (see gateFor).
+//  3. The gate, from --fail-on, else the rule's threshold (see gateFor),
+//     plus VEX the package's publisher attached, when this pull verifies
+//     it (see security.PublishedVEX).
 //
 // It then scans fresh and gates. A scan here is only ever a gate, so a
 // scanner with no threshold, or a threshold with no scanner, is an error
@@ -281,8 +283,8 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 		return errors.New("--scan needs --fail-on (or a matching rule's threshold) to refuse anything; to just scan, run \"bomify security scan\" after pulling")
 	}
 
-	// The publisher's VEX applies first, so the rule's and --vex's own win
-	// where they disagree.
+	// The publisher's VEX applies first, so the rule's stored VEX wins where
+	// they disagree.
 	verify := s.verify
 	if !s.policy.Verifies(ref) {
 		verify = nil

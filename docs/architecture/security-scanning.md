@@ -170,7 +170,7 @@ A scan on pull honors them (`security.PublishedVEX`) only when:
 2. each VEX referrer passes the same `transfer.Verifier` itself.
    Unsigned or untrusted ones are skipped with a warning.
 
-Trusted documents apply oldest first, then the rule's stored VEX and
-`--vex` (`security.CombineVEX`), so the consumer's own statements win.
+Trusted documents apply oldest first, then the rule's stored VEX
+(`security.CombineVEX`), so the consumer's own statements win.
 They're used by that gate only and never stored. Files, stored copies,
 and pulled documents all load through `security.LoadVEXDocuments`.
