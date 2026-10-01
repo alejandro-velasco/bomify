@@ -159,7 +159,8 @@ referrer (`transfer.Attach`): artifact type
 `application/vnd.bomify.vex.v1+json`, one layer holding the document as
 written, dated to the nanosecond so documents from one push keep their
 order. A document the package already carries isn't attached again,
-and with `--sign` each new referrer is signed like the package. Nothing
+and with `--sign` each new referrer is signed like the package; without
+it, the push warns that pulls will ignore the VEX (see below). Nothing
 is attached implicitly; a rule's VEX is never published unless named.
 
 A scan on pull honors them (`security.PublishedVEX`) only when:

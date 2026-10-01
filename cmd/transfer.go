@@ -134,6 +134,9 @@ func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) 
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
+	if len(f.vex) > 0 && signer == nil {
+		logger.Warn("attaching VEX without --sign: pulls only apply a package's VEX when they verify its signature, so this VEX will be ignored", "documents", len(f.vex))
+	}
 	var attach []transfer.Attachment
 	for _, arg := range f.vex {
 		doc, err := security.ReadVEX(dataDir, arg)
