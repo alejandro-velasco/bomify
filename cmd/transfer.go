@@ -39,10 +39,10 @@ func (f *transferFlags) logger(cmd *cobra.Command) *slog.Logger {
 	return logger
 }
 
-// options returns the transfer.Options f describes, rendering progress
-// bars on stderr unless --quiet. Call done once the transfer ends, so the
-// bars settle before anything else is written.
-func (f *transferFlags) options(cmd *cobra.Command) (opts transfer.Options, done func()) {
+// transferOptions returns the transfer.Options f describes, rendering
+// progress bars on stderr unless --quiet. Call done once the transfer
+// ends, so the bars settle before anything else is written.
+func (f *transferFlags) transferOptions(cmd *cobra.Command) (opts transfer.Options, done func()) {
 	opts.Concurrency = f.concurrency
 	if f.quiet {
 		return opts, func() {}
@@ -98,7 +98,7 @@ func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 	verifier := signature.NewVerifier(layout.Plugins(dataDir), policy, logger)
 	scan := &pullScanHook{flags: &f.scan, w: cmd.ErrOrStderr(), concurrency: f.concurrency, logger: logger, policy: policy, verify: verifier}
 
-	opts, done := f.options(cmd)
+	opts, done := f.transferOptions(cmd)
 	opts.Verify, opts.Scan = verifier, scan.scan
 	return &restore{logger: logger, opts: opts, scan: scan, done: done}, nil
 }
@@ -126,9 +126,10 @@ func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "attach this VEX document to the package: a name from \"bomify security vex add\", or a file (repeatable)")
 }
 
-// options is transferFlags.options plus the signer --sign describes and
-// the VEX documents --vex names, each attached to the package.
-func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
+// transferOptions is transferFlags.transferOptions plus the signer --sign
+// describes and the VEX documents --vex names, each attached to the
+// package.
+func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
 	signer, err := f.sign.signer(logger)
 	if err != nil {
 		return transfer.Options{}, nil, err
@@ -142,7 +143,7 @@ func (f *publishFlags) options(cmd *cobra.Command, logger *slog.Logger) (transfe
 		attach = append(attach, doc.Attachment())
 	}
 
-	opts, done := f.transferFlags.options(cmd)
+	opts, done := f.transferFlags.transferOptions(cmd)
 	opts.Sign, opts.Attach = signer, attach
 	return opts, done, nil
 }

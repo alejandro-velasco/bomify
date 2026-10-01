@@ -66,7 +66,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 
 	// Resolved before creating --output, so a bad --sign leaves no empty
 	// tarball behind.
-	transferOpts, done, err := opts.options(cmd, logger)
+	transferOpts, done, err := opts.transferOptions(cmd, logger)
 	if err != nil {
 		return err
 	}

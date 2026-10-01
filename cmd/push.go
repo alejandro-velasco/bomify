@@ -93,7 +93,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
-	transferOpts, done, err := opts.options(cmd, logger)
+	transferOpts, done, err := opts.transferOptions(cmd, logger)
 	if err != nil {
 		return err
 	}
