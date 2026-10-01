@@ -125,7 +125,7 @@ func (f *gateFlags) gateFor(ref string, rule security.Rule, matched bool, logger
 	}
 
 	if f.skip {
-		if g.FailOn != 0 {
+		if g.FailOn != security.SeverityNone {
 			logger.Warn("skipping vulnerability gate required by scan policy", "reference", ref, "match", rule.Match, "failOn", rule.FailOn)
 		}
 		return security.Gate{}, nil
@@ -153,14 +153,14 @@ func (f *gateFlags) flagGate() (security.Gate, error) {
 
 // loadVEX loads ruleVEX's documents (stored copies' paths), then --vex's — so a --vex statement
 // wins over a rule's where they disagree — or returns nil if there are
-// none. With no threshold (failOn 0) nothing can fail anyway, so it
+// none. With no threshold (SeverityNone) nothing can fail anyway, so it
 // warns that the documents won't change anything.
 func (f *gateFlags) loadVEX(ruleVEX []string, failOn security.Severity, ref string, logger *slog.Logger) (*security.VEX, error) {
 	paths := append(slices.Clone(ruleVEX), f.vex...)
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	if failOn == 0 {
+	if failOn == security.SeverityNone {
 		logger.Warn("VEX given, but no --fail-on or scan policy threshold applies, so nothing can fail", "reference", ref)
 	}
 	return security.LoadVEX(paths)
@@ -280,7 +280,7 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 		return err
 	}
 
-	scans, gates := scanner != "", gate.FailOn != 0
+	scans, gates := scanner != "", gate.FailOn != security.SeverityNone
 	switch {
 	case !scans && !gates:
 		return nil
