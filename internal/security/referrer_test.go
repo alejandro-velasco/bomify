@@ -96,7 +96,7 @@ func exists(t *testing.T, store *oci.Store, desc ocispec.Descriptor) bool {
 
 func TestAttachIsDatedByNewestReport(t *testing.T) {
 	f := newPruneFixture(t)
-	referrers, err := Referrers(context.Background(), f.store, f.manifest)
+	referrers, err := ReportReferrers(context.Background(), f.store, f.manifest)
 	if err != nil {
 		t.Fatalf("Referrers: %v", err)
 	}

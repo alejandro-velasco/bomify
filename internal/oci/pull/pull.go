@@ -184,12 +184,12 @@ func filterLayers(descs []ocispec.Descriptor, keep func(purl string) bool) []oci
 }
 
 // restoreReports restores the reports carried by the newest vulnerability
-// report referrer of manifest (see security.Referrers) — the one most
+// report referrer of manifest (see security.ReportReferrers) — the one most
 // recently scanned — into dataDir, once a non-nil verify accepts that
 // referrer. A package with no report referrer restores none, and no
 // error; any error is why none were restored.
 func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, dataDir string, concurrency int, progress transfer.ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) ([]Layer, error) {
-	referrers, err := security.Referrers(ctx, target, manifest)
+	referrers, err := security.ReportReferrers(ctx, target, manifest)
 	if err != nil {
 		return nil, err
 	}

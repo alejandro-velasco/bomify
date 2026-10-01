@@ -156,7 +156,7 @@ func (f *gateFlags) flagGate() (security.Gate, error) {
 // none. With no threshold (SeverityNone) nothing can fail anyway, so it
 // warns that the documents won't change anything.
 func (f *gateFlags) loadVEX(ruleVEX []string, failOn security.Severity, ref string, logger *slog.Logger) (*security.VEX, error) {
-	paths := append(slices.Clone(ruleVEX), f.vex...)
+	paths := slices.Concat(ruleVEX, f.vex)
 	if len(paths) == 0 {
 		return nil, nil
 	}

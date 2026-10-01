@@ -126,7 +126,7 @@ orphans its signature.
   reproduces it byte for byte. With `--sign` it's signed like the
   package.
 - **Restore**: after restoring the package, `pull` takes the newest
-  report referrer (`security.Referrers`), checks it with the same
+  report referrer (`security.ReportReferrers`), checks it with the same
   `transfer.Verifier` as the package, and writes its reports to
   `vulnerabilities/`. Reports are advisory: any failure only skips them
   (`Result.ReportsSkipped`, plus a warning).

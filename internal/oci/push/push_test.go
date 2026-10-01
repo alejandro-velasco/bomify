@@ -351,7 +351,7 @@ func TestPushAttachesReportsAsReferrer(t *testing.T) {
 			t.Fatalf("package manifest has %d layers, want only the %d component layers", len(manifest.Layers), n)
 		}
 
-		referrers, err := security.Referrers(ctx, store, result.Manifest)
+		referrers, err := security.ReportReferrers(ctx, store, result.Manifest)
 		if err != nil {
 			t.Fatalf("Referrers: %v", err)
 		}
@@ -428,7 +428,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		t.Errorf("re-scan changed the package digest from %s to %s", first.ManifestDigest, rescanned.ManifestDigest)
 	}
 
-	referrers, err := security.Referrers(ctx, store, first.Manifest)
+	referrers, err := security.ReportReferrers(ctx, store, first.Manifest)
 	if err != nil {
 		t.Fatalf("Referrers: %v", err)
 	}

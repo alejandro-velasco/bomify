@@ -128,9 +128,9 @@ func reportProvenance(report *cdx.BOM) (scannedAt time.Time, scanner string) {
 	return scannedAt, scanner
 }
 
-// Referrers lists manifest's vulnerability report referrers in target,
+// ReportReferrers lists manifest's vulnerability report referrers in target,
 // newest first (see transfer.Referrers).
-func Referrers(ctx context.Context, target content.ReadOnlyStorage, manifest ocispec.Descriptor) ([]ocispec.Descriptor, error) {
+func ReportReferrers(ctx context.Context, target content.ReadOnlyStorage, manifest ocispec.Descriptor) ([]ocispec.Descriptor, error) {
 	return transfer.Referrers(ctx, target, manifest, transfer.VulnerabilityReportsArtifactType)
 }
 
@@ -148,7 +148,7 @@ type PruneTarget interface {
 }
 
 // PruneReferrers deletes all but the newest keep of manifest's
-// vulnerability report referrers in target (see Referrers), each along
+// vulnerability report referrers in target (see ReportReferrers), each along
 // with anything referring to it in turn — typically its signature — so
 // deleting a report never leaves an orphaned signature behind. keep < 1
 // deletes nothing. Only VulnerabilityReportsArtifactType referrers are
@@ -163,7 +163,7 @@ func PruneReferrers(ctx context.Context, target PruneTarget, manifest ocispec.De
 		return nil, nil
 	}
 
-	referrers, err := Referrers(ctx, target, manifest)
+	referrers, err := ReportReferrers(ctx, target, manifest)
 	if err != nil {
 		return nil, err
 	}
