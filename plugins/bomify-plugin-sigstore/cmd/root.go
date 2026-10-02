@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	return pluginlib.NewRootCommand("sigstore", "bomify signing plugin producing Sigstore bundles",
 		pluginlib.SignatureCommand(signer{}, pluginlib.SigningHelp{
 			Sign:    "Sign a payload, printing a Sigstore bundle as the envelope",
+			Attest:  "Sign an in-toto statement, printing a Sigstore bundle holding a DSSE envelope",
 			Verify:  "Verify a Sigstore bundle envelope over a payload",
 			Options: "key, or for keyless identity-token, certificate-identity[-regexp], certificate-oidc-issuer[-regexp]",
 		}))
@@ -38,6 +39,23 @@ func (signer) Sign(ctx context.Context, req pluginlib.SignRequest) (pluginlib.Si
 		ArtifactType: sigstore.BundleMediaType,
 		MediaType:    sigstore.BundleMediaType,
 		Envelope:     envelope,
+	}, nil
+}
+
+func (signer) Attest(ctx context.Context, req pluginlib.AttestRequest) (pluginlib.SignResult, error) {
+	opts, err := sigstore.ParseOptions(req.Options)
+	if err != nil {
+		return pluginlib.SignResult{}, err
+	}
+	envelope, err := sigstore.Attest(ctx, req.Statement, opts)
+	if err != nil {
+		return pluginlib.SignResult{}, err
+	}
+	return pluginlib.SignResult{
+		ArtifactType: sigstore.BundleMediaType,
+		MediaType:    sigstore.BundleMediaType,
+		Envelope:     envelope,
+		Annotations:  sigstore.AttestationAnnotations(req.Statement),
 	}, nil
 }
 

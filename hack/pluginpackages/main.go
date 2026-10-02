@@ -30,7 +30,6 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"github.com/package-url/packageurl-go"
 
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
@@ -218,16 +217,16 @@ func writeSBOM(path, kind, version string, binaries []binary) error {
 
 // component describes b as kind's plugin binary.
 func component(kind, version string, b binary) cdx.Component {
-	purl := packageurl.NewPackageURL(plugin.PurlType, "", kind, version, packageurl.QualifiersFromMap(map[string]string{
+	purl := plugin.Purl(kind, version, map[string]string{
 		"os":   b.platform.os,
 		"arch": b.platform.arch,
-	}), "")
+	})
 
 	return cdx.Component{
 		Type:               cdx.ComponentTypeApplication,
 		Name:               plugin.BinaryName(kind),
 		Version:            version,
-		PackageURL:         purl.ToString(),
+		PackageURL:         purl,
 		Hashes:             &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: b.sha256}},
 		ExternalReferences: &[]cdx.ExternalReference{{Type: cdx.ERTypeDistribution, URL: b.path}},
 	}

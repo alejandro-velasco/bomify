@@ -126,15 +126,27 @@ func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 	cmd.Flags().StringArrayVar(&f.vex, "vex", nil, "attach this VEX document to the package: a name from \"bomify security vex add\", or a file (repeatable)")
 }
 
-// transferOptions is transferFlags.transferOptions plus the signer --sign
-// describes and the VEX documents --vex names, each attached to the
-// package.
+// transferOptions is transferFlags.transferOptions plus a signer and
+// attester from the plugin --sign names, and the VEX documents --vex
+// names, each attached to the package.
 func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
-	signer, err := f.sign.signer(logger)
+	p, signs, err := f.sign.plugin()
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
-	if len(f.vex) > 0 && signer == nil {
+	var (
+		signer   transfer.Signer
+		attester transfer.Attester
+	)
+	if signs {
+		if signer, err = signature.NewSigner(layout.Plugins(dataDir), p, logger); err != nil {
+			return transfer.Options{}, nil, err
+		}
+		if attester, err = signature.NewAttester(layout.Plugins(dataDir), p, logger); err != nil {
+			return transfer.Options{}, nil, err
+		}
+	}
+	if len(f.vex) > 0 && !signs {
 		logger.Warn("attaching VEX without --sign: pulls only apply a package's VEX when they verify its signature, so this VEX will be ignored", "documents", len(f.vex))
 	}
 	var attach []transfer.Attachment
@@ -147,6 +159,6 @@ func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) 
 	}
 
 	opts, done := f.transferFlags.transferOptions(cmd)
-	opts.Sign, opts.Attach = signer, attach
+	opts.Sign, opts.Attest, opts.Attach = signer, attester, attach
 	return opts, done, nil
 }

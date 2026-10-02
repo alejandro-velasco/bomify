@@ -58,9 +58,10 @@ func PushReferrer(ctx context.Context, target oras.Target, subject ocispec.Descr
 	return referrer, nil
 }
 
-// Referrers lists subject's referrers of artifactType in target, newest
-// first by their created annotation (ties broken by digest, so the order
-// is stable). A target that can't list referrers at all is an error.
+// Referrers lists subject's referrers of artifactType (of any type, if
+// empty) in target, newest first by their created annotation (ties broken
+// by digest, so the order is stable). A target that can't list referrers
+// at all is an error.
 func Referrers(ctx context.Context, target content.ReadOnlyStorage, subject ocispec.Descriptor, artifactType string) ([]ocispec.Descriptor, error) {
 	graph, ok := target.(content.ReadOnlyGraphStorage)
 	if !ok {
@@ -72,9 +73,11 @@ func Referrers(ctx context.Context, target content.ReadOnlyStorage, subject ocis
 		return nil, fmt.Errorf("list %s referrers of %s: %w", artifactType, subject.Digest, err)
 	}
 	// A registry's Referrers API may ignore the artifactType filter.
-	referrers = slices.DeleteFunc(referrers, func(d ocispec.Descriptor) bool {
-		return d.ArtifactType != artifactType
-	})
+	if artifactType != "" {
+		referrers = slices.DeleteFunc(referrers, func(d ocispec.Descriptor) bool {
+			return d.ArtifactType != artifactType
+		})
+	}
 
 	slices.SortStableFunc(referrers, func(a, b ocispec.Descriptor) int {
 		if c := createdAt(b).Compare(createdAt(a)); c != 0 {

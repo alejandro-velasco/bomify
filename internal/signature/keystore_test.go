@@ -113,7 +113,7 @@ func TestKeyOptionRules(t *testing.T) {
 	}
 
 	// The policy hands those options to the verifier.
-	p, required := (Policy{Rules: rules}).For("registry.example.com/app:1", nil)
+	p, required := (Policy{Rules: rules}).For("registry.example.com/app:1")
 	if !required || !reflect.DeepEqual(p.Options, want) {
 		t.Errorf("Policy.For = %+v, %v; want options %v", p, required, want)
 	}

@@ -7,13 +7,21 @@ import (
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// signPayload invokes the signing plugin's "signature sign" over the payload in
-// payloadFile, on behalf of the package being published as ref (see
-// plugins/SIGNING-CONTRACT.md). Each of options ("key=value") is passed
-// through, unparsed, as its own --option flag.
+// signPayload invokes the signing plugin's "signature sign" over the
+// payload in payloadFile, on behalf of the package being published as ref
+// (see plugins/SIGNING-CONTRACT.md). Each of options ("key=value") is
+// passed through, unparsed, as its own --option flag.
 func signPayload(path, payloadFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
 	logger.Debug("signing", "path", path, "reference", ref)
 	args := append([]string{"signature", "sign", "--payload", payloadFile, "--reference", ref}, optionArgs(options)...)
+	return plugin.Invoke[pluginlib.SignResult](path, args...)
+}
+
+// attestStatement invokes the signing plugin's "signature attest" over
+// the in-toto statement in statementFile, as signPayload does.
+func attestStatement(path, statementFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
+	logger.Debug("attesting", "path", path, "reference", ref)
+	args := append([]string{"signature", "attest", "--statement", statementFile, "--reference", ref}, optionArgs(options)...)
 	return plugin.Invoke[pluginlib.SignResult](path, args...)
 }
 

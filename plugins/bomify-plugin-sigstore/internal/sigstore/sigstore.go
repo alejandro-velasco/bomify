@@ -14,11 +14,13 @@ package sigstore
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/sign"
@@ -33,9 +35,22 @@ import (
 // v0.3 bundle.
 const BundleMediaType = "application/vnd.dev.sigstore.bundle.v0.3+json"
 
-// Sign signs payload — with the private key opts names, or keyless if it
-// names none — returning the resulting Sigstore bundle as JSON.
+// Sign signs payload's raw bytes — with the private key opts names, or
+// keyless if it names none — returning the resulting Sigstore bundle as
+// JSON.
 func Sign(ctx context.Context, payload []byte, opts Options) ([]byte, error) {
+	return signBundle(ctx, &sign.PlainData{Data: payload}, opts)
+}
+
+// Attest signs statement, an in-toto statement, as Sign does, but as a
+// DSSE envelope: the bundle form cosign and gh attestation verify read.
+func Attest(ctx context.Context, statement []byte, opts Options) ([]byte, error) {
+	return signBundle(ctx, &sign.DSSEData{Data: statement, PayloadType: pluginlib.InTotoPayloadType}, opts)
+}
+
+// signBundle signs content with the key or keyless identity opts names,
+// returning the Sigstore bundle as JSON.
+func signBundle(ctx context.Context, content sign.Content, opts Options) ([]byte, error) {
 	var (
 		kp         sign.Keypair
 		bundleOpts = sign.BundleOptions{Context: ctx}
@@ -58,12 +73,26 @@ func Sign(ctx context.Context, payload []byte, opts Options) ([]byte, error) {
 		kp = ephemeral
 	}
 
-	pb, err := sign.Bundle(&sign.PlainData{Data: payload}, kp, bundleOpts)
+	pb, err := sign.Bundle(content, kp, bundleOpts)
 	if err != nil {
 		return nil, fmt.Errorf("sign: %w", err)
 	}
 
 	return protojson.Marshal(pb)
+}
+
+// AttestationAnnotations returns the referrer annotations Sigstore's own
+// tools (cosign, gh attestation) use to find an Attest bundle: that it
+// holds a DSSE envelope and, if statement names one, its predicate type.
+func AttestationAnnotations(statement []byte) map[string]string {
+	annotations := map[string]string{"dev.sigstore.bundle.content": "dsse-envelope"}
+	var s struct {
+		PredicateType string `json:"predicateType"`
+	}
+	if json.Unmarshal(statement, &s) == nil && s.PredicateType != "" {
+		annotations["dev.sigstore.bundle.predicateType"] = s.PredicateType
+	}
+	return annotations
 }
 
 // keylessBundleOptions points opts at the public-good Sigstore instance's

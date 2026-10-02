@@ -2,40 +2,37 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/layout"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // signFlags are the --sign/--sign-option flags push and save share.
 type signFlags struct {
-	plugin  string
+	kind    string
 	options []string
 }
 
 func (f *signFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.plugin, "sign", "", "sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer")
+	cmd.Flags().StringVar(&f.kind, "sign", "", "sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer")
 	cmd.Flags().StringArrayVar(&f.options, "sign-option", nil, "a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)")
 }
 
-// signer returns the transfer.Signer f describes, or nil if --sign wasn't
-// given.
-func (f *signFlags) signer(logger *slog.Logger) (transfer.Signer, error) {
-	if f.plugin == "" {
+// plugin returns the signing plugin --sign and --sign-option describe,
+// with ok false if --sign wasn't given.
+func (f *signFlags) plugin() (p signature.Plugin, ok bool, err error) {
+	if f.kind == "" {
 		if len(f.options) > 0 {
-			return nil, fmt.Errorf("--sign-option given without --sign")
+			return signature.Plugin{}, false, fmt.Errorf("--sign-option given without --sign")
 		}
-		return nil, nil
+		return signature.Plugin{}, false, nil
 	}
 	if err := validateOptions("--sign-option", f.options); err != nil {
-		return nil, err
+		return signature.Plugin{}, false, err
 	}
-	return signature.NewSigner(layout.Plugins(dataDir), signature.Plugin{Kind: f.plugin, Options: f.options}, logger)
+	return signature.Plugin{Kind: f.kind, Options: f.options}, true, nil
 }
 
 // verifyFlags are the --verify/--verify-option/--insecure-skip-verify

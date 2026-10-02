@@ -166,7 +166,7 @@ is attached implicitly; a rule's VEX is never published unless named.
 A scan on pull honors them (`security.PublishedVEX`) only when:
 
 1. the pull verifies signatures (`--verify` or a matching trust rule,
-   `signature.Policy.Verifies`), since VEX only ever exempts, and
+   `signature.Policy.For`), since VEX only ever exempts, and
    anyone who can push could otherwise silence any finding; and
 2. each VEX referrer passes the same `transfer.Verifier` itself.
    Unsigned or untrusted ones are skipped with a warning.

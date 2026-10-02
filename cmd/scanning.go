@@ -293,7 +293,7 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 	// The publisher's VEX applies first, so the rule's stored VEX wins where
 	// they disagree.
 	verify := s.verify
-	if !s.policy.Verifies(ref) {
+	if _, verifies := s.policy.For(ref); !verifies {
 		verify = nil
 	}
 	gate.VEX = security.CombineVEX(security.PublishedVEX(ctx, target, ref, manifest, verify, s.logger), gate.VEX)
