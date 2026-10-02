@@ -4,6 +4,8 @@ on:
   push:
     branches:
     - main
+    - alpha-release
+    - beta-release
     - feature/**
   pull_request:
 
@@ -36,4 +38,5 @@ jobs:
       - name: Build container
         run: make build-container
 
-# Releasing happens in release.yml, once this workflow passes on main.
+# Releasing happens in release.yml, once this workflow passes on a release
+# branch.
