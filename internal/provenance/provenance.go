@@ -14,6 +14,12 @@ import (
 	"sync"
 	"time"
 
+	slsa "github.com/in-toto/attestation/go/predicates/provenance/v1"
+	intoto "github.com/in-toto/attestation/go/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/alejandro-velasco/bomify/internal/buildinfo"
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -21,8 +27,6 @@ import (
 )
 
 const (
-	// StatementType is the in-toto statement type.
-	StatementType = "https://in-toto.io/Statement/v1"
 	// PredicateType is the SLSA provenance predicate type.
 	PredicateType = "https://slsa.dev/provenance/v1"
 	// MediaType is the media type of an in-toto statement, and the DSSE
@@ -36,74 +40,25 @@ const (
 	BuilderID = "https://github.com/alejandro-velasco/bomify"
 )
 
-// Predicate is a SLSA v1 provenance predicate.
-type Predicate struct {
-	BuildDefinition BuildDefinition `json:"buildDefinition"`
-	RunDetails      RunDetails      `json:"runDetails"`
-}
-
-type BuildDefinition struct {
-	BuildType            string               `json:"buildType"`
-	ExternalParameters   ExternalParameters   `json:"externalParameters"`
-	ResolvedDependencies []ResourceDescriptor `json:"resolvedDependencies,omitempty"`
-}
-
-// ExternalParameters are what the user asked bomify build to do.
-type ExternalParameters struct {
-	SBOM ResourceDescriptor `json:"sbom"`
-	Tags []string           `json:"tags,omitempty"`
-}
-
-// ResourceDescriptor is an in-toto resource descriptor.
-type ResourceDescriptor struct {
-	URI    string            `json:"uri,omitempty"`
-	Name   string            `json:"name,omitempty"`
-	Digest map[string]string `json:"digest,omitempty"`
-}
-
-type RunDetails struct {
-	Builder  Builder  `json:"builder"`
-	Metadata Metadata `json:"metadata"`
-}
-
-type Builder struct {
-	ID      string            `json:"id"`
-	Version map[string]string `json:"version,omitempty"`
-}
-
-type Metadata struct {
-	InvocationID string `json:"invocationId,omitempty"`
-	StartedOn    string `json:"startedOn,omitempty"`
-	FinishedOn   string `json:"finishedOn,omitempty"`
-}
-
-// Statement is an in-toto statement about one subject.
-type Statement struct {
-	Type          string               `json:"_type"`
-	Subject       []ResourceDescriptor `json:"subject"`
-	PredicateType string               `json:"predicateType"`
-	Predicate     Predicate            `json:"predicate"`
-}
-
 // Recorder collects a build's resolved dependencies as its components are
 // pulled. It's safe for concurrent use.
 type Recorder struct {
 	started time.Time
 
 	mu      sync.Mutex
-	deps    map[string]ResourceDescriptor
+	deps    map[string]*intoto.ResourceDescriptor
 	plugins map[string]bool
 }
 
 // NewRecorder starts recording a build now.
 func NewRecorder() *Recorder {
-	return &Recorder{started: time.Now().UTC(), deps: map[string]ResourceDescriptor{}, plugins: map[string]bool{}}
+	return &Recorder{started: time.Now(), deps: map[string]*intoto.ResourceDescriptor{}, plugins: map[string]bool{}}
 }
 
 // AddComponent records a pulled component by purl and, if known, the
 // SHA-256 of what was pulled.
 func (r *Recorder) AddComponent(purl, sha256 string) {
-	r.add(ResourceDescriptor{URI: purl, Digest: digest(sha256)})
+	r.add(&intoto.ResourceDescriptor{Uri: purl, Digest: digest(sha256)})
 }
 
 // AddPlugin records the plugin binary for kind at path, once per kind. Its
@@ -127,74 +82,129 @@ func (r *Recorder) AddPlugin(kind, path, version, recordedSHA256 string, hash fu
 	if version != "" && strings.EqualFold(recordedSHA256, sum) {
 		uri += "@" + version
 	}
-	r.add(ResourceDescriptor{URI: uri, Name: "bomify-plugin-" + kind, Digest: digest(sum)})
+	r.add(&intoto.ResourceDescriptor{Uri: uri, Name: "bomify-plugin-" + kind, Digest: digest(sum)})
 	return nil
 }
 
-func (r *Recorder) add(d ResourceDescriptor) {
+func (r *Recorder) add(d *intoto.ResourceDescriptor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.deps[d.URI] = d
+	r.deps[d.GetUri()] = d
 }
 
 // Write records the build of the SBOM hashing to sbomHash, tagged tags, as
 // baseDir's provenance for that build, replacing any earlier record.
 func (r *Recorder) Write(baseDir, sbomHash string, tags []string) error {
 	r.mu.Lock()
-	deps := make([]ResourceDescriptor, 0, len(r.deps))
+	deps := make([]*intoto.ResourceDescriptor, 0, len(r.deps))
 	for _, d := range r.deps {
 		deps = append(deps, d)
 	}
 	r.mu.Unlock()
-	slices.SortFunc(deps, func(a, b ResourceDescriptor) int { return strings.Compare(a.URI, b.URI) })
+	slices.SortFunc(deps, func(a, b *intoto.ResourceDescriptor) int { return strings.Compare(a.GetUri(), b.GetUri()) })
 
-	p := Predicate{
-		BuildDefinition: BuildDefinition{
+	params, err := externalParameters(sbomHash, tags)
+	if err != nil {
+		return err
+	}
+	p := &slsa.Provenance{
+		BuildDefinition: &slsa.BuildDefinition{
 			BuildType:            BuildType,
-			ExternalParameters:   ExternalParameters{SBOM: ResourceDescriptor{Digest: digest(sbomHash)}, Tags: tags},
+			ExternalParameters:   params,
 			ResolvedDependencies: deps,
 		},
-		RunDetails: RunDetails{
-			Builder: Builder{ID: BuilderID, Version: map[string]string{"bomify": buildinfo.GetBuildInfo().Version}},
-			Metadata: Metadata{
-				InvocationID: invocationID(),
-				StartedOn:    r.started.Format(time.RFC3339),
-				FinishedOn:   time.Now().UTC().Format(time.RFC3339),
+		RunDetails: &slsa.RunDetails{
+			Builder: &slsa.Builder{Id: BuilderID, Version: map[string]string{"bomify": buildinfo.GetBuildInfo().Version}},
+			Metadata: &slsa.BuildMetadata{
+				InvocationId: invocationID(),
+				StartedOn:    timestamppb.New(r.started.Truncate(time.Second)),
+				FinishedOn:   timestamppb.New(time.Now().Truncate(time.Second)),
 			},
 		},
 	}
-	return fsutil.WriteJSON(layout.Provenance(baseDir, sbomHash), p)
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("provenance: %w", err)
+	}
+	data, err := protojson.MarshalOptions{Multiline: true}.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("encode provenance: %w", err)
+	}
+	return fsutil.WriteFileAtomic(layout.Provenance(baseDir, sbomHash), data)
+}
+
+// externalParameters are what the user asked bomify build to do: the
+// SBOM it built, by digest, and the tags it gave the build. Their schema
+// is BuildType's to define.
+func externalParameters(sbomHash string, tags []string) (*structpb.Struct, error) {
+	params := map[string]any{"sbom": map[string]any{"digest": map[string]any{"sha256": strings.ToLower(sbomHash)}}}
+	if len(tags) > 0 {
+		list := make([]any, len(tags))
+		for i, tag := range tags {
+			list[i] = tag
+		}
+		params["tags"] = list
+	}
+	return structpb.NewStruct(params)
 }
 
 // Read returns baseDir's provenance for the build of sbomHash; ok is false
 // if that build recorded none.
-func Read(baseDir, sbomHash string) (p Predicate, ok bool, err error) {
-	path := layout.Provenance(baseDir, sbomHash)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return Predicate{}, false, nil
+func Read(baseDir, sbomHash string) (p *slsa.Provenance, ok bool, err error) {
+	data, err := os.ReadFile(layout.Provenance(baseDir, sbomHash))
+	if os.IsNotExist(err) {
+		return nil, false, nil
 	}
-	if err := fsutil.ReadJSON(path, &p); err != nil {
-		return Predicate{}, false, err
+	if err != nil {
+		return nil, false, err
+	}
+	p = &slsa.Provenance{}
+	if err := protojson.Unmarshal(data, p); err != nil {
+		return nil, false, fmt.Errorf("parse provenance %s: %w", layout.Provenance(baseDir, sbomHash), err)
 	}
 	return p, true, nil
 }
 
 // NewStatement returns p as an in-toto statement whose subject is the
-// artifact name with the given sha256 digest, encoded deterministically.
-func NewStatement(p Predicate, name, sha256 string) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	err := enc.Encode(Statement{
-		Type:          StatementType,
-		Subject:       []ResourceDescriptor{{Name: name, Digest: digest(sha256)}},
+// artifact name with the given sha256 digest. Its encoding is compact and
+// deterministic, so the same provenance always hashes the same (see
+// AnnotationStatement).
+func NewStatement(p *slsa.Provenance, name, sha256 string) ([]byte, error) {
+	predicate, err := toStruct(p)
+	if err != nil {
+		return nil, err
+	}
+	s := &intoto.Statement{
+		Type:          intoto.StatementTypeUri,
+		Subject:       []*intoto.ResourceDescriptor{{Name: name, Digest: digest(sha256)}},
 		PredicateType: PredicateType,
-		Predicate:     p,
-	})
+		Predicate:     predicate,
+	}
+	if err := s.Validate(); err != nil {
+		return nil, fmt.Errorf("provenance statement: %w", err)
+	}
+	data, err := protojson.Marshal(s)
 	if err != nil {
 		return nil, fmt.Errorf("encode provenance statement: %w", err)
 	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+	// protojson's whitespace deliberately varies between builds of bomify.
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// toStruct converts p to the generic Struct a Statement's predicate is.
+func toStruct(p *slsa.Provenance) (*structpb.Struct, error) {
+	data, err := protojson.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("encode provenance: %w", err)
+	}
+	s := &structpb.Struct{}
+	if err := protojson.Unmarshal(data, s); err != nil {
+		return nil, fmt.Errorf("encode provenance: %w", err)
+	}
+	return s, nil
 }
 
 func digest(sha256 string) map[string]string {

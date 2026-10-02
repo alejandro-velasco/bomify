@@ -21,6 +21,12 @@ build is recorded. Building the same SBOM again with `--provenance`
 replaces it, and pruning removes it with its build. `--provenance` can't
 be combined with `--check`, which records nothing.
 
+The predicate and statement use the in-toto project's Go types
+([`in-toto/attestation`](https://github.com/in-toto/attestation)) and
+are validated against the spec as they're written, so a malformed
+digest (e.g. a plugin reporting a SHA-256 that isn't 64 hex digits)
+fails the build. Only `externalParameters` is bomify's own schema.
+
 | Field | Contents |
 | --- | --- |
 | `buildDefinition.buildType` | This page's URL. |

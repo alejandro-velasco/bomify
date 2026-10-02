@@ -108,7 +108,20 @@ func TestBuildProvenanceSavedUnsigned(t *testing.T) {
 	if referrer.ArtifactType != provenance.MediaType {
 		t.Errorf("unsigned provenance artifact type = %q, want %q", referrer.ArtifactType, provenance.MediaType)
 	}
-	var s provenance.Statement
+	var s struct {
+		Subject []struct {
+			Name   string            `json:"name"`
+			Digest map[string]string `json:"digest"`
+		} `json:"subject"`
+		Predicate struct {
+			BuildDefinition struct {
+				ResolvedDependencies []struct {
+					URI    string            `json:"uri"`
+					Digest map[string]string `json:"digest"`
+				} `json:"resolvedDependencies"`
+			} `json:"buildDefinition"`
+		} `json:"predicate"`
+	}
 	if err := json.Unmarshal(layer, &s); err != nil {
 		t.Fatalf("statement: %v", err)
 	}
