@@ -43,6 +43,22 @@ func verifyEnvelope(path, payloadFile, envelopeFile, mediaType, ref string, opti
 	return plugin.Invoke[pluginlib.VerifyResult](path, args...)
 }
 
+// verifyAttestationEnvelope invokes the signing plugin's "signature
+// verify-attestation", asking whether the envelope in envelopeFile (of
+// media type mediaType) is a trusted attestation about subject, and for
+// the statement it signs.
+func verifyAttestationEnvelope(path, envelopeFile, mediaType, subject, ref string, options []string, logger *slog.Logger) (pluginlib.VerifyAttestationResult, error) {
+	logger.Debug("verifying attestation", "path", path, "reference", ref, "mediaType", mediaType)
+	args := append([]string{
+		"signature", "verify-attestation",
+		"--envelope", envelopeFile,
+		"--media-type", mediaType,
+		"--subject", subject,
+		"--reference", ref,
+	}, optionArgs(options)...)
+	return plugin.Invoke[pluginlib.VerifyAttestationResult](path, args...)
+}
+
 // supportedTypes invokes the signing plugin's "signature
 // supported-types", which reports the referrer artifact types its
 // "signature verify" understands.

@@ -222,3 +222,41 @@ func TestKeyAttest(t *testing.T) {
 		t.Errorf("annotations = %v", annotations)
 	}
 }
+
+// TestKeyVerifyAttestation covers verifying an attestation: it returns
+// the statement only for the trusted key and a subject it names.
+func TestKeyVerifyAttestation(t *testing.T) {
+	priv, pub := writeKeyPair(t, "")
+	_, otherPub := writeKeyPair(t, "")
+	digest := strings.Repeat("ab", 32)
+	statement := []byte(`{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"app","digest":{"sha256":"` + digest + `"}}],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}`)
+
+	envelope, err := Attest(context.Background(), statement, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Attest: %v", err)
+	}
+
+	signer, got, err := VerifyAttestation(envelope, "sha256:"+digest, Options{OptionKey: pub})
+	if err != nil {
+		t.Fatalf("VerifyAttestation: %v", err)
+	}
+	if string(got) != string(statement) || !strings.HasPrefix(signer, "key sha256:") {
+		t.Errorf("VerifyAttestation = %q, %s; want the key and the statement", signer, got)
+	}
+
+	if _, _, err := VerifyAttestation(envelope, "sha256:"+strings.Repeat("cd", 32), Options{OptionKey: pub}); err == nil {
+		t.Error("VerifyAttestation of another subject: nil, want error")
+	}
+	if _, _, err := VerifyAttestation(envelope, "sha256:"+digest, Options{OptionKey: otherPub}); err == nil {
+		t.Error("VerifyAttestation with an untrusted key: nil, want error")
+	}
+
+	// A plain signature isn't an attestation.
+	plain, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, _, err := VerifyAttestation(plain, "sha256:"+digest, Options{OptionKey: pub}); err == nil {
+		t.Error("VerifyAttestation of a plain signature: nil, want error")
+	}
+}

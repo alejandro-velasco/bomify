@@ -31,6 +31,10 @@ type Rule struct {
 	// option takes a key file is up to the plugin — e.g. sigstore's
 	// "key".
 	KeyOptions map[string]string `json:"keyOptions,omitempty"`
+	// Provenance requires a matching package to also carry build
+	// provenance (see internal/provenance) attested by a signer Verifier's
+	// plugin trusts, with these same options.
+	Provenance bool `json:"provenance,omitempty"`
 }
 
 // Config is the "<baseDir>/conf/trust.json" record: an unordered list of
@@ -88,7 +92,8 @@ func ruleMatch(r Rule) string { return r.Match }
 // before it's restored: an explicit Verifier applies to every reference;
 // otherwise the best-matching trust.json rule in Rules does (see
 // Resolve); otherwise nothing is verified. Skip disables verification
-// entirely, even where a rule demands it.
+// entirely, even where a rule demands it. The same source decides whether
+// build provenance must verify too (see ProvenanceRequired).
 type Policy struct {
 	// Verifier, if set, is the plugin every reference must verify with,
 	// regardless of Rules — bomify pull/load's --verify.
@@ -98,6 +103,9 @@ type Policy struct {
 	// Skip disables verification entirely — bomify pull/load's
 	// --insecure-skip-verify.
 	Skip bool
+	// Provenance requires every reference's build provenance to verify —
+	// bomify pull/load's --verify-provenance.
+	Provenance bool
 }
 
 // For reports which plugin must verify ref, and whether one must at all,
@@ -123,4 +131,22 @@ func (p Policy) For(ref string) (Plugin, bool) {
 		return Plugin{Kind: rule.Verifier, Options: rule.Options}, true
 	}
 	return Plugin{}, false
+}
+
+// ProvenanceRequired reports whether ref's build provenance must verify,
+// with the plugin For picks: always with Provenance (unless Skip);
+// otherwise only if the trust rule For uses requires it, so --verify,
+// which ignores rules, never inherits one's Provenance.
+func (p Policy) ProvenanceRequired(ref string) bool {
+	if p.Skip {
+		return false
+	}
+	if p.Provenance {
+		return true
+	}
+	if p.Verifier.Kind != "" {
+		return false
+	}
+	rule, ok := Resolve(p.Rules, ref)
+	return ok && rule.Provenance
 }

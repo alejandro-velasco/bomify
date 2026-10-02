@@ -35,7 +35,8 @@ import (
 // signing plugin that produced its envelope, purely informational.
 const AnnotationPlugin = "land.bomify.signature.plugin"
 
-// maxEnvelopeSize bounds how large an envelope Verify will fetch from a
+// maxEnvelopeSize bounds how large an envelope VerifySignature or
+// VerifyAttestation will fetch from a
 // referrer. Envelopes are published by whoever could push to the
 // repository — not necessarily whoever bomify trusts — so this keeps a
 // hostile referrer from making bomify download something arbitrarily
@@ -181,7 +182,7 @@ func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.
 			return nil
 		}
 
-		signer, err := Verify(ctx, target, ref, manifest, pluginDir, p, logger)
+		signer, err := VerifySignature(ctx, target, ref, manifest, pluginDir, p, logger)
 		if err != nil {
 			return err
 		}
@@ -191,13 +192,13 @@ func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.
 	}
 }
 
-// Verify requires at least one of manifest's signature referrers in
+// VerifySignature requires at least one of manifest's signature referrers in
 // target — among those whose artifact type p's plugin reports it
 // supports — to pass that plugin's "signature verify", returning the
 // signer it reported. It fails if there are no such referrers at all, or
 // if every one fails, naming why each did. pluginDir is where p's plugin
 // is installed (see plugin.Dir).
-func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, pluginDir string, p Plugin, logger *slog.Logger) (signer string, err error) {
+func VerifySignature(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, pluginDir string, p Plugin, logger *slog.Logger) (signer string, err error) {
 	path, err := plugin.Find(pluginDir, p.Kind)
 	if err != nil {
 		return "", err
@@ -255,40 +256,113 @@ func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifes
 // verifyReferrer fetches the envelope a single signature referrer
 // carries and hands it to the plugin at path to verify.
 func verifyReferrer(ctx context.Context, store content.ReadOnlyStorage, referrer ocispec.Descriptor, path, payloadFile, ref string, options []string, logger *slog.Logger) (string, error) {
-	data, err := content.FetchAll(ctx, store, referrer)
-	if err != nil {
-		return "", fmt.Errorf("fetch referrer: %w", err)
-	}
-
-	var m ocispec.Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return "", fmt.Errorf("parse referrer: %w", err)
-	}
-	if len(m.Layers) != 1 {
-		return "", fmt.Errorf("referrer has %d layers, want exactly 1 (the envelope)", len(m.Layers))
-	}
-
-	envelopeDesc := m.Layers[0]
-	if envelopeDesc.Size > maxEnvelopeSize {
-		return "", fmt.Errorf("envelope is %d bytes, larger than the %d allowed", envelopeDesc.Size, maxEnvelopeSize)
-	}
-
-	envelope, err := content.FetchAll(ctx, store, envelopeDesc)
-	if err != nil {
-		return "", fmt.Errorf("fetch envelope: %w", err)
-	}
-
-	envelopeFile, err := writeTemp("bomify-signature-envelope-*", envelope)
+	envelopeFile, mediaType, err := fetchEnvelope(ctx, store, referrer)
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(envelopeFile)
 
-	result, err := verifyEnvelope(path, payloadFile, envelopeFile, envelopeDesc.MediaType, ref, options, logger)
+	result, err := verifyEnvelope(path, payloadFile, envelopeFile, mediaType, ref, options, logger)
 	if err != nil {
 		return "", err
 	}
 	return result.Signer, nil
+}
+
+// fetchEnvelope writes the envelope referrer carries as its one layer to
+// a new temp file, which the caller must remove, returning its path and
+// media type.
+func fetchEnvelope(ctx context.Context, store content.ReadOnlyStorage, referrer ocispec.Descriptor) (string, string, error) {
+	data, err := content.FetchAll(ctx, store, referrer)
+	if err != nil {
+		return "", "", fmt.Errorf("fetch referrer: %w", err)
+	}
+
+	var m ocispec.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return "", "", fmt.Errorf("parse referrer: %w", err)
+	}
+	if len(m.Layers) != 1 {
+		return "", "", fmt.Errorf("referrer has %d layers, want exactly 1 (the envelope)", len(m.Layers))
+	}
+
+	envelopeDesc := m.Layers[0]
+	if envelopeDesc.Size > maxEnvelopeSize {
+		return "", "", fmt.Errorf("envelope is %d bytes, larger than the %d allowed", envelopeDesc.Size, maxEnvelopeSize)
+	}
+
+	envelope, err := content.FetchAll(ctx, store, envelopeDesc)
+	if err != nil {
+		return "", "", fmt.Errorf("fetch envelope: %w", err)
+	}
+
+	envelopeFile, err := writeTemp("bomify-signature-envelope-*", envelope)
+	if err != nil {
+		return "", "", err
+	}
+	return envelopeFile, envelopeDesc.MediaType, nil
+}
+
+// VerifyAttestation requires at least one of manifest's attestation
+// referrers of predicateType in target — among those whose artifact type
+// p's plugin supports — to pass that plugin's "signature
+// verify-attestation" and then check, which inspects the statement the
+// plugin returns. It returns that statement and its signer, failing if
+// there are no such referrers, or if every one fails, naming why each
+// did. pluginDir is where p's plugin is installed (see plugin.Dir).
+func VerifyAttestation(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, predicateType, pluginDir string, p Plugin, check func(statement []byte) error, logger *slog.Logger) (statement []byte, signer string, err error) {
+	path, err := plugin.Find(pluginDir, p.Kind)
+	if err != nil {
+		return nil, "", err
+	}
+	supported, err := supportedTypes(path, logger)
+	if err != nil {
+		return nil, "", err
+	}
+
+	referrers, err := transfer.Referrers(ctx, target, manifest, "")
+	if err != nil {
+		return nil, "", err
+	}
+	var candidates []ocispec.Descriptor
+	for _, referrer := range referrers {
+		if referrer.Annotations[transfer.AnnotationAttestation] == predicateType && slices.Contains(supported.ArtifactTypes, referrer.ArtifactType) {
+			candidates = append(candidates, referrer)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, "", fmt.Errorf("no %s attestation of %s found that %s can verify (supported artifact types: %s)", predicateType, manifest.Digest, p.Kind, strings.Join(supported.ArtifactTypes, ", "))
+	}
+
+	var failures []error
+	for _, candidate := range candidates {
+		statement, signer, err := verifyAttestationReferrer(ctx, target, candidate, path, manifest.Digest.String(), ref, p.Options, check, logger)
+		if err == nil {
+			return statement, signer, nil
+		}
+		failures = append(failures, fmt.Errorf("attestation %s: %w", candidate.Digest, err))
+	}
+	return nil, "", fmt.Errorf("no %s attestation of %s verified with %s: %w", predicateType, manifest.Digest, p.Kind, errors.Join(failures...))
+}
+
+// verifyAttestationReferrer fetches the envelope a single attestation
+// referrer carries, has the plugin at path verify it as an attestation
+// about subject, and checks the statement it signs.
+func verifyAttestationReferrer(ctx context.Context, store content.ReadOnlyStorage, referrer ocispec.Descriptor, path, subject, ref string, options []string, check func([]byte) error, logger *slog.Logger) ([]byte, string, error) {
+	envelopeFile, mediaType, err := fetchEnvelope(ctx, store, referrer)
+	if err != nil {
+		return nil, "", err
+	}
+	defer os.Remove(envelopeFile)
+
+	result, err := verifyAttestationEnvelope(path, envelopeFile, mediaType, subject, ref, options, logger)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := check(result.Statement); err != nil {
+		return nil, "", err
+	}
+	return result.Statement, result.Signer, nil
 }
 
 // writePayload writes the payload a signing plugin signs, or verifies a

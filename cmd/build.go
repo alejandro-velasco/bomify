@@ -32,7 +32,8 @@ authorized, without downloading anything or recording a build.
 --provenance records SLSA provenance of the build: the SBOM, every
 component and plugin binary by digest, and bomify's version. "bomify
 push" and "bomify save" attach it as an in-toto attestation, signed with
---sign, for tools like cosign and slsa-verifier to check. In CI, set
+--sign, for "bomify pull --verify-provenance", cosign, and "gh
+attestation verify" to check. In CI, set
 BOMIFY_INVOCATION_ID to identify the run (e.g. the job's URL).`
 
 const buildExample = `  # Build the package described by sbom.json

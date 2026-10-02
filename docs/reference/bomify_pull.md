@@ -11,7 +11,11 @@ or verified, the package is still restored, with a warning.
 
 --verify requires a signature the named plugin verifies; without it, a
 matching "bomify trust" rule applies. The package is verified before
-anything is written. --insecure-skip-verify bypasses a trust rule.
+anything is written. --verify-provenance also requires the package's
+build provenance (see "bomify build --provenance"), attested by a signer
+the same plugin and options trust, as does a trust rule created with
+--require-provenance; --verify replaces a rule's requirement along with
+the rest of it. --insecure-skip-verify bypasses a trust rule.
 
 --scan <type> --fail-on <severity> scans the package fresh, after
 verification and before anything is written, and refuses it if anything
@@ -45,6 +49,9 @@ bomify pull <reference> [flags]
   # Require a signature made with a specific cosign key
   bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub
 
+  # Also require build provenance attested with that key
+  bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub --verify-provenance
+
   # Print just the pinned reference of what was pulled
   pinned=$(bomify pull registry.example.com/myapp:latest --quiet)
 ```
@@ -55,12 +62,13 @@ bomify pull <reference> [flags]
   -c, --concurrency int             number of layers to download concurrently (default 3)
       --fail-on string              fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
   -h, --help                        help for pull
-      --insecure-skip-verify        restore the package without verifying its signature, even if a "bomify trust" rule requires it
+      --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
   -q, --quiet                       print only the restored package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --scan string                 scan the package with this scanner (e.g. grype) before anything is written, refusing it if --fail-on is met; overrides a matching "bomify security policy" rule's
       --skip-scan                   don't scan or gate at all, even if a "bomify security policy" rule matching the package says to
       --verify string               require a signature this signing plugin (bomify-plugin-<kind>, e.g. sigstore) verifies, overriding any "bomify trust" rule
       --verify-option stringArray   a key=value option passed through to the --verify plugin (repeatable; e.g. key=cosign.pub)
+      --verify-provenance           also require the package's build provenance, attested by a signer the verifying plugin trusts
 ```
 
 ### Options inherited from parent commands

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/verify-attestation-result.schema.json",
+  "title": "bomify plugin VerifyAttestationResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout for its \"signature verify-attestation\" subcommand when — and only when — the envelope is a trusted attestation about the given subject, per plugins/SIGNING-CONTRACT.md. A failed verification is reported by a non-zero exit instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signer",
+    "statement"
+  ],
+  "properties": {
+    "signer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A human-readable identity of whoever signed the attestation (a key fingerprint, certificate subject, email address, ...). bomify only logs it."
+    },
+    "statement": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "minLength": 1,
+      "description": "The in-toto statement the envelope signs, exactly as signed, standard base64. bomify checks it is the package's build provenance."
+    }
+  }
+}

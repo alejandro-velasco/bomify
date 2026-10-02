@@ -19,7 +19,9 @@ the way Docker builds images from Dockerfiles.
 - `--sign` and `--verify` (or `bomify trust` rules) sign whole packages
   and require a trusted signature before restoring them.
 - `bomify build --provenance` records SLSA build provenance, attached to
-  the pushed package as a signed in-toto attestation.
+  the pushed package as a signed in-toto attestation, which `pull`/`load
+  --verify-provenance` (or a `bomify trust --require-provenance` rule)
+  can require.
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)**: installation,
 a quickstart, how-tos, the CLI reference, and a guide to writing plugins.

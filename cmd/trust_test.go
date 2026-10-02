@@ -174,3 +174,14 @@ func TestTrustKeyOptions(t *testing.T) {
 		t.Errorf("trust key remove: %v", err)
 	}
 }
+
+func TestTrustCreateRequireProvenance(t *testing.T) {
+	baseDir := t.TempDir()
+	if _, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--option", "key=a.pub", "--require-provenance"); err != nil {
+		t.Fatalf("trust create --require-provenance: %v", err)
+	}
+	out, err := runRootCmd(t, baseDir, "trust", "list")
+	if err != nil || !strings.Contains(out, "PROVENANCE") || !strings.Contains(out, "required") {
+		t.Errorf("trust list = %q, %v; want provenance listed as required", out, err)
+	}
+}

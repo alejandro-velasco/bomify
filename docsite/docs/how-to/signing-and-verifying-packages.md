@@ -75,7 +75,9 @@ bomify trust create sigstore --match registry.example.com/team --option key=sign
 
 Now every `pull` and `load` under that prefix requires a signature that
 key verifies. The most specific `--match` wins; `--verify` overrides the
-rules and `--insecure-skip-verify` bypasses them with a warning.
+rules and `--insecure-skip-verify` bypasses them with a warning. Add
+`--require-provenance` to require build provenance too (see
+[step 7](#7-attach-and-require-build-provenance)).
 
 To stop the rule depending on where the key file lives, store the key
 under a name. Re-adding the name rotates it for every rule using it.
@@ -132,7 +134,7 @@ bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore \
   --verify-option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-## 7. Attach build provenance
+## 7. Attach and require build provenance
 
 Record SLSA provenance when you build, and it's attached to the package
 as an in-toto attestation on push or save, signed with `--sign`:
@@ -144,5 +146,14 @@ bomify push ghcr.io/my-org/myapp:1.0 --sign sigstore
 
 With `bomify-plugin-sigstore`, it's a Sigstore bundle attestation
 stored as an OCI referrer, the format cosign's bundle support and `gh
-attestation verify` read. bomify doesn't check provenance on pull. See
-[Build provenance](../development/architecture/provenance.md).
+attestation verify` read.
+
+To require it when pulling or loading, add `--verify-provenance`. The
+provenance must be signed by a signer the same plugin and options trust,
+be about this very package and SBOM, and come from a bomify build:
+
+```sh
+bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore   --verify-option certificate-identity=https://github.com/my-org/myapp/.github/workflows/publish.yml@refs/heads/main   --verify-option certificate-oidc-issuer=https://token.actions.githubusercontent.com   --verify-provenance
+```
+
+See [Build provenance](../development/architecture/provenance.md#verifying).

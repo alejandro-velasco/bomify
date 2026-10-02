@@ -12,9 +12,9 @@ The first-party plugins. Each directory is a standalone
 - **Security scanning** (`security scan|supported-components`,
   [`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)):
   reports the vulnerabilities a purl is affected by.
-- **Signing** (`signature sign|verify|supported-types`,
+- **Signing** (`signature sign|attest|verify|verify-attestation|supported-types`,
   [`SIGNING-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)):
-  signs and verifies whole packages.
+  signs and verifies whole packages and their build provenance.
 
 | Plugin | Handles | Built on | Contracts |
 | --- | --- | --- | --- |
@@ -183,7 +183,8 @@ producing v0.3 Sigstore bundles
 `signature attest` (see the
 [contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-attest))
 signs a DSSE envelope instead, in the bundle format cosign and `gh
-attestation verify` read.
+attestation verify` read; `signature verify-attestation` verifies one
+with the same options as `signature verify`.
 
 `key` can't be combined with keyless options, and unknown options are
 rejected.

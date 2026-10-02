@@ -7,7 +7,7 @@ A plugin binary can implement any of four independent contracts:
 | [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md) | `component pull/push/remote` | `build`, `distribute` | a purl type |
 | [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
 | [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
-| [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md) | `signature sign/attest/verify/supported-types` | `--sign`, `--verify` | a signing scheme |
+| [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
 
 Every call bomify makes to a plugin goes through `plugin.Invoke`: run
 the binary, parse stdout as the contract's JSON result, and fold stderr

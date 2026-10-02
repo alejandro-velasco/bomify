@@ -15,6 +15,10 @@ key or identity to trust. --key-option (option=name) instead names a key
 from "bomify trust key add"; the plugin receives the stored copy's path
 as that option. The same option can't be given both ways.
 
+--require-provenance also requires the package's build provenance (see
+"bomify build --provenance"), attested by a signer the plugin trusts
+with the same options.
+
 "--verify" on pull or load overrides every rule, and
 "--insecure-skip-verify" bypasses them.
 
@@ -34,6 +38,9 @@ bomify trust create <verifier> [flags]
   # The same, with the key kept in the managed key store
   bomify trust key add org org.pub
   bomify trust create sigstore --key-option key=org
+
+  # Also require build provenance attested with that key
+  bomify trust create sigstore --key-option key=org --require-provenance
 ```
 
 ### Options
@@ -43,6 +50,7 @@ bomify trust create <verifier> [flags]
       --key-option stringArray   an option=name pair: pass the verifier plugin option=<path of the stored key name> (see "bomify trust key add"; repeatable)
       --match string             apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
       --option stringArray       a key=value option passed through to the verifier plugin (repeatable)
+      --require-provenance       also require the package's build provenance, attested by a signer the verifier trusts with the same options
 ```
 
 ### Options inherited from parent commands

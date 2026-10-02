@@ -90,7 +90,7 @@ func sign(t *testing.T, store *oci.Store, ref string, manifest ocispec.Descripto
 }
 
 func verify(store *oci.Store, ref string, manifest ocispec.Descriptor, key string) (string, error) {
-	return Verify(context.Background(), store, ref, manifest, pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
+	return VerifySignature(context.Background(), store, ref, manifest, pluginDir, Plugin{Kind: fakeKind, Options: []string{"key=" + key}}, discardLogger())
 }
 
 func TestSignThenVerify(t *testing.T) {

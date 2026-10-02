@@ -1,9 +1,10 @@
 # Signing plugin contract
 
 The spec for a `bomify-plugin-<kind>` binary's **signing** subcommands,
-`signature sign`, `signature attest`, `signature verify`, and `signature
-supported-types`, which `bomify push`/`save --sign` and `bomify
-pull`/`load --verify` (or a matching `bomify trust` rule) call. It's independent of the
+`signature sign`, `signature attest`, `signature verify`, `signature
+verify-attestation`, and `signature supported-types`, which `bomify
+push`/`save --sign` and `bomify pull`/`load --verify` (or a matching
+`bomify trust` rule) call. It's independent of the
 [component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
 [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
 and [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)
@@ -12,7 +13,7 @@ contracts.
 Here `<kind>` names a signing scheme (e.g. `sigstore`, `notation`).
 
 Go plugins should implement `pkg/plugin`'s `SigningPlugin` interface and
-use `plugin.SignatureCommand`, which provides all four subcommands,
+use `plugin.SignatureCommand`, which provides all five subcommands,
 their flags, reading `--payload`/`--statement`/`--envelope`, and output.
 
 ## Naming and discovery
@@ -36,6 +37,10 @@ envelope is a trusted signature over a payload. bomify does the rest:
    manifest's referrers, keep those whose artifact type `signature
    supported-types` lists, and call `signature verify` on each until one
    passes. If none does, the pull fails and nothing is written.
+4. **Verify provenance** (pull/load with `--verify-provenance` or a
+   trust rule's `--require-provenance`): the same way, call `signature
+   verify-attestation` on each attestation referrer until one passes and
+   bomify accepts the statement it returns.
 
 The plugin never talks to a registry or sees the package's contents, so
 it works the same for registries and `bomify save` tarballs.
@@ -59,6 +64,7 @@ produces it identically at sign and verify time. A plugin may parse it
 bomify-plugin-<kind> signature sign            --payload <file> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature attest          --statement <file> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature verify          --payload <file> --envelope <file> --media-type <mt> --reference <ref> [--option <key>=<value>]...
+bomify-plugin-<kind> signature verify-attestation --envelope <file> --media-type <mt> --subject <digest> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature supported-types
 ```
 
@@ -94,7 +100,8 @@ and exit `0`. A plugin that can't produce DSSE must fail.
 
 bomify stores an attestation as a referrer of the package like a
 signature, annotated `land.bomify.attestation.predicateType`, and never
-passes it to `signature verify` as a package signature.
+passes it to `signature verify` as a package signature, only to
+[`signature verify-attestation`](#signature-verify-attestation).
 
 ### `signature verify`
 
@@ -112,6 +119,23 @@ trusts. Anything else (bad signature, untrusted or unconfigured signer,
 malformed envelope, unsupported media type) exits non-zero with one
 stderr message. Fail closed: if trust can't be established, it's not
 trusted.
+
+### `signature verify-attestation`
+
+| Flag | Required | Meaning |
+| --- | --- | --- |
+| `--envelope` | yes | One attestation envelope, byte for byte as some `attest` produced it (not necessarily this plugin's, nor a trusted signer's). |
+| `--media-type` | yes | The envelope's media type, as its `attest` reported it. |
+| `--subject` | yes | The package manifest's digest, `<algorithm>:<hex>` (e.g. `sha256:ae88...`). |
+| `--reference` | yes | As for `verify`. |
+| `--option` | no, repeatable | As for `verify`. |
+
+Print one [`VerifyAttestationResult`](#verifyattestationresult) and exit
+`0` **only** if the envelope is a DSSE envelope of payload type
+`application/vnd.in-toto+json`, validly signed by a signer the plugin
+trusts, whose statement names `--subject` among its subjects. Fail
+otherwise, closed, as for `verify`. bomify checks the rest of the
+statement itself.
 
 ### `signature supported-types`
 
@@ -176,6 +200,19 @@ Schema: [`sign-result.schema.json`](https://github.com/alejandro-velasco/bomify/
 
 Schema: [`verify-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/verify-result.schema.json).
 
+## VerifyAttestationResult
+
+```json
+{ "signer": "key sha256:<base64 fingerprint of the public key>", "statement": "eyJfdHlwZSI6..." }
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `signer` | string | yes | As for [`VerifyResult`](#verifyresult). |
+| `statement` | string (base64) | yes, non-empty | The in-toto statement the envelope signs, exactly as signed, standard base64. |
+
+Schema: [`verify-attestation-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/verify-attestation-result.schema.json).
+
 ## SupportedSignatureTypesResult
 
 ```json
@@ -184,7 +221,7 @@ Schema: [`verify-result.schema.json`](https://github.com/alejandro-velasco/bomif
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `artifactTypes` | array of strings | yes, non-empty | Referrer artifact types `verify` understands. bomify never passes it an envelope of another type. |
+| `artifactTypes` | array of strings | yes, non-empty | Referrer artifact types `verify` and `verify-attestation` understand. bomify never passes them an envelope of another type. |
 
 Schema: [`supported-signature-types-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-signature-types-result.schema.json).
 

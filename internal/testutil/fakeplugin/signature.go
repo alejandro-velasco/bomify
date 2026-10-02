@@ -25,7 +25,7 @@ func (o *optionFlags) String() string     { return strings.Join(*o, ",") }
 func (o *optionFlags) Set(v string) error { *o = append(*o, v); return nil }
 
 // signatureMain implements the signing contract: "signature
-// <sign|attest|verify|supported-types>". Its "signature" is an HMAC-SHA256 of
+// <sign|attest|verify|verify-attestation|supported-types>". Its "signature" is an HMAC-SHA256 of
 // the payload, keyed by --option key=<secret>, so verifying with any
 // other key fails exactly like a real plugin rejecting an untrusted
 // signer.
@@ -47,6 +47,8 @@ func signatureMain() {
 		sign("statement", pluginlib.InTotoPayloadType)
 	case "verify":
 		verify()
+	case "verify-attestation":
+		verifyAttestation()
 	default:
 		fail("unknown subcommand " + os.Args[2])
 	}
@@ -68,9 +70,14 @@ func sign(payloadFlag, payloadType string) {
 	key := option(options, "key")
 	data := read(*payload)
 
-	// An attestation's "envelope" records its payload type, standing in
-	// for a DSSE envelope, so tests can tell it from a signature.
-	envelope, _ := json.Marshal(map[string]string{"key": key, "mac": mac(key, data), "payloadType": payloadType})
+	// An attestation's "envelope" records its payload type and carries
+	// the statement, standing in for a DSSE envelope, so tests can tell it
+	// from a signature.
+	fields := map[string]string{"key": key, "mac": mac(key, data), "payloadType": payloadType}
+	if payloadType != "" {
+		fields["statement"] = string(data)
+	}
+	envelope, _ := json.Marshal(fields)
 	print(map[string]any{
 		"artifactType": ArtifactType,
 		"mediaType":    MediaType,
@@ -104,6 +111,55 @@ func verify() {
 		fail("signature does not verify with the given key")
 	}
 	print(map[string]any{"signer": "key:" + key})
+}
+
+func verifyAttestation() {
+	fs := flag.NewFlagSet("verify-attestation", flag.ExitOnError)
+	envelopePath := fs.String("envelope", "", "")
+	mediaType := fs.String("media-type", "", "")
+	subject := fs.String("subject", "", "")
+	ref := fs.String("reference", "", "")
+	var options optionFlags
+	fs.Var(&options, "option", "")
+	fs.Parse(os.Args[3:])
+
+	if *ref == "" {
+		fail("--reference is required")
+	}
+	if *mediaType != MediaType {
+		fail("unsupported envelope media type " + *mediaType)
+	}
+	key := option(options, "key")
+
+	var envelope map[string]string
+	if err := json.Unmarshal(read(*envelopePath), &envelope); err != nil {
+		fail("malformed envelope: " + err.Error())
+	}
+	if envelope["payloadType"] != pluginlib.InTotoPayloadType {
+		fail("not an attestation")
+	}
+	statement := []byte(envelope["statement"])
+	if !hmac.Equal([]byte(envelope["mac"]), []byte(mac(key, statement))) {
+		fail("attestation does not verify with the given key")
+	}
+
+	var s struct {
+		Subject []struct {
+			Digest map[string]string `json:"digest"`
+		} `json:"subject"`
+	}
+	algorithm, digest, _ := strings.Cut(*subject, ":")
+	if err := json.Unmarshal(statement, &s); err != nil {
+		fail("malformed statement: " + err.Error())
+	}
+	named := false
+	for _, sub := range s.Subject {
+		named = named || sub.Digest[algorithm] == digest
+	}
+	if !named {
+		fail("statement does not name subject " + *subject)
+	}
+	print(map[string]any{"signer": "key:" + key, "statement": statement})
 }
 
 func option(options []string, name string) string {

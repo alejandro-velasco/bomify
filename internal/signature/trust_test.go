@@ -93,3 +93,28 @@ func TestReadMissingConfig(t *testing.T) {
 		t.Errorf("Read = %+v, %v; want empty, nil", config, err)
 	}
 }
+
+func TestPolicyProvenanceRequired(t *testing.T) {
+	rules := Config{
+		{Match: "registry.example.com", Verifier: "rule", Provenance: true},
+		{Match: "registry.example.com/legacy", Verifier: "rule"},
+	}
+	for _, tc := range []struct {
+		name   string
+		policy Policy
+		ref    string
+		want   bool
+	}{
+		{"rule requires it", Policy{Rules: rules}, "registry.example.com/app:1", true},
+		{"more specific rule doesn't", Policy{Rules: rules}, "registry.example.com/legacy/app:1", false},
+		{"no rule matches", Policy{Rules: rules}, "other.example.com/app:1", false},
+		{"flag requires it", Policy{Rules: rules, Provenance: true}, "other.example.com/app:1", true},
+		{"--verify ignores rules", Policy{Rules: rules, Verifier: Plugin{Kind: "flag"}}, "registry.example.com/app:1", false},
+		{"--verify with the flag", Policy{Verifier: Plugin{Kind: "flag"}, Provenance: true}, "registry.example.com/app:1", true},
+		{"skip", Policy{Rules: rules, Skip: true}, "registry.example.com/app:1", false},
+	} {
+		if got := tc.policy.ProvenanceRequired(tc.ref); got != tc.want {
+			t.Errorf("%s: ProvenanceRequired = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

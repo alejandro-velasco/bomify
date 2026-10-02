@@ -44,11 +44,14 @@ type Options struct {
 	// Progress reports each blob's transfer; nil reports nothing.
 	Progress ProgressFunc
 
-	// Sign is called when pushing; Verify and then Scan when pulling. Any
-	// may be nil.
-	Sign   Signer
-	Verify Verifier
-	Scan   Scanner
+	// Sign is called when pushing; Verify, VerifyProvenance, and then Scan
+	// when pulling. Any may be nil. Unlike Verify, which also checks what's
+	// attached to a package, VerifyProvenance is only called with the
+	// package itself.
+	Sign             Signer
+	Verify           Verifier
+	VerifyProvenance Verifier
+	Scan             Scanner
 	// Attest signs the package's build provenance, if it has any; without
 	// it, provenance is attached unsigned.
 	Attest Attester
