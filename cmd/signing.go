@@ -2,49 +2,37 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/layout"
-	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
 // signFlags are the --sign/--sign-option flags push and save share.
 type signFlags struct {
-	plugin  string
+	kind    string
 	options []string
 }
 
 func (f *signFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.plugin, "sign", "", "sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer")
+	cmd.Flags().StringVar(&f.kind, "sign", "", "sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer")
 	cmd.Flags().StringArrayVar(&f.options, "sign-option", nil, "a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)")
 }
 
-// signers returns the transfer.Signer and transfer.Attester f describes,
-// both from the same --sign plugin, or nils if --sign wasn't given.
-func (f *signFlags) signers(logger *slog.Logger) (transfer.Signer, transfer.Attester, error) {
-	if f.plugin == "" {
+// plugin returns the signing plugin --sign and --sign-option describe,
+// with ok false if --sign wasn't given.
+func (f *signFlags) plugin() (p signature.Plugin, ok bool, err error) {
+	if f.kind == "" {
 		if len(f.options) > 0 {
-			return nil, nil, fmt.Errorf("--sign-option given without --sign")
+			return signature.Plugin{}, false, fmt.Errorf("--sign-option given without --sign")
 		}
-		return nil, nil, nil
+		return signature.Plugin{}, false, nil
 	}
 	if err := validateOptions("--sign-option", f.options); err != nil {
-		return nil, nil, err
+		return signature.Plugin{}, false, err
 	}
-	p := signature.Plugin{Kind: f.plugin, Options: f.options}
-	signer, err := signature.NewSigner(layout.Plugins(dataDir), p, logger)
-	if err != nil {
-		return nil, nil, err
-	}
-	attester, err := signature.NewAttester(layout.Plugins(dataDir), p, logger)
-	if err != nil {
-		return nil, nil, err
-	}
-	return signer, attester, nil
+	return signature.Plugin{Kind: f.kind, Options: f.options}, true, nil
 }
 
 // verifyFlags are the --verify/--verify-option/--insecure-skip-verify
