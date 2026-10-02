@@ -2,7 +2,6 @@ package signature
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -101,9 +100,9 @@ type Policy struct {
 	Skip bool
 }
 
-// For reports which plugin must verify ref, and whether one must at
-// all. It logs a warning when Skip overrides a rule that matched, since
-// that's a policy being deliberately bypassed rather than simply absent.
+// For reports which plugin must verify ref, and whether one must at all,
+// so a caller can tell a package that verified from one nothing asked to
+// verify.
 //
 // Exactly one source decides, checked in this order:
 //  1. Skip (--insecure-skip-verify): nothing is verified.
@@ -113,11 +112,8 @@ type Policy struct {
 //  3. Rules (trust.json): the most specific match, with only its
 //     own options.
 //  4. Nothing matched: the package is restored unverified.
-func (p Policy) For(ref string, logger *slog.Logger) (Plugin, bool) {
+func (p Policy) For(ref string) (Plugin, bool) {
 	if p.Skip {
-		if rule, ok := Resolve(p.Rules, ref); ok {
-			logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
-		}
 		return Plugin{}, false
 	}
 	if p.Verifier.Kind != "" {
@@ -127,12 +123,4 @@ func (p Policy) For(ref string, logger *slog.Logger) (Plugin, bool) {
 		return Plugin{Kind: rule.Verifier, Options: rule.Options}, true
 	}
 	return Plugin{}, false
-}
-
-// Verifies reports whether ref must carry a verified signature at all —
-// what For decides, without logging — so a caller can tell a package
-// that verified from one nothing asked to verify.
-func (p Policy) Verifies(ref string) bool {
-	_, ok := p.For(ref, slog.New(slog.DiscardHandler))
-	return ok
 }

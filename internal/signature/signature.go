@@ -166,12 +166,17 @@ func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Des
 // Policy.For), and if one must, requires at least one of the manifest's
 // signature referrers to pass that plugin's "signature verify" — failing
 // the pull outright otherwise. A reference no policy applies to is
-// restored unverified. pluginDir is where the verifying plugins are
-// installed (see plugin.Dir).
+// restored unverified, with a warning when --insecure-skip-verify
+// bypasses a trust rule that matched it, since that's a policy being
+// deliberately bypassed rather than simply absent. pluginDir is where the
+// verifying plugins are installed (see plugin.Dir).
 func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
-		p, required := policy.For(ref, logger)
+		p, required := policy.For(ref)
 		if !required {
+			if rule, ok := Resolve(policy.Rules, ref); ok && policy.Skip {
+				logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+			}
 			logger.Debug("no signature verification required", "reference", ref)
 			return nil
 		}
