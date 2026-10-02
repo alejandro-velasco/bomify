@@ -17,6 +17,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/buildinfo"
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 	PredicateType = "https://slsa.dev/provenance/v1"
 	// MediaType is the media type of an in-toto statement, and the DSSE
 	// payload type it's signed as.
-	MediaType = "application/vnd.in-toto+json"
+	MediaType = pluginlib.InTotoPayloadType
 	// BuildType identifies bomify builds, documenting what their
 	// externalParameters and resolvedDependencies mean.
 	BuildType = "https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/provenance.md"

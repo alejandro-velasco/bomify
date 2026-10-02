@@ -28,6 +28,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // AnnotationPlugin is the referrer manifest annotation naming the kind of
@@ -79,7 +80,11 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 		}
 		defer cleanup()
 
-		signatureDesc, err := signAndAttach(ctx, target, ref, manifest, path, p, payloadFile, "", nil, logger)
+		result, err := signPayload(path, payloadFile, ref, p.Options, logger)
+		if err != nil {
+			return err
+		}
+		signatureDesc, err := attachEnvelope(ctx, target, manifest, path, p, result, nil)
 		if err != nil {
 			return err
 		}
@@ -88,12 +93,9 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 	}, nil
 }
 
-// InTotoPayloadType is the DSSE payload type of an in-toto statement.
-const InTotoPayloadType = "application/vnd.in-toto+json"
-
 // NewAttester returns a transfer.Attester that has p's plugin sign an
 // in-toto statement as a DSSE envelope (see plugins/SIGNING-CONTRACT.md's
-// --payload-type) and pushes it as a referrer of the package manifest, the
+// "signature attest") and pushes it as a referrer of the package manifest, the
 // same way NewSigner pushes a signature.
 func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Attester, error) {
 	path, err := plugin.Find(pluginDir, p.Kind)
@@ -108,7 +110,11 @@ func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Atte
 		}
 		defer os.Remove(statementFile)
 
-		desc, err := signAndAttach(ctx, target, ref, subject, path, p, statementFile, InTotoPayloadType, annotations, logger)
+		result, err := attestStatement(path, statementFile, ref, p.Options, logger)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		desc, err := attachEnvelope(ctx, target, subject, path, p, result, annotations)
 		if err != nil {
 			return ocispec.Descriptor{}, err
 		}
@@ -117,21 +123,16 @@ func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Atte
 	}, nil
 }
 
-// signAndAttach has the plugin at path sign payloadFile (as a DSSE
-// envelope of payloadType, if given) and pushes the envelope as a
-// referrer of subject, annotated with annotations, the plugin's own, and
-// AnnotationPlugin.
-func signAndAttach(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, path string, p Plugin, payloadFile, payloadType string, annotations map[string]string, logger *slog.Logger) (ocispec.Descriptor, error) {
-	result, err := signPayload(path, payloadFile, payloadType, ref, p.Options, logger)
-	if err != nil {
-		return ocispec.Descriptor{}, err
-	}
+// attachEnvelope pushes the envelope in result, from the plugin at path,
+// as a referrer of subject, annotated with annotations, the plugin's own,
+// and AnnotationPlugin.
+func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Descriptor, path string, p Plugin, result pluginlib.SignResult, annotations map[string]string) (ocispec.Descriptor, error) {
 	// All three are required by the contract (see
 	// plugins/SIGNING-CONTRACT.md's SignResult): without them there's no
 	// referrer type to push, no media type to hand back to verify, or
 	// nothing to store at all.
 	if result.ArtifactType == "" || result.MediaType == "" || len(result.Envelope) == 0 {
-		return ocispec.Descriptor{}, fmt.Errorf("plugin %s signature sign reported an incomplete result (artifactType, mediaType, and envelope are all required)", path)
+		return ocispec.Descriptor{}, fmt.Errorf("plugin %s reported an incomplete signing result (artifactType, mediaType, and envelope are all required)", path)
 	}
 
 	envelopeDesc, err := transfer.PushBytes(ctx, target, result.Envelope, result.MediaType, "signature", nil)

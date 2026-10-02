@@ -42,9 +42,8 @@ already carries a referrer with that statement, nothing is attached, so
 pushing again adds nothing new.
 
 - **With `--sign`**: `signature.NewAttester` has the signing plugin sign
-  the statement as a DSSE envelope (`signature sign --payload-type
-  application/vnd.in-toto+json`, see the
-  [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#attestations)),
+  the statement as a DSSE envelope (`signature attest`, see the
+  [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-attest)),
   pushed as a referrer of the plugin's artifact type. With
   `bomify-plugin-sigstore`, that's a Sigstore bundle carrying Sigstore's
   own annotations, in the form cosign and `gh` read.

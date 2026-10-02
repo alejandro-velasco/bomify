@@ -1,9 +1,9 @@
 # Signing plugin contract
 
 The spec for a `bomify-plugin-<kind>` binary's **signing** subcommands,
-`signature sign`, `signature verify`, and `signature supported-types`,
-which `bomify push`/`save --sign` and `bomify pull`/`load --verify` (or a
-matching `bomify trust` rule) call. It's independent of the
+`signature sign`, `signature attest`, `signature verify`, and `signature
+supported-types`, which `bomify push`/`save --sign` and `bomify
+pull`/`load --verify` (or a matching `bomify trust` rule) call. It's independent of the
 [component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
 [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
 and [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)
@@ -12,8 +12,8 @@ contracts.
 Here `<kind>` names a signing scheme (e.g. `sigstore`, `notation`).
 
 Go plugins should implement `pkg/plugin`'s `SigningPlugin` interface and
-use `plugin.SignatureCommand`, which provides all three subcommands,
-their flags, reading `--payload`/`--envelope`, and output.
+use `plugin.SignatureCommand`, which provides all four subcommands,
+their flags, reading `--payload`/`--statement`/`--envelope`, and output.
 
 ## Naming and discovery
 
@@ -56,7 +56,8 @@ produces it identically at sign and verify time. A plugin may parse it
 ## Commands
 
 ```
-bomify-plugin-<kind> signature sign            --payload <file> --reference <ref> [--payload-type <type>] [--option <key>=<value>]...
+bomify-plugin-<kind> signature sign            --payload <file> --reference <ref> [--option <key>=<value>]...
+bomify-plugin-<kind> signature attest          --statement <file> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature verify          --payload <file> --envelope <file> --media-type <mt> --reference <ref> [--option <key>=<value>]...
 bomify-plugin-<kind> signature supported-types
 ```
@@ -67,23 +68,29 @@ bomify-plugin-<kind> signature supported-types
 | --- | --- | --- |
 | `--payload` | yes | The [payload](#payload) file to sign. |
 | `--reference` | yes | The reference being published. Informational; use it to pick an identity, or ignore it. |
-| `--payload-type` | no | Sign `--payload` as the payload of a DSSE envelope of this type, instead of a signature over its raw bytes. See [Attestations](#attestations). |
 | `--option` | no, repeatable | A `key=value` from `--sign-option`. See [Options](#options). |
 
 On success, print one [`SignResult`](#signresult) and exit `0`.
 
-### Attestations
+### `signature attest`
 
-With `--payload-type`, `--payload` is a document to attest, such as an
-in-toto statement (`application/vnd.in-toto+json`) of a package's build
-provenance, rather than the [payload](#payload) above. Sign it as a
-[DSSE](https://github.com/secure-systems-lab/dsse) envelope with that
-payload type, in your ecosystem's usual form, so its own tools can
-verify it (e.g. a Sigstore bundle holding a DSSE envelope, which cosign
-and `gh attestation verify` read). Return any annotations those tools
-use to find it (e.g. Sigstore's `dev.sigstore.bundle.content` and
-`dev.sigstore.bundle.predicateType`). A plugin that can't produce DSSE
-must fail.
+Called with `--sign` when the package has
+[provenance](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/provenance.md).
+
+| Flag | Required | Meaning |
+| --- | --- | --- |
+| `--statement` | yes | An in-toto statement to attest, such as the package's build provenance. |
+| `--reference` | yes | As for `sign`. |
+| `--option` | no, repeatable | As for `sign`. |
+
+Sign the statement as a [DSSE](https://github.com/secure-systems-lab/dsse)
+envelope with payload type `application/vnd.in-toto+json`, in your
+ecosystem's usual form, so its own tools can verify it (e.g. a Sigstore
+bundle holding a DSSE envelope, which cosign and `gh attestation verify`
+read). On success, print one [`SignResult`](#signresult), with any
+annotations those tools use to find it (e.g. Sigstore's
+`dev.sigstore.bundle.content` and `dev.sigstore.bundle.predicateType`),
+and exit `0`. A plugin that can't produce DSSE must fail.
 
 bomify stores an attestation as a referrer of the package like a
 signature, annotated `land.bomify.attestation.predicateType`, and never

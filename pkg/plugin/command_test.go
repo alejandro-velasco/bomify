@@ -112,11 +112,19 @@ func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 	}
 }
 
-// fakeSigner records the SignRequest SignatureCommand hands it.
-type fakeSigner struct{ sign SignRequest }
+// fakeSigner records the requests SignatureCommand hands it.
+type fakeSigner struct {
+	sign   SignRequest
+	attest AttestRequest
+}
 
 func (f *fakeSigner) Sign(_ context.Context, req SignRequest) (SignResult, error) {
 	f.sign = req
+	return SignResult{ArtifactType: "a", MediaType: "m", Envelope: []byte("e")}, nil
+}
+
+func (f *fakeSigner) Attest(_ context.Context, req AttestRequest) (SignResult, error) {
+	f.attest = req
 	return SignResult{ArtifactType: "a", MediaType: "m", Envelope: []byte("e")}, nil
 }
 
@@ -128,26 +136,23 @@ func (f *fakeSigner) SupportedTypes(context.Context) (SupportedSignatureTypesRes
 	return SupportedSignatureTypesResult{}, nil
 }
 
-func TestSignatureCommandPayloadType(t *testing.T) {
-	payload := filepath.Join(t.TempDir(), "payload")
-	if err := os.WriteFile(payload, []byte("statement"), 0o644); err != nil {
+func TestSignatureCommandAttest(t *testing.T) {
+	statement := filepath.Join(t.TempDir(), "statement.json")
+	if err := os.WriteFile(statement, []byte("statement"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"", "application/vnd.in-toto+json"} {
-		p := &fakeSigner{}
-		root := NewRootCommand("fake", "fake", SignatureCommand(p, SigningHelp{}))
-		root.SetOut(&bytes.Buffer{})
-		args := []string{"signature", "sign", "--payload", payload, "--reference", "app:1"}
-		if want != "" {
-			args = append(args, "--payload-type", want)
-		}
-		root.SetArgs(args)
-		if err := root.Execute(); err != nil {
-			t.Fatalf("sign %v: %v", args, err)
-		}
-		if p.sign.PayloadType != want || string(p.sign.Payload) != "statement" {
-			t.Errorf("request = %+v, want payload type %q", p.sign, want)
-		}
+	p := &fakeSigner{}
+	root := NewRootCommand("fake", "fake", SignatureCommand(p, SigningHelp{}))
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"signature", "attest", "--statement", statement, "--reference", "app:1", "--option", "key=k"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("attest: %v", err)
+	}
+	if string(p.attest.Statement) != "statement" || p.attest.Reference != "app:1" || len(p.attest.Options) != 1 {
+		t.Errorf("request = %+v", p.attest)
+	}
+	if p.sign.Payload != nil {
+		t.Error("attest called Sign")
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // ArtifactType is the referrer artifact type this fake signs as, and
@@ -23,7 +25,7 @@ func (o *optionFlags) String() string     { return strings.Join(*o, ",") }
 func (o *optionFlags) Set(v string) error { *o = append(*o, v); return nil }
 
 // signatureMain implements the signing contract: "signature
-// <sign|verify|supported-types>". Its "signature" is an HMAC-SHA256 of
+// <sign|attest|verify|supported-types>". Its "signature" is an HMAC-SHA256 of
 // the payload, keyed by --option key=<secret>, so verifying with any
 // other key fails exactly like a real plugin rejecting an untrusted
 // signer.
@@ -40,7 +42,9 @@ func signatureMain() {
 		}
 		print(map[string]any{"artifactTypes": types})
 	case "sign":
-		sign()
+		sign("payload", "")
+	case "attest":
+		sign("statement", pluginlib.InTotoPayloadType)
 	case "verify":
 		verify()
 	default:
@@ -48,11 +52,12 @@ func signatureMain() {
 	}
 }
 
-func sign() {
-	fs := flag.NewFlagSet("sign", flag.ExitOnError)
-	payload := fs.String("payload", "", "")
+// sign implements "signature sign" (payloadFlag "payload") and
+// "signature attest" (payloadFlag "statement", with payloadType set).
+func sign(payloadFlag, payloadType string) {
+	fs := flag.NewFlagSet(os.Args[2], flag.ExitOnError)
+	payload := fs.String(payloadFlag, "", "")
 	ref := fs.String("reference", "", "")
-	payloadType := fs.String("payload-type", "", "")
 	var options optionFlags
 	fs.Var(&options, "option", "")
 	fs.Parse(os.Args[3:])
@@ -63,9 +68,9 @@ func sign() {
 	key := option(options, "key")
 	data := read(*payload)
 
-	// With --payload-type, the "envelope" records it, standing in for a
-	// DSSE envelope, so tests can tell an attestation from a signature.
-	envelope, _ := json.Marshal(map[string]string{"key": key, "mac": mac(key, data), "payloadType": *payloadType})
+	// An attestation's "envelope" records its payload type, standing in
+	// for a DSSE envelope, so tests can tell it from a signature.
+	envelope, _ := json.Marshal(map[string]string{"key": key, "mac": mac(key, data), "payloadType": payloadType})
 	print(map[string]any{
 		"artifactType": ArtifactType,
 		"mediaType":    MediaType,

@@ -8,15 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// InTotoPayloadType is the media type of an in-toto statement, and the
+// DSSE payload type Attest signs it as.
+const InTotoPayloadType = "application/vnd.in-toto+json"
+
 // SigningPlugin is a signing plugin's own logic (see
 // plugins/SIGNING-CONTRACT.md), for SignatureCommand to expose as the
-// contract's "signature sign"/"signature verify"/"signature
-// supported-types". SignatureCommand reads the payload and envelope
-// files itself, so a SigningPlugin only ever deals in bytes.
+// contract's "signature sign"/"signature attest"/"signature
+// verify"/"signature supported-types". SignatureCommand reads the
+// payload, statement, and envelope files itself, so a SigningPlugin only
+// ever deals in bytes.
 type SigningPlugin interface {
 	// Sign signs payload on behalf of the package being published as
 	// req.Reference.
 	Sign(ctx context.Context, req SignRequest) (SignResult, error)
+	// Attest signs req.Statement, an in-toto statement, as a DSSE envelope
+	// of InTotoPayloadType. A plugin that can't produce one must fail.
+	Attest(ctx context.Context, req AttestRequest) (SignResult, error)
 	// Verify reports who signed req.Envelope over req.Payload, failing if
 	// it isn't a valid signature by a signer req.Options trusts.
 	Verify(ctx context.Context, req VerifyRequest) (VerifyResult, error)
@@ -26,13 +34,16 @@ type SigningPlugin interface {
 
 // SignRequest is one "signature sign" invocation.
 type SignRequest struct {
-	Payload []byte
-	// PayloadType, if set, asks for a DSSE envelope over Payload with this
-	// payload type (e.g. "application/vnd.in-toto+json" for an in-toto
-	// attestation) instead of a signature over the raw payload. A plugin
-	// that can't produce one must fail.
-	PayloadType string
-	Reference   string
+	Payload   []byte
+	Reference string
+	// Options are the --option values, each "key=value", unparsed.
+	Options []string
+}
+
+// AttestRequest is one "signature attest" invocation.
+type AttestRequest struct {
+	Statement []byte
+	Reference string
 	// Options are the --option values, each "key=value", unparsed.
 	Options []string
 }
@@ -49,8 +60,8 @@ type VerifyRequest struct {
 
 // SigningHelp is the plugin-specific help text SignatureCommand shows.
 type SigningHelp struct {
-	// Sign and Verify are each subcommand's short description.
-	Sign, Verify string
+	// Sign, Attest, and Verify are each subcommand's short description.
+	Sign, Attest, Verify string
 	// Options describes the --option keys the plugin understands.
 	Options string
 }
@@ -82,10 +93,32 @@ func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 	}
 	sign.Flags().StringVar(&signPayload, "payload", "", "file holding the payload to sign (required)")
 	sign.Flags().StringVar(&signReq.Reference, "reference", "", "reference of the package being signed (required)")
-	sign.Flags().StringVar(&signReq.PayloadType, "payload-type", "", "sign the payload as a DSSE envelope of this payload type, e.g. application/vnd.in-toto+json")
 	sign.Flags().StringArrayVar(&signReq.Options, "option", nil, optionUsage)
 	for _, name := range []string{"payload", "reference"} {
 		_ = sign.MarkFlagRequired(name)
+	}
+
+	var (
+		attestReq       AttestRequest
+		attestStatement string
+	)
+	attest := &cobra.Command{
+		Use:   "attest",
+		Short: help.Attest,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if attestReq.Statement, err = readFile("statement", attestStatement); err != nil {
+				return err
+			}
+			result, err := p.Attest(cmd.Context(), attestReq)
+			return print(cmd, result, err)
+		},
+	}
+	attest.Flags().StringVar(&attestStatement, "statement", "", "file holding the in-toto statement to attest (required)")
+	attest.Flags().StringVar(&attestReq.Reference, "reference", "", "reference of the package being attested (required)")
+	attest.Flags().StringArrayVar(&attestReq.Options, "option", nil, optionUsage)
+	for _, name := range []string{"statement", "reference"} {
+		_ = attest.MarkFlagRequired(name)
 	}
 
 	var (
@@ -125,7 +158,7 @@ func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(sign, verify, supported)
+	cmd.AddCommand(sign, attest, verify, supported)
 	return cmd
 }
 
