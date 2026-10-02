@@ -23,6 +23,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/buildinfo"
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/plugin"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -82,11 +83,10 @@ func (r *Recorder) AddPlugin(kind, path, version, recordedSHA256 string, hash fu
 	if err != nil {
 		return fmt.Errorf("hash plugin %s: %w", kind, err)
 	}
-	uri := "pkg:bomify-plugin/" + kind
-	if version != "" && strings.EqualFold(recordedSHA256, sum) {
-		uri += "@" + version
+	if !strings.EqualFold(recordedSHA256, sum) {
+		version = ""
 	}
-	r.add(&intoto.ResourceDescriptor{Uri: uri, Name: "bomify-plugin-" + kind, Digest: digest(sum)})
+	r.add(&intoto.ResourceDescriptor{Uri: plugin.Purl(kind, version, nil), Name: plugin.BinaryName(kind), Digest: digest(sum)})
 	return nil
 }
 

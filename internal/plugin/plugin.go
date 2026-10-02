@@ -46,6 +46,12 @@ const binaryPrefix = "bomify-plugin-"
 // "bomify plugin install" installs them (see internal/plugin/install).
 const PurlType = "bomify-plugin"
 
+// Purl returns the purl of kind's plugin binary, a PurlType component;
+// version and qualifiers (e.g. os, arch) are optional.
+func Purl(kind, version string, qualifiers map[string]string) string {
+	return packageurl.NewPackageURL(PurlType, "", kind, version, packageurl.QualifiersFromMap(qualifiers), "").ToString()
+}
+
 // Detect returns the plugin kind corresponding to the given SBOM
 // component's purl type (e.g. "oci" for "pkg:oci/nginx@sha256:abc"),
 // which is also the kind passed to BinaryName to locate the plugin
