@@ -1,15 +1,21 @@
 name: Release
 
-# Releases run in their own workflow, after Build has passed on main,
-# rather than as a job inside it: plugin packages are signed keyless as
-# this workflow, so the signer identity users trust for bomify's own
-# plugins names the release specifically —
+# Releases run in their own workflow, after Build has passed on a release
+# branch, rather than as a job inside it: plugin packages are signed
+# keyless as this workflow, so the signer identity users trust for
+# bomify's own plugins names the release specifically —
 #
 #   https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
 #
 # — not the workflow that builds every push and pull request (see
-# plugins/README.md#installing-plugins). Renaming this file, or releasing
-# from anywhere but main, changes that identity.
+# plugins/README.md#installing-plugins). A workflow_run workflow always
+# runs from the default branch, so that identity ends in refs/heads/main
+# whichever branch is released. Renaming this file, or changing the
+# default branch, changes it.
+#
+# Release branches (.releaserc.json): alpha-release cuts 1.0.0-alpha.N,
+# beta-release 1.0.0-beta.N, and main 1.0.0 and later. main is left out
+# of the trigger below until bomify is ready for its first GA release.
 #
 # The work is split so only one job can sign, and that job runs no
 # third-party npm code:
@@ -28,7 +34,7 @@ on:
   workflow_run:
     workflows: [Build]
     types: [completed]
-    branches: [main]
+    branches: [alpha-release, beta-release]
 
 # One release at a time: a second run waits rather than racing the first
 # to tag the same version.
@@ -51,8 +57,8 @@ jobs:
       CONTAINER_TOOL: podman
       CONTAINER_REGISTRY: ghcr.io
     steps:
-      # The exact commit Build just passed, not whatever main points at by
-      # now. If main has moved on since, semantic-release sees this commit
+      # The exact commit Build just passed, not whatever its branch points
+      # at by now. If the branch has moved on since, semantic-release sees this commit
       # is behind and skips; the newer commit's own Build run releases it.
       - name: Check out code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -74,13 +80,16 @@ jobs:
 
       # Writes version=<next version> to this step's outputs (see
       # verifyReleaseCmd in .releaserc.json) only when it cuts a release.
+      # GITHUB_REF is the default branch in a workflow_run run, so point
+      # semantic-release at the branch Build ran on instead.
       - name: Release
         id: release
         env:
           CONTAINER_REPO: ${{ steps.repo.outputs.repo }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          npx --yes \
+          GITHUB_REF="refs/heads/$RELEASE_BRANCH" npx --yes \
             --package=semantic-release@25.0.9 \
             --package=@semantic-release/commit-analyzer@13.0.1 \
             --package=@semantic-release/release-notes-generator@14.1.1 \

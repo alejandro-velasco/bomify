@@ -31,7 +31,7 @@ Leave this section empty (or remove it) if there's no related issue.
 ## Conventional Commits
 
 This repo's releases are cut by [semantic-release](https://semantic-release.gitbook.io/) directly from commit
-messages on `main`, so **every commit in this PR** (not just the PR title) must follow
+messages on the release branches (`alpha-release`, `beta-release`, `main`), so **every commit in this PR** (not just the PR title) must follow
 [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
