@@ -140,6 +140,19 @@ func TestRecorder(t *testing.T) {
 	}
 }
 
+func TestInvocationID(t *testing.T) {
+	const run = "https://ci.example.com/jobs/42"
+	t.Setenv(InvocationIDEnv, run)
+	dir := record(t, sbomHash)
+	p, _, err := Read(dir, sbomHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.GetRunDetails().GetMetadata().GetInvocationId(); got != run {
+		t.Errorf("invocationId = %q, want %q", got, run)
+	}
+}
+
 func TestNewStatement(t *testing.T) {
 	p, _, _ := Read(record(t, sbomHash), sbomHash)
 	a, err := NewStatement(p, "registry.example.com/app", subjectSum)

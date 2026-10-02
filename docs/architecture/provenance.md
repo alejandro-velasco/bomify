@@ -34,7 +34,7 @@ fails the build. Only `externalParameters` is bomify's own schema.
 | `externalParameters.tags` | The `--tag`s given. |
 | `resolvedDependencies` | Every component, by purl, with the SHA-256 its plugin reported (none if it reported none); and every plugin used, as `pkg:bomify-plugin/<kind>[@<version>]` with its binary's SHA-256. The version comes from `bomify plugin install`'s record, only if the installed binary still matches it. Sorted by URI. |
 | `runDetails.builder.id` | `https://github.com/alejandro-velasco/bomify`, with `version.bomify` set to bomify's version. |
-| `runDetails.metadata` | `startedOn` and `finishedOn`, and, in GitHub Actions, `invocationId`: the run's URL. |
+| `runDetails.metadata` | `startedOn` and `finishedOn`, and `invocationId` if `BOMIFY_INVOCATION_ID` is set: the CI run that built it, e.g. the job's URL. |
 
 ## Attaching
 

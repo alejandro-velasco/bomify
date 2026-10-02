@@ -38,6 +38,10 @@ const (
 	// BuilderID identifies bomify as the builder; runDetails.builder.version
 	// says which version.
 	BuilderID = "https://github.com/alejandro-velasco/bomify"
+	// InvocationIDEnv names the environment variable a CI pipeline sets to
+	// identify its run (e.g. the job's URL) as runDetails.metadata's
+	// invocationId.
+	InvocationIDEnv = "BOMIFY_INVOCATION_ID"
 )
 
 // Recorder collects a build's resolved dependencies as its components are
@@ -116,7 +120,7 @@ func (r *Recorder) Write(baseDir, sbomHash string, tags []string) error {
 		RunDetails: &slsa.RunDetails{
 			Builder: &slsa.Builder{Id: BuilderID, Version: map[string]string{"bomify": buildinfo.GetBuildInfo().Version}},
 			Metadata: &slsa.BuildMetadata{
-				InvocationId: invocationID(),
+				InvocationId: os.Getenv(InvocationIDEnv),
 				StartedOn:    timestamppb.New(r.started.Truncate(time.Second)),
 				FinishedOn:   timestamppb.New(time.Now().Truncate(time.Second)),
 			},
@@ -212,18 +216,4 @@ func digest(sha256 string) map[string]string {
 		return nil
 	}
 	return map[string]string{"sha256": strings.ToLower(sha256)}
-}
-
-// invocationID identifies the CI run this build is part of, when there is
-// one: a GitHub Actions run's URL.
-func invocationID() string {
-	server, repo, run := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_RUN_ID")
-	if server == "" || repo == "" || run == "" {
-		return ""
-	}
-	id := server + "/" + repo + "/actions/runs/" + run
-	if attempt := os.Getenv("GITHUB_RUN_ATTEMPT"); attempt != "" {
-		id += "/attempts/" + attempt
-	}
-	return id
 }
