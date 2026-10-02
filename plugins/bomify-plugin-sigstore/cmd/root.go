@@ -35,7 +35,11 @@ func (signer) Sign(ctx context.Context, req pluginlib.SignRequest) (pluginlib.Si
 	if err != nil {
 		return pluginlib.SignResult{}, err
 	}
-	return bundleResult(envelope, nil), nil
+	return pluginlib.SignResult{
+		ArtifactType: sigstore.BundleMediaType,
+		MediaType:    sigstore.BundleMediaType,
+		Envelope:     envelope,
+	}, nil
 }
 
 func (signer) Attest(ctx context.Context, req pluginlib.AttestRequest) (pluginlib.SignResult, error) {
@@ -47,17 +51,12 @@ func (signer) Attest(ctx context.Context, req pluginlib.AttestRequest) (pluginli
 	if err != nil {
 		return pluginlib.SignResult{}, err
 	}
-	return bundleResult(envelope, sigstore.AttestationAnnotations(req.Statement)), nil
-}
-
-// bundleResult reports envelope, a Sigstore bundle, with annotations.
-func bundleResult(envelope []byte, annotations map[string]string) pluginlib.SignResult {
 	return pluginlib.SignResult{
 		ArtifactType: sigstore.BundleMediaType,
 		MediaType:    sigstore.BundleMediaType,
 		Envelope:     envelope,
-		Annotations:  annotations,
-	}
+		Annotations:  sigstore.AttestationAnnotations(req.Statement),
+	}, nil
 }
 
 func (signer) Verify(_ context.Context, req pluginlib.VerifyRequest) (pluginlib.VerifyResult, error) {
