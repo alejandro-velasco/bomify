@@ -17,6 +17,7 @@ import (
 	slsa "github.com/in-toto/attestation/go/predicates/provenance/v1"
 	intoto "github.com/in-toto/attestation/go/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -137,18 +138,26 @@ func (r *Recorder) Write(baseDir, sbomHash string, tags []string) error {
 }
 
 // externalParameters are what the user asked bomify build to do: the
-// SBOM it built, by digest, and the tags it gave the build. Their schema
-// is BuildType's to define.
+// SBOM it built, as a resource descriptor, and the tags it gave the
+// build. Their schema is BuildType's to define.
 func externalParameters(sbomHash string, tags []string) (*structpb.Struct, error) {
-	params := map[string]any{"sbom": map[string]any{"digest": map[string]any{"sha256": strings.ToLower(sbomHash)}}}
-	if len(tags) > 0 {
-		list := make([]any, len(tags))
-		for i, tag := range tags {
-			list[i] = tag
-		}
-		params["tags"] = list
+	rd := &intoto.ResourceDescriptor{Digest: digest(sbomHash)}
+	if err := rd.Validate(); err != nil {
+		return nil, fmt.Errorf("sbom: %w", err)
 	}
-	return structpb.NewStruct(params)
+	sbom, err := toStruct(rd)
+	if err != nil {
+		return nil, err
+	}
+	params := &structpb.Struct{Fields: map[string]*structpb.Value{"sbom": structpb.NewStructValue(sbom)}}
+	if len(tags) > 0 {
+		values := make([]*structpb.Value, len(tags))
+		for i, tag := range tags {
+			values[i] = structpb.NewStringValue(tag)
+		}
+		params.Fields["tags"] = structpb.NewListValue(&structpb.ListValue{Values: values})
+	}
+	return params, nil
 }
 
 // Read returns baseDir's provenance for the build of sbomHash; ok is false
@@ -198,15 +207,16 @@ func NewStatement(p *slsa.Provenance, name, sha256 string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// toStruct converts p to the generic Struct a Statement's predicate is.
-func toStruct(p *slsa.Provenance) (*structpb.Struct, error) {
-	data, err := protojson.Marshal(p)
+// toStruct converts m to a generic Struct, the type of a Statement's
+// predicate and of BuildDefinition's externalParameters.
+func toStruct(m proto.Message) (*structpb.Struct, error) {
+	data, err := protojson.Marshal(m)
 	if err != nil {
-		return nil, fmt.Errorf("encode provenance: %w", err)
+		return nil, fmt.Errorf("encode %T: %w", m, err)
 	}
 	s := &structpb.Struct{}
 	if err := protojson.Unmarshal(data, s); err != nil {
-		return nil, fmt.Errorf("encode provenance: %w", err)
+		return nil, fmt.Errorf("encode %T: %w", m, err)
 	}
 	return s, nil
 }
