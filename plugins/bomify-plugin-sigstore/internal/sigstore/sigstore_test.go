@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
 
@@ -186,5 +188,37 @@ func TestIdentityTokenPrecedence(t *testing.T) {
 	}
 	if token := (Options{OptionIdentityToken: "option-token"}).identityToken(); token != "option-token" {
 		t.Errorf("identityToken() = %q, want the option to win", token)
+	}
+}
+
+// TestKeyAttest covers signing an in-toto statement as an attestation:
+// the bundle holds a DSSE envelope over the statement rather than a plain
+// signature, and the annotations Sigstore's tools look for name it.
+func TestKeyAttest(t *testing.T) {
+	priv, _ := writeKeyPair(t, "")
+	statement := []byte(`{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"app","digest":{"sha256":"ab"}}],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}`)
+
+	envelope, err := Attest(context.Background(), statement, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Attest: %v", err)
+	}
+	var b bundle.Bundle
+	if err := b.UnmarshalJSON(envelope); err != nil {
+		t.Fatalf("parse bundle: %v", err)
+	}
+	dsse := b.GetDsseEnvelope()
+	if dsse == nil {
+		t.Fatalf("bundle has no DSSE envelope:\n%s", envelope)
+	}
+	if dsse.GetPayloadType() != pluginlib.InTotoPayloadType || string(dsse.GetPayload()) != string(statement) {
+		t.Errorf("DSSE payload = %q (%s), want the statement as %s", dsse.GetPayload(), dsse.GetPayloadType(), pluginlib.InTotoPayloadType)
+	}
+	if len(dsse.GetSignatures()) == 0 {
+		t.Error("DSSE envelope has no signatures")
+	}
+
+	annotations := AttestationAnnotations(statement)
+	if annotations["dev.sigstore.bundle.content"] != "dsse-envelope" || annotations["dev.sigstore.bundle.predicateType"] != "https://slsa.dev/provenance/v1" {
+		t.Errorf("annotations = %v", annotations)
 	}
 }

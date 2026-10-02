@@ -39,7 +39,7 @@ func TestPolicyFlagOverridesRules(t *testing.T) {
 		Rules:    Config{{Match: "registry.example.com", Verifier: "rule"}},
 	}
 
-	p, ok := policy.For("registry.example.com/app:v1", discardLogger())
+	p, ok := policy.For("registry.example.com/app:v1")
 	if !ok || !reflect.DeepEqual(p, policy.Verifier) {
 		t.Errorf("For = %+v, %v; want the explicit verifier", p, ok)
 	}

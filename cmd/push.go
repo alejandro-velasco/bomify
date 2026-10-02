@@ -28,6 +28,15 @@ the registry refuses).
 --sign signs the package, and its reports separately, before the tag
 moves, so the tag never points at an unsigned package.
 
+Provenance recorded by "bomify build --provenance" is attached as an
+in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
+without it.
+
+--vex (repeatable) attaches a VEX document, a name from "bomify security
+vex add" or a file, as its own referrer; one already attached isn't
+added again. A pull's gate honors it only when the pull verifies
+signatures and the document's own signature verifies.
+
 --quiet prints only the pinned reference, <repository>@<digest>, with no
 progress or info logging.`
 
@@ -88,7 +97,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 		return err
 	}
 
-	transferOpts, done, err := opts.options(cmd, logger)
+	transferOpts, done, err := opts.transferOptions(cmd, logger)
 	if err != nil {
 		return err
 	}
@@ -128,5 +137,11 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	}
 	if len(result.VulnerabilityReports) > 0 {
 		logger.Info("vulnerability reports referrer attached", "digest", result.ReportsReferrer.Digest.String())
+	}
+	for _, referrer := range result.Attached {
+		logger.Info("attached", "artifactType", referrer.ArtifactType, "digest", referrer.Digest.String())
+	}
+	if result.Provenance.Digest != "" {
+		logger.Info("provenance attached", "digest", result.Provenance.Digest.String())
 	}
 }

@@ -16,6 +16,15 @@ the registry refuses).
 --sign signs the package, and its reports separately, before the tag
 moves, so the tag never points at an unsigned package.
 
+Provenance recorded by "bomify build --provenance" is attached as an
+in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
+without it.
+
+--vex (repeatable) attaches a VEX document, a name from "bomify security
+vex add" or a file, as its own referrer; one already attached isn't
+added again. A pull's gate honors it only when the pull verifies
+signatures and the document's own signature verifies.
+
 --quiet prints only the pinned reference, <repository>@<digest>, with no
 progress or info logging.
 
@@ -51,6 +60,7 @@ bomify push <tag> [flags]
   -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
       --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --vex stringArray           attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
 ```
 
 ### Options inherited from parent commands

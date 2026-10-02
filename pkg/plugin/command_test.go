@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -108,5 +109,50 @@ func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "&c=2") {
 		t.Errorf("Print HTML-escaped the result: %s", out.String())
+	}
+}
+
+// fakeSigner records the requests SignatureCommand hands it.
+type fakeSigner struct {
+	sign   SignRequest
+	attest AttestRequest
+}
+
+func (f *fakeSigner) Sign(_ context.Context, req SignRequest) (SignResult, error) {
+	f.sign = req
+	return SignResult{ArtifactType: "a", MediaType: "m", Envelope: []byte("e")}, nil
+}
+
+func (f *fakeSigner) Attest(_ context.Context, req AttestRequest) (SignResult, error) {
+	f.attest = req
+	return SignResult{ArtifactType: "a", MediaType: "m", Envelope: []byte("e")}, nil
+}
+
+func (f *fakeSigner) Verify(context.Context, VerifyRequest) (VerifyResult, error) {
+	return VerifyResult{}, nil
+}
+
+func (f *fakeSigner) SupportedTypes(context.Context) (SupportedSignatureTypesResult, error) {
+	return SupportedSignatureTypesResult{}, nil
+}
+
+func TestSignatureCommandAttest(t *testing.T) {
+	statement := filepath.Join(t.TempDir(), "statement.json")
+	if err := os.WriteFile(statement, []byte("statement"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &fakeSigner{}
+	root := NewRootCommand("fake", "fake", SignatureCommand(p, SigningHelp{}))
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"signature", "attest", "--statement", statement, "--reference", "app:1", "--option", "key=k"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("attest: %v", err)
+	}
+	if string(p.attest.Statement) != "statement" || p.attest.Reference != "app:1" || len(p.attest.Options) != 1 {
+		t.Errorf("request = %+v", p.attest)
+	}
+	if p.sign.Payload != nil {
+		t.Error("attest called Sign")
 	}
 }

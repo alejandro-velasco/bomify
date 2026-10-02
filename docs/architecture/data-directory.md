@@ -21,6 +21,8 @@ nowhere else.
 - **`vulnerabilities/<purlHash>.json`** is a component's latest
   vulnerability report (see [Security scanning](security-scanning.md)),
   shared by every package containing that purl.
+- **`provenance/<sbomHash>.json`** is a build's SLSA provenance, if it
+  was built with `--provenance` (see [Build provenance](provenance.md)).
 - **`package/repositories.json`** maps `repo -> tag -> sbom hash`.
 - **`conf/*.json`** are the rule files: `distribution.json` (`bomify
   distribute` endpoints), `trust.json` (signature verification), and

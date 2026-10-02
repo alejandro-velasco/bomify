@@ -28,6 +28,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // AnnotationPlugin is the referrer manifest annotation naming the kind of
@@ -63,9 +64,9 @@ type payload struct {
 
 // NewSigner returns a transfer.Signer that signs a package's manifest
 // with p and pushes the resulting envelope into the same target as an
-// OCI referrer of that manifest — a manifest of p's reported artifact
-// type whose subject is the package manifest and whose only layer is the
-// envelope. pluginDir is where p's plugin is installed (see plugin.Dir).
+// OCI referrer of that manifest: a manifest of p's reported artifact type
+// whose subject is the package manifest and whose only layer is the
+// envelope. pluginDir is where p's plugin is installed.
 func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer, error) {
 	path, err := plugin.Find(pluginDir, p.Kind)
 	if err != nil {
@@ -83,41 +84,81 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 		if err != nil {
 			return err
 		}
-		// All three are required by the contract (see
-		// plugins/SIGNING-CONTRACT.md's SignResult): without them there's
-		// no referrer type to push, no media type to hand back to verify,
-		// or nothing to store at all.
-		hasArtifactType := result.ArtifactType != ""
-		hasMediaType := result.MediaType != ""
-		hasEnvelope := len(result.Envelope) > 0
-		if !hasArtifactType || !hasMediaType || !hasEnvelope {
-			return fmt.Errorf("plugin %s signature sign reported an incomplete result (artifactType, mediaType, and envelope are all required)", path)
-		}
-
-		envelopeDesc, err := transfer.PushBytes(ctx, target, result.Envelope, result.MediaType, "signature", nil)
+		signatureDesc, err := attachEnvelope(ctx, target, manifest, path, p, result, nil)
 		if err != nil {
-			return fmt.Errorf("push signature envelope: %w", err)
+			return err
 		}
-
-		annotations := map[string]string{}
-		for k, v := range result.Annotations {
-			annotations[k] = v
-		}
-		annotations[AnnotationPlugin] = p.Kind
-
-		subject := ocispec.Descriptor{MediaType: manifest.MediaType, Digest: manifest.Digest, Size: manifest.Size}
-		signatureDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, result.ArtifactType, oras.PackManifestOptions{
-			Subject:             &subject,
-			Layers:              []ocispec.Descriptor{envelopeDesc},
-			ManifestAnnotations: annotations,
-		})
-		if err != nil {
-			return fmt.Errorf("push signature referrer: %w", err)
-		}
-
 		logger.Info("signed", "reference", ref, "plugin", p.Kind, "manifest", manifest.Digest.String(), "signature", signatureDesc.Digest.String())
 		return nil
 	}, nil
+}
+
+// NewAttester returns a transfer.Attester that has p's plugin sign an
+// in-toto statement as a DSSE envelope (see plugins/SIGNING-CONTRACT.md's
+// "signature attest") and pushes it as a referrer of the package manifest, the
+// same way NewSigner pushes a signature.
+func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Attester, error) {
+	path, err := plugin.Find(pluginDir, p.Kind)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error) {
+		statementFile, err := writeTemp("bomify-attestation-*.json", statement)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		defer os.Remove(statementFile)
+
+		result, err := attestStatement(path, statementFile, ref, p.Options, logger)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		desc, err := attachEnvelope(ctx, target, subject, path, p, result, annotations)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		logger.Info("attested", "reference", ref, "plugin", p.Kind, "manifest", subject.Digest.String(), "attestation", desc.Digest.String())
+		return desc, nil
+	}, nil
+}
+
+// attachEnvelope pushes the envelope in result, from the plugin at path,
+// as a referrer of subject, annotated with annotations, the plugin's own,
+// and AnnotationPlugin.
+func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Descriptor, path string, p Plugin, result pluginlib.SignResult, annotations map[string]string) (ocispec.Descriptor, error) {
+	// All three are required by the contract (see
+	// plugins/SIGNING-CONTRACT.md's SignResult): without them there's no
+	// referrer type to push, no media type to hand back to verify, or
+	// nothing to store at all.
+	if result.ArtifactType == "" || result.MediaType == "" || len(result.Envelope) == 0 {
+		return ocispec.Descriptor{}, fmt.Errorf("plugin %s reported an incomplete signing result (artifactType, mediaType, and envelope are all required)", path)
+	}
+
+	envelopeDesc, err := transfer.PushBytes(ctx, target, result.Envelope, result.MediaType, "signature", nil)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("push signature envelope: %w", err)
+	}
+
+	merged := map[string]string{}
+	for k, v := range result.Annotations {
+		merged[k] = v
+	}
+	for k, v := range annotations {
+		merged[k] = v
+	}
+	merged[AnnotationPlugin] = p.Kind
+
+	subject = ocispec.Descriptor{MediaType: subject.MediaType, Digest: subject.Digest, Size: subject.Size}
+	desc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, result.ArtifactType, oras.PackManifestOptions{
+		Subject:             &subject,
+		Layers:              []ocispec.Descriptor{envelopeDesc},
+		ManifestAnnotations: merged,
+	})
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("push signature referrer: %w", err)
+	}
+	return desc, nil
 }
 
 // NewVerifier returns a transfer.Verifier enforcing policy: for each
@@ -125,12 +166,17 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 // Policy.For), and if one must, requires at least one of the manifest's
 // signature referrers to pass that plugin's "signature verify" — failing
 // the pull outright otherwise. A reference no policy applies to is
-// restored unverified. pluginDir is where the verifying plugins are
-// installed (see plugin.Dir).
+// restored unverified, with a warning when --insecure-skip-verify
+// bypasses a trust rule that matched it, since that's a policy being
+// deliberately bypassed rather than simply absent. pluginDir is where the
+// verifying plugins are installed (see plugin.Dir).
 func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
-		p, required := policy.For(ref, logger)
+		p, required := policy.For(ref)
 		if !required {
+			if rule, ok := Resolve(policy.Rules, ref); ok && policy.Skip {
+				logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+			}
 			logger.Debug("no signature verification required", "reference", ref)
 			return nil
 		}
@@ -174,6 +220,12 @@ func Verify(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifes
 
 	var candidates []ocispec.Descriptor
 	for _, referrer := range referrers {
+		// An attestation (e.g. build provenance) is signed with the same
+		// plugin, and so the same artifact type, but over a statement, not
+		// the package.
+		if referrer.Annotations[transfer.AnnotationAttestation] != "" {
+			continue
+		}
 		if slices.Contains(supported.ArtifactTypes, referrer.ArtifactType) {
 			candidates = append(candidates, referrer)
 		}

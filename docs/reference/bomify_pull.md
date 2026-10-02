@@ -18,7 +18,10 @@ verification and before anything is written, and refuses it if anything
 is at or above <severity>. The two go together. A matching "bomify
 security policy" rule with --on pull does the same without flags, and
 its stored VEX exempts what it covers; flags override the rule, and
---skip-scan ignores it. Scanning may need network access.
+--skip-scan ignores it. VEX the publisher attached (see "bomify push
+--vex") also counts, but only when this pull verifies signatures and
+each document's own signature verifies. Scanning may need network
+access.
 
 --quiet prints only the package's pinned reference,
 <repository>@<digest>, with no progress or info logging.

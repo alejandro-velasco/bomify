@@ -17,8 +17,8 @@ reports and signatures, to a single tarball (an OCI image layout) that
 "bomify load" can restore anywhere without a registry. Shared components
 are stored once. It writes to stdout unless --output is given.
 
---sign signs each package as "bomify push --sign" does; the signature
-travels inside the tarball.`
+--sign and --vex work as for "bomify push", and provenance is attached
+the same way; all of it travels inside the tarball.`
 
 const saveExample = `  # Save one package to stdout, redirected to a file
   bomify save myapp:latest > packages.tar
@@ -66,7 +66,7 @@ func runSave(cmd *cobra.Command, tags []string, opts *saveOptions) error {
 
 	// Resolved before creating --output, so a bad --sign leaves no empty
 	// tarball behind.
-	transferOpts, done, err := opts.options(cmd, logger)
+	transferOpts, done, err := opts.transferOptions(cmd, logger)
 	if err != nil {
 		return err
 	}

@@ -13,7 +13,7 @@ import (
 
 // PrunedItem describes one manifest or layer Prune removed.
 type PrunedItem struct {
-	// Kind is "manifest", "layer", or "vulnerabilities".
+	// Kind is "manifest", "layer", "vulnerabilities", or "provenance".
 	Kind string
 	Path string
 }
@@ -90,6 +90,15 @@ func Prune(baseDir string) (PruneResult, error) {
 				return PruneResult{}, fmt.Errorf("remove %s: %w", manifestPath, err)
 			}
 			result.Removed = append(result.Removed, PrunedItem{Kind: "manifest", Path: manifestPath})
+		}
+
+		// A build's provenance goes with its build manifest.
+		provenancePath := layout.Provenance(baseDir, hash)
+		if _, err := os.Stat(provenancePath); err == nil {
+			if err := os.Remove(provenancePath); err != nil {
+				return PruneResult{}, fmt.Errorf("remove %s: %w", provenancePath, err)
+			}
+			result.Removed = append(result.Removed, PrunedItem{Kind: "provenance", Path: provenancePath})
 		}
 
 		layerDir := layout.Layer(baseDir, hash)

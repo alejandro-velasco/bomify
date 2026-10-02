@@ -2,7 +2,6 @@ package security
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
@@ -26,12 +24,6 @@ import (
 // AnnotationScanPlugin is the report referrer annotation naming the
 // scanning plugin(s) that produced its reports, purely informational.
 const AnnotationScanPlugin = "land.bomify.scan.plugin"
-
-// maxReferrerManifestSize bounds how large a report referrer's manifest
-// FetchReports will read. Referrers are published by whoever could push to
-// the repository, so this keeps a hostile one from making bomify download
-// something arbitrarily large just to list its layers.
-const maxReferrerManifestSize = 4 << 20
 
 // AttachedReport is one component's vulnerability report attached to a
 // package.
@@ -101,11 +93,6 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 		return ocispec.Descriptor{}, nil, false, nil
 	}
 
-	configDesc, err := transfer.PushBytes(ctx, target, ocispec.DescriptorEmptyJSON.Data, ocispec.MediaTypeEmptyJSON, "empty config", nil)
-	if err != nil {
-		return ocispec.Descriptor{}, nil, false, fmt.Errorf("push empty config: %w", err)
-	}
-
 	if newest.IsZero() {
 		newest = time.Unix(0, 0)
 	}
@@ -117,31 +104,13 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 		annotations[AnnotationScanPlugin] = strings.Join(scanners, ",")
 	}
 
-	subject := ocispec.Descriptor{MediaType: manifest.MediaType, Digest: manifest.Digest, Size: manifest.Size}
-	m := ocispec.Manifest{
-		Versioned:    specs.Versioned{SchemaVersion: 2},
-		MediaType:    ocispec.MediaTypeImageManifest,
-		ArtifactType: transfer.VulnerabilityReportsArtifactType,
-		Config:       configDesc,
-		Layers:       layers,
-		Subject:      &subject,
-		Annotations:  annotations,
-	}
-	data, err := json.Marshal(m)
+	// Built only from the reports themselves, so an identical referrer
+	// already in target — the same reports pushed again — is left alone
+	// (see transfer.PushReferrer).
+	referrer, err = transfer.PushReferrer(ctx, target, manifest, transfer.VulnerabilityReportsArtifactType, layers, annotations, "vulnerability reports")
 	if err != nil {
-		return ocispec.Descriptor{}, nil, false, fmt.Errorf("encode vulnerability report referrer: %w", err)
+		return ocispec.Descriptor{}, nil, false, err
 	}
-
-	// Pushed through PushBytes rather than oras.PackManifest so an
-	// identical referrer already in target — the same reports pushed
-	// again — is left alone instead of rejected (see PushBytes).
-	referrer, err = transfer.PushBytes(ctx, target, data, ocispec.MediaTypeImageManifest, "vulnerability reports", nil)
-	if err != nil {
-		return ocispec.Descriptor{}, nil, false, fmt.Errorf("push vulnerability report referrer: %w", err)
-	}
-	referrer.ArtifactType = transfer.VulnerabilityReportsArtifactType
-	referrer.Annotations = annotations
-
 	return referrer, attached, true, nil
 }
 
@@ -159,59 +128,16 @@ func reportProvenance(report *cdx.BOM) (scannedAt time.Time, scanner string) {
 	return scannedAt, scanner
 }
 
-// Referrers lists manifest's vulnerability report referrers in target,
-// newest first by their created annotation (ties broken by digest, so the
-// order is stable). A target that can't list referrers at all is an
-// error.
-func Referrers(ctx context.Context, target content.ReadOnlyStorage, manifest ocispec.Descriptor) ([]ocispec.Descriptor, error) {
-	graph, ok := target.(content.ReadOnlyGraphStorage)
-	if !ok {
-		return nil, fmt.Errorf("cannot list vulnerability reports: %T does not support referrers", target)
-	}
-
-	referrers, err := registry.Referrers(ctx, graph, manifest, transfer.VulnerabilityReportsArtifactType)
-	if err != nil {
-		return nil, fmt.Errorf("list vulnerability reports of %s: %w", manifest.Digest, err)
-	}
-	// A registry's Referrers API may ignore the artifactType filter.
-	referrers = slices.DeleteFunc(referrers, func(d ocispec.Descriptor) bool {
-		return d.ArtifactType != transfer.VulnerabilityReportsArtifactType
-	})
-
-	slices.SortStableFunc(referrers, func(a, b ocispec.Descriptor) int {
-		if c := createdAt(b).Compare(createdAt(a)); c != 0 {
-			return c
-		}
-		return strings.Compare(b.Digest.String(), a.Digest.String())
-	})
-	return referrers, nil
-}
-
-func createdAt(desc ocispec.Descriptor) time.Time {
-	t, _ := time.Parse(time.RFC3339, desc.Annotations[ocispec.AnnotationCreated])
-	return t
+// ReportReferrers lists manifest's vulnerability report referrers in target,
+// newest first (see transfer.Referrers).
+func ReportReferrers(ctx context.Context, target content.ReadOnlyStorage, manifest ocispec.Descriptor) ([]ocispec.Descriptor, error) {
+	return transfer.Referrers(ctx, target, manifest, transfer.VulnerabilityReportsArtifactType)
 }
 
 // FetchReports returns the report layers a vulnerability report referrer
 // carries.
 func FetchReports(ctx context.Context, target content.ReadOnlyStorage, referrer ocispec.Descriptor) ([]ocispec.Descriptor, error) {
-	if referrer.Size > maxReferrerManifestSize {
-		return nil, fmt.Errorf("referrer %s is %d bytes, larger than the %d allowed", referrer.Digest, referrer.Size, maxReferrerManifestSize)
-	}
-	data, err := content.FetchAll(ctx, target, referrer)
-	if err != nil {
-		return nil, fmt.Errorf("fetch referrer %s: %w", referrer.Digest, err)
-	}
-
-	var m ocispec.Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse referrer %s: %w", referrer.Digest, err)
-	}
-
-	layers := slices.DeleteFunc(m.Layers, func(d ocispec.Descriptor) bool {
-		return d.MediaType != transfer.VulnerabilityReportMediaType
-	})
-	return layers, nil
+	return transfer.ReferrerLayers(ctx, target, referrer, transfer.VulnerabilityReportMediaType)
 }
 
 // PruneTarget is a target PruneReferrers can list and delete referrers
@@ -222,7 +148,7 @@ type PruneTarget interface {
 }
 
 // PruneReferrers deletes all but the newest keep of manifest's
-// vulnerability report referrers in target (see Referrers), each along
+// vulnerability report referrers in target (see ReportReferrers), each along
 // with anything referring to it in turn — typically its signature — so
 // deleting a report never leaves an orphaned signature behind. keep < 1
 // deletes nothing. Only VulnerabilityReportsArtifactType referrers are
@@ -237,7 +163,7 @@ func PruneReferrers(ctx context.Context, target PruneTarget, manifest ocispec.De
 		return nil, nil
 	}
 
-	referrers, err := Referrers(ctx, target, manifest)
+	referrers, err := ReportReferrers(ctx, target, manifest)
 	if err != nil {
 		return nil, err
 	}

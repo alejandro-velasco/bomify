@@ -3,6 +3,7 @@ package security
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -41,14 +42,41 @@ func AddVEX(baseDir, name, path string) (StoredVEX, error) {
 	if err := namedstore.ValidateName(store.Kind, name); err != nil {
 		return StoredVEX{}, err
 	}
-	if _, err := LoadVEX([]string{path}); err != nil {
+	doc, err := readVEX(path, path)
+	if err != nil {
 		return StoredVEX{}, err
 	}
+	return store.Add(name, path, doc.Data)
+}
+
+// ReadVEX returns the VEX document arg names: the one stored in
+// baseDir's managed store under that name, if any, or else the file at
+// arg — checked to load, either way.
+func ReadVEX(baseDir, arg string) (VEXDocument, error) {
+	stored, err := ListVEX(baseDir)
+	if err != nil {
+		return VEXDocument{}, err
+	}
+	if i := slices.IndexFunc(stored, func(e StoredVEX) bool { return e.Name == arg }); i >= 0 {
+		return readVEX(arg, VEXPath(baseDir, stored[i].SHA256))
+	}
+	if _, err := os.Stat(arg); err != nil {
+		return VEXDocument{}, fmt.Errorf("%q is neither a stored VEX document (see \"bomify security vex list\") nor a file: %w", arg, err)
+	}
+	return readVEX(filepath.Base(arg), arg)
+}
+
+// readVEX reads the VEX document at path, named name, checking it loads.
+func readVEX(name, path string) (VEXDocument, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return StoredVEX{}, fmt.Errorf("read %s: %w", path, err)
+		return VEXDocument{}, fmt.Errorf("read %s: %w", path, err)
 	}
-	return store.Add(name, path, data)
+	doc := VEXDocument{Name: name, Data: data}
+	if _, err := LoadVEXDocuments([]VEXDocument{doc}); err != nil {
+		return VEXDocument{}, err
+	}
+	return doc, nil
 }
 
 // RemoveVEX removes name from baseDir's managed VEX store, deleting its
