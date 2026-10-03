@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
@@ -16,6 +18,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 	"github.com/alejandro-velasco/bomify/internal/table"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // defaultPluginRegistry is where "bomify plugin install" looks for plugin
@@ -56,8 +59,9 @@ downloading:
   - a digest pin, which is how bomify-plugin-sigstore itself is
     installed first, from the digests each release publishes.
 
-Each binary must also match the SHA-256 its SBOM declares. --verify=false
-skips the signature requirement, but not the checksum.`
+Each binary must also match the SHA-256 its SBOM declares, and speak the
+plugin contract versions bomify does, as its SBOM records. --verify=false
+skips the signature requirement, but not these checks.`
 
 const pluginInstallExample = `  # Bootstrap: install bomify-plugin-sigstore pinned to the digest a
   # bomify release published for it
@@ -200,8 +204,23 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return nil, nil
 	}
 
-	_, err := plugin.Find(layout.Plugins(dataDir), pluginVerifier)
+	_, err := plugin.Find(layout.Plugins(dataDir), pluginVerifier, pluginlib.SigningContract)
 	verifierInstalled := err == nil
+
+	switch {
+	case err == nil, errors.Is(err, plugin.ErrNotInstalled):
+	case errors.Is(err, plugin.ErrIncompatible):
+		// A verifier too old (or new) to speak the signing contract
+		// bomify needs can only be replaced by a package that's safe
+		// without it: one pinned by digest.
+		if len(opts.verifyOptions) > 0 || !isDigestReference(ref) {
+			return nil, fmt.Errorf("can't verify %s: %w — install a current %s pinned by digest first (%s@sha256:<digest>, digests are published with each bomify release)", ref, err, plugin.BinaryName(pluginVerifier), pluginVerifier)
+		}
+		logger.Warn("installing by pinned digest, without a signature check: the installed verifier is incompatible", "reference", ref, "error", err)
+		return nil, nil
+	default:
+		return nil, err
+	}
 
 	if len(opts.verifyOptions) > 0 {
 		if !verifierInstalled {
@@ -235,11 +254,11 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 	return nil, fmt.Errorf("can't verify %s: no signer is configured for it — pass --verify-option (key=<public key>, or certificate-identity=... and certificate-oidc-issuer=... for a keyless signer), run \"bomify trust create %s --match %s --option ...\" with the same options, pin it by digest, or pass --verify=false to install it unverified", ref, pluginVerifier, prefix.Repository(ref))
 }
 
-// isDigestReference reports whether ref names its package by digest
-// ("...@sha256:..."), rather than by a tag that could be moved.
+// isDigestReference reports whether ref names its package by a valid
+// digest ("...@sha256:<hex>"), rather than by a tag that could be moved.
 func isDigestReference(ref string) bool {
-	_, digest, ok := strings.Cut(ref, "@")
-	return ok && strings.HasPrefix(digest, "sha256:")
+	r, err := registry.ParseReference(ref)
+	return err == nil && r.ValidateReferenceAsDigest() == nil
 }
 
 const pluginListShort = "List installed plugins"

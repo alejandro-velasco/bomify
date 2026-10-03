@@ -7,8 +7,9 @@
 //	<out>/<kind>/sbom.cdx.json
 //
 // where the SBOM describes each binary as a plugin.PurlType component —
-// with its SHA-256, and a distribution reference relative to the SBOM —
-// ready for `bomify build`. Run it from the repository root; `make
+// with its SHA-256, the contract versions the plugin reports
+// (plugin.PropertyContracts), and a distribution reference relative to
+// the SBOM — ready for `bomify build`. Run it from the repository root; `make
 // plugin-packages` does:
 //
 //	go run ./hack/pluginpackages -version 1.12.0 -platforms "linux/amd64 windows/amd64" -out dist/plugin-packages
@@ -18,8 +19,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -32,6 +35,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // aliases lists, per plugin kind, the other kinds its binary also serves:
@@ -122,6 +126,11 @@ func buildPackage(dir, kind, version string, targets []platform, pkgDir string) 
 		return err
 	}
 
+	contracts, err := contractsOf(dir)
+	if err != nil {
+		return err
+	}
+
 	var binaries []binary
 	for _, target := range targets {
 		fmt.Printf("    %s/%s\n", target.os, target.arch)
@@ -139,7 +148,37 @@ func buildPackage(dir, kind, version string, targets []platform, pkgDir string) 
 		binaries = append(binaries, binary{platform: target, path: rel, sha256: sum})
 	}
 
-	return writeSBOM(filepath.Join(pkgDir, "sbom.cdx.json"), kind, version, binaries)
+	return writeSBOM(filepath.Join(pkgDir, "sbom.cdx.json"), kind, version, contracts, binaries)
+}
+
+// contractsOf asks the plugin in dir which contract versions it speaks,
+// returning its answer as plugin.PropertyContracts records it. The
+// plugin is run for this machine, since the binaries buildPackage
+// cross-compiles may not run here; every platform's build of the same
+// source speaks the same versions.
+func contractsOf(dir string) (string, error) {
+	cmd := exec.Command("go", "run", "./"+filepath.ToSlash(dir), pluginlib.ContractSubcommand)
+	// As in goBuild.
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		cmd = exec.Command("go", "run", ".", pluginlib.ContractSubcommand)
+		cmd.Dir = dir
+	}
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("ask for contract versions: %w", err)
+	}
+
+	var result pluginlib.ContractResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return "", fmt.Errorf("parse contract versions: %w", err)
+	}
+	if len(result.Contracts) == 0 {
+		return "", fmt.Errorf("plugin reports no contracts")
+	}
+	data, err := json.Marshal(result.Contracts)
+	return string(data), err
 }
 
 // goBuild cross-compiles the plugin in dir for target into dst.
@@ -184,12 +223,13 @@ func sha256File(path string) (string, error) {
 
 // writeSBOM writes the SBOM for kind's plugin package to path: one
 // plugin.PurlType component per binary, plus one per alias of kind (see
-// aliases), each pointing at the same binary.
-func writeSBOM(path, kind, version string, binaries []binary) error {
+// aliases), each pointing at the same binary and recording contracts (see
+// contractsOf).
+func writeSBOM(path, kind, version, contracts string, binaries []binary) error {
 	var components []cdx.Component
 	for _, b := range binaries {
 		for _, k := range append([]string{kind}, aliases[kind]...) {
-			components = append(components, component(k, version, b))
+			components = append(components, component(k, version, contracts, b))
 		}
 	}
 
@@ -215,8 +255,8 @@ func writeSBOM(path, kind, version string, binaries []binary) error {
 	return f.Close()
 }
 
-// component describes b as kind's plugin binary.
-func component(kind, version string, b binary) cdx.Component {
+// component describes b as kind's plugin binary, speaking contracts.
+func component(kind, version, contracts string, b binary) cdx.Component {
 	purl := plugin.Purl(kind, version, map[string]string{
 		"os":   b.platform.os,
 		"arch": b.platform.arch,
@@ -229,5 +269,6 @@ func component(kind, version string, b binary) cdx.Component {
 		PackageURL:         purl,
 		Hashes:             &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: b.sha256}},
 		ExternalReferences: &[]cdx.ExternalReference{{Type: cdx.ERTypeDistribution, URL: b.path}},
+		Properties:         &[]cdx.Property{{Name: plugin.PropertyContracts, Value: contracts}},
 	}
 }

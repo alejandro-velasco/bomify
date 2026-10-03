@@ -54,7 +54,8 @@ bomify-plugin-<kind> contract
 ```
 
 No flags. Print one JSON object to stdout and exit `0`; it must always
-report the same thing.
+report the same thing. bomify asks before it first calls a plugin, and
+refuses one that doesn't speak the version it needs, or can't answer.
 
 ```json
 { "contracts": { "component": 1, "sbom": 1 } }
@@ -130,7 +131,10 @@ A plugin package is a bomify package whose SBOM lists the binaries as
 qualifiers in `GOOS`/`GOARCH` terms. `bomify build` copies each binary
 from the path (or `file://` URL) in its `distribution` external
 reference, relative to the SBOM. Declare each binary's SHA-256: `build`
-checks it and `install` requires it.
+checks it and `install` requires it. Record the contract versions it
+speaks, its `contract` output's `contracts` object, as the
+`land.bomify.plugin.contracts` property: `install` refuses a binary that
+records none, or a version bomify doesn't speak.
 
 ```json
 {
@@ -144,6 +148,7 @@ checks it and `install` requires it.
       "version": "v1.0.0",
       "purl": "pkg:bomify-plugin/mykind@v1.0.0?os=linux&arch=amd64",
       "hashes": [{ "alg": "SHA-256", "content": "<sha256 of the binary>" }],
+      "properties": [{ "name": "land.bomify.plugin.contracts", "value": "{\"component\":1}" }],
       "externalReferences": [{ "type": "distribution", "url": "dist/linux-amd64/bomify-plugin-mykind" }]
     }
   ]

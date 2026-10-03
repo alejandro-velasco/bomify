@@ -89,7 +89,7 @@ type SigningHelp struct {
 // signing plugin contract around p.
 func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "signature",
+		Use:   SigningSubcommand,
 		Short: "Signing subcommands — see plugins/contracts/signing/v1/CONTRACT.md",
 	}
 	optionUsage := "a key=value option (repeatable): " + help.Options

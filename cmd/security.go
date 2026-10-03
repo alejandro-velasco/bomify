@@ -17,6 +17,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/table"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const securityShort = "Security scanning commands"
@@ -113,7 +114,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		return err
 	}
 
-	path, err := plugin.Find(layout.Plugins(dataDir), opts.scanType)
+	path, err := plugin.Find(layout.Plugins(dataDir), opts.scanType, pluginlib.SecurityContract)
 	if err != nil {
 		return err
 	}

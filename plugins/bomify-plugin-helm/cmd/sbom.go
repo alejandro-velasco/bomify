@@ -9,6 +9,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
 )
 
@@ -17,7 +18,7 @@ import (
 // binary's own component plugin subcommands under componentCmd.
 func sbomCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "sbom",
+		Use:   plugin.SBOMSubcommand,
 		Short: "SBOM generation subcommands — see plugins/contracts/sbom/v1/CONTRACT.md",
 	}
 

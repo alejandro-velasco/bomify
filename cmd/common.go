@@ -15,6 +15,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // forEachComponent calls fn for every component in the SBOM at sbomPath,
@@ -64,7 +65,7 @@ func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string
 		return "", "", fmt.Errorf("detect plugin kind: %w", err)
 	}
 
-	path, err = plugin.Find(layout.Plugins(dataDir), kind)
+	path, err = plugin.Find(layout.Plugins(dataDir), kind, pluginlib.ComponentContract)
 	if err != nil {
 		return "", "", err
 	}

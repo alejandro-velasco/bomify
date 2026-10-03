@@ -69,7 +69,7 @@ type payload struct {
 // whose subject is the package manifest and whose only layer is the
 // envelope. pluginDir is where p's plugin is installed.
 func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer, error) {
-	path, err := plugin.Find(pluginDir, p.Kind)
+	path, err := plugin.Find(pluginDir, p.Kind, pluginlib.SigningContract)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 // it as a referrer of the package manifest, the same way NewSigner pushes a
 // signature.
 func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Attester, error) {
-	path, err := plugin.Find(pluginDir, p.Kind)
+	path, err := plugin.Find(pluginDir, p.Kind, pluginlib.SigningContract)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.
 // if every one fails, naming why each did. pluginDir is where p's plugin
 // is installed (see plugin.Dir).
 func VerifySignature(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, pluginDir string, p Plugin, logger *slog.Logger) (signer string, err error) {
-	path, err := plugin.Find(pluginDir, p.Kind)
+	path, err := plugin.Find(pluginDir, p.Kind, pluginlib.SigningContract)
 	if err != nil {
 		return "", err
 	}
@@ -312,7 +312,7 @@ func fetchEnvelope(ctx context.Context, store content.ReadOnlyStorage, referrer 
 // there are no such referrers, or if every one fails, naming why each
 // did. pluginDir is where p's plugin is installed (see plugin.Dir).
 func VerifyAttestation(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, predicateType, pluginDir string, p Plugin, check func(statement []byte) error, logger *slog.Logger) (statement []byte, signer string, err error) {
-	path, err := plugin.Find(pluginDir, p.Kind)
+	path, err := plugin.Find(pluginDir, p.Kind, pluginlib.SigningContract)
 	if err != nil {
 		return nil, "", err
 	}

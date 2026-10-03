@@ -11,7 +11,10 @@ A plugin binary can implement any of four independent contracts:
 
 Every call bomify makes to a plugin goes through `plugin.Invoke`: run
 the binary, parse stdout as the contract's JSON result, and fold stderr
-into the error on failure. On the plugin side, `pkg/plugin`'s
+into the error on failure. `plugin.Find`, which locates the binary
+first, refuses one that doesn't speak the contract version bomify needs
+(see
+[Plugin installation](plugin-installation.md#contract-versions)). On the plugin side, `pkg/plugin`'s
 `ComponentCommand`, `SecurityCommand`, and `SignatureCommand` build each
 contract's subcommands (flags, validation, logging, output) around a
 small Go interface, so a first-party plugin's `cmd` package is only an

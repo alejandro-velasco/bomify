@@ -18,8 +18,9 @@ downloading:
   - a digest pin, which is how bomify-plugin-sigstore itself is
     installed first, from the digests each release publishes.
 
-Each binary must also match the SHA-256 its SBOM declares. --verify=false
-skips the signature requirement, but not the checksum.
+Each binary must also match the SHA-256 its SBOM declares, and speak the
+plugin contract versions bomify does, as its SBOM records. --verify=false
+skips the signature requirement, but not these checks.
 
 ```
 bomify plugin install <name>[:<version>|@<digest>] [flags]

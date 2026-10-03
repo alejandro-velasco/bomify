@@ -53,7 +53,7 @@ func TestWriteSBOMIsWhatBomifyBuilds(t *testing.T) {
 	}
 
 	sbomPath := filepath.Join(pkgDir, "sbom.cdx.json")
-	if err := writeSBOM(sbomPath, "oci", "1.12.0", binaries); err != nil {
+	if err := writeSBOM(sbomPath, "oci", "1.12.0", `{"component":1}`, binaries); err != nil {
 		t.Fatalf("writeSBOM() error = %v", err)
 	}
 
@@ -90,8 +90,33 @@ func TestWriteSBOMIsWhatBomifyBuilds(t *testing.T) {
 		if _, err := plugin.CheckBinary(c, pkgDir); err != nil {
 			t.Errorf("%s: bomify build would reject it: %v", c.PackageURL, err)
 		}
+
+		offered, ok, err := plugin.OfferedBy(c)
+		if err != nil || !ok {
+			t.Errorf("%s: OfferedBy() = %v, %v, want its contract versions", c.PackageURL, ok, err)
+		} else if err := plugin.CheckCompatible(c.Name, offered); err != nil {
+			t.Errorf("%s: bomify plugin install would refuse it: %v", c.PackageURL, err)
+		}
 	}
 	for b := range want {
 		t.Errorf("missing component %+v", b)
+	}
+}
+
+// TestContractsOf asks a real plugin, in this module and in its own, for
+// the contract versions it reports.
+func TestContractsOf(t *testing.T) {
+	for dir, want := range map[string]string{
+		filepath.Join("..", "..", "plugins", "bomify-plugin-generic"):  `{"component":1}`,
+		filepath.Join("..", "..", "plugins", "bomify-plugin-sigstore"): `{"signing":1}`,
+	} {
+		got, err := contractsOf(dir)
+		if err != nil {
+			t.Errorf("contractsOf(%s): %v", dir, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("contractsOf(%s) = %s, want %s", dir, got, want)
+		}
 	}
 }

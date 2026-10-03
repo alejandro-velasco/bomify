@@ -71,7 +71,7 @@ func TestBinaryName(t *testing.T) {
 }
 
 func TestFindMissing(t *testing.T) {
-	if _, err := Find(t.TempDir(), "does-not-exist-kind"); err == nil {
+	if _, err := Find(t.TempDir(), "does-not-exist-kind", pluginlib.ComponentContract); err == nil {
 		t.Fatal("Find() for nonexistent plugin: expected error, got nil")
 	}
 }

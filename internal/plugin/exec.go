@@ -17,6 +17,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // Invoke runs the plugin binary at path with args and returns its stdout
@@ -80,7 +81,7 @@ func runComponent[T any](path, verb string, component cdx.Component, baseDir str
 		}()
 	}
 
-	args := append([]string{"component", verb, "--purl", component.PackageURL, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
+	args := append([]string{pluginlib.ComponentSubcommand, verb, "--purl", component.PackageURL, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
 	result, err := Invoke[T](path, args...)
 	if err != nil {
 		return nil, err

@@ -17,16 +17,44 @@ const (
 	SigningContractVersion   = 1
 )
 
-// contractVersions maps each contract's top-level subcommand to the
-// contract's name, as ContractResult reports it, and version.
-var contractVersions = map[string]struct {
-	name    string
-	version int
-}{
-	"component": {"component", ComponentContractVersion},
-	"sbom":      {"sbom", SBOMContractVersion},
-	"security":  {"security", SecurityContractVersion},
-	"signature": {"signing", SigningContractVersion},
+// Contract names a plugin contract, as ContractResult reports it.
+type Contract string
+
+// The plugin contracts.
+const (
+	ComponentContract Contract = "component"
+	SBOMContract      Contract = "sbom"
+	SecurityContract  Contract = "security"
+	SigningContract   Contract = "signing"
+)
+
+// ContractVersions maps each contract to the major version of it this
+// package implements.
+var ContractVersions = map[Contract]int{
+	ComponentContract: ComponentContractVersion,
+	SBOMContract:      SBOMContractVersion,
+	SecurityContract:  SecurityContractVersion,
+	SigningContract:   SigningContractVersion,
+}
+
+// The top-level subcommand each contract's commands live under, and the
+// one every plugin reports its contract versions with. A contract's
+// subcommand isn't always its name: signing's is "signature".
+const (
+	ComponentSubcommand = "component"
+	SBOMSubcommand      = "sbom"
+	SecuritySubcommand  = "security"
+	SigningSubcommand   = "signature"
+	ContractSubcommand  = "contract"
+)
+
+// contractCommands maps each contract's top-level subcommand to the
+// contract.
+var contractCommands = map[string]Contract{
+	ComponentSubcommand: ComponentContract,
+	SBOMSubcommand:      SBOMContract,
+	SecuritySubcommand:  SecurityContract,
+	SigningSubcommand:   SigningContract,
 }
 
 // NewRootCommand builds a plugin binary's root command, bomify-plugin-<kind>,
@@ -54,12 +82,12 @@ func NewRootCommand(kind, short string, contracts ...*cobra.Command) *cobra.Comm
 func contractCommand(contracts []*cobra.Command) *cobra.Command {
 	result := ContractResult{Contracts: map[string]int{}}
 	for _, cmd := range contracts {
-		if c, ok := contractVersions[cmd.Name()]; ok {
-			result.Contracts[c.name] = c.version
+		if c, ok := contractCommands[cmd.Name()]; ok {
+			result.Contracts[string(c)] = ContractVersions[c]
 		}
 	}
 	return &cobra.Command{
-		Use:   "contract",
+		Use:   ContractSubcommand,
 		Short: "Print the plugin contracts this plugin implements and their versions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -27,7 +27,7 @@ type SecurityHelp struct {
 // security scanning plugin contract around p.
 func SecurityCommand(p SecurityPlugin, help SecurityHelp) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "security",
+		Use:   SecuritySubcommand,
 		Short: "Security scanning subcommands — see plugins/contracts/security/v1/CONTRACT.md",
 	}
 

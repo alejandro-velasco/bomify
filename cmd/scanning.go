@@ -19,6 +19,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // gateFlags are the --fail-on/--ignore/--vex flags, plus a skip flag,
@@ -304,7 +305,7 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 	}
 	components := sbom.Components(bom.Components)
 
-	path, err := plugin.Find(layout.Plugins(dataDir), scanner)
+	path, err := plugin.Find(layout.Plugins(dataDir), scanner, pluginlib.SecurityContract)
 	if err != nil {
 		return err
 	}

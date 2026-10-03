@@ -47,6 +47,9 @@ type packageOptions struct {
 	// after the build recorded its hash, so what's pushed no longer matches
 	// what the SBOM declares.
 	tamper string
+	// contracts is every component's plugin.PropertyContracts: by default
+	// {"component":1}, and none at all if "-".
+	contracts string
 }
 
 // publishPackage builds a plugin package carrying binaries — exactly as
@@ -76,6 +79,13 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 		}
 		if !opts.omitHashes {
 			c.Hashes = &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: hex.EncodeToString(sum[:])}}
+		}
+		switch opts.contracts {
+		case "":
+			c.Properties = &[]cdx.Property{{Name: plugin.PropertyContracts, Value: `{"component":1}`}}
+		case "-":
+		default:
+			c.Properties = &[]cdx.Property{{Name: plugin.PropertyContracts, Value: opts.contracts}}
 		}
 		components = append(components, c)
 	}
@@ -285,6 +295,36 @@ func TestInstallVerifierFailureInstallsNothing(t *testing.T) {
 		t.Fatalf("Install() error = %v, want %v", err, errUnsigned)
 	}
 	assertNothingInstalled(t, dataDir)
+}
+
+func TestInstallChecksContractVersions(t *testing.T) {
+	for name, tc := range map[string]struct {
+		contracts string
+		wantErr   string
+	}{
+		"another version": {contracts: `{"component":2}`, wantErr: "bomify needs component v1"},
+		// A package built before plugins reported their contract versions
+		// records none.
+		"predates them": {contracts: "-", wantErr: "predates them"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := publishPackage(t, []platformBinary{hostBinary("incompatible")}, packageOptions{contracts: tc.contracts})
+			recorder := &fetchRecorder{ReadOnlyTarget: store}
+			dataDir := t.TempDir()
+
+			_, err := Install(context.Background(), recorder, ref, dataDir, Options{RequireChecksum: true})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), `"bomify-plugin-fake"`) {
+				t.Fatalf("Install() error = %v, want one naming the plugin and containing %q", err, tc.wantErr)
+			}
+			if !errors.Is(err, plugin.ErrIncompatible) {
+				t.Errorf("Install() error = %v, want it to wrap plugin.ErrIncompatible", err)
+			}
+			if len(recorder.purls) != 0 {
+				t.Errorf("fetched layers for %v, want none", recorder.purls)
+			}
+			assertNothingInstalled(t, dataDir)
+		})
+	}
 }
 
 func TestListIncludesUnmanagedBinaries(t *testing.T) {

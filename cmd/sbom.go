@@ -8,6 +8,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const sbomShort = "Generate SBOMs for a deployment medium"
@@ -64,12 +65,12 @@ func sbomGenerateCmd() *cobra.Command {
 // imposes any flags of its own here — see
 // plugins/contracts/sbom/v1/CONTRACT.md.
 func runSBOMGenerate(cmd *cobra.Command, medium string, args []string) error {
-	path, err := plugin.Find(layout.Plugins(dataDir), medium)
+	path, err := plugin.Find(layout.Plugins(dataDir), medium, pluginlib.SBOMContract)
 	if err != nil {
 		return err
 	}
 
-	sub := exec.Command(path, append([]string{"sbom", "generate"}, args...)...)
+	sub := exec.Command(path, append([]string{pluginlib.SBOMSubcommand, "generate"}, args...)...)
 	sub.Stdin = cmd.InOrStdin()
 	sub.Stdout = cmd.OutOrStdout()
 	sub.Stderr = cmd.ErrOrStderr()

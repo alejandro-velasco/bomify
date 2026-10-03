@@ -11,6 +11,8 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // binaryComponent returns a PurlType component for purl whose binary is
@@ -187,12 +189,9 @@ func TestCheckBinary(t *testing.T) {
 
 func TestFindInstalled(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ExecutableName("fake", runtime.GOOS))
-	if err := os.WriteFile(path, []byte("x"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	path := testutil.InstallFakePlugin(t, dir, "fake")
 
-	got, err := Find(dir, "fake")
+	got, err := Find(dir, "fake", pluginlib.ComponentContract)
 	if err != nil {
 		t.Fatalf("Find() error = %v", err)
 	}
@@ -203,7 +202,7 @@ func TestFindInstalled(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, ExecutableName("dir", runtime.GOOS)), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Find(dir, "dir"); err == nil {
+	if _, err := Find(dir, "dir", pluginlib.ComponentContract); err == nil {
 		t.Error("Find() for a directory: want error")
 	}
 }

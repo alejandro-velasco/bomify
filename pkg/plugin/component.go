@@ -63,7 +63,7 @@ type ComponentHelp struct {
 // component plugin contract around p.
 func ComponentCommand(p ComponentPlugin, help ComponentHelp) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "component",
+		Use:   ComponentSubcommand,
 		Short: "Component plugin subcommands (pull/push/remote) — see plugins/contracts/component/v1/CONTRACT.md",
 	}
 	cmd.AddCommand(pullCommand(p, help.Pull), pushCommand(p, help.Push, help.RemoteFlag), remoteCommand(p, help.Remote))

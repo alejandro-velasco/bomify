@@ -33,6 +33,36 @@ signature requirement only; a mismatched checksum still fails. `bomify
 plugin list` shows every installed binary and its `installed.json`
 entry.
 
+## Contract versions
+
+bomify refuses a plugin that doesn't speak the
+[contract version](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)
+it needs, which is `pkg/plugin`'s (`ContractVersions`), both when installing
+it and when calling it:
+
+- **Installing**: each binary's component records the versions it
+  speaks as the `land.bomify.plugin.contracts` property, e.g.
+  `{"component":1}`, which `hack/pluginpackages` gets from the plugin's
+  `contract` subcommand at release. `Install` checks it on the SBOM
+  alone (the pull's `Scan` hook), before any binary is downloaded, with
+  `plugin.CheckCompatible`: every contract bomify speaks that the binary
+  records must be at bomify's version, since bomify can't yet tell which
+  one it will be called through. A binary recording none predates
+  contract versions and is refused.
+- **Calling**: `plugin.Find` takes the contract its caller is about to
+  use, and before returning the binary asks it with `contract` and
+  checks that contract's version (`plugin.CheckOffered`). Each binary is
+  asked once per run, cached by path, size, and modification time. A
+  binary that can't answer predates contract versions, so it's refused
+  with an upgrade hint, as is one installed some other way that speaks
+  the wrong version.
+
+Either error names the plugin, the versions it offers, and the version
+bomify needs, and wraps `plugin.ErrIncompatible`. An incompatible
+`bomify-plugin-sigstore` can't verify its own replacement, so
+`pluginInstallPolicy` then only accepts a package pinned by digest, as
+when bootstrapping it; any other failure to find it is an error.
+
 ## Releases
 
 `make plugin-packages` ([`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages))

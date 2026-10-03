@@ -27,6 +27,7 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,8 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // binaryPrefix precedes the kind in a plugin's executable name.
@@ -85,16 +88,24 @@ func ExecutableName(kind, goos string) string {
 	return BinaryName(kind)
 }
 
+// ErrNotInstalled is what Find's error wraps when no plugin of the kind
+// asked for is installed at all.
+var ErrNotInstalled = errors.New("not installed")
+
 // Find resolves the plugin binary for kind in dir (see layout.Plugins) —
-// the only place bomify looks for one; PATH is never consulted. It
-// returns an error if no such plugin is installed there.
-func Find(dir, kind string) (string, error) {
+// the only place bomify looks for one; PATH is never consulted — that
+// bomify will call through contract. Before returning it, Find checks the
+// plugin speaks the version of contract bomify needs, the one pkg/plugin
+// implements (pluginlib.ContractVersions), asking it with its "contract"
+// subcommand once per run. It returns an error wrapping ErrNotInstalled if
+// no such plugin is installed there.
+func Find(dir, kind string, contract pluginlib.Contract) (string, error) {
 	path := filepath.Join(dir, ExecutableName(kind, runtime.GOOS))
 
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("plugin %q is not installed in %s (install it with \"bomify plugin install %s\")", BinaryName(kind), dir, kind)
+			return "", fmt.Errorf("plugin %q is %w in %s (install it with \"bomify plugin install %s\")", BinaryName(kind), ErrNotInstalled, dir, kind)
 		}
 		return "", fmt.Errorf("plugin %q: %w", BinaryName(kind), err)
 	}
@@ -102,5 +113,8 @@ func Find(dir, kind string) (string, error) {
 		return "", fmt.Errorf("plugin %q: %s is a directory, not an executable", BinaryName(kind), path)
 	}
 
+	if err := checkContract(path, kind, info, contract); err != nil {
+		return "", err
+	}
 	return path, nil
 }

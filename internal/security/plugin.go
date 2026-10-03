@@ -15,7 +15,7 @@ import (
 // plugins/contracts/security/v1/CONTRACT.md).
 func scanComponent(path string, component cdx.Component, logger *slog.Logger) (pluginlib.SecurityResult, error) {
 	logger.Info("scanning component", "purl", component.PackageURL)
-	return plugin.Invoke[pluginlib.SecurityResult](path, "security", "scan", "--purl", component.PackageURL)
+	return plugin.Invoke[pluginlib.SecurityResult](path, pluginlib.SecuritySubcommand, "scan", "--purl", component.PackageURL)
 }
 
 // supportedComponents invokes the scanning plugin's "security
@@ -23,5 +23,5 @@ func scanComponent(path string, component cdx.Component, logger *slog.Logger) (p
 // worth dispatching to scanComponent at all.
 func supportedComponents(path string, logger *slog.Logger) (pluginlib.SupportedComponentsResult, error) {
 	logger.Info("querying supported components", "path", path)
-	return plugin.Invoke[pluginlib.SupportedComponentsResult](path, "security", "supported-components")
+	return plugin.Invoke[pluginlib.SupportedComponentsResult](path, pluginlib.SecuritySubcommand, "supported-components")
 }

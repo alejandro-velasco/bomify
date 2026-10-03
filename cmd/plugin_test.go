@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -17,6 +18,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
 func TestPluginReference(t *testing.T) {
@@ -48,18 +50,71 @@ func TestPluginReference(t *testing.T) {
 	}
 }
 
-// installFakeVerifier puts a placeholder bomify-plugin-sigstore into
-// baseDir's plugins directory. pluginInstallVerifier only checks it's
-// installed; nothing here ever runs it.
+// fakeVerifier is the fake plugin (see testutil), built once for every
+// installFakeVerifier to copy.
+var fakeVerifier struct {
+	once sync.Once
+	data []byte
+	err  error
+}
+
+// installFakeVerifier installs the fake plugin as bomify-plugin-sigstore
+// into baseDir's plugins directory. pluginInstallPolicy only asks it
+// which contract versions it speaks (see plugin.Find); nothing here signs
+// or verifies with it.
 func installFakeVerifier(t *testing.T, baseDir string) {
 	t.Helper()
+
+	fakeVerifier.once.Do(func() {
+		bin := testutil.InstallFakePlugin(t, os.TempDir(), "bomify-cmd-test-verifier")
+		fakeVerifier.data, fakeVerifier.err = os.ReadFile(bin)
+		os.Remove(bin)
+	})
+	if fakeVerifier.err != nil {
+		t.Fatal(fakeVerifier.err)
+	}
 
 	dir := layout.Plugins(baseDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, plugin.ExecutableName(pluginVerifier, runtime.GOOS)), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plugin.ExecutableName(pluginVerifier, runtime.GOOS)), fakeVerifier.data, 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// brokenVerifier puts a directory where bomify-plugin-sigstore belongs,
+// so finding it fails for a reason other than its contract versions.
+func brokenVerifier(t *testing.T, baseDir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(layout.Plugins(baseDir), plugin.ExecutableName(pluginVerifier, runtime.GOOS)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// installOutdatedVerifier installs a bomify-plugin-sigstore that speaks a
+// signing contract version bomify doesn't.
+func installOutdatedVerifier(t *testing.T, baseDir string) {
+	t.Helper()
+	t.Setenv("FAKEPLUGIN_CONTRACTS", `{"signing":0}`)
+	installFakeVerifier(t, baseDir)
+}
+
+func TestIsDigestReference(t *testing.T) {
+	const hex = "0000000000000000000000000000000000000000000000000000000000000000"
+	for ref, want := range map[string]bool{
+		"ghcr.io/org/plugins/oci@sha256:" + hex:       true,
+		"ghcr.io/org/plugins/oci:1.0@sha256:" + hex:   true,
+		"ghcr.io/org/plugins/oci@sha512:" + hex + hex: true,
+		"ghcr.io/org/plugins/oci:1.0":                 false,
+		"ghcr.io/org/plugins/oci":                     false,
+		"ghcr.io/org/plugins/oci@sha256:zz":           false,
+		"ghcr.io/org/plugins/oci@sha256:" + hex[:10]:  false,
+		"ghcr.io/org/plugins/oci@md5:" + hex[:32]:     false,
+	} {
+		if got := isDigestReference(ref); got != want {
+			t.Errorf("isDigestReference(%q) = %v, want %v", ref, got, want)
+		}
 	}
 }
 
@@ -100,6 +155,8 @@ func TestPluginInstallPolicy(t *testing.T) {
 		// sigstore itself is bootstrapped.
 		{name: "digest pin, sigstore missing", ref: digestRef, opts: pluginInstallOptions{verify: true}},
 		{name: "digest pin, sigstore installed", ref: digestRef, setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}},
+		// A malformed digest pins nothing, so it needs a signer like a tag.
+		{name: "malformed digest pin", ref: "ghcr.io/alejandro-velasco/bomify/plugins/oci@sha256:zz", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true}, wantErr: true},
 		{name: "verify options with sigstore installed", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
 		{name: "verify options without sigstore", opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
 		{name: "malformed verify option", setup: installFakeVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"cosign.pub"}}, wantErr: true},
@@ -113,6 +170,13 @@ func TestPluginInstallPolicy(t *testing.T) {
 		{name: "trust rule for another registry, digest pin", ref: digestRef, setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}},
 		{name: "verify=false ignores a matching trust rule", setup: trustRule(""), opts: pluginInstallOptions{verify: false}},
 		{name: "verify=false with verify options", setup: installFakeVerifier, opts: pluginInstallOptions{verify: false, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
+		// A verifier that can't be used is only replaced by digest pin, as
+		// it was first installed.
+		{name: "outdated sigstore", setup: installOutdatedVerifier, opts: pluginInstallOptions{verify: true}, wantErr: true},
+		{name: "outdated sigstore, digest pin", ref: digestRef, setup: installOutdatedVerifier, opts: pluginInstallOptions{verify: true}},
+		{name: "outdated sigstore, verify options", ref: digestRef, setup: installOutdatedVerifier, opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantErr: true},
+		// Anything else wrong with the verifier isn't a reason to skip it.
+		{name: "something else in sigstore's place, digest pin", ref: digestRef, setup: brokenVerifier, opts: pluginInstallOptions{verify: true}, wantErr: true},
 	}
 
 	for _, tt := range tests {

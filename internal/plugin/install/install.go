@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
@@ -65,10 +66,12 @@ type Options struct {
 
 // Install pulls the package ref names from target into a staging
 // directory, picks every plugin.PurlType component its SBOM describes
-// that matches opts.GOOS/opts.GOARCH, checks each binary against its
-// component's declared SHA-256, and only then — every one having passed
-// — moves them all into dataDir's plugins directory, replacing any
-// earlier install of the same kind, and records them (see List). Nothing
+// that matches opts.GOOS/opts.GOARCH, checks each one speaks the plugin
+// contract versions bomify does (see plugin.CheckCompatible) before
+// downloading it and against its component's declared SHA-256 after, and
+// only then — every one having passed — moves them all into dataDir's
+// plugins directory, replacing any earlier install of the same kind, and
+// records them (see List). Nothing
 // is installed if any step fails, and the staging directory is always
 // removed again; the package itself is never recorded as a local package
 // the way "bomify pull" would.
@@ -104,7 +107,24 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 		b, ok, err := plugin.ParseBinary(cdx.Component{PackageURL: purl})
 		return err == nil && ok && b.Matches(goos, goarch)
 	}
-	result, err := pull.PullLayers(ctx, target, ref, staging, transfer.Options{Concurrency: opts.Concurrency, Progress: opts.Progress, Verify: opts.Verify}, keep)
+	// Checked on the SBOM alone, before any binary is downloaded.
+	checkPackage := func(_ context.Context, _ oras.ReadOnlyTarget, _ string, _ ocispec.Descriptor, sbomData []byte) error {
+		bom, err := sbom.LoadBytes(sbomData)
+		if err != nil {
+			return fmt.Errorf("parse package sbom: %w", err)
+		}
+		candidates, err := selectBinaries(bom, goos, goarch)
+		if err != nil {
+			return err
+		}
+		for _, c := range candidates {
+			if err := checkBinaryContracts(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	result, err := pull.PullLayers(ctx, target, ref, staging, transfer.Options{Concurrency: opts.Concurrency, Progress: opts.Progress, Verify: opts.Verify, Scan: checkPackage}, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +219,22 @@ func selectBinaries(bom *cdx.BOM, goos, goarch string) ([]candidate, error) {
 		return nil, fmt.Errorf("package has no plugin binary for %s/%s (available: %s)", goos, goarch, strings.Join(platforms, ", "))
 	}
 	return selected, nil
+}
+
+// checkBinaryContracts fails unless c's binary records contract versions
+// (see plugin.PropertyContracts) that bomify can use (see
+// plugin.CheckCompatible). A package that records none was built before
+// plugins reported their contract versions.
+func checkBinaryContracts(c candidate) error {
+	name := plugin.BinaryName(c.binary.Kind)
+	offered, ok, err := plugin.OfferedBy(c.component)
+	if err != nil {
+		return fmt.Errorf("%s: %w", c.component.PackageURL, err)
+	}
+	if !ok {
+		return fmt.Errorf("plugin %q is %w: it doesn't record which plugin contract versions it speaks (the %s property), so it predates them; install a newer version of it", name, plugin.ErrIncompatible, plugin.PropertyContracts)
+	}
+	return plugin.CheckCompatible(name, offered)
 }
 
 // platformOf formats b's kind and platform for an error message.

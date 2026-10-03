@@ -13,7 +13,7 @@ import (
 // passed through, unparsed, as its own --option flag.
 func signPayload(path, payloadFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
 	logger.Debug("signing", "path", path, "reference", ref)
-	args := append([]string{"signature", "sign", "--payload", payloadFile, "--reference", ref}, optionArgs(options)...)
+	args := append([]string{pluginlib.SigningSubcommand, "sign", "--payload", payloadFile, "--reference", ref}, optionArgs(options)...)
 	return plugin.Invoke[pluginlib.SignResult](path, args...)
 }
 
@@ -21,7 +21,7 @@ func signPayload(path, payloadFile, ref string, options []string, logger *slog.L
 // the in-toto statement in statementFile, as signPayload does.
 func attestStatement(path, statementFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
 	logger.Debug("attesting", "path", path, "reference", ref)
-	args := append([]string{"signature", "attest", "--statement", statementFile, "--reference", ref}, optionArgs(options)...)
+	args := append([]string{pluginlib.SigningSubcommand, "attest", "--statement", statementFile, "--reference", ref}, optionArgs(options)...)
 	return plugin.Invoke[pluginlib.SignResult](path, args...)
 }
 
@@ -34,7 +34,7 @@ func attestStatement(path, statementFile, ref string, options []string, logger *
 func verifyEnvelope(path, payloadFile, envelopeFile, mediaType, ref string, options []string, logger *slog.Logger) (pluginlib.VerifyResult, error) {
 	logger.Debug("verifying signature", "path", path, "reference", ref, "mediaType", mediaType)
 	args := append([]string{
-		"signature", "verify",
+		pluginlib.SigningSubcommand, "verify",
 		"--payload", payloadFile,
 		"--envelope", envelopeFile,
 		"--media-type", mediaType,
@@ -50,7 +50,7 @@ func verifyEnvelope(path, payloadFile, envelopeFile, mediaType, ref string, opti
 func verifyAttestationEnvelope(path, envelopeFile, mediaType, subject, ref string, options []string, logger *slog.Logger) (pluginlib.VerifyAttestationResult, error) {
 	logger.Debug("verifying attestation", "path", path, "reference", ref, "mediaType", mediaType)
 	args := append([]string{
-		"signature", "verify-attestation",
+		pluginlib.SigningSubcommand, "verify-attestation",
 		"--envelope", envelopeFile,
 		"--media-type", mediaType,
 		"--subject", subject,
@@ -64,7 +64,7 @@ func verifyAttestationEnvelope(path, envelopeFile, mediaType, subject, ref strin
 // "signature verify" understands.
 func supportedTypes(path string, logger *slog.Logger) (pluginlib.SupportedSignatureTypesResult, error) {
 	logger.Debug("querying supported signature types", "path", path)
-	return plugin.Invoke[pluginlib.SupportedSignatureTypesResult](path, "signature", "supported-types")
+	return plugin.Invoke[pluginlib.SupportedSignatureTypesResult](path, pluginlib.SigningSubcommand, "supported-types")
 }
 
 // optionArgs expands each "key=value" option into its own --option flag.
