@@ -39,8 +39,9 @@ entry.
 cross-compiles each first-party plugin and writes its SBOM (plus a
 `docker` alias in `oci`'s). `make push-plugin-packages`
 ([`hack/push-plugin-packages.sh`](https://github.com/alejandro-velasco/bomify/blob/main/hack/push-plugin-packages.sh)) pushes
-each as `<registry>/<kind>:<version>` and `:latest`, signed, and writes
-the pinned references to `plugin-digests.txt`.
+each as `<registry>/<kind>:<version>` and `:latest`, signed, with its
+[build provenance](provenance.md) attached and signed the same way, and
+writes the pinned references to `plugin-digests.txt`.
 
 [`release.yml`](https://github.com/alejandro-velasco/bomify/blob/main/.github/workflows/release.yml) runs only after Build
 passes on a release branch (`alpha-release` or `beta-release`; `main`
@@ -54,7 +55,8 @@ runs no npm code:
   `PLUGIN_SIGN_KEYLESS=true`, the only job with `id-token: write`.
   Before each push it fetches a fresh GitHub OIDC token (they expire in
   minutes) and passes it to `bomify-plugin-sigstore` as
-  `SIGSTORE_ID_TOKEN`. Fulcio issues a certificate for
+  `SIGSTORE_ID_TOKEN`, and sets `BOMIFY_INVOCATION_ID` to the run's
+  URL. Fulcio issues a certificate for
   `https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main`,
   logged in Rekor. There's no key to store or leak.
 - `publish-digests`: attaches `plugin-digests.txt` to the release.

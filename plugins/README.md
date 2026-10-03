@@ -72,6 +72,10 @@ bomify trust create sigstore --match ghcr.io/alejandro-velasco/bomify/plugins \
 From then on, installs from that registry, including upgrades of
 `sigstore`, fail unless that workflow signed them.
 
+Each package also carries its
+[build provenance](https://alejandro-velasco.github.io/bomify/development/architecture/provenance/),
+signed by the same workflow.
+
 ## Publishing a plugin
 
 A plugin package is a bomify package whose SBOM lists the binaries as

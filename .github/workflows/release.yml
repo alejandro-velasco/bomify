@@ -23,7 +23,8 @@ name: Release
 #   release          semantic-release: version, tag, GitHub release, and
 #                    container image. No id-token permission.
 #   sign-plugins     builds, signs (keyless), and pushes the plugin
-#                    packages. The only job with id-token: write.
+#                    packages and their build provenance. The only job
+#                    with id-token: write.
 #   publish-digests  attaches every plugin package's pinned reference to
 #                    the GitHub release, so users can bootstrap
 #                    bomify-plugin-sigstore by digest.
@@ -132,7 +133,10 @@ jobs:
       - name: Build plugin packages
         run: make plugin-packages VERSION="$VERSION"
 
+      # Recorded in each package's provenance as the run that built it.
       - name: Sign and push plugin packages
+        env:
+          BOMIFY_INVOCATION_ID: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: make push-plugin-packages VERSION="$VERSION" PLUGIN_REGISTRY="${{ steps.repo.outputs.registry }}" PLUGIN_SIGN_KEYLESS=true PLUGIN_DIGESTS_FILE="$RUNNER_TEMP/plugin-digests.txt"
 
       - name: Keep pinned references

@@ -8,6 +8,11 @@
 # (<repository>@<digest>) is written to PLUGIN_DIGESTS_FILE (default
 # PACKAGES_DIR/plugin-digests.txt), for the release to publish.
 #
+# Every package is built with --provenance, so it's pushed with SLSA
+# build provenance attached, signed along with the package when signing
+# is set up below. Export BOMIFY_INVOCATION_ID (e.g. the CI run's URL) to
+# record which run built it.
+#
 # Uses a throwaway data directory, so nothing here touches (or depends
 # on) the caller's own ~/.bomify. Registry credentials are the ones
 # `bomify login` (or `docker login` — they share a store) already has.
@@ -153,7 +158,7 @@ for sbom in "${sboms[@]}"; do
 	for tag in "${tags[@]}"; do
 		tag_args+=(--tag "$repo:$tag")
 	done
-	bomify build "$sbom" "${tag_args[@]}"
+	bomify build "$sbom" "${tag_args[@]}" --provenance
 
 	for tag in "${tags[@]}"; do
 		if [ "$keyless" = true ]; then

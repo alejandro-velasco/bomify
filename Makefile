@@ -92,7 +92,8 @@ plugin-packages:
 
 # push-plugin-packages builds each SBOM plugin-packages wrote into a bomify
 # package and pushes it as $(PLUGIN_REGISTRY)/<kind>:$(VERSION) (and
-# :latest, for a release version), signed with bomify-plugin-sigstore when
+# :latest, for a release version), with its build provenance attached, and
+# both signed with bomify-plugin-sigstore when
 # PLUGIN_SIGN_KEYLESS=true (keyless, as the running GitHub Actions workflow)
 # or PLUGIN_SIGN_KEY names a private key. Run plugin-packages first (with the
 # same VERSION): it's not a dependency, so a release can build everything
