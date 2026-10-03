@@ -125,9 +125,9 @@ func Prune(baseDir string) (PruneResult, error) {
 // candidateHashes returns every hash with a manifest file under
 // manifestsDir, a layer directory under layersDir, or a directory of
 // vulnerability reports under reportsDir — i.e. every hash Prune might
-// need to reclaim. A missing directory
-// contributes no candidates rather than erroring, since a fresh baseDir
-// (or one with nothing pulled yet) simply has nothing to prune there.
+// need to reclaim. A missing directory contributes no candidates rather
+// than erroring, since a fresh baseDir (or one with nothing pulled yet)
+// simply has nothing to prune there.
 func candidateHashes(manifestsDir, layersDir, reportsDir string) ([]string, error) {
 	seen := map[string]bool{}
 	var hashes []string

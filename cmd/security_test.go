@@ -11,7 +11,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
-	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
@@ -116,7 +116,7 @@ func runSecurityScanCmd(t *testing.T, baseDir, scanType, tag string) (string, er
 func readReport(t *testing.T, baseDir string, component cdx.Component) *cdx.BOM {
 	t.Helper()
 
-	report, err := security.ReadReport(baseDir, layout.PurlHash(component.PackageURL), "grype")
+	report, err := sbom.Load(layout.Report(baseDir, layout.PurlHash(component.PackageURL), "grype"))
 	if err != nil {
 		t.Fatalf("read report for %s: %v", component.PackageURL, err)
 	}
@@ -393,7 +393,7 @@ func TestSecurityScanKeepsEveryScannersReport(t *testing.T) {
 
 	purlHash := layout.PurlHash(component.PackageURL)
 	for _, scanner := range []string{"grype", "trivy"} {
-		report, err := security.ReadReport(baseDir, purlHash, scanner)
+		report, err := sbom.Load(layout.Report(baseDir, purlHash, scanner))
 		if err != nil {
 			t.Fatalf("%s's report: %v", scanner, err)
 		}

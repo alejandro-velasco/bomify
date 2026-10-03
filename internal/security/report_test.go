@@ -9,6 +9,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -48,7 +49,7 @@ func TestReportsArePerScanner(t *testing.T) {
 		t.Errorf("grype's path = %s, want %s", stored[0].Path, want)
 	}
 	for scanner, want := range map[string]string{"grype": "CVE-GRYPE", "trivy": "CVE-TRIVY"} {
-		report, err := ReadReport(baseDir, purlHash, scanner)
+		report, err := sbom.Load(layout.Report(baseDir, purlHash, scanner))
 		if err != nil {
 			t.Fatal(err)
 		}

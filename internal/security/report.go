@@ -21,7 +21,6 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/sbom"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -160,10 +159,4 @@ func ReadReports(baseDir, purlHash string) ([]StoredReport, error) {
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Scanner < reports[j].Scanner })
 	return reports, nil
-}
-
-// ReadReport reads scanner's vulnerability report of the component whose
-// purl hashes to purlHash.
-func ReadReport(baseDir, purlHash, scanner string) (*cdx.BOM, error) {
-	return sbom.Load(layout.Report(baseDir, purlHash, scanner))
 }

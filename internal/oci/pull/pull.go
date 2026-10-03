@@ -405,6 +405,7 @@ func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, d
 	if err := downloadBlob(ctx, target, desc, destPath, purl, progress); err != nil {
 		return Layer{}, err
 	}
+
 	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
 }
 
