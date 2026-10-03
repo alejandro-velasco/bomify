@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -21,23 +22,27 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 )
 
-// AnnotationScanPlugin is the report referrer annotation naming the
-// scanning plugin(s) that produced its reports, purely informational.
+// AnnotationScanPlugin names the scanning plugin that produced a report:
+// on each report layer, the one scanner whose report it is (which pull
+// restores it as); on the report referrer, every scanner it carries
+// reports of, comma-separated, purely informational.
 const AnnotationScanPlugin = "land.bomify.scan.plugin"
 
-// AttachedReport is one component's vulnerability report attached to a
-// package.
+// AttachedReport is one scanner's vulnerability report of one component,
+// attached to a package.
 type AttachedReport struct {
-	Purl string
-	Hash string
+	Purl    string
+	Scanner string
+	Hash    string
 }
 
-// Attach pushes the local vulnerability report (see WriteReport) of
-// every component in components that has one into target, as the layers
-// of a single VulnerabilityReportsArtifactType referrer whose subject is
-// the package manifest, manifest. It returns that referrer and the
-// reports it carries, in components' order; ok is false, and nothing is
-// pushed, when no component has a local report at all.
+// Attach pushes every local vulnerability report (see WriteReport) of
+// every component in components — one per scanner that scanned it — into
+// target, as the layers of a single VulnerabilityReportsArtifactType
+// referrer whose subject is the package manifest, manifest. It returns
+// that referrer and the reports it carries, in components' order and by
+// scanner within each; ok is false, and nothing is pushed, when no
+// component has a local report at all.
 //
 // The referrer is built only from the reports themselves — its created
 // annotation is the newest report's scan time, not the time of the push
@@ -57,37 +62,47 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 		}
 		seen[purlHash] = true
 
-		reportPath := layout.Report(baseDir, purlHash)
-		data, err := os.ReadFile(reportPath)
+		stored, err := ReadReports(baseDir, purlHash)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return ocispec.Descriptor{}, nil, false, fmt.Errorf("read vulnerability report %s: %w", reportPath, err)
+			return ocispec.Descriptor{}, nil, false, err
 		}
+		for _, s := range stored {
+			data, err := os.ReadFile(s.Path)
+			if err != nil {
+				return ocispec.Descriptor{}, nil, false, fmt.Errorf("read vulnerability report %s: %w", s.Path, err)
+			}
 
-		if report, err := sbom.LoadBytes(data); err == nil {
-			scannedAt, scanner := reportProvenance(report)
-			if scannedAt.After(newest) {
-				newest = scannedAt
+			if report, err := sbom.LoadBytes(data); err == nil {
+				if scannedAt := reportScannedAt(report); scannedAt.After(newest) {
+					newest = scannedAt
+				}
 			}
-			if scanner != "" && !slices.Contains(scanners, scanner) {
-				scanners = append(scanners, scanner)
+			if !slices.Contains(scanners, s.Scanner) {
+				scanners = append(scanners, s.Scanner)
 			}
-		}
 
-		purl := component.PackageURL
-		label := transfer.Label(purl, purlHash)
-		desc, err := transfer.PushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
-		if err != nil {
-			return ocispec.Descriptor{}, nil, false, fmt.Errorf("push vulnerability report %s: %w", label, err)
+			// Titled with its path under the data directory's reports, so a
+			// tool pulling the referrer into a directory (e.g. "oras pull")
+			// lays the reports out as bomify keeps them.
+			title, err := filepath.Rel(layout.Reports(baseDir), s.Path)
+			if err != nil {
+				return ocispec.Descriptor{}, nil, false, fmt.Errorf("title vulnerability report %s: %w", s.Path, err)
+			}
+
+			purl := component.PackageURL
+			label := fmt.Sprintf("%s (%s)", transfer.Label(purl, purlHash), s.Scanner)
+			desc, err := transfer.PushBytes(ctx, target, data, transfer.VulnerabilityReportMediaType, "vulnerability report: "+label, progress)
+			if err != nil {
+				return ocispec.Descriptor{}, nil, false, fmt.Errorf("push vulnerability report %s: %w", label, err)
+			}
+			desc.Annotations = map[string]string{
+				ocispec.AnnotationTitle: filepath.ToSlash(title),
+				transfer.AnnotationPurl: purl,
+				AnnotationScanPlugin:    s.Scanner,
+			}
+			layers = append(layers, desc)
+			attached = append(attached, AttachedReport{Purl: purl, Scanner: s.Scanner, Hash: desc.Digest.Encoded()})
 		}
-		desc.Annotations = map[string]string{
-			ocispec.AnnotationTitle: purlHash + ".json",
-			transfer.AnnotationPurl: purl,
-		}
-		layers = append(layers, desc)
-		attached = append(attached, AttachedReport{Purl: purl, Hash: desc.Digest.Encoded()})
 	}
 	if len(layers) == 0 {
 		return ocispec.Descriptor{}, nil, false, nil
@@ -114,18 +129,14 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 	return referrer, attached, true, nil
 }
 
-// reportProvenance returns when report was scanned and by which plugin,
-// as NewReport recorded them; either is its zero value if the report
-// doesn't say (e.g. one written before bomify recorded them).
-func reportProvenance(report *cdx.BOM) (scannedAt time.Time, scanner string) {
+// reportScannedAt returns when report was scanned, as NewReport recorded
+// it, or the zero time if the report doesn't say.
+func reportScannedAt(report *cdx.BOM) time.Time {
 	if report.Metadata == nil {
-		return time.Time{}, ""
+		return time.Time{}
 	}
-	scannedAt, _ = time.Parse(time.RFC3339, report.Metadata.Timestamp)
-	if tools := report.Metadata.Tools; tools != nil && tools.Components != nil && len(*tools.Components) > 0 {
-		scanner = (*tools.Components)[0].Name
-	}
-	return scannedAt, scanner
+	scannedAt, _ := time.Parse(time.RFC3339, report.Metadata.Timestamp)
+	return scannedAt
 }
 
 // ReportReferrers lists manifest's vulnerability report referrers in target,

@@ -11,7 +11,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
-	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
@@ -116,7 +116,7 @@ func runSecurityScanCmd(t *testing.T, baseDir, scanType, tag string) (string, er
 func readReport(t *testing.T, baseDir string, component cdx.Component) *cdx.BOM {
 	t.Helper()
 
-	report, err := security.ReadReport(baseDir, layout.PurlHash(component.PackageURL))
+	report, err := sbom.Load(layout.Report(baseDir, layout.PurlHash(component.PackageURL), "grype"))
 	if err != nil {
 		t.Fatalf("read report for %s: %v", component.PackageURL, err)
 	}
@@ -328,7 +328,7 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 		t.Errorf("oci report vulnerabilities = %+v, want CVE-OCI only", report.Vulnerabilities)
 	}
 
-	if _, err := os.Stat(layout.ComponentReport(baseDir, componentNPM.PackageURL)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Report(baseDir, layout.PurlHash(componentNPM.PackageURL), "grype")); !os.IsNotExist(err) {
 		t.Errorf("unsupported component has a report (stat err = %v), want none", err)
 	}
 }
@@ -372,5 +372,42 @@ func TestSecurityScanMissingPlugin(t *testing.T) {
 
 	if _, err := runSecurityScanCmd(t, baseDir, "does-not-exist", "myapp:latest"); err == nil {
 		t.Fatal("Execute() error = nil, want an error for a missing plugin")
+	}
+}
+
+// TestSecurityScanKeepsEveryScannersReport scans one package with two
+// scanners, then the first again: each keeps its own report, and
+// "package vulnerabilities" prints both.
+func TestSecurityScanKeepsEveryScannersReport(t *testing.T) {
+	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
+	usePlugin(t, baseDir, "trivy")
+	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
+	writePackage(t, baseDir, "myapp:latest", component)
+
+	for _, scanner := range []string{"grype", "trivy", "grype"} {
+		if _, err := runSecurityScanCmd(t, baseDir, scanner, "myapp:latest"); err != nil {
+			t.Fatalf("scan with %s: %v", scanner, err)
+		}
+	}
+
+	purlHash := layout.PurlHash(component.PackageURL)
+	for _, scanner := range []string{"grype", "trivy"} {
+		report, err := sbom.Load(layout.Report(baseDir, purlHash, scanner))
+		if err != nil {
+			t.Fatalf("%s's report: %v", scanner, err)
+		}
+		if tools := report.Metadata.Tools; tools == nil || tools.Components == nil || (*tools.Components)[0].Name != scanner {
+			t.Errorf("%s's report doesn't name it as its scanner: %+v", scanner, tools)
+		}
+	}
+
+	out, err := runRootCmd(t, baseDir, "package", "vulnerabilities", "myapp:latest")
+	if err != nil {
+		t.Fatalf("package vulnerabilities: %v", err)
+	}
+	var printed []json.RawMessage
+	if err := json.Unmarshal([]byte(out), &printed); err != nil || len(printed) != 2 {
+		t.Errorf("package vulnerabilities printed %d reports (%v), want one per scanner:\n%s", len(printed), err, out)
 	}
 }

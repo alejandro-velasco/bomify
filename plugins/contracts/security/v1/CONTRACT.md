@@ -116,7 +116,7 @@ Schema: [`supported-components-result.schema.json`](https://github.com/alejandro
 ## Reports
 
 bomify writes each result as a CycloneDX document at
-`<data-dir>/vulnerabilities/<purl-hash>.json`:
+`<data-dir>/vulnerabilities/<purl-hash>/<type>.json`:
 
 - `metadata.component` is the scanned component, `bom-ref` set to its
   purl, so a directly scanned component's `affects` resolve.
@@ -125,8 +125,9 @@ bomify writes each result as a CycloneDX document at
 - `metadata.timestamp` and `metadata.tools` record when and by which
   plugin it was scanned.
 
-Reports are keyed by purl alone, so packages sharing a component share
-its report, and the newest scan replaces it. On push or save, reports
+Reports are keyed by purl and scanner, so packages sharing a component
+share its reports, and a scanner's newest scan replaces only its own
+report. On push or save, reports
 travel as an OCI referrer, so re-scanning never changes the package
 digest (see
 [the architecture docs](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/security-scanning.md#reports-in-a-registry)).

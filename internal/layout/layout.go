@@ -53,9 +53,16 @@ func Log(dataDir, hash string) string { return filepath.Join(dataDir, "logs", ha
 // Reports returns "<dataDir>/vulnerabilities".
 func Reports(dataDir string) string { return filepath.Join(dataDir, "vulnerabilities") }
 
-// Report returns "<dataDir>/vulnerabilities/<hash>.json", the
-// vulnerability report of the component whose PurlHash is hash.
-func Report(dataDir, hash string) string { return filepath.Join(Reports(dataDir), hash+".json") }
+// ComponentReports returns "<dataDir>/vulnerabilities/<hash>", holding
+// one vulnerability report per scanner for the component whose PurlHash
+// is hash.
+func ComponentReports(dataDir, hash string) string { return filepath.Join(Reports(dataDir), hash) }
+
+// Report returns "<dataDir>/vulnerabilities/<hash>/<scanner>.json",
+// scanner's vulnerability report of the component whose PurlHash is hash.
+func Report(dataDir, hash, scanner string) string {
+	return filepath.Join(ComponentReports(dataDir, hash), scanner+".json")
+}
 
 // Provenance returns "<dataDir>/provenance/<sbomHash>.json", the build
 // provenance "bomify build --provenance" recorded for that build.
@@ -74,9 +81,6 @@ func ComponentPID(dataDir, purl string) string { return PID(dataDir, PurlHash(pu
 
 // ComponentLog is Log for the component with purl.
 func ComponentLog(dataDir, purl string) string { return Log(dataDir, PurlHash(purl)) }
-
-// ComponentReport is Report for the component with purl.
-func ComponentReport(dataDir, purl string) string { return Report(dataDir, PurlHash(purl)) }
 
 // Repositories returns "<dataDir>/package/repositories.json", the tag
 // record.

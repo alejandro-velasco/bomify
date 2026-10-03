@@ -109,12 +109,13 @@ func Prune(baseDir string) (PruneResult, error) {
 			result.Removed = append(result.Removed, PrunedItem{Kind: "layer", Path: layerDir})
 		}
 
-		reportPath := layout.Report(baseDir, hash)
-		if _, err := os.Stat(reportPath); err == nil {
-			if err := os.Remove(reportPath); err != nil {
-				return PruneResult{}, fmt.Errorf("remove %s: %w", reportPath, err)
+		// Every scanner's report.
+		reportsDir := layout.ComponentReports(baseDir, hash)
+		if info, err := os.Stat(reportsDir); err == nil && info.IsDir() {
+			if err := os.RemoveAll(reportsDir); err != nil {
+				return PruneResult{}, fmt.Errorf("remove %s: %w", reportsDir, err)
 			}
-			result.Removed = append(result.Removed, PrunedItem{Kind: "vulnerabilities", Path: reportPath})
+			result.Removed = append(result.Removed, PrunedItem{Kind: "vulnerabilities", Path: reportsDir})
 		}
 	}
 
@@ -122,10 +123,11 @@ func Prune(baseDir string) (PruneResult, error) {
 }
 
 // candidateHashes returns every hash with a manifest file under
-// manifestsDir, a layer directory under layersDir, or a vulnerability
-// report under reportsDir — i.e. every hash Prune might need to reclaim. A missing directory
-// contributes no candidates rather than erroring, since a fresh baseDir
-// (or one with nothing pulled yet) simply has nothing to prune there.
+// manifestsDir, a layer directory under layersDir, or a directory of
+// vulnerability reports under reportsDir — i.e. every hash Prune might
+// need to reclaim. A missing directory contributes no candidates rather
+// than erroring, since a fresh baseDir (or one with nothing pulled yet)
+// simply has nothing to prune there.
 func candidateHashes(manifestsDir, layersDir, reportsDir string) ([]string, error) {
 	seen := map[string]bool{}
 	var hashes []string
@@ -164,12 +166,10 @@ func candidateHashes(manifestsDir, layersDir, reportsDir string) ([]string, erro
 		return nil, fmt.Errorf("read %s: %w", reportsDir, err)
 	}
 	for _, entry := range reportEntries {
-		// Skip an in-flight report write's temp file (see
-		// security.WriteReport) — it isn't a report yet.
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || strings.HasPrefix(entry.Name(), ".") {
-			continue
+		// Each component's reports are a directory of per-scanner files.
+		if entry.IsDir() {
+			add(entry.Name())
 		}
-		add(strings.TrimSuffix(entry.Name(), ".json"))
 	}
 
 	return hashes, nil

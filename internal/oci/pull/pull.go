@@ -379,11 +379,13 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
 }
 
-// fetchVulnerabilityReport downloads desc — a component's vulnerability
-// report (see transfer.VulnerabilityReportMediaType) — straight to
-// "<dataDir>/vulnerabilities/<purl-hash>.json", the same path `bomify
-// security scan` itself would have written it to, replacing whatever
-// report (if any) was already there for that purl.
+// fetchVulnerabilityReport downloads desc — one scanner's vulnerability
+// report of a component (see transfer.VulnerabilityReportMediaType) —
+// straight to "<dataDir>/vulnerabilities/<purl-hash>/<scanner>.json", the
+// same path `bomify security scan` itself would have written it to,
+// replacing that scanner's report (if any) for that purl. The scanner is
+// the layer's own annotation (see security.AnnotationScanPlugin), which it
+// must have.
 func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress transfer.ProgressFunc) (Layer, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
@@ -394,8 +396,12 @@ func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, d
 	if purl == "" {
 		return Layer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, transfer.AnnotationPurl)
 	}
+	scanner := desc.Annotations[security.AnnotationScanPlugin]
+	if err := security.CheckScanner(scanner); err != nil {
+		return Layer{}, fmt.Errorf("vulnerability report %s (%s annotation): %w", desc.Digest, security.AnnotationScanPlugin, err)
+	}
 
-	destPath := layout.Report(dataDir, layout.PurlHash(purl))
+	destPath := layout.Report(dataDir, layout.PurlHash(purl), scanner)
 	if err := downloadBlob(ctx, target, desc, destPath, purl, progress); err != nil {
 		return Layer{}, err
 	}

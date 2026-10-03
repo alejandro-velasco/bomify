@@ -18,9 +18,10 @@ nowhere else.
     identical component be reused across builds. `internal/oci/pull`
     writes one for every component it restores, too.
 - **`layers/<purlHash>/`** is a component's pulled content.
-- **`vulnerabilities/<purlHash>.json`** is a component's latest
-  vulnerability report (see [Security scanning](security-scanning.md)),
-  shared by every package containing that purl.
+- **`vulnerabilities/<purlHash>/<scanner>.json`** is each scanner's
+  latest vulnerability report of a component (see
+  [Security scanning](security-scanning.md)), shared by every package
+  containing that purl.
 - **`provenance/<sbomHash>.json`** is a build's SLSA provenance, if it
   was built with `--provenance` (see [Build provenance](provenance.md)).
 - **`package/repositories.json`** maps `repo -> tag -> sbom hash`.

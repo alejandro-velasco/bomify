@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,7 +162,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	})
 
 	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
-	reportPath := layout.ComponentReport(baseDir, singleFileComponent.PackageURL)
+	reportPath := layout.Report(baseDir, layout.PurlHash(singleFileComponent.PackageURL), "grype")
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	if report.Purl != singleFileComponent.PackageURL {
 		t.Errorf("pulled vulnerability report purl = %q, want %q", report.Purl, singleFileComponent.PackageURL)
 	}
-	wantPath := layout.ComponentReport(pulledDir, singleFileComponent.PackageURL)
+	wantPath := layout.Report(pulledDir, layout.PurlHash(singleFileComponent.PackageURL), "grype")
 	if report.Path != wantPath {
 		t.Errorf("pulled vulnerability report path = %s, want %s", report.Path, wantPath)
 	}
@@ -235,7 +236,7 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Errorf("pulled vulnerability report content = %q, want %q", got, reportBytes)
 	}
 
-	if _, err := os.Stat(layout.ComponentReport(pulledDir, multiFileComponent.PackageURL)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Report(pulledDir, layout.PurlHash(multiFileComponent.PackageURL), "grype")); !os.IsNotExist(err) {
 		t.Errorf("multi-file component got a vulnerability report, want none: err = %v", err)
 	}
 }
@@ -440,7 +441,7 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	if _, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
-	got, err := os.ReadFile(layout.ComponentReport(pulledDir, singleFileComponent.PackageURL))
+	got, err := os.ReadFile(layout.Report(pulledDir, layout.PurlHash(singleFileComponent.PackageURL), "grype"))
 	if err != nil {
 		t.Fatalf("read pulled report: %v", err)
 	}
@@ -486,7 +487,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 	if len(result.VulnerabilityReports) != 0 {
 		t.Errorf("restored %d reports, want none", len(result.VulnerabilityReports))
 	}
-	if _, err := os.Stat(layout.ComponentReport(pulledDir, singleFileComponent.PackageURL)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Report(pulledDir, layout.PurlHash(singleFileComponent.PackageURL), "grype")); !os.IsNotExist(err) {
 		t.Errorf("unverified report was written: err = %v", err)
 	}
 }
@@ -495,7 +496,7 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 // vulnerability and dated scannedAt, as `bomify security scan` would.
 func writeReport(t *testing.T, baseDir string, component cdx.Component, id, scannedAt string) {
 	t.Helper()
-	reportPath := layout.ComponentReport(baseDir, component.PackageURL)
+	reportPath := layout.Report(baseDir, layout.PurlHash(component.PackageURL), "grype")
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -616,5 +617,101 @@ func TestPushIsDeterministic(t *testing.T) {
 	}
 	if got := manifest.Annotations[ocispec.AnnotationCreated]; got != "2026-09-28T10:00:00Z" {
 		t.Errorf("created annotation = %q, want the SBOM's timestamp", got)
+	}
+}
+
+// TestPushPullKeepsEveryScannersReport pushes a component scanned by two
+// scanners: both reports travel in the package's report referrer, each
+// annotated with its scanner, and pull restores each to its own path.
+func TestPushPullKeepsEveryScannersReport(t *testing.T) {
+	baseDir := t.TempDir()
+	writeLayer(t, baseDir, singleFileComponent, map[string]string{"artifact": "single file contents"})
+
+	reports := map[string]string{
+		"grype": `{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-GRYPE"}]}`,
+		"trivy": `{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TRIVY"}]}`,
+	}
+	for scanner, report := range reports {
+		path := layout.Report(baseDir, layout.PurlHash(singleFileComponent.PackageURL), scanner)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
+	sbom := `{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[` +
+		`{"type":"container","name":"single-file","version":"1.0","purl":"pkg:generic/single-file@1.0?download_url=https://example.com/single-file"}]}`
+	if err := os.WriteFile(sbomPath, []byte(sbom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sbomHash, _, err := build.RecordManifest(baseDir, sbomPath)
+	if err != nil {
+		t.Fatalf("RecordManifest: %v", err)
+	}
+
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 2})
+	if err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+	if len(result.VulnerabilityReports) != 2 {
+		t.Fatalf("attached %d reports, want one per scanner", len(result.VulnerabilityReports))
+	}
+
+	layers, err := security.FetchReports(ctx, store, result.ReportsReferrer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var annotated []string
+	for _, l := range layers {
+		annotated = append(annotated, l.Annotations[security.AnnotationScanPlugin])
+	}
+	slices.Sort(annotated)
+	if !slices.Equal(annotated, []string{"grype", "trivy"}) {
+		t.Errorf("report layers' scanners = %v, want grype and trivy", annotated)
+	}
+
+	pulledDir := t.TempDir()
+	pulled, err := pull.Pull(ctx, store, "test", pulledDir, transfer.Options{Concurrency: 2})
+	if err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+	if pulled.ReportsSkipped != nil || len(pulled.VulnerabilityReports) != 2 {
+		t.Fatalf("pulled %d reports (skipped: %v), want 2", len(pulled.VulnerabilityReports), pulled.ReportsSkipped)
+	}
+	for scanner, want := range reports {
+		got, err := os.ReadFile(layout.Report(pulledDir, layout.PurlHash(singleFileComponent.PackageURL), scanner))
+		if err != nil || string(got) != want {
+			t.Errorf("pulled %s report = %q, %v; want %q", scanner, got, err, want)
+		}
+	}
+
+	// A report layer that doesn't say which scanner produced it can't be
+	// restored to anyone's report, so the pull skips the reports rather
+	// than guessing.
+	manifest := result.Manifest
+	blob, err := transfer.PushBytes(ctx, store, []byte(reports["grype"]), transfer.VulnerabilityReportMediaType, "report", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob.Annotations = map[string]string{transfer.AnnotationPurl: singleFileComponent.PackageURL}
+	if _, err := transfer.PushReferrer(ctx, store, manifest, transfer.VulnerabilityReportsArtifactType, []ocispec.Descriptor{blob},
+		map[string]string{ocispec.AnnotationCreated: "2999-01-01T00:00:00Z"}, "unannotated reports"); err != nil {
+		t.Fatal(err)
+	}
+	skippedDir := t.TempDir()
+	pulled, err = pull.Pull(ctx, store, "test", skippedDir, transfer.Options{Concurrency: 2})
+	if err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+	if pulled.ReportsSkipped == nil || len(pulled.VulnerabilityReports) != 0 {
+		t.Errorf("pull of an unannotated report: %d restored, skipped %v; want none restored and a reason", len(pulled.VulnerabilityReports), pulled.ReportsSkipped)
 	}
 }

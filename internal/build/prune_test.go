@@ -215,7 +215,7 @@ func TestPruneRemovesUnreachableVulnerabilityReports(t *testing.T) {
 	orphan := cdx.Component{Name: "orphan", Version: "1.0", PackageURL: "pkg:generic/orphan@1.0"}
 
 	for _, c := range []cdx.Component{kept, orphan} {
-		if _, err := security.WriteReport(baseDir, c, security.NewReport(c, pluginlib.SecurityResult{}, "", time.Time{})); err != nil {
+		if _, err := security.WriteReport(baseDir, security.ComponentReport{Component: c, Scanner: "grype", Report: security.NewReport(c, pluginlib.SecurityResult{}, "grype", time.Time{})}); err != nil {
 			t.Fatalf("WriteReport(%s): %v", c.Name, err)
 		}
 	}
@@ -235,10 +235,10 @@ func TestPruneRemovesUnreachableVulnerabilityReports(t *testing.T) {
 		t.Fatalf("Prune() error = %v", err)
 	}
 
-	if !exists(layout.ComponentReport(baseDir, kept.PackageURL)) {
+	if !exists(layout.Report(baseDir, layout.PurlHash(kept.PackageURL), "grype")) {
 		t.Error("reachable component's vulnerability report was removed")
 	}
-	if exists(layout.ComponentReport(baseDir, orphan.PackageURL)) {
+	if exists(layout.Report(baseDir, layout.PurlHash(orphan.PackageURL), "grype")) {
 		t.Error("unreachable component's vulnerability report still exists")
 	}
 	if len(result.Removed) != 1 || result.Removed[0].Kind != "vulnerabilities" {

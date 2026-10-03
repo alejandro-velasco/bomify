@@ -16,19 +16,22 @@
    the purl itself, or, for something it had to unpack (an image), to
    the affected pieces, which it also returns as components.
 5. Writes each result as its own CycloneDX document
-   (`security.NewReport`) to `vulnerabilities/<purlHash>.json`,
-   replacing the previous one. Its `metadata.component` is the scanned
+   (`security.NewReport`) to `vulnerabilities/<purlHash>/<scanner>.json`,
+   replacing that scanner's previous one and leaving other scanners'
+   alone, so scanning with a second scanner adds to the first's
+   findings. Its `metadata.component` is the scanned
    component (`bom-ref` = purl), its `components` are the unpacked
    pieces some `affects` names, its `vulnerabilities` are exactly what
    the plugin reported, and `metadata.timestamp`/`tools` record when and
    what scanned it.
 
 Nothing in a report depends on the package it was scanned through,
-which is why packages sharing a purl share a report.
+which is why packages sharing a purl share its reports.
 
 `bomify package vulnerabilities <tag>` prints the reports of a package's
 components (or `--purl` ones) as one JSON array on stdout, in SBOM
-order, reading each report as raw JSON so values are never re-encoded.
+order and by scanner within a component (`security.ReadReports`),
+reading each report as raw JSON so values are never re-encoded.
 Components without a report are skipped; warnings go to stderr.
 
 ## Vulnerability gating
@@ -137,17 +140,22 @@ orphans its signature.
 
 - **Attach**: one referrer (artifact type
   `application/vnd.bomify.vulnerabilities.v1+json`, annotated
-  `land.bomify.scan.plugin`) with one layer per report (media type
+  `land.bomify.scan.plugin` with every scanner it carries) with one
+  layer per component and scanner (media type
   `application/vnd.bomify.component.vulnerabilities.v1+json`, annotated
-  with its purl, in SBOM order). It's dated by the newest report's scan
+  with its purl and its one scanner, `land.bomify.scan.plugin`, and
+  titled with its path under `vulnerabilities/`, so `oras pull` lays the
+  reports out as bomify keeps them; in SBOM order and by scanner). It's dated by the newest report's scan
   time, not the push time, so pushing again without re-scanning
   reproduces it byte for byte. With `--sign` it's signed like the
   package.
 - **Restore**: after restoring the package, `pull` takes the newest
   report referrer (`security.ReportReferrers`), checks it with the same
-  `transfer.Verifier` as the package, and writes its reports to
-  `vulnerabilities/`. Reports are advisory: any failure only skips them
-  (`Result.ReportsSkipped`, plus a warning).
+  `transfer.Verifier` as the package, and writes each report to its
+  scanner's place under `vulnerabilities/`, by the layer's scanner
+  annotation; a layer without one fails the restore. Reports are
+  advisory: any failure only skips them (`Result.ReportsSkipped`, plus a
+  warning).
 - **Prune**: after attaching, `push` deletes all but the newest
   `--keep-reports` (default 1; 0 keeps all) report referrers
   (`security.PruneReferrers`), each after whatever refers to it (its

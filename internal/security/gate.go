@@ -141,9 +141,11 @@ type Evaluation struct {
 	Suppressed []Suppressed
 }
 
-// ComponentReport is one component's vulnerability report.
+// ComponentReport is one component's vulnerability report, by Scanner
+// (the scanning plugin's type).
 type ComponentReport struct {
 	Component cdx.Component
+	Scanner   string
 	Report    *cdx.BOM
 }
 

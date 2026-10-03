@@ -6,7 +6,9 @@ Print a package's component vulnerability reports
 
 Vulnerabilities prints the vulnerability reports of the local package
 <tag>'s components (from "bomify security scan") as one JSON array on
-stdout, in SBOM order. Components without a report are skipped.
+stdout, in SBOM order: one per component and scanner, ordered by
+scanner, each naming its scanner in metadata.tools. Components without a
+report are skipped.
 
 --purl (repeatable) limits it to specific components. Nothing but the
 array goes to stdout; warnings, such as a --purl matching nothing, go
