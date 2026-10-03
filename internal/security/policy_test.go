@@ -68,3 +68,13 @@ func TestSetAndRemoveRule(t *testing.T) {
 		t.Error("RemoveRule of a missing rule succeeded")
 	}
 }
+
+func TestSetRuleOnPullNeedsAGate(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := SetRule(baseDir, Rule{Scanner: "grype", On: []string{HookPull}}); err == nil {
+		t.Error("a pull rule with no gate: nil, want an error")
+	}
+	if err := SetRule(baseDir, Rule{Scanner: "grype", FailOnUnscanned: true, On: []string{HookPull}}); err != nil {
+		t.Errorf("a pull rule gating only on unscanned components: %v", err)
+	}
+}

@@ -40,7 +40,7 @@ bomify load [flags]
 
 ```
   -c, --concurrency int             number of layers to restore concurrently (default 3)
-      --fail-on string              fail if any vulnerability is at or above this severity (info, low, medium, high, critical); overrides a matching "bomify security policy" rule's
+      --fail-on conditions          fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if the scanner skipped any component; replaces a matching "bomify security policy" rule's
   -h, --help                        help for load
   -i, --input string                read the tarball from here instead of stdin
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it

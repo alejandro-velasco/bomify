@@ -22,6 +22,9 @@ type Rule struct {
 	// FailOn is the severity (see ParseSeverity) at or above which a
 	// matching package fails its scan. Empty never fails it.
 	FailOn string `json:"failOn,omitempty"`
+	// FailOnUnscanned fails a matching package any of whose components
+	// Scanner doesn't support (see Gate.FailOnUnscanned).
+	FailOnUnscanned bool `json:"failOnUnscanned,omitempty"`
 	// VEX names documents in the data directory's managed VEX store (see
 	// AddVEX and ResolveVEX) whose statements exempt a matching package's
 	// vulnerabilities from FailOn — names, not paths, so a rule keeps
@@ -50,17 +53,25 @@ func (r Rule) AppliesOn(hook string) bool {
 	return slices.Contains(r.On, hook)
 }
 
-// Gate returns r's FailOn as a Gate, with no VEX loaded (see
-// Rule.VEX).
+// CanFail reports whether r can fail a matching package at all, like
+// Gate.CanFail, without parsing FailOn.
+func (r Rule) CanFail() bool {
+	return r.FailOn != "" || r.FailOnUnscanned
+}
+
+// Gate returns r's FailOn and FailOnUnscanned as a Gate, with no VEX
+// loaded (see Rule.VEX).
 func (r Rule) Gate() (Gate, error) {
+	g := Gate{FailOnUnscanned: r.FailOnUnscanned}
 	if r.FailOn == "" {
-		return Gate{}, nil
+		return g, nil
 	}
 	sev, err := ParseSeverity(r.FailOn)
 	if err != nil {
 		return Gate{}, fmt.Errorf("scan rule %q: %w", r.Match, err)
 	}
-	return Gate{FailOn: sev}, nil
+	g.FailOn = sev
+	return g, nil
 }
 
 // Config is the "<baseDir>/conf/scan.json" record: an unordered list of
@@ -95,7 +106,7 @@ func SetRule(baseDir string, rule Rule) error {
 	}
 	// A scan at a hook is only ever a gate: one with nothing to refuse on
 	// would scan every pull for nothing.
-	if len(rule.On) > 0 && rule.FailOn == "" {
+	if len(rule.On) > 0 && !rule.CanFail() {
 		return fmt.Errorf("--on %s needs --fail-on: a scan on pull only refuses packages; to just scan, run \"bomify security scan\" after pulling", strings.Join(rule.On, ","))
 	}
 	if _, err := ResolveVEX(baseDir, rule.VEX); err != nil {

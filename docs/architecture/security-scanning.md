@@ -6,8 +6,10 @@
 2. Finds `bomify-plugin-<type>`. One scanner handles every component,
    whatever its purl type.
 3. Asks it once for `security supported-components` and skips any
-   component whose purl type isn't listed. Duplicate purls are scanned
-   once.
+   component whose purl type isn't listed, or that has no purl type at
+   all, returning the skipped ones with why (`security.Skipped`; see
+   [Coverage](#coverage)). Duplicate purls are scanned once, and aren't
+   counted as skipped.
 4. Calls `security scan --purl <purl>` per component, up to
    `--concurrency` at a time (`security.Scan`). The plugin returns
    CycloneDX vulnerabilities, each with `affects` set by the plugin: to
@@ -33,14 +35,20 @@ Components without a report are skipped; warnings go to stderr.
 
 `security.Gate` (`internal/security/gate.go`) fails a package when any
 report has a vulnerability at or above its threshold (`info` < `low` <
-`medium` < `high` < `critical`) that isn't ignored or exempted by VEX. A
-vulnerability's severity is the highest of its `ratings`; unrated,
-`none`, or `unknown` never fails.
+`medium` < `high` < `critical`) that isn't ignored or exempted by VEX,
+or, with `FailOnUnscanned`, when the scan skipped any of its components
+(see [Coverage](#coverage)). A vulnerability's severity is the highest
+of its `ratings`; unrated, `none`, or `unknown` never fails.
+
+`--fail-on` lists the conditions (`security.ParseFailOn`): at most one
+severity, and `unscanned`, e.g. `--fail-on high,unscanned`. A rule
+stores them as `failOn` and `failOnUnscanned`.
 
 `bomify security scan` picks the gate (`cmd/scanning.go`, `gateFlags`):
 
 1. `--skip-gate`: nothing fails (warning if a rule would have).
-2. `--fail-on`, plus `--ignore`.
+2. `--fail-on`, plus `--ignore` (which needs a severity in it). It
+   replaces all of a matching rule's conditions.
 3. The most specific `conf/scan.json` rule matching the repository.
    Rules have no ignore list on purpose: a standing exemption belongs in
    a VEX document that says which component and why.
@@ -53,6 +61,16 @@ VEX adds up rather than overriding: the rule's stored documents, then
 writes them all before checking the gate, so a failing package's reports
 are there to inspect. A failure prints a table of the offending
 vulnerabilities to stderr.
+
+### Coverage
+
+A component the scanner skipped has no report, so on its own it could
+never fail a gate: a package nothing could check would pass as clean.
+Every scan (`checkGate`) prints the components it skipped, and why, to
+stderr, e.g. `2 of 9 components not scanned by grype`. With
+`Gate.FailOnUnscanned` (`--fail-on unscanned`, or a rule's
+`failOnUnscanned`), any skipped component fails the gate, alongside or
+instead of a severity, and the `GateError` carries them as `Unscanned`.
 
 ### VEX
 
@@ -92,10 +110,10 @@ rule's stored VEX. For each package, `pullScanHook` resolves:
    lists `pull` in `on` (`security.Rule.AppliesOn`).
 3. The gate, as for `security scan`, under the same condition.
 
-A scan on pull is only a gate, so scanner and threshold must come
-together. The package is always scanned fresh, never judged by the
-reports its publisher attached. For the same reason, a rule's `--on
-pull` requires `--fail-on`.
+A scan on pull is only a gate, so scanner and `--fail-on` must come
+together (`Gate.CanFail`). The package is always scanned fresh, never
+judged by the reports its publisher attached. For the same reason, a
+rule's `--on pull` requires `--fail-on`.
 
 The hook runs as `transfer.Options.Scan`: `pull.PullLayers` hands it the
 SBOM, along with the target and package manifest, after verifying the

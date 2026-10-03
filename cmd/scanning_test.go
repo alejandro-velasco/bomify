@@ -157,3 +157,30 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadFailOnUnscanned loads a package whose one component the
+// scanner doesn't support: --fail-on unscanned refuses it, writing
+// nothing, and it's a gate on its own, needing no --fail-on.
+func TestLoadFailOnUnscanned(t *testing.T) {
+	archive := saveHookPackage(t)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":["oci"],"scans":["sca"]}`)
+
+	destDir := t.TempDir()
+	usePlugin(t, destDir, "grype")
+
+	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "unscanned")
+	var gateErr *security.GateError
+	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 1 {
+		t.Fatalf("load --fail-on unscanned: %v, want a gate failure on the one component", err)
+	}
+	if repos, _ := build.ReadRepositories(destDir); len(repos) != 0 {
+		t.Errorf("tags recorded despite a failing gate: %v", repos)
+	}
+
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--fail-on", "unscanned"); err == nil || isGateError(err) {
+		t.Errorf("--fail-on unscanned without --scan: %v, want a request for --scan", err)
+	}
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "critical"); err != nil {
+		t.Errorf("load without --fail-on unscanned: %v, want it loaded", err)
+	}
+}

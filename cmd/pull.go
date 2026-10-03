@@ -26,9 +26,10 @@ the same plugin and options trust, as does a trust rule created with
 --require-provenance; --verify replaces a rule's requirement along with
 the rest of it. --insecure-skip-verify bypasses a trust rule.
 
---scan <type> --fail-on <severity> scans the package fresh, after
-verification and before anything is written, and refuses it if anything
-is at or above <severity>. The two go together. A matching "bomify
+--scan <type> --fail-on <conditions> scans the package fresh, after
+verification and before anything is written, and refuses it if any
+condition is met: anything at or above a severity, and/or "unscanned",
+a component the scanner skipped. The two go together. A matching "bomify
 security policy" rule with --on pull does the same without flags, and
 its stored VEX exempts what it covers; flags override the rule, and
 --skip-scan ignores it. VEX the publisher attached (see "bomify push

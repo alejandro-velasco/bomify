@@ -6,7 +6,8 @@ Create or update a vulnerability scanning policy rule
 
 Create adds a scan policy rule for packages whose repository starts with
 --match (a "/"-separated prefix; omit it to match every package): the
-scanner to use and, with --fail-on, the severity that fails. The longest
+scanner to use and, with --fail-on, what fails a matching package (as
+for "bomify security scan": a severity, and/or "unscanned"). The longest
 matching --match wins, and creating a rule for the same --match replaces
 it.
 
@@ -39,6 +40,9 @@ bomify security policy create <scanner> [flags]
   # ...and scan and gate them automatically before they're pulled or loaded
   bomify security policy create grype --match registry.example.com/team --fail-on high --on pull
 
+  # ...also refusing any package with a component grype can't scan
+  bomify security policy create grype --match registry.example.com/team --fail-on high,unscanned --on pull
+
   # Scan every other package with grype, never failing
   bomify security policy create grype
 ```
@@ -46,11 +50,11 @@ bomify security policy create <scanner> [flags]
 ### Options
 
 ```
-      --fail-on string    fail on any vulnerability at or above this severity (info, low, medium, high, critical); default never fails
-  -h, --help              help for create
-      --match string      apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
-      --on strings        lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none
-      --vex stringArray   the name of a stored VEX document (see "bomify security vex add") exempting vulnerabilities it shows don't affect the package (repeatable)
+      --fail-on conditions   fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if the scanner skipped any component; default never fails
+  -h, --help                 help for create
+      --match string         apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
+      --on strings           lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none
+      --vex stringArray      the name of a stored VEX document (see "bomify security vex add") exempting vulnerabilities it shows don't affect the package (repeatable)
 ```
 
 ### Options inherited from parent commands

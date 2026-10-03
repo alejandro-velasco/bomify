@@ -26,7 +26,10 @@ bomify security scan grype myapp:1.0 --concurrency 4
 
 Each component's report goes to `<data-dir>/vulnerabilities/`, shared by
 every package containing that component. Components grype doesn't
-support (such as `generic`) are skipped.
+support (such as `generic`) are skipped, and listed on stderr: they have
+no report, so nothing about them can fail a gate. Add `unscanned` to
+`--fail-on` (e.g. `--fail-on high,unscanned`) to fail the scan if any
+were skipped.
 
 For `oci`/`docker` components, grype catalogs the image with
 [syft](https://github.com/anchore/syft) and scans every package inside;
