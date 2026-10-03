@@ -9,11 +9,10 @@ import (
 )
 
 // ComponentPlugin is a component plugin's own logic (see
-// plugins/COMPONENT-CONTRACT.md), for ComponentCommand to expose as the
-// contract's "component pull"/"component push"/"component remote".
-// Everything else the contract requires — flags, which are required
-// when, the --log logger, and printing the result — ComponentCommand
-// handles.
+// plugins/contracts/component/v1/CONTRACT.md), for ComponentCommand to expose
+// as the contract's "component pull"/"component push"/"component remote".
+// Everything else the contract requires — flags, which are required when, the
+// --log logger, and printing the result — ComponentCommand handles.
 type ComponentPlugin interface {
 	// Pull fetches the component req.Purl names into req.Output, or with
 	// req.Check only verifies that it could (see the contract's check
@@ -65,7 +64,7 @@ type ComponentHelp struct {
 func ComponentCommand(p ComponentPlugin, help ComponentHelp) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "component",
-		Short: "Component plugin subcommands (pull/push/remote) — see plugins/COMPONENT-CONTRACT.md",
+		Short: "Component plugin subcommands (pull/push/remote) — see plugins/contracts/component/v1/CONTRACT.md",
 	}
 	cmd.AddCommand(pullCommand(p, help.Pull), pushCommand(p, help.Push, help.RemoteFlag), remoteCommand(p, help.Remote))
 	return cmd

@@ -61,7 +61,8 @@ func sbomGenerateCmd() *cobra.Command {
 // runSBOMGenerate execs "bomify-plugin-<medium> sbom generate" with args
 // passed through exactly as given, wiring cmd's own stdin/stdout/stderr
 // straight to the plugin's. bomify neither parses the plugin's output nor
-// imposes any flags of its own here — see plugins/SBOM-CONTRACT.md.
+// imposes any flags of its own here — see
+// plugins/contracts/sbom/v1/CONTRACT.md.
 func runSBOMGenerate(cmd *cobra.Command, medium string, args []string) error {
 	path, err := plugin.Find(layout.Plugins(dataDir), medium)
 	if err != nil {

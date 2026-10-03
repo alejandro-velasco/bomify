@@ -109,10 +109,10 @@ bomify does no fetching, publishing, scanning, or signing itself; it
 hands each to a `bomify-plugin-<kind>` binary in `~/.bomify/plugins`.
 [`plugins/`](plugins) holds the first-party ones, and anyone can
 [publish](plugins/README.md#publishing-a-plugin) their own against the
-[component](plugins/COMPONENT-CONTRACT.md),
-[SBOM generation](plugins/SBOM-CONTRACT.md),
-[security scanning](plugins/SECURITY-CONTRACT.md), or
-[signing](plugins/SIGNING-CONTRACT.md) contracts. See
+[component](plugins/contracts/component/v1/CONTRACT.md),
+[SBOM generation](plugins/contracts/sbom/v1/CONTRACT.md),
+[security scanning](plugins/contracts/security/v1/CONTRACT.md), or
+[signing](plugins/contracts/signing/v1/CONTRACT.md) contracts. See
 [`docs/architecture`](docs/architecture) for how it fits together.
 
 ## License

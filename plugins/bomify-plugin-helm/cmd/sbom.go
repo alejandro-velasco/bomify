@@ -12,13 +12,13 @@ import (
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
 )
 
-// sbomCmd groups the SBOM generation plugin contract's "generate"
-// subcommand (see plugins/SBOM-CONTRACT.md), kept independent of this
+// sbomCmd groups the SBOM generation plugin contract's "generate" subcommand
+// (see plugins/contracts/sbom/v1/CONTRACT.md), kept independent of this
 // binary's own component plugin subcommands under componentCmd.
 func sbomCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sbom",
-		Short: "SBOM generation subcommands — see plugins/SBOM-CONTRACT.md",
+		Short: "SBOM generation subcommands — see plugins/contracts/sbom/v1/CONTRACT.md",
 	}
 
 	cmd.AddCommand(newSBOMGenerateCmd())
@@ -138,7 +138,8 @@ generated SBOM as-is.`,
 
 // encodeBOM writes bom to w as pretty-printed CycloneDX JSON — the exact
 // output "sbom generate" must produce on success, per
-// plugins/SBOM-CONTRACT.md, whether w is stdout or an --output file.
+// plugins/contracts/sbom/v1/CONTRACT.md, whether w is stdout or an --output
+// file.
 func encodeBOM(w io.Writer, bom *cdx.BOM) error {
 	enc := cdx.NewBOMEncoder(w, cdx.BOMFileFormatJSON)
 	enc.SetEscapeHTML(false)

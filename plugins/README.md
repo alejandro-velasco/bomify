@@ -4,16 +4,16 @@ The first-party plugins. Each directory is a standalone
 `bomify-plugin-<kind>` binary implementing one or more contracts:
 
 - **Component** (`component pull|push|remote`,
-  [`COMPONENT-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md)):
+  [`contracts/component/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
   fetches and publishes the components an SBOM describes.
 - **SBOM generation** (`sbom generate`,
-  [`SBOM-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md)):
+  [`contracts/sbom/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   builds an SBOM for a deployment medium.
 - **Security scanning** (`security scan|supported-components`,
-  [`SECURITY-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)):
+  [`contracts/security/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md)):
   reports the vulnerabilities a purl is affected by.
 - **Signing** (`signature sign|attest|verify|verify-attestation|supported-types`,
-  [`SIGNING-CONTRACT.md`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)):
+  [`contracts/signing/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)):
   signs and verifies whole packages and their build provenance.
 
 | Plugin | Handles | Built on | Contracts |
@@ -23,6 +23,53 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, plus images | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
+
+## Contract versions
+
+Each contract has a major version, in its spec's title (e.g. "Signing
+plugin contract v1"), bumped by any change that a plugin or bomify
+written for the previous version would break on. Every first-party
+plugin speaks version 1 of the contracts it implements.
+
+Each version has its own folder, holding its spec and the JSON Schemas
+of its results:
+
+```
+plugins/contracts/
+├── contract-result.schema.json    the "contract" command's result, below
+├── component/v1/                  CONTRACT.md, result, remote-result
+├── sbom/v1/                       CONTRACT.md (no results to validate)
+├── security/v1/                   CONTRACT.md, security-result, supported-components-result
+└── signing/v1/                    CONTRACT.md, sign-result, verify-result,
+                                   verify-attestation-result, supported-signature-types-result
+```
+
+A new version is a new folder (`v2/`) alongside the old one, which
+stays as the spec of what plugins speaking it still do.
+
+Every plugin reports the versions it speaks:
+
+```
+bomify-plugin-<kind> contract
+```
+
+No flags. Print one JSON object to stdout and exit `0`; it must always
+report the same thing.
+
+```json
+{ "contracts": { "component": 1, "sbom": 1 } }
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `contracts` | object | yes | Each contract the plugin implements (`component`, `sbom`, `security`, or `signing`), mapped to the major version it speaks. Contracts it doesn't implement are absent. |
+
+Schema: [`contract-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/contract-result.schema.json).
+
+A Go plugin gets this for free: `pkg/plugin`'s `NewRootCommand` adds
+`contract`, reporting the version `pkg/plugin` implements for each
+contract subcommand (`component`, `sbom`, `security`, `signature`) the
+plugin registers. Other plugins implement it themselves.
 
 ## Installing plugins
 
@@ -185,7 +232,7 @@ producing v0.3 Sigstore bundles
   Sigstore's trusted root.
 
 `signature attest` (see the
-[contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-attest))
+[contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-attest))
 signs a DSSE envelope instead, in the bundle format cosign and `gh
 attestation verify` read; `signature verify-attestation` verifies one
 with the same options as `signature verify`.

@@ -49,7 +49,7 @@ pushing again adds nothing new.
 
 - **With `--sign`**: `signature.NewAttester` has the signing plugin sign
   the statement as a DSSE envelope (`signature attest`, see the
-  [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-attest)),
+  [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-attest)),
   pushed as a referrer of the plugin's artifact type. With
   `bomify-plugin-sigstore`, that's a Sigstore bundle carrying Sigstore's
   own annotations, in the form cosign and `gh` read.
@@ -81,7 +81,7 @@ written, and only for the package itself, not its other referrers. It
 keeps the referrers annotated `land.bomify.attestation.predicateType`
 with the SLSA predicate type and an artifact type the verifier supports,
 and asks the plugin's `signature verify-attestation` (see the
-[signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-verify-attestation))
+[signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-verify-attestation))
 about each, with the manifest digest as the subject, until one passes
 and `provenance.Check` accepts the statement it returns:
 

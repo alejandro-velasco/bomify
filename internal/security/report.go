@@ -28,13 +28,12 @@ import (
 // was affected — and whose vulnerabilities are exactly what the plugin
 // reported, "affects" included.
 //
-// The report is shared by every package describing the same purl, so it
-// must not carry anything specific to the one SBOM it happened to be
-// scanned from: the metadata component's bom-ref is set to its purl —
-// which is also what a plugin that scanned the purl directly names in
-// "affects" (see plugins/SECURITY-CONTRACT.md) — rather than whatever
-// bom-ref that SBOM gave it, and any nested components it declared there
-// are dropped.
+// The report is shared by every package describing the same purl, so it must
+// not carry anything specific to the one SBOM it happened to be scanned from:
+// the metadata component's bom-ref is set to its purl — which is also what a
+// plugin that scanned the purl directly names in "affects" (see
+// plugins/contracts/security/v1/CONTRACT.md) — rather than whatever bom-ref
+// that SBOM gave it, and any nested components it declared there are dropped.
 //
 // scanner (the scanning plugin's type) and scannedAt are recorded as the
 // report's metadata tool and timestamp, which is how a package's report

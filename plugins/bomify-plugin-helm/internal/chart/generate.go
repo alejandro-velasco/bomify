@@ -25,7 +25,8 @@ import (
 // GenerateOptions identifies the chart Generate should render and how to
 // render it. Unlike Ref (which Resolve derives from a component purl for
 // pull/push), these come directly from "sbom generate"'s own flags — see
-// plugins/SBOM-CONTRACT.md, which leaves this entirely up to the plugin.
+// plugins/contracts/sbom/v1/CONTRACT.md, which leaves this entirely up to the
+// plugin.
 type GenerateOptions struct {
 	// Name is the chart's name, e.g. "postgresql".
 	Name string

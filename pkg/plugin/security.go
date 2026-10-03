@@ -7,8 +7,8 @@ import (
 )
 
 // SecurityPlugin is a security scanning plugin's own logic (see
-// plugins/SECURITY-CONTRACT.md), for SecurityCommand to expose as the
-// contract's "security scan"/"security supported-components".
+// plugins/contracts/security/v1/CONTRACT.md), for SecurityCommand to expose
+// as the contract's "security scan"/"security supported-components".
 type SecurityPlugin interface {
 	// Scan reports every vulnerability purl is affected by.
 	Scan(ctx context.Context, purl string) (SecurityResult, error)
@@ -28,7 +28,7 @@ type SecurityHelp struct {
 func SecurityCommand(p SecurityPlugin, help SecurityHelp) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "security",
-		Short: "Security scanning subcommands — see plugins/SECURITY-CONTRACT.md",
+		Short: "Security scanning subcommands — see plugins/contracts/security/v1/CONTRACT.md",
 	}
 
 	var purl string

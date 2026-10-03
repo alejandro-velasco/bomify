@@ -10,8 +10,8 @@ import (
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-grype/internal/scan"
 )
 
-// NewRootCmd builds the bomify-plugin-grype root command, implementing
-// the security scanning contract (see plugins/SECURITY-CONTRACT.md).
+// NewRootCmd builds the bomify-plugin-grype root command, implementing the
+// security scanning contract (see plugins/contracts/security/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
 	return pluginlib.NewRootCommand("grype", "bomify security scanning plugin backed by grype",
 		pluginlib.SecurityCommand(scanner{}, pluginlib.SecurityHelp{

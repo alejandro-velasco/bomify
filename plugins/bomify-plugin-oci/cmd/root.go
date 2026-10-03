@@ -12,7 +12,7 @@ import (
 )
 
 // NewRootCmd builds the bomify-plugin-oci root command, implementing the
-// component plugin contract (see plugins/COMPONENT-CONTRACT.md).
+// component plugin contract (see plugins/contracts/component/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("oci", "bomify plugin for container/OCI image components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{

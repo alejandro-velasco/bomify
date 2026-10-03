@@ -13,7 +13,8 @@ import (
 
 // NewRootCmd builds the bomify-plugin-helm root command, implementing two
 // entirely independent plugin contracts: the component contract (see
-// plugins/COMPONENT-CONTRACT.md) and SBOM generation (see sbomCmd).
+// plugins/contracts/component/v1/CONTRACT.md) and SBOM generation (see
+// sbomCmd).
 func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("helm", "bomify plugin for Helm chart components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{

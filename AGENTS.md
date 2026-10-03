@@ -45,9 +45,12 @@ never turn them into separate copies:
   docs-site-sync`.
 - `getting-started/installing-plugins.md`,
   `development/{component,sbom,security,signing}-contract.md`, and
-  `development/architecture/*.md` are one-line wrappers that include
-  `plugins/README.md`, the `plugins/*-CONTRACT.md` files, and
+  `development/architecture/*.md` are wrappers that include
+  `plugins/README.md`, each contract's current
+  `plugins/contracts/<contract>/v<N>/CONTRACT.md`, and
   `docs/architecture/*.md` via `pymdownx.snippets`. Edit the sources.
+  The plugins and contract pages also include each of their
+  `*.schema.json` files under "Schemas"; list a new schema there.
   Since they render from a different directory, links in them to other
   repo files must be absolute GitHub URLs. The exceptions: links between
   architecture pages, and their `../diagrams/*.svg` images, which `make

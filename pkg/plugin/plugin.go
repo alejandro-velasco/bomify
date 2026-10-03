@@ -1,17 +1,18 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
-// binary: the Result/Hash/RemoteResult types the component plugin
-// contract's JSON output mirrors, SecurityResult for the security
-// scanning contract's, SignResult/VerifyResult for the signing
-// contract's, and Print to emit any of them correctly. On top of those,
-// ComponentCommand, SecurityCommand, and SignatureCommand build each
-// contract's whole subcommand tree — its flags, validation, logging, and
-// output — around a plugin's own implementation, and Run executes a
-// plugin's root command with the contract's exit-code and stderr rules. See
-// plugins/COMPONENT-CONTRACT.md, plugins/SECURITY-CONTRACT.md, and
-// plugins/SIGNING-CONTRACT.md for the contracts this package implements
-// one side of; unlike those documents,
-// this package is importable from outside this module, so a third-party
-// plugin (in its own separate Go module) can depend on it directly.
+// binary: the Result/Hash/RemoteResult types the component plugin contract's
+// JSON output mirrors, SecurityResult for the security scanning contract's,
+// SignResult/VerifyResult for the signing contract's, ContractResult for the
+// contract versions every plugin reports, and Print to emit any of them
+// correctly. On top of those, ComponentCommand, SecurityCommand, and
+// SignatureCommand build each contract's whole subcommand tree — its flags,
+// validation, logging, and output — around a plugin's own implementation, and
+// Run executes a plugin's root command with the contract's exit-code and
+// stderr rules. See plugins/contracts/component/v1/CONTRACT.md,
+// plugins/contracts/security/v1/CONTRACT.md, and
+// plugins/contracts/signing/v1/CONTRACT.md for the contracts this package
+// implements one side of; unlike those documents, this package is importable
+// from outside this module, so a third-party plugin (in its own separate Go
+// module) can depend on it directly.
 package plugin
 
 import (
@@ -44,14 +45,14 @@ type Hash struct {
 // success for its "remote" subcommand.
 type RemoteResult struct {
 	// Remote identifies where a component's content comes from or is
-	// published under — a registry/namespace address, a source URL, etc.
-	// It must be in the same shape push's own --remote expects to
-	// receive: without the component's own trailing name if push appends
-	// that itself, or the exact complete destination if push doesn't
-	// append anything at all — see plugins/COMPONENT-CONTRACT.md's RemoteResult
-	// section for why. A distribution rule matched by --match can
-	// substitute part of this value back into --remote for a later push,
-	// preserving whatever came after the matched prefix.
+	// published under — a registry/namespace address, a source URL, etc. It
+	// must be in the same shape push's own --remote expects to receive:
+	// without the component's own trailing name if push appends that itself,
+	// or the exact complete destination if push doesn't append anything at
+	// all — see plugins/contracts/component/v1/CONTRACT.md's RemoteResult
+	// section for why. A distribution rule matched by --match can substitute
+	// part of this value back into --remote for a later push, preserving
+	// whatever came after the matched prefix.
 	Remote string `json:"remote"`
 }
 
@@ -68,7 +69,7 @@ type RemoteResult struct {
 // BOMRef, never the purl that was scanned. bomify never sets or
 // overwrites Affects itself: it writes Vulnerabilities, unmodified, into
 // the scanned component's own vulnerability report (see
-// plugins/SECURITY-CONTRACT.md).
+// plugins/contracts/security/v1/CONTRACT.md).
 //
 // Components is optional: it lists the pieces a plugin had to unpack
 // the scanned purl into to scan it at all (e.g. the packages found by
@@ -87,11 +88,11 @@ type SecurityResult struct {
 
 // SupportedComponentsResult is the JSON object a plugin's "security
 // supported-components" subcommand prints to stdout on success: which
-// component purl types and scan categories it supports. bomify calls
-// this once per "bomify security scan" invocation — never per
-// component — to decide which components in the SBOM are even worth
-// dispatching to "security scan": a component whose purl type isn't
-// listed in Types is skipped instead (see plugins/SECURITY-CONTRACT.md).
+// component purl types and scan categories it supports. bomify calls this
+// once per "bomify security scan" invocation — never per component — to
+// decide which components in the SBOM are even worth dispatching to "security
+// scan": a component whose purl type isn't listed in Types is skipped instead
+// (see plugins/contracts/security/v1/CONTRACT.md).
 type SupportedComponentsResult struct {
 	// Types lists the component purl types (e.g. "oci", "helm",
 	// "generic") this plugin can scan.
@@ -101,13 +102,13 @@ type SupportedComponentsResult struct {
 	Scans []string `json:"scans"`
 }
 
-// SignResult is the JSON object a plugin's "signature sign" subcommand
-// prints to stdout on success: the signature envelope it produced over
-// the payload it was given, plus what bomify needs to store that
-// envelope as an OCI referrer of the signed package (see
-// plugins/SIGNING-CONTRACT.md). bomify never parses Envelope itself — it
-// stores it verbatim, and hands the exact same bytes back to "signature
-// verify" later.
+// SignResult is the JSON object a plugin's "signature sign" subcommand prints
+// to stdout on success: the signature envelope it produced over the payload
+// it was given, plus what bomify needs to store that envelope as an OCI
+// referrer of the signed package (see
+// plugins/contracts/signing/v1/CONTRACT.md). bomify never parses Envelope
+// itself — it stores it verbatim, and hands the exact same bytes back to
+// "signature verify" later.
 type SignResult struct {
 	// ArtifactType is the OCI artifact type of the referrer manifest
 	// bomify pushes to carry Envelope. A plugin should use its signing
@@ -157,9 +158,18 @@ type VerifyAttestationResult struct {
 // supported-types" subcommand prints to stdout on success: which
 // referrer artifact types it can verify. bomify only hands a plugin's
 // "signature verify" the envelopes of referrers whose artifact type is
-// listed here (see plugins/SIGNING-CONTRACT.md).
+// listed here (see plugins/contracts/signing/v1/CONTRACT.md).
 type SupportedSignatureTypesResult struct {
 	ArtifactTypes []string `json:"artifactTypes"`
+}
+
+// ContractResult is the JSON object every plugin's "contract" subcommand
+// prints to stdout: the plugin contracts it implements (see
+// plugins/README.md#contract-versions).
+type ContractResult struct {
+	// Contracts maps each contract the plugin implements ("component",
+	// "sbom", "security", or "signing") to the major version it speaks.
+	Contracts map[string]int `json:"contracts"`
 }
 
 // HashAlgorithm is the one algorithm a Result's Hash is reported in.

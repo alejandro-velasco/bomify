@@ -1,6 +1,7 @@
-// Command bomify-plugin-helm is bomify's plugin for Helm chart
-// components. It implements the pull/push contract described in
-// plugins/COMPONENT-CONTRACT.md, using the Helm SDK (helm.sh/helm/v4):
+// Command bomify-plugin-helm is bomify's plugin for Helm chart components. It
+// implements the pull/push contract described in
+// plugins/contracts/component/v1/CONTRACT.md, using the Helm SDK
+// (helm.sh/helm/v4):
 //
 //	bomify-plugin-helm component pull --purl '<component purl>' --output <dir>
 //	bomify-plugin-helm component push --purl '<component purl>' --input <dir> --remote <endpoint>

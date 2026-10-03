@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // fakeComponent records the requests ComponentCommand hands it.
@@ -182,5 +184,54 @@ func TestSignatureCommandVerifyAttestation(t *testing.T) {
 	}
 	if want := `{"signer":"s","statement":"c3RhdGVtZW50"}`; strings.TrimSpace(out.String()) != want {
 		t.Errorf("stdout = %s, want %s", out.String(), want)
+	}
+}
+
+// fakeScanner is a SecurityPlugin that's never called.
+type fakeScanner struct{}
+
+func (fakeScanner) Scan(context.Context, string) (SecurityResult, error) {
+	return SecurityResult{}, nil
+}
+
+func (fakeScanner) SupportedComponents(context.Context) (SupportedComponentsResult, error) {
+	return SupportedComponentsResult{}, nil
+}
+
+func TestContractCommand(t *testing.T) {
+	for name, tc := range map[string]struct {
+		contracts []*cobra.Command
+		want      string
+	}{
+		"every contract": {
+			[]*cobra.Command{
+				ComponentCommand(&fakeComponent{}, ComponentHelp{}),
+				// SBOM generation has no builder: a plugin's own "sbom"
+				// command counts.
+				{Use: "sbom"},
+				SecurityCommand(fakeScanner{}, SecurityHelp{}),
+				SignatureCommand(&fakeSigner{}, SigningHelp{}),
+				// Neither does a command of no contract.
+				{Use: "other"},
+			},
+			`{"contracts":{"component":1,"sbom":1,"security":1,"signing":1}}`,
+		},
+		"one contract": {
+			[]*cobra.Command{SignatureCommand(&fakeSigner{}, SigningHelp{})},
+			`{"contracts":{"signing":1}}`,
+		},
+		"none": {nil, `{"contracts":{}}`},
+	} {
+		root := NewRootCommand("fake", "fake", tc.contracts...)
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetArgs([]string{"contract"})
+		if err := root.Execute(); err != nil {
+			t.Errorf("%s: contract: %v", name, err)
+			continue
+		}
+		if got := strings.TrimSpace(out.String()); got != tc.want {
+			t.Errorf("%s: stdout = %s, want %s", name, got, tc.want)
+		}
 	}
 }

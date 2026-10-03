@@ -1,12 +1,16 @@
-# Security scanning plugin contract
+# Security scanning plugin contract v1
+
+A plugin reports the contract versions it speaks with
+`bomify-plugin-<type> contract` (see
+[contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The spec for a `bomify-plugin-<type>` binary's **security scanning**
 subcommands, `security scan` and `security supported-components`, which
 `bomify security scan <type> <tag>` (and a scan on `pull`/`load`) call.
 It's independent of the
-[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
-[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
-and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md),
+[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md),
+and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)
 contracts.
 
 Here `<type>` names the scanning tool (e.g. `grype`, `trivy`), not a
@@ -18,7 +22,7 @@ flags, and output.
 
 ## Naming and discovery
 
-As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#naming-and-discovery):
+As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md#naming-and-discovery):
 `bomify-plugin-<type>` (`.exe` on Windows), installed in
 `<data-dir>/plugins`.
 
@@ -94,7 +98,7 @@ Give each vulnerability a stable `bom-ref` (its ID works) and each
 component a stable `bom-ref` (its purl works). Report every piece you
 unpacked, not just affected ones; bomify filters them.
 
-Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/security-result.schema.json).
+Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/security-result.schema.json).
 
 ## SupportedComponentsResult
 
@@ -107,7 +111,7 @@ Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bom
 | `types` | array of strings | yes, non-empty | Purl types the plugin can scan (`oci`, `npm`, ...). Components of other types are never sent to `scan`. |
 | `scans` | array of strings | yes | Scan categories (e.g. `sca`, `sast`). Informational: bomify only logs them. |
 
-Schema: [`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-components-result.schema.json).
+Schema: [`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/supported-components-result.schema.json).
 
 ## Reports
 

@@ -1,12 +1,16 @@
-# Component plugin contract
+# Component plugin contract v1
+
+A plugin reports the contract versions it speaks with
+`bomify-plugin-<kind> contract` (see
+[contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The authoritative spec for a `bomify-plugin-<kind>` binary's **component
 plugin** subcommands (`component pull`, `component push`, `component
 remote`), which `bomify build` and `bomify distribute` call. It's
 independent of the
-[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
-[security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md),
-and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md),
+[security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md),
+and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)
 contracts; a binary can implement any combination.
 
 Go plugins should use
@@ -138,7 +142,7 @@ equivalent, so `hash` may be absent, `{}`, or fully set.
 | `hash.algorithm` | string | with `hash.value` | Always `SHA-256`. |
 | `hash.value` | string | with `hash.algorithm` | Hex digest. Compared case-insensitively; lowercase by convention. |
 
-Schema: [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json).
+Schema: [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/result.schema.json).
 
 ### Hashes
 
@@ -173,7 +177,7 @@ distribution rule can hand it back as `--remote`:
 Components with a common origin must report values sharing a common
 `/`-separated prefix; that's what rules match and substitute.
 
-Schema: [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
+Schema: [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/remote-result.schema.json).
 
 ## Logging
 

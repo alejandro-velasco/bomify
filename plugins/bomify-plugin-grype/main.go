@@ -1,6 +1,6 @@
 // Command bomify-plugin-grype is bomify's security scanning plugin
 // backed by Anchore's grype vulnerability scanner. It implements the
-// contract described in plugins/SECURITY-CONTRACT.md:
+// contract described in plugins/contracts/security/v1/CONTRACT.md:
 //
 //	bomify-plugin-grype security scan --purl '<component purl>'
 //	bomify-plugin-grype security supported-components

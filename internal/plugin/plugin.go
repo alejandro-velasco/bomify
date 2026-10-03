@@ -1,13 +1,13 @@
 // Package plugin is bomify's caller-side orchestration of external
 // "bomify-plugin-<kind>" binaries: finding one (Find), running one and
-// parsing its JSON result (Invoke), and, for the component plugin
-// contract, dispatching SBOM components to one (Pull, Push, Remote, and
-// their --check counterparts) with bookkeeping around Pull so each
-// component is fetched once. See plugins/COMPONENT-CONTRACT.md for the
-// subprocess contract a component plugin implements, and pkg/plugin for
-// the Go library a plugin author implements it with. The security
-// scanning and signing contracts' own calls live with their callers, in
-// internal/security and internal/signature, built on Invoke.
+// parsing its JSON result (Invoke), and, for the component plugin contract,
+// dispatching SBOM components to one (Pull, Push, Remote, and their --check
+// counterparts) with bookkeeping around Pull so each component is fetched
+// once. See plugins/contracts/component/v1/CONTRACT.md for the subprocess
+// contract a component plugin implements, and pkg/plugin for the Go library a
+// plugin author implements it with. The security scanning and signing
+// contracts' own calls live with their callers, in internal/security and
+// internal/signature, built on Invoke.
 //
 // Pull is safe to call concurrently, even from separate bomify processes,
 // for components that hash to the same directory (e.g. duplicate purls

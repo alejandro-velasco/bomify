@@ -22,14 +22,14 @@ type Rule struct {
 	// Type is a plugin kind (e.g. "oci", "helm", "generic"). Empty
 	// matches a component of any kind.
 	Type string `json:"type,omitempty"`
-	// Match is a "/"-separated prefix of a component's origin — the
-	// Remote its plugin's "remote" subcommand reports (see
-	// internal/plugin.Remote and plugins/COMPONENT-CONTRACT.md) — e.g. "docker.io",
+	// Match is a "/"-separated prefix of a component's origin — the Remote
+	// its plugin's "remote" subcommand reports (see internal/plugin.Remote
+	// and plugins/contracts/component/v1/CONTRACT.md) — e.g. "docker.io",
 	// "docker.io/myorg", or "docker.io/myorg/myrepo" — matched at segment
-	// boundaries. Empty matches a component of any (or no) origin, but
-	// also means there's nothing for Resolve to mirror: see Resolve for
-	// how a non-empty Match acts as a prefix substitution rather than a
-	// plain lookup key.
+	// boundaries. Empty matches a component of any (or no) origin, but also
+	// means there's nothing for Resolve to mirror: see Resolve for how a
+	// non-empty Match acts as a prefix substitution rather than a plain
+	// lookup key.
 	Match string `json:"match,omitempty"`
 	// Endpoint is the remote this rule resolves to — see Resolve for how
 	// a non-empty Match can extend it with the rest of the component's
@@ -72,18 +72,18 @@ func RemoveRule(baseDir, ruleType, match string) error {
 	return distributionFile(baseDir).Remove(Rule{Type: ruleType, Match: match})
 }
 
-// Resolve picks the best rule in rules for a component of the given kind
-// (see plugin.Detect) whose origin is origin — its plugin's own report of
-// where it comes from or is published under (see internal/plugin.Remote
-// and plugins/COMPONENT-CONTRACT.md's "remote" subcommand), in whatever shape that
-// plugin's kind uses; any URL scheme (e.g. "https://", "oci://") and
-// surrounding slashes are stripped before matching, so origin lines up
-// with a Match regardless of how the plugin formatted it. Candidates are
-// ranked first by how specific their Match is — more "/"-separated
+// Resolve picks the best rule in rules for a component of the given kind (see
+// plugin.Detect) whose origin is origin — its plugin's own report of where it
+// comes from or is published under (see internal/plugin.Remote and
+// plugins/contracts/component/v1/CONTRACT.md's "remote" subcommand), in
+// whatever shape that plugin's kind uses; any URL scheme (e.g. "https://",
+// "oci://") and surrounding slashes are stripped before matching, so origin
+// lines up with a Match regardless of how the plugin formatted it. Candidates
+// are ranked first by how specific their Match is — more "/"-separated
 // segments wins, since that names a narrower, more concrete target — and,
-// among equally specific matches, a Rule whose Type also matches kind
-// wins over one with no Type at all. It reports ok=false if no rule
-// matches at all.
+// among equally specific matches, a Rule whose Type also matches kind wins
+// over one with no Type at all. It reports ok=false if no rule matches at
+// all.
 //
 // The winning rule's Endpoint isn't necessarily returned verbatim: when
 // its Match is non-empty, Resolve acts as a mirror — origin's portion

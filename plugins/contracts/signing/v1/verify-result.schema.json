@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/signing/v1/verify-result.schema.json",
+  "title": "bomify plugin VerifyResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout for its \"signature verify\" subcommand when — and only when — the envelope is a trusted signature over the payload, per plugins/contracts/signing/v1/CONTRACT.md. A failed verification is reported by a non-zero exit instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signer"
+  ],
+  "properties": {
+    "signer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A human-readable identity of whoever made the signature (a key fingerprint, certificate subject, email address, ...). bomify only logs it."
+    }
+  }
+}

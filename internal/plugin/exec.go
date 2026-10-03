@@ -45,13 +45,13 @@ func Invoke[T any](path string, args ...string) (T, error) {
 // for new content while the plugin is still running.
 const logStreamPollInterval = 100 * time.Millisecond
 
-// runComponent is Invoke for the component contract's "component <verb>"
-// (see plugins/COMPONENT-CONTRACT.md), passing component's purl, its log
-// file (as --log), and extraArgs. It creates the log file fresh before
-// starting the plugin and — if logger has debug logging enabled (bomify
-// was run with --verbose) — streams its content live to stdout for the
-// duration of the run; either way, the file exists only to make that
-// streaming possible, so it's removed again once the plugin exits.
+// runComponent is Invoke for the component contract's "component <verb>" (see
+// plugins/contracts/component/v1/CONTRACT.md), passing component's purl, its
+// log file (as --log), and extraArgs. It creates the log file fresh before
+// starting the plugin and — if logger has debug logging enabled (bomify was
+// run with --verbose) — streams its content live to stdout for the duration
+// of the run; either way, the file exists only to make that streaming
+// possible, so it's removed again once the plugin exits.
 func runComponent[T any](path, verb string, component cdx.Component, baseDir string, logger *slog.Logger, extraArgs ...string) (*T, error) {
 	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)

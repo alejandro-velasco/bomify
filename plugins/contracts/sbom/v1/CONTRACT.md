@@ -1,16 +1,20 @@
-# SBOM generation plugin contract
+# SBOM generation plugin contract v1
+
+A plugin reports the contract versions it speaks with
+`bomify-plugin-<kind> contract` (see
+[contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The spec for a `bomify-plugin-<kind>` binary's **SBOM generation**
 subcommand, `sbom generate`, which `bomify sbom generate <kind> [flags]`
 calls. It's independent of the
-[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
-[security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md),
-and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md)
+[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md),
+[security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md),
+and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)
 contracts. Here `<kind>` names a deployment medium (e.g. `helm`, `oci`).
 
 ## Naming and discovery
 
-As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#naming-and-discovery):
+As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md#naming-and-discovery):
 `bomify-plugin-<kind>` (`.exe` on Windows), installed in
 `<data-dir>/plugins`.
 
