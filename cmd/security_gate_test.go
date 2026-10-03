@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +92,9 @@ func TestSecurityScanGateFlagValidation(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"--fail-on", "severe"},
+		{"--fail-on", "high,low"},
 		{"--ignore", "CVE-HIGH"},
+		{"--ignore", "CVE-HIGH", "--fail-on", "unscanned"},
 		{"--skip-gate", "--fail-on", "high"},
 	} {
 		if _, err := runRootCmd(t, baseDir, append([]string{"security", "scan", "grype", gatedTag}, args...)...); err == nil || errors.As(err, new(*security.GateError)) {
@@ -239,6 +243,95 @@ func TestSecurityVEXAddListRemove(t *testing.T) {
 	} {
 		if _, err := runRootCmd(t, baseDir, append([]string{"security", "vex"}, args...)...); err == nil {
 			t.Errorf("vex %v: error = nil, want one", args)
+		}
+	}
+}
+
+// TestSecurityScanFailOnUnscanned scans a package with a component the
+// fake scanner doesn't support (npm): it's skipped either way, but only
+// fails the scan when asked to.
+func TestSecurityScanFailOnUnscanned(t *testing.T) {
+	baseDir, component := setUpGatedPackage(t)
+	unsupported := cdx.Component{Name: "b", Version: "1.0", PackageURL: "pkg:npm/b@1.0"}
+	writePackage(t, baseDir, gatedTag, component, unsupported)
+
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag); err != nil {
+		t.Fatalf("no gate: %v, want none", err)
+	}
+
+	unscannedOnly := func(err error) bool {
+		var gateErr *security.GateError
+		return errors.As(err, &gateErr) && len(gateErr.Findings) == 0 &&
+			len(gateErr.Unscanned) == 1 && gateErr.Unscanned[0].Component.PackageURL == unsupported.PackageURL
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "unscanned"); !unscannedOnly(err) {
+		t.Errorf("--fail-on unscanned: %v, want a gate failure on just %s", err, unsupported.PackageURL)
+	}
+	// The scanned component's report is written even when the gate fails.
+	readReport(t, baseDir, component)
+
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate", "--fail-on", "unscanned"); err == nil || errors.As(err, new(*security.GateError)) {
+		t.Errorf("--skip-gate --fail-on unscanned: %v, want a flag error", err)
+	}
+
+	// A rule asking for it applies too, and --skip-gate drops it.
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--match", "registry.example.com/team", "--fail-on", "unscanned"); err != nil {
+		t.Fatalf("policy create: %v", err)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag); !unscannedOnly(err) {
+		t.Errorf("with a rule: %v, want a gate failure on just %s", err, unsupported.PackageURL)
+	}
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--skip-gate"); err != nil {
+		t.Errorf("--skip-gate over the rule: %v, want none", err)
+	}
+	// --fail-on replaces all of the rule's conditions, unscanned included.
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "critical"); err != nil {
+		t.Errorf("--fail-on critical over the rule: %v, want none", err)
+	}
+	// Both conditions at once fail on both.
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "high,unscanned")
+	if !errors.As(err, &gateErr) || len(gateErr.Findings) != 1 || len(gateErr.Unscanned) != 1 {
+		t.Errorf("--fail-on high,unscanned: %v, want one finding and one unscanned component", err)
+	}
+	if out, err := runRootCmd(t, baseDir, "security", "policy", "list"); err != nil || !strings.Contains(out, " unscanned ") {
+		t.Errorf("policy list = %q, %v; want the rule's FAIL-ON to list unscanned", out, err)
+	}
+}
+
+func TestCheckGateListsSkipped(t *testing.T) {
+	skipped := []security.Skipped{
+		{Component: cdx.Component{PackageURL: "pkg:npm/b@1.0"}, Reason: `unsupported type "npm"`},
+		{Component: cdx.Component{Name: "c", Version: "2.0"}, Reason: "no detectable type: no package URL"},
+	}
+	var out bytes.Buffer
+	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, "grype", 5, nil, skipped); err != nil {
+		t.Fatalf("checkGate: %v", err)
+	}
+	for _, want := range []string{"2 of 5 components not scanned by grype", "pkg:npm/b@1.0", `unsupported type "npm"`, "c@2.0", "no detectable type"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, "grype", 5, nil, nil); err != nil || out.Len() != 0 {
+		t.Errorf("nothing skipped: %v, %q; want no error and no output", err, out.String())
+	}
+}
+
+func TestFailsOn(t *testing.T) {
+	for _, tc := range []struct {
+		rule security.Rule
+		want string
+	}{
+		{security.Rule{}, ""},
+		{security.Rule{FailOn: "high"}, "high"},
+		{security.Rule{FailOnUnscanned: true}, "unscanned"},
+		{security.Rule{FailOn: "high", FailOnUnscanned: true}, "high,unscanned"},
+	} {
+		if got := failsOn(tc.rule); got != tc.want {
+			t.Errorf("failsOn(%+v) = %q, want %q", tc.rule, got, tc.want)
 		}
 	}
 }

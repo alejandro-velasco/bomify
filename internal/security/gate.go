@@ -56,6 +56,32 @@ func ParseSeverity(s string) (Severity, error) {
 	return SeverityNone, fmt.Errorf("unknown severity %q (want one of info, low, medium, high, critical)", s)
 }
 
+// ConditionUnscanned is the --fail-on condition that fails a package any
+// of whose components the scan skipped (see Gate.FailOnUnscanned).
+const ConditionUnscanned = "unscanned"
+
+// ParseFailOn parses --fail-on's conditions, case-insensitively, into
+// the Gate they describe: at most one severity (see ParseSeverity), the
+// threshold, and ConditionUnscanned. Ignore and VEX are left unset.
+func ParseFailOn(conditions []string) (Gate, error) {
+	var g Gate
+	for _, condition := range conditions {
+		if strings.EqualFold(condition, ConditionUnscanned) {
+			g.FailOnUnscanned = true
+			continue
+		}
+		sev, err := ParseSeverity(condition)
+		if err != nil {
+			return Gate{}, fmt.Errorf("unknown condition %q (want a severity: info, low, medium, high, critical; and/or %s)", condition, ConditionUnscanned)
+		}
+		if g.FailOn != SeverityNone {
+			return Gate{}, fmt.Errorf("more than one severity (%s and %s): give the lowest that should fail", g.FailOn, sev)
+		}
+		g.FailOn = sev
+	}
+	return g, nil
+}
+
 // severityOf maps a CycloneDX rating severity onto Severity; "none",
 // "unknown", and anything unrecognized map to SeverityNone.
 func severityOf(s cdx.Severity) Severity {
@@ -65,9 +91,15 @@ func severityOf(s cdx.Severity) Severity {
 
 // Gate is a vulnerability threshold: a package fails it when any of its
 // reports names a vulnerability at FailOn or above that isn't in Ignore
-// and that VEX doesn't exempt. A FailOn of SeverityNone gates nothing.
+// and that VEX doesn't exempt, or, with FailOnUnscanned, when the scan
+// skipped any of its components. A FailOn of SeverityNone fails nothing
+// on vulnerabilities.
 type Gate struct {
 	FailOn Severity
+	// FailOnUnscanned fails a package any of whose components the scanner
+	// didn't scan (see Skipped), so that a component nothing checked never
+	// passes as clean.
+	FailOnUnscanned bool
 	// Ignore lists vulnerability IDs (e.g. "CVE-2024-1234") never to fail
 	// on, however severe — a one-off, for a single command.
 	Ignore []string
@@ -75,6 +107,12 @@ type Gate struct {
 	// affect the component it was found in, or was fixed there (see
 	// VEX.exempts).
 	VEX *VEX
+}
+
+// CanFail reports whether g can fail a package at all: on a
+// vulnerability threshold, on unscanned components, or both.
+func (g Gate) CanFail() bool {
+	return g.FailOn != SeverityNone || g.FailOnUnscanned
 }
 
 // Finding is one vulnerability at or above a Gate's threshold, in one
@@ -175,27 +213,45 @@ func highestSeverity(vuln cdx.Vulnerability) Severity {
 }
 
 // GateError is returned when a package fails a Gate, carrying what
-// failed it.
+// failed it: Findings, Unscanned, or both.
 type GateError struct {
 	FailOn   Severity
 	Findings []Finding
+	// Unscanned are the components the scan skipped, set only when the
+	// Gate fails on them (FailOnUnscanned).
+	Unscanned []Skipped
 }
 
 func (e *GateError) Error() string {
-	noun := "vulnerabilities"
-	if len(e.Findings) == 1 {
-		noun = "vulnerability"
+	var reasons []string
+	if n := len(e.Findings); n > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d %s at or above %s", n, plural(n, "vulnerability", "vulnerabilities"), e.FailOn))
 	}
-	return fmt.Sprintf("%d %s at or above %s", len(e.Findings), noun, e.FailOn)
+	if n := len(e.Unscanned); n > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d %s not scanned", n, plural(n, "component", "components")))
+	}
+	return strings.Join(reasons, "; ")
 }
 
-// Err returns a *GateError if anything failed the gate e came from, or
-// nil.
-func (e Evaluation) Err(failOn Severity) error {
-	if len(e.Findings) > 0 {
-		return &GateError{FailOn: failOn, Findings: e.Findings}
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
 	}
-	return nil
+	return many
+}
+
+// Err returns a *GateError if anything failed g, the gate e came from —
+// any finding, or, with g.FailOnUnscanned, any component in skipped, the
+// ones the scan skipped (see Scan) — or nil.
+func (e Evaluation) Err(g Gate, skipped []Skipped) error {
+	err := &GateError{FailOn: g.FailOn, Findings: e.Findings}
+	if g.FailOnUnscanned {
+		err.Unscanned = skipped
+	}
+	if len(err.Findings) == 0 && len(err.Unscanned) == 0 {
+		return nil
+	}
+	return err
 }
 
 // WriteFindings prints findings to w as a table.
@@ -205,4 +261,18 @@ func WriteFindings(w io.Writer, findings []Finding) error {
 		rows = append(rows, []string{f.Severity.String(), f.ID, f.Purl})
 	}
 	return table.Write(w, []string{"SEVERITY", "ID", "COMPONENT"}, rows)
+}
+
+// WriteSkipped writes skipped, components a scan didn't scan, to w as a
+// table: each one's purl (or name@version, without one) and why.
+func WriteSkipped(w io.Writer, skipped []Skipped) error {
+	rows := make([][]string, 0, len(skipped))
+	for _, s := range skipped {
+		label := s.Component.PackageURL
+		if label == "" {
+			label = s.Component.Name + "@" + s.Component.Version
+		}
+		rows = append(rows, []string{label, s.Reason})
+	}
+	return table.Write(w, []string{"COMPONENT", "REASON"}, rows)
 }
