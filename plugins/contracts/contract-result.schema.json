@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/contract-result.schema.json",
+  "title": "bomify plugin ContractResult",
+  "description": "The single JSON object every bomify-plugin-<kind> binary must print to stdout on success for its \"contract\" subcommand, per plugins/README.md#contract-versions. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contracts"
+  ],
+  "properties": {
+    "contracts": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "component",
+          "sbom",
+          "security",
+          "signing"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "description": "Each plugin contract the plugin implements, mapped to the major version of it the plugin speaks. A contract it doesn't implement is absent."
+    }
+  }
+}

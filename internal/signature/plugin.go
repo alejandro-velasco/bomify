@@ -7,9 +7,9 @@ import (
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// signPayload invokes the signing plugin's "signature sign" over the
-// payload in payloadFile, on behalf of the package being published as ref
-// (see plugins/SIGNING-CONTRACT.md). Each of options ("key=value") is
+// signPayload invokes the signing plugin's "signature sign" over the payload
+// in payloadFile, on behalf of the package being published as ref (see
+// plugins/contracts/signing/v1/CONTRACT.md). Each of options ("key=value") is
 // passed through, unparsed, as its own --option flag.
 func signPayload(path, payloadFile, ref string, options []string, logger *slog.Logger) (pluginlib.SignResult, error) {
 	logger.Debug("signing", "path", path, "reference", ref)

@@ -116,10 +116,10 @@ nav = [
           { "Builds and tagging" = "development/architecture/builds.md" },
           { "Push and pull" = "development/architecture/registry.md" },
       ] },
-      { "Component plugin contract" = "development/component-contract.md" },
-      { "SBOM generation contract" = "development/sbom-contract.md" },
-      { "Security scanning contract" = "development/security-contract.md" },
-      { "Signing contract" = "development/signing-contract.md" },
+      { "Component plugin contract v1" = "development/component-contract.md" },
+      { "SBOM generation contract v1" = "development/sbom-contract.md" },
+      { "Security scanning contract v1" = "development/security-contract.md" },
+      { "Signing contract v1" = "development/signing-contract.md" },
   ] },
 ]
 

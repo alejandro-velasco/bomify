@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/supported-components-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/security/v1/supported-components-result.schema.json",
   "title": "bomify plugin SupportedComponentsResult",
-  "description": "The single JSON object a bomify-plugin-<type> binary must print to stdout on success for its \"security supported-components\" subcommand, per plugins/SECURITY-CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "description": "The single JSON object a bomify-plugin-<type> binary must print to stdout on success for its \"security supported-components\" subcommand, per plugins/contracts/security/v1/CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
   "type": "object",
   "additionalProperties": false,
   "required": ["types", "scans"],

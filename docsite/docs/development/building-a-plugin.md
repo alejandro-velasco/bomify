@@ -63,8 +63,8 @@ logic easy to test.
 - [ ] Support `--check` if there's a cheap check, and never fall back to
       a real push for it (see [check mode](component-contract.md#check-mode)).
 - [ ] Validate your output against
-      [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/result.schema.json)
-      and [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/remote-result.schema.json).
+      [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/result.schema.json)
+      and [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/remote-result.schema.json).
 - [ ] To make it installable, publish it as a
       [plugin package](../getting-started/installing-plugins.md#publishing-a-plugin).
 - [ ] For a first-party plugin, add it to

@@ -4,10 +4,10 @@ A plugin binary can implement any of four independent contracts:
 
 | Contract | Subcommands | Used by | `<kind>` names |
 | --- | --- | --- | --- |
-| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md) | `component pull/push/remote` | `build`, `distribute` | a purl type |
-| [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
-| [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
-| [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
+| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull/push/remote` | `build`, `distribute` | a purl type |
+| [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
+| [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
+| [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
 
 Every call bomify makes to a plugin goes through `plugin.Invoke`: run
 the binary, parse stdout as the contract's JSON result, and fold stderr
@@ -15,7 +15,10 @@ into the error on failure. On the plugin side, `pkg/plugin`'s
 `ComponentCommand`, `SecurityCommand`, and `SignatureCommand` build each
 contract's subcommands (flags, validation, logging, output) around a
 small Go interface, so a first-party plugin's `cmd` package is only an
-adapter over its `internal` logic.
+adapter over its `internal` logic. `NewRootCommand` adds the `contract`
+subcommand every plugin answers with the version of each contract it
+speaks (see
+[contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 ## Component plugins
 

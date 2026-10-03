@@ -34,14 +34,14 @@ func Resolve(purlString string) (string, error) {
 	}
 }
 
-// Location returns the registry/namespace prefix purlString's purl names
-// — its repository address (see repositoryFor) with the component's own
-// trailing "/<name>" segment removed, so it's in the same shape Push's
-// own --remote expects: destinationReference below appends "/<name>:<tag>"
-// onto whatever --remote it's given, so reporting that name back as part
-// of "remote" would double it up. This is what the "remote" subcommand
-// reports (see plugins/COMPONENT-CONTRACT.md): where this component's registry
-// lives, not the component's own specific repository within it.
+// Location returns the registry/namespace prefix purlString's purl names —
+// its repository address (see repositoryFor) with the component's own
+// trailing "/<name>" segment removed, so it's in the same shape Push's own
+// --remote expects: destinationReference below appends "/<name>:<tag>" onto
+// whatever --remote it's given, so reporting that name back as part of
+// "remote" would double it up. This is what the "remote" subcommand reports
+// (see plugins/contracts/component/v1/CONTRACT.md): where this component's
+// registry lives, not the component's own specific repository within it.
 func Location(purlString string) (string, error) {
 	purl, err := packageurl.FromString(purlString)
 	if err != nil {

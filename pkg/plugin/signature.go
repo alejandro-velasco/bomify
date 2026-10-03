@@ -13,11 +13,11 @@ import (
 const InTotoPayloadType = "application/vnd.in-toto+json"
 
 // SigningPlugin is a signing plugin's own logic (see
-// plugins/SIGNING-CONTRACT.md), for SignatureCommand to expose as the
-// contract's "signature sign"/"signature attest"/"signature
+// plugins/contracts/signing/v1/CONTRACT.md), for SignatureCommand to expose
+// as the contract's "signature sign"/"signature attest"/"signature
 // verify"/"signature verify-attestation"/"signature supported-types".
-// SignatureCommand reads the payload, statement, and envelope files
-// itself, so a SigningPlugin only ever deals in bytes.
+// SignatureCommand reads the payload, statement, and envelope files itself,
+// so a SigningPlugin only ever deals in bytes.
 type SigningPlugin interface {
 	// Sign signs payload on behalf of the package being published as
 	// req.Reference.
@@ -90,7 +90,7 @@ type SigningHelp struct {
 func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "signature",
-		Short: "Signing subcommands — see plugins/SIGNING-CONTRACT.md",
+		Short: "Signing subcommands — see plugins/contracts/signing/v1/CONTRACT.md",
 	}
 	optionUsage := "a key=value option (repeatable): " + help.Options
 

@@ -1,7 +1,7 @@
 // Command bomify-plugin-sigstore is bomify's signing plugin backed by
 // Sigstore (via sigstore-go), producing standard v0.3 Sigstore bundles.
 // It implements the contract described in
-// plugins/SIGNING-CONTRACT.md:
+// plugins/contracts/signing/v1/CONTRACT.md:
 //
 //	bomify-plugin-sigstore signature sign --payload <file> --reference <ref> [--option key=<private key>]
 //	bomify-plugin-sigstore signature verify --payload <file> --envelope <file> --media-type <mt> --reference <ref> \

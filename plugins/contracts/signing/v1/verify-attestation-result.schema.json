@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/verify-attestation-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/signing/v1/verify-attestation-result.schema.json",
   "title": "bomify plugin VerifyAttestationResult",
-  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout for its \"signature verify-attestation\" subcommand when — and only when — the envelope is a trusted attestation about the given subject, per plugins/SIGNING-CONTRACT.md. A failed verification is reported by a non-zero exit instead.",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout for its \"signature verify-attestation\" subcommand when — and only when — the envelope is a trusted attestation about the given subject, per plugins/contracts/signing/v1/CONTRACT.md. A failed verification is reported by a non-zero exit instead.",
   "type": "object",
   "additionalProperties": false,
   "required": [

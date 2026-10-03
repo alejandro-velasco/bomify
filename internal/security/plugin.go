@@ -12,7 +12,7 @@ import (
 // scanComponent invokes the scanning plugin's "security scan" for
 // component, which reports every vulnerability its purl is affected by —
 // each with Affects already set by the plugin, never by bomify (see
-// plugins/SECURITY-CONTRACT.md).
+// plugins/contracts/security/v1/CONTRACT.md).
 func scanComponent(path string, component cdx.Component, logger *slog.Logger) (pluginlib.SecurityResult, error) {
 	logger.Info("scanning component", "purl", component.PackageURL)
 	return plugin.Invoke[pluginlib.SecurityResult](path, "security", "scan", "--purl", component.PackageURL)

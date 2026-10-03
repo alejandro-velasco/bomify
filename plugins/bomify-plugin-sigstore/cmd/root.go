@@ -12,7 +12,7 @@ import (
 )
 
 // NewRootCmd builds the bomify-plugin-sigstore root command, implementing
-// the signing contract (see plugins/SIGNING-CONTRACT.md).
+// the signing contract (see plugins/contracts/signing/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
 	return pluginlib.NewRootCommand("sigstore", "bomify signing plugin producing Sigstore bundles",
 		pluginlib.SignatureCommand(signer{}, pluginlib.SigningHelp{

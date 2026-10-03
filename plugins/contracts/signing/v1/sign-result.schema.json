@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/sign-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/signing/v1/sign-result.schema.json",
   "title": "bomify plugin SignResult",
-  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"signature sign\" subcommand, per plugins/SIGNING-CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"signature sign\" subcommand, per plugins/contracts/signing/v1/CONTRACT.md. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
   "type": "object",
   "additionalProperties": false,
   "required": [

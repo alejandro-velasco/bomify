@@ -77,13 +77,13 @@ func DBDirectory() string {
 	return installCfg.DBDirectoryPath()
 }
 
-// Purl scans the single component purlString identifies, returning
-// every CycloneDX vulnerability it's affected by (see toVulnerability
-// for the grype-match-to-CycloneDX field mapping). Each vulnerability's
-// Affects references purlString itself back — this plugin's only
-// responsibility here, per plugins/SECURITY-CONTRACT.md, since a purl
-// looked up directly like this names exactly one thing, with nothing
-// smaller to attribute a finding to.
+// Purl scans the single component purlString identifies, returning every
+// CycloneDX vulnerability it's affected by (see toVulnerability for the
+// grype-match-to-CycloneDX field mapping). Each vulnerability's Affects
+// references purlString itself back — this plugin's only responsibility here,
+// per plugins/contracts/security/v1/CONTRACT.md, since a purl looked up
+// directly like this names exactly one thing, with nothing smaller to
+// attribute a finding to.
 //
 // An "oci"/"docker" purl is dispatched to scanImage instead, which
 // reports Affects differently: see image.go.

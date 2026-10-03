@@ -1,14 +1,14 @@
-// Package signature signs and verifies bomify packages through a
-// signing plugin (see plugins/SIGNING-CONTRACT.md). What's signed is a
-// package's OCI manifest descriptor (see Payload): since that manifest
-// pins the SBOM config and every component layer by digest, one
-// signature over it covers the whole package. A package's vulnerability
-// reports live in a referrer of their own (see internal/security), which
-// is signed the same way, separately. The
-// plugin only turns that payload into a signature envelope and back;
-// bomify itself stores each envelope as an OCI referrer of the package's
-// manifest, in whatever target the package lives in — a registry or a
-// `bomify save` tarball alike — so a plugin never talks to a registry.
+// Package signature signs and verifies bomify packages through a signing
+// plugin (see plugins/contracts/signing/v1/CONTRACT.md). What's signed is a
+// package's OCI manifest descriptor (see Payload): since that manifest pins
+// the SBOM config and every component layer by digest, one signature over it
+// covers the whole package. A package's vulnerability reports live in a
+// referrer of their own (see internal/security), which is signed the same
+// way, separately. The plugin only turns that payload into a signature
+// envelope and back; bomify itself stores each envelope as an OCI referrer of
+// the package's manifest, in whatever target the package lives in — a
+// registry or a `bomify save` tarball alike — so a plugin never talks to a
+// registry.
 package signature
 
 import (
@@ -52,10 +52,10 @@ type Plugin struct {
 	Options []string
 }
 
-// payload is the exact JSON a signing plugin signs. Its fields, their
-// order (encoding/json writes them in declaration order), and the absence
-// of omitempty are all part of plugins/SIGNING-CONTRACT.md's "Payload"
-// section: changing any of them changes the signed bytes, and so
+// payload is the exact JSON a signing plugin signs. Its fields, their order
+// (encoding/json writes them in declaration order), and the absence of
+// omitempty are all part of plugins/contracts/signing/v1/CONTRACT.md's
+// "Payload" section: changing any of them changes the signed bytes, and so
 // invalidates every existing signature.
 type payload struct {
 	MediaType string `json:"mediaType"`
@@ -94,10 +94,11 @@ func NewSigner(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Signer
 	}, nil
 }
 
-// NewAttester returns a transfer.Attester that has p's plugin sign an
-// in-toto statement as a DSSE envelope (see plugins/SIGNING-CONTRACT.md's
-// "signature attest") and pushes it as a referrer of the package manifest, the
-// same way NewSigner pushes a signature.
+// NewAttester returns a transfer.Attester that has p's plugin sign an in-toto
+// statement as a DSSE envelope (see
+// plugins/contracts/signing/v1/CONTRACT.md's "signature attest") and pushes
+// it as a referrer of the package manifest, the same way NewSigner pushes a
+// signature.
 func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Attester, error) {
 	path, err := plugin.Find(pluginDir, p.Kind)
 	if err != nil {
@@ -129,9 +130,9 @@ func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Atte
 // and AnnotationPlugin.
 func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Descriptor, path string, p Plugin, result pluginlib.SignResult, annotations map[string]string) (ocispec.Descriptor, error) {
 	// All three are required by the contract (see
-	// plugins/SIGNING-CONTRACT.md's SignResult): without them there's no
-	// referrer type to push, no media type to hand back to verify, or
-	// nothing to store at all.
+	// plugins/contracts/signing/v1/CONTRACT.md's SignResult): without them
+	// there's no referrer type to push, no media type to hand back to verify,
+	// or nothing to store at all.
 	if result.ArtifactType == "" || result.MediaType == "" || len(result.Envelope) == 0 {
 		return ocispec.Descriptor{}, fmt.Errorf("plugin %s reported an incomplete signing result (artifactType, mediaType, and envelope are all required)", path)
 	}

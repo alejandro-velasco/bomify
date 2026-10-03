@@ -1,6 +1,6 @@
 // Command fakeplugin is a synthetic bomify-plugin-* binary used only by
-// tests, implementing every plugin contract bomify drives (see plugins/*
-// -CONTRACT.md) without depending on a real tool: the component contract
+// tests, implementing every plugin contract bomify drives (see
+// plugins/contracts/) without depending on a real tool: the component contract
 // (component.go), the security scanning contract (security.go), the
 // signing contract (signature.go), and SBOM generation (below). Install
 // it with testutil.InstallFakePlugin. Each contract's behavior is driven
@@ -36,10 +36,10 @@ func main() {
 }
 
 // sbomMain stands in for "sbom generate", whose arguments bomify passes
-// through unparsed (see plugins/SBOM-CONTRACT.md): it echoes its own
-// arguments to stdout and, if any is exactly "--fail", writes to stderr
-// and exits 7 instead, so tests can check both paths and that the exit
-// code propagates.
+// through unparsed (see plugins/contracts/sbom/v1/CONTRACT.md): it echoes its
+// own arguments to stdout and, if any is exactly "--fail", writes to stderr
+// and exits 7 instead, so tests can check both paths and that the exit code
+// propagates.
 func sbomMain() {
 	fmt.Fprintln(os.Stdout, strings.Join(os.Args[1:], " "))
 

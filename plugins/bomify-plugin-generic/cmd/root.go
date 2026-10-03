@@ -11,8 +11,8 @@ import (
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-generic/internal/artifact"
 )
 
-// NewRootCmd builds the bomify-plugin-generic root command, implementing
-// the component plugin contract (see plugins/COMPONENT-CONTRACT.md).
+// NewRootCmd builds the bomify-plugin-generic root command, implementing the
+// component plugin contract (see plugins/contracts/component/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("generic", "bomify plugin for plain HTTP GET/PUT artifacts",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{

@@ -12,10 +12,10 @@ comments or rely on memory of it, since the contracts keep growing.
 
 | Contract | Subcommands | Spec |
 | --- | --- | --- |
-| Component | `component pull/push/remote` | [`COMPONENT-CONTRACT.md`](../../../plugins/COMPONENT-CONTRACT.md) |
-| SBOM generation | `sbom generate` | [`SBOM-CONTRACT.md`](../../../plugins/SBOM-CONTRACT.md) |
-| Security scanning | `security scan/supported-components` | [`SECURITY-CONTRACT.md`](../../../plugins/SECURITY-CONTRACT.md) |
-| Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`SIGNING-CONTRACT.md`](../../../plugins/SIGNING-CONTRACT.md) |
+| Component | `component pull/push/remote` | [`contracts/component/v1`](../../../plugins/contracts/component/v1/CONTRACT.md) |
+| SBOM generation | `sbom generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
+| Security scanning | `security scan/supported-components` | [`contracts/security/v1`](../../../plugins/contracts/security/v1/CONTRACT.md) |
+| Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`contracts/signing/v1`](../../../plugins/contracts/signing/v1/CONTRACT.md) |
 
 Also relevant:
 
@@ -26,8 +26,11 @@ Also relevant:
   flags, validation, logging, and output. Contract changes to flags or
   output belong in these builders, not in each plugin. Check the package
   for its current API. SBOM generation has no equivalent, by design.
-- `plugins/*.schema.json`: one JSON Schema per result shape bomify
-  parses (SBOM generation has none). Glob for the current set.
+- `plugins/contracts/<contract>/v<N>/*.schema.json`: one JSON Schema per
+  result shape bomify parses, next to that version's spec (SBOM
+  generation has none). Glob for the current set.
+  `plugins/contracts/contract-result.schema.json` is the `contract`
+  command's, shared by all.
 - [`plugins/README.md`](../../../plugins/README.md): the first-party
   plugins.
 - [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):
@@ -42,5 +45,13 @@ Also relevant:
    affected schema (adding one for a new result shape) in the same
    change, and check every first-party plugin still conforms. Never let
    a change to one contract imply another.
-4. For a new first-party plugin, or a change to a plugin's main
+4. If that change breaks a plugin or bomify written for the current
+   version, make it in a new version instead, in the same change: copy
+   `plugins/contracts/<contract>/v<N>/` to `v<N+1>/` and edit the copy,
+   leaving `v<N>/` as it was. Then point everything current at it: the
+   title, every schema's `$id`, the docsite wrapper and its
+   `docsite/zensical.toml` nav entry, the links to the spec, `pkg/plugin`'s
+   `<Contract>ContractVersion`, and the tests that expect it (see
+   [contract versions](../../../plugins/README.md#contract-versions)).
+5. For a new first-party plugin, or a change to a plugin's main
    features, update `plugins/README.md`.

@@ -1,13 +1,17 @@
-# Signing plugin contract
+# Signing plugin contract v1
+
+A plugin reports the contract versions it speaks with
+`bomify-plugin-<kind> contract` (see
+[contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The spec for a `bomify-plugin-<kind>` binary's **signing** subcommands,
 `signature sign`, `signature attest`, `signature verify`, `signature
 verify-attestation`, and `signature supported-types`, which `bomify
 push`/`save --sign` and `bomify pull`/`load --verify` (or a matching
 `bomify trust` rule) call. It's independent of the
-[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md),
-[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SBOM-CONTRACT.md),
-and [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SECURITY-CONTRACT.md)
+[component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md),
+[SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md),
+and [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md)
 contracts.
 
 Here `<kind>` names a signing scheme (e.g. `sigstore`, `notation`).
@@ -18,7 +22,7 @@ their flags, reading `--payload`/`--statement`/`--envelope`, and output.
 
 ## Naming and discovery
 
-As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/COMPONENT-CONTRACT.md#naming-and-discovery):
+As for the [component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md#naming-and-discovery):
 `bomify-plugin-<kind>` (`.exe` on Windows), installed in
 `<data-dir>/plugins`.
 
@@ -186,7 +190,7 @@ else (for verification) the most specific trust rule (see
 | `envelope` | string (base64) | yes, non-empty | The envelope, standard base64. bomify stores the decoded bytes and passes exactly those to `verify`. |
 | `annotations` | object | no | Extra annotations for the referrer. bomify adds `land.bomify.signature.plugin` (`<kind>`). |
 
-Schema: [`sign-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/sign-result.schema.json).
+Schema: [`sign-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/sign-result.schema.json).
 
 ## VerifyResult
 
@@ -198,7 +202,7 @@ Schema: [`sign-result.schema.json`](https://github.com/alejandro-velasco/bomify/
 | --- | --- | --- | --- |
 | `signer` | string | yes | Human-readable identity of the signer (key fingerprint, certificate subject, email). Logged only. |
 
-Schema: [`verify-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/verify-result.schema.json).
+Schema: [`verify-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/verify-result.schema.json).
 
 ## VerifyAttestationResult
 
@@ -211,7 +215,7 @@ Schema: [`verify-result.schema.json`](https://github.com/alejandro-velasco/bomif
 | `signer` | string | yes | As for [`VerifyResult`](#verifyresult). |
 | `statement` | string (base64) | yes, non-empty | The in-toto statement the envelope signs, exactly as signed, standard base64. |
 
-Schema: [`verify-attestation-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/verify-attestation-result.schema.json).
+Schema: [`verify-attestation-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/verify-attestation-result.schema.json).
 
 ## SupportedSignatureTypesResult
 
@@ -223,7 +227,7 @@ Schema: [`verify-attestation-result.schema.json`](https://github.com/alejandro-v
 | --- | --- | --- | --- |
 | `artifactTypes` | array of strings | yes, non-empty | Referrer artifact types `verify` and `verify-attestation` understand. bomify never passes them an envelope of another type. |
 
-Schema: [`supported-signature-types-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/supported-signature-types-result.schema.json).
+Schema: [`supported-signature-types-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/supported-signature-types-result.schema.json).
 
 ## Where signatures live
 
