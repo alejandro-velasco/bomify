@@ -1,6 +1,8 @@
 package security
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -28,12 +30,22 @@ func TestReportsArePerScanner(t *testing.T) {
 		}
 	}
 
+	// Neither an in-flight write's temp file nor a stray file is a report.
+	for _, name := range []string{".tmp-123", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(layout.ComponentReports(baseDir, purlHash), name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	stored, err := ReadReports(baseDir, purlHash)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(stored) != 2 || stored[0].Scanner != "grype" || stored[1].Scanner != "trivy" {
 		t.Fatalf("ReadReports = %+v, want grype then trivy", stored)
+	}
+	if want := layout.Report(baseDir, purlHash, "grype"); stored[0].Path != want {
+		t.Errorf("grype's path = %s, want %s", stored[0].Path, want)
 	}
 	for scanner, want := range map[string]string{"grype": "CVE-GRYPE", "trivy": "CVE-TRIVY"} {
 		report, err := ReadReport(baseDir, purlHash, scanner)

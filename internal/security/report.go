@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -97,8 +96,7 @@ func NewReport(component cdx.Component, result pluginlib.SecurityResult, scanner
 // crash mid-write — never sees a partial report. It returns the report's
 // path.
 func WriteReport(baseDir string, r ComponentReport) (string, error) {
-	scanner, err := reportScanner(r.Scanner)
-	if err != nil {
+	if err := CheckScanner(r.Scanner); err != nil {
 		return "", err
 	}
 	var buf bytes.Buffer
@@ -109,7 +107,7 @@ func WriteReport(baseDir string, r ComponentReport) (string, error) {
 		return "", fmt.Errorf("encode vulnerability report: %w", err)
 	}
 
-	path := layout.Report(baseDir, layout.PurlHash(r.Component.PackageURL), scanner)
+	path := layout.Report(baseDir, layout.PurlHash(r.Component.PackageURL), r.Scanner)
 	if err := fsutil.WriteFileAtomic(path, buf.Bytes()); err != nil {
 		return "", fmt.Errorf("write report: %w", err)
 	}
@@ -117,21 +115,17 @@ func WriteReport(baseDir string, r ComponentReport) (string, error) {
 	return path, nil
 }
 
-// StoredScanner returns the name a report by scanner is kept under — see
-// reportScanner — for restoring one pulled from a registry, whose scanner
-// annotation must not be trusted to be a safe file name.
-func StoredScanner(scanner string) (string, error) { return reportScanner(scanner) }
-
-// reportScanner returns the name a report by scanner is kept under:
-// scanner itself, which must be set and usable as a file name.
-func reportScanner(scanner string) (string, error) {
+// CheckScanner fails unless scanner can name a vulnerability report: set,
+// and usable as a file name, since it is one (see layout.Report). A name
+// from a registry annotation must pass it before it's used.
+func CheckScanner(scanner string) error {
 	if scanner == "" {
-		return "", fmt.Errorf("a vulnerability report needs the scanner that produced it")
+		return fmt.Errorf("a vulnerability report needs the scanner that produced it")
 	}
 	if !transfer.IsSafeFilename(scanner) {
-		return "", fmt.Errorf("scanner %q can't name a vulnerability report", scanner)
+		return fmt.Errorf("scanner %q can't name a vulnerability report", scanner)
 	}
-	return scanner, nil
+	return nil
 }
 
 // StoredReport is one scanner's vulnerability report of a component, as
@@ -155,12 +149,14 @@ func ReadReports(baseDir, purlHash string) ([]StoredReport, error) {
 
 	var reports []StoredReport
 	for _, entry := range entries {
-		name := entry.Name()
-		// Skip an in-flight write's temp file (see fsutil.WriteFileAtomic).
-		if entry.IsDir() || filepath.Ext(name) != ".json" || strings.HasPrefix(name, ".") {
+		// A report is <scanner>.json, as WriteReport names it. Anything
+		// else, such as an in-flight write's temp file (".tmp-*", see
+		// fsutil.WriteFileAtomic), isn't one.
+		scanner, isReport := strings.CutSuffix(entry.Name(), ".json")
+		if !isReport || entry.IsDir() || CheckScanner(scanner) != nil {
 			continue
 		}
-		reports = append(reports, StoredReport{Scanner: strings.TrimSuffix(name, ".json"), Path: filepath.Join(dir, name)})
+		reports = append(reports, StoredReport{Scanner: scanner, Path: layout.Report(baseDir, purlHash, scanner)})
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Scanner < reports[j].Scanner })
 	return reports, nil

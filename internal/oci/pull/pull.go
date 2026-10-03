@@ -396,8 +396,8 @@ func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, d
 	if purl == "" {
 		return Layer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, transfer.AnnotationPurl)
 	}
-	scanner, err := security.StoredScanner(desc.Annotations[security.AnnotationScanPlugin])
-	if err != nil {
+	scanner := desc.Annotations[security.AnnotationScanPlugin]
+	if err := security.CheckScanner(scanner); err != nil {
 		return Layer{}, fmt.Errorf("vulnerability report %s (%s annotation): %w", desc.Digest, security.AnnotationScanPlugin, err)
 	}
 
