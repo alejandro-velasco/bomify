@@ -136,6 +136,10 @@ func CheckScanners(scanners []string) error {
 		return fmt.Errorf("no scanner given")
 	}
 	for i, scanner := range scanners {
+		// An empty name in a list is a stray comma, e.g. "grype,".
+		if scanner == "" {
+			return fmt.Errorf("empty scanner name in %q", strings.Join(scanners, ","))
+		}
 		if err := CheckScanner(scanner); err != nil {
 			return err
 		}

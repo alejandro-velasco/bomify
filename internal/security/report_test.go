@@ -82,4 +82,7 @@ func TestCheckScanners(t *testing.T) {
 			t.Errorf("CheckScanners(%q): nil, want an error", bad)
 		}
 	}
+	if err := CheckScanners([]string{"grype", ""}); err == nil || err.Error() != `empty scanner name in "grype,"` {
+		t.Errorf("CheckScanners(grype, \"\") = %v, want it to name the list", err)
+	}
 }
