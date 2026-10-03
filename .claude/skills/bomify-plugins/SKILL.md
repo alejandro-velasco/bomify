@@ -42,9 +42,10 @@ Also relevant:
    change another subcommand's requirements.
 2. Implement it exactly: every subcommand, flag, mode, and result shape.
 3. For a breaking change or new requirement, update the contract and any
-   affected schema (adding one for a new result shape) in the same
-   change, and check every first-party plugin still conforms. Never let
-   a change to one contract imply another.
+   affected schema (adding one for a new result shape, and listing it
+   under "Schemas" on the contract's docsite page) in the same change,
+   and check every first-party plugin still conforms. Never let a
+   change to one contract imply another.
 4. If that change breaks a plugin or bomify written for the current
    version, make it in a new version instead, in the same change: copy
    `plugins/contracts/<contract>/v<N>/` to `v<N+1>/` and edit the copy,
