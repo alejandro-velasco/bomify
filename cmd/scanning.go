@@ -1,13 +1,13 @@
 package cmd
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
@@ -150,7 +150,7 @@ func (f *gateFlags) gateFor(ref string, rule security.Rule, matched bool, logger
 
 // failOnUsage describes --fail-on's conditions, for every command that
 // takes it.
-const failOnUsage = "fail on these comma-separated `conditions`: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or \"unscanned\", failing if the scanner skipped any component"
+const failOnUsage = "fail on these comma-separated `conditions`: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or \"unscanned\", failing if any component no scanner scanned"
 
 // flagGate builds the Gate --fail-on and --ignore describe, the
 // command-line counterpart to security.Rule.Gate.
@@ -178,27 +178,27 @@ func (f *gateFlags) loadVEX(ruleVEX []string, failOn security.Severity, ref stri
 	return security.LoadVEX(paths)
 }
 
-// checkGate prints a table of the components scanner skipped (out of
-// total) to w, then evaluates reports and skipped against g, logging
+// checkGate prints a table of the components result's scan skipped to
+// w, then evaluates its reports and skipped components against g, logging
 // every vulnerability VEX exempted — so a suppression is never silent —
 // and printing a table of whatever fails it to w before returning the
 // resulting error.
-func checkGate(w io.Writer, logger *slog.Logger, g security.Gate, scanner string, total int, reports []security.ComponentReport, skipped []security.Skipped) error {
-	if len(skipped) > 0 {
-		fmt.Fprintf(w, "%d of %d components not scanned by %s:\n", len(skipped), total, scanner)
-		if err := security.WriteSkipped(w, skipped); err != nil {
+func checkGate(w io.Writer, logger *slog.Logger, g security.Gate, result security.ScanResult) error {
+	if len(result.Skipped) > 0 {
+		fmt.Fprintf(w, "%d of %d components not scanned by %s:\n", len(result.Skipped), result.Components, strings.Join(result.Scanners, " or "))
+		if err := security.WriteSkipped(w, result.Skipped); err != nil {
 			return err
 		}
 	}
 
-	e := g.Evaluate(reports)
+	e := g.Evaluate(result.Reports)
 	for _, s := range e.Suppressed {
 		logger.Info("vulnerability exempted by VEX", "id", s.ID, "severity", s.Severity.String(), "component", s.Purl,
 			"status", s.Statement.Status, "justification", s.Statement.Justification,
 			"impact", s.Statement.ImpactStatement, "source", s.Statement.Source)
 	}
 
-	err := e.Err(g, skipped)
+	err := e.Err(g, result.Skipped)
 	var gateErr *security.GateError
 	if errors.As(err, &gateErr) && len(gateErr.Findings) > 0 {
 		if werr := security.WriteFindings(w, gateErr.Findings); werr != nil {
@@ -209,23 +209,40 @@ func checkGate(w io.Writer, logger *slog.Logger, g security.Gate, scanner string
 }
 
 // scanFlags are the flags that scan and gate a package as pull or load
-// restores it: --scan <type>, --fail-on, and --skip-scan.
+// restores it: --scan <scanners>, --fail-on, and --skip-scan.
 type scanFlags struct {
-	scanner string
+	scanners []string
 	gateFlags
 }
 
 func (f *scanFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.scanner, "scan", "", "scan the package with this scanner (e.g. grype) before anything is written, refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's")
+	cmd.Flags().StringSliceVar(&f.scanners, "scan", nil, "scan the package with these comma-separated `scanners` (e.g. grype) before anything is written, refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's")
 	f.registerThreshold(cmd, "skip-scan", "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
 }
 
 // validate rejects flag combinations that contradict each other.
 func (f *scanFlags) validate() error {
-	if f.skip && f.scanner != "" {
+	if f.skip && len(f.scanners) > 0 {
 		return errors.New("--skip-scan cannot be combined with --scan")
 	}
 	return f.gateFlags.validate()
+}
+
+// findScanners checks scanners (see security.CheckScanners) and finds
+// each one's plugin.
+func findScanners(scanners []string) ([]security.ScanPlugin, error) {
+	if err := security.CheckScanners(scanners); err != nil {
+		return nil, err
+	}
+	plugins := make([]security.ScanPlugin, 0, len(scanners))
+	for _, scanner := range scanners {
+		path, err := plugin.Find(layout.Plugins(dataDir), scanner, pluginlib.SecurityContract)
+		if err != nil {
+			return nil, err
+		}
+		plugins = append(plugins, security.ScanPlugin{Name: scanner, Path: path})
+	}
+	return plugins, nil
 }
 
 // writeReports keeps reports in the data directory, as "bomify security
@@ -261,7 +278,7 @@ type pullScanHook struct {
 // and flags win over it:
 //  1. --skip-scan: nothing (with a warning if the rule would have
 //     scanned).
-//  2. --scan, else the rule's scanner.
+//  2. --scan, else the rule's scanners.
 //  3. The gate, from --fail-on, else the rule's threshold (see gateFor),
 //     plus VEX the package's publisher attached, when this pull verifies
 //     it (see security.PublishedVEX).
@@ -283,25 +300,24 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 
 	if f.skip {
 		if applies {
-			s.logger.Warn("skipping vulnerability scan required by scan policy", "reference", ref, "match", rule.Match, "scanner", rule.Scanner)
+			s.logger.Warn("skipping vulnerability scan required by scan policy", "reference", ref, "match", rule.Match, "scanners", rule.Scanners)
 		}
 		return nil
 	}
 
-	// --scan wins over the rule's scanner, which only counts if the rule
+	// --scan wins over the rule's scanners, which only count if the rule
 	// applies on pull.
-	var ruleScanner string
-	if applies {
-		ruleScanner = rule.Scanner
+	scanners := f.scanners
+	if len(scanners) == 0 && applies {
+		scanners = rule.Scanners
 	}
-	scanner := cmp.Or(f.scanner, ruleScanner)
 
 	gate, err := f.gateFor(ref, rule, applies, s.logger)
 	if err != nil {
 		return err
 	}
 
-	scans, gates := scanner != "", gate.CanFail()
+	scans, gates := len(scanners) > 0, gate.CanFail()
 	switch {
 	case !scans && !gates:
 		return nil
@@ -325,18 +341,18 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 	}
 	components := sbom.Components(bom.Components)
 
-	path, err := plugin.Find(layout.Plugins(dataDir), scanner, pluginlib.SecurityContract)
+	plugins, err := findScanners(scanners)
 	if err != nil {
 		return err
 	}
 	log := s.logger.With("reference", ref)
-	reports, skipped, err := security.Scan(path, scanner, components, s.concurrency, log)
+	result, err := security.ScanAll(plugins, components, s.concurrency, log)
 	if err != nil {
 		return err
 	}
-	if err := checkGate(s.w, log, gate, scanner, len(components), reports, skipped); err != nil {
+	if err := checkGate(s.w, log, gate, result); err != nil {
 		return err
 	}
-	s.collected = append(s.collected, reports...)
+	s.collected = append(s.collected, result.Reports...)
 	return nil
 }

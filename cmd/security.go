@@ -12,12 +12,10 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/table"
-	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const securityShort = "Security scanning commands"
@@ -38,20 +36,22 @@ func securityCmd() *cobra.Command {
 
 const securityScanShort = "Scan a built package's components for vulnerabilities via a security scanning plugin"
 
-const securityScanLong = `Scan scans every component of the local package <tag> with
-bomify-plugin-<type> (a scanner such as grype) and writes one CycloneDX
-vulnerability report per component to <data-dir>/vulnerabilities/,
-shared by every package containing that component. Each scanner keeps
-its own report of a component, so scanning with another scanner adds to
-this one's rather than replacing it. Components of purl types the
-scanner doesn't support are skipped, and listed on stderr.
+const securityScanLong = `Scan scans every component of the local package <tag> with each of
+<scanners>, comma-separated (bomify-plugin-<scanner>, e.g. grype), and
+writes one CycloneDX vulnerability report per component and scanner to
+<data-dir>/vulnerabilities/, shared by every package containing that
+component. Each component goes to every scanner that supports it, and a
+scanner's report replaces only its own earlier one. Components no
+scanner supports are skipped, and listed on stderr.
 
 --fail-on takes comma-separated conditions that exit non-zero, printing
 what failed to stderr. Reports are written either way.
   - A severity (info, low, medium, high, critical): any vulnerability at
     or above it.
-  - "unscanned": any component the scanner skipped, so nothing passes
+  - "unscanned": any component no scanner scanned, so nothing passes
     unchecked. Skipped components are listed on stderr either way.
+  Every scanner's reports are gated together: a vulnerability several
+  scanners report fails at the highest severity any gives it.
   --ignore (repeatable) exempts vulnerability IDs for this scan only.
   --vex (repeatable) reads an OpenVEX, CSAF, or CycloneDX VEX file; a
   vulnerability it marks not affected or fixed doesn't fail the scan.
@@ -72,10 +72,13 @@ const securityScanExample = `  # Scan the package tagged myapp:latest for vulner
   bomify security scan grype myapp:latest --fail-on high --ignore CVE-2024-1234
 
   # Also fail if grype skipped any component
-  bomify security scan grype myapp:latest --fail-on high,unscanned`
+  bomify security scan grype myapp:latest --fail-on high,unscanned
+
+  # Scan with two scanners, failing unless one of them scanned every component
+  bomify security scan grype,trivy myapp:latest --fail-on high,unscanned`
 
 type securityScanOptions struct {
-	scanType    string
+	scanners    []string
 	tag         string
 	concurrency int
 	gate        gateFlags
@@ -85,13 +88,13 @@ func securityScanCmd() *cobra.Command {
 	opts := &securityScanOptions{}
 
 	cmd := &cobra.Command{
-		Use:     "scan <type> <tag>",
+		Use:     "scan <scanners> <tag>",
 		Short:   securityScanShort,
 		Long:    securityScanLong,
 		Example: securityScanExample,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.scanType, opts.tag = args[0], args[1]
+			opts.scanners, opts.tag = strings.Split(args[0], ","), args[1]
 			if err := runSecurityScan(cmd, opts, logging.FromContext(cmd.Context())); err != nil {
 				return fmt.Errorf("security scan: %w", err)
 			}
@@ -123,7 +126,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		return err
 	}
 
-	path, err := plugin.Find(layout.Plugins(dataDir), opts.scanType, pluginlib.SecurityContract)
+	plugins, err := findScanners(opts.scanners)
 	if err != nil {
 		return err
 	}
@@ -136,12 +139,12 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	components := sbom.Components(bom.Components)
 	logger.Info("loaded sbom", "path", sbomPath, "components", len(components), "concurrency", opts.concurrency)
 
-	reports, skipped, err := security.Scan(path, opts.scanType, components, opts.concurrency, logger)
+	result, err := security.ScanAll(plugins, components, opts.concurrency, logger)
 	if err != nil {
 		return err
 	}
 
-	for _, r := range reports {
+	for _, r := range result.Reports {
 		reportPath, err := security.WriteReport(dataDir, r)
 		if err != nil {
 			return err
@@ -149,7 +152,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 		logger.Debug("report written", "purl", r.Component.PackageURL, "path", reportPath)
 	}
 
-	return checkGate(cmd.ErrOrStderr(), logger, gate, opts.scanType, len(components), reports, skipped)
+	return checkGate(cmd.ErrOrStderr(), logger, gate, result)
 }
 
 const securityPruneShort = "Delete stale vulnerability report referrers of a package in a registry"
@@ -236,7 +239,8 @@ const securityPolicyCreateShort = "Create or update a vulnerability scanning pol
 
 const securityPolicyCreateLong = `Create adds a scan policy rule for packages whose repository starts with
 --match (a "/"-separated prefix; omit it to match every package): the
-scanner to use and, with --fail-on, what fails a matching package (as
+scanners to use, comma-separated, and, with --fail-on, what fails a
+matching package (as
 for "bomify security scan": a severity, and/or "unscanned"). The longest
 matching --match wins, and creating a rule for the same --match replaces
 it.
@@ -266,6 +270,9 @@ const securityPolicyCreateExample = `  # Fail any scan of a team's packages on h
   # ...also refusing any package with a component grype can't scan
   bomify security policy create grype --match registry.example.com/team --fail-on high,unscanned --on pull
 
+  # Scan another team's packages with both grype and trivy
+  bomify security policy create grype,trivy --match registry.example.com/infra --fail-on high,unscanned
+
   # Scan every other package with grype, never failing
   bomify security policy create grype`
 
@@ -274,13 +281,13 @@ func securityPolicyCreateCmd() *cobra.Command {
 	var failOn []string
 
 	cmd := &cobra.Command{
-		Use:     "create <scanner>",
+		Use:     "create <scanners>",
 		Short:   securityPolicyCreateShort,
 		Long:    securityPolicyCreateLong,
 		Example: securityPolicyCreateExample,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rule.Scanner = args[0]
+			rule.Scanners = strings.Split(args[0], ",")
 			g, err := security.ParseFailOn(failOn)
 			if err != nil {
 				return fmt.Errorf("security policy create: --fail-on: %w", err)
@@ -308,7 +315,7 @@ const securityPolicyListShort = "List vulnerability scanning policy rules"
 
 const securityPolicyListLong = `List prints every scan policy rule. "*" in MATCH means every package.
 FAIL-ON lists what fails a matching package: a severity threshold, and
-"unscanned" for components the scanner skipped.
+"unscanned" for components no scanner scanned.
 "-" means nothing fails it, or no ON hooks.`
 
 const securityPolicyListExample = `  # See every configured rule
@@ -339,9 +346,9 @@ func runSecurityPolicyList(cmd *cobra.Command) error {
 
 	rows := make([][]string, 0, len(config))
 	for _, rule := range config {
-		rows = append(rows, []string{rules.Display(rule.Match), rule.Scanner, dashIfEmpty(failsOn(rule)), strings.Join(rule.VEX, ","), dashIfEmpty(strings.Join(rule.On, ","))})
+		rows = append(rows, []string{rules.Display(rule.Match), strings.Join(rule.Scanners, ","), dashIfEmpty(failsOn(rule)), strings.Join(rule.VEX, ","), dashIfEmpty(strings.Join(rule.On, ","))})
 	}
-	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SCANNER", "FAIL-ON", "VEX", "ON"}, rows)
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SCANNERS", "FAIL-ON", "VEX", "ON"}, rows)
 }
 
 // failsOn lists what fails a package matching rule, for policy list's

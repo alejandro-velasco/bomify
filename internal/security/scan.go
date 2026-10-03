@@ -12,6 +12,83 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 )
 
+// ScanPlugin is one scanning plugin ScanAll scans with: its type (the
+// scanner bomify-plugin-<Name> is), and where it's installed.
+type ScanPlugin struct {
+	Name string
+	Path string
+}
+
+// ScanResult is what ScanAll found.
+type ScanResult struct {
+	// Scanners are the scanners that scanned, by name.
+	Scanners []string
+	// Components is how many components were given to scan.
+	Components int
+	// Reports holds every scanner's report of every component it
+	// supports, each recording its scanner (see ComponentReport.Scanner).
+	Reports []ComponentReport
+	// Skipped are the components no scanner scanned, in the order they
+	// were given, each once.
+	Skipped []Skipped
+}
+
+// ScanAll scans components with every plugin in plugins, one plugin after
+// another, each as Scan does: each component gets a report from every
+// plugin that supports it. Any scan failing fails it.
+func ScanAll(plugins []ScanPlugin, components []cdx.Component, concurrency int, logger *slog.Logger) (ScanResult, error) {
+	result := ScanResult{Components: len(components)}
+	// unscanned are the components (see componentKey) every plugin so far
+	// skipped; skippedByFirst is what the first plugin skipped, why, and in
+	// what order.
+	var unscanned map[string]bool
+	var skippedByFirst []Skipped
+	for i, p := range plugins {
+		reports, skipped, err := Scan(p.Path, p.Name, components, concurrency, logger.With("scanner", p.Name))
+		if err != nil {
+			return ScanResult{}, fmt.Errorf("%s: %w", p.Name, err)
+		}
+		result.Scanners = append(result.Scanners, p.Name)
+		result.Reports = append(result.Reports, reports...)
+
+		skippedByThis := map[string]bool{}
+		for _, s := range skipped {
+			skippedByThis[componentKey(s.Component)] = true
+		}
+		if i == 0 {
+			skippedByFirst, unscanned = skipped, skippedByThis
+			continue
+		}
+		for key := range unscanned {
+			if !skippedByThis[key] {
+				delete(unscanned, key) // this plugin scanned it
+			}
+		}
+	}
+
+	// A component every plugin skipped was skipped by the first, for the
+	// same reason (detecting its type doesn't depend on the plugin), so
+	// its list gives each one's reason, in components' order. Deleting
+	// each as it's listed lists a repeated component once.
+	for _, s := range skippedByFirst {
+		key := componentKey(s.Component)
+		if unscanned[key] {
+			delete(unscanned, key)
+			result.Skipped = append(result.Skipped, s)
+		}
+	}
+	return result, nil
+}
+
+// componentKey identifies component for ScanAll: its purl, or, without
+// one, its name and version.
+func componentKey(component cdx.Component) string {
+	if component.PackageURL != "" {
+		return component.PackageURL
+	}
+	return component.Name + "@" + component.Version
+}
+
 // Skipped is a component Scan didn't scan, and why.
 type Skipped struct {
 	Component cdx.Component

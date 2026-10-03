@@ -16,9 +16,9 @@ type Rule struct {
 	// reference without any tag or digest (see prefix.Repository) —
 	// matched at segment boundaries. Empty matches every package.
 	Match string `json:"match,omitempty"`
-	// Scanner names the scanning plugin (bomify-plugin-<Scanner>) that
-	// scans a matching package.
-	Scanner string `json:"scanner"`
+	// Scanners name the scanning plugins (bomify-plugin-<scanner>) that
+	// scan a matching package, every one each component it supports.
+	Scanners []string `json:"scanners"`
 	// FailOn is the severity (see ParseSeverity) at or above which a
 	// matching package fails its scan. Empty never fails it.
 	FailOn string `json:"failOn,omitempty"`
@@ -96,6 +96,9 @@ func Read(baseDir string) (Config, error) {
 // scan.json, after checking its FailOn parses and every VEX document it
 // names is in baseDir's managed VEX store.
 func SetRule(baseDir string, rule Rule) error {
+	if err := CheckScanners(rule.Scanners); err != nil {
+		return err
+	}
 	if _, err := rule.Gate(); err != nil {
 		return err
 	}

@@ -6,9 +6,9 @@ import (
 
 func TestResolve(t *testing.T) {
 	rules := Config{
-		{Match: "", Scanner: "catchall"},
-		{Match: "registry.example.com", Scanner: "registry"},
-		{Match: "registry.example.com/team", Scanner: "team", FailOn: "high"},
+		{Match: "", Scanners: []string{"catchall"}},
+		{Match: "registry.example.com", Scanners: []string{"registry"}},
+		{Match: "registry.example.com/team", Scanners: []string{"team"}, FailOn: "high"},
 	}
 
 	for _, tt := range []struct {
@@ -21,7 +21,7 @@ func TestResolve(t *testing.T) {
 		{"myapp:v1", "catchall"},
 	} {
 		rule, ok := Resolve(rules, tt.ref)
-		if !ok || rule.Scanner != tt.want {
+		if !ok || len(rule.Scanners) != 1 || rule.Scanners[0] != tt.want {
 			t.Errorf("Resolve(%q) = %+v, %v; want %s", tt.ref, rule, ok, tt.want)
 		}
 	}
@@ -38,13 +38,13 @@ func TestSetAndRemoveRule(t *testing.T) {
 		t.Fatalf("Read(missing) = %v, %v; want empty", config, err)
 	}
 
-	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "high"}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanners: []string{"grype"}, FailOn: "high"}); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanner: "grype", FailOn: "critical"}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com", Scanners: []string{"grype"}, FailOn: "critical"}); err != nil {
 		t.Fatalf("SetRule (replace): %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Scanner: "grype", FailOn: "severe"}); err == nil {
+	if err := SetRule(baseDir, Rule{Scanners: []string{"grype"}, FailOn: "severe"}); err == nil {
 		t.Error("SetRule accepted an invalid --fail-on")
 	}
 
@@ -71,10 +71,16 @@ func TestSetAndRemoveRule(t *testing.T) {
 
 func TestSetRuleOnPullNeedsAGate(t *testing.T) {
 	baseDir := t.TempDir()
-	if err := SetRule(baseDir, Rule{Scanner: "grype", On: []string{HookPull}}); err == nil {
+	if err := SetRule(baseDir, Rule{Scanners: []string{"grype"}, On: []string{HookPull}}); err == nil {
 		t.Error("a pull rule with no gate: nil, want an error")
 	}
-	if err := SetRule(baseDir, Rule{Scanner: "grype", FailOnUnscanned: true, On: []string{HookPull}}); err != nil {
+	if err := SetRule(baseDir, Rule{Scanners: []string{"grype"}, FailOnUnscanned: true, On: []string{HookPull}}); err != nil {
 		t.Errorf("a pull rule gating only on unscanned components: %v", err)
+	}
+}
+
+func TestSetRuleNeedsScanners(t *testing.T) {
+	if err := SetRule(t.TempDir(), Rule{FailOn: "high"}); err == nil {
+		t.Error("SetRule with no scanners: nil, want an error")
 	}
 }

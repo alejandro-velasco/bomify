@@ -1,11 +1,15 @@
 # Security scanning
 
-`bomify security scan <type> <tag>` (`cmd/security.go`):
+`bomify security scan <scanners> <tag>` (`cmd/security.go`), where
+`<scanners>` is one scanner or several, comma-separated (e.g.
+`grype,trivy`):
 
 1. Resolves `<tag>` (`build.ResolveTag`) and walks its SBOM.
-2. Finds `bomify-plugin-<type>`. One scanner handles every component,
-   whatever its purl type.
-3. Asks it once for `security supported-components` and skips any
+2. Finds `bomify-plugin-<scanner>` for each (`findScanners`), and scans
+   with each in turn (`security.ScanAll`), so every component goes to
+   every scanner that supports it. A component no scanner scanned is
+   skipped; see [Coverage](#coverage).
+3. Asks each once for `security supported-components` and skips any
    component whose purl type isn't listed, or that has no purl type at
    all, returning the skipped ones with why (`security.Skipped`; see
    [Coverage](#coverage)). Duplicate purls are scanned once, and aren't
@@ -45,7 +49,13 @@ of its `ratings`; unrated, `none`, or `unknown` never fails.
 
 `--fail-on` lists the conditions (`security.ParseFailOn`): at most one
 severity, and `unscanned`, e.g. `--fail-on high,unscanned`. A rule
-stores them as `failOn` and `failOnUnscanned`.
+stores them as `failOn` and `failOnUnscanned`, and its scanners as
+`scanners`.
+
+Every scanner's reports are gated together. A vulnerability two
+scanners both report on a component is one finding: it fails at the
+highest severity any non-exempt report gives it, and is exempted only
+if VEX exempts it in every report of it.
 
 `bomify security scan` picks the gate (`cmd/scanning.go`, `gateFlags`):
 
@@ -67,10 +77,11 @@ vulnerabilities to stderr.
 
 ### Coverage
 
-A component the scanner skipped has no report, so on its own it could
+A component no scanner scanned has no report, so on its own it could
 never fail a gate: a package nothing could check would pass as clean.
 Every scan (`checkGate`) prints the components it skipped, and why, to
-stderr, e.g. `2 of 9 components not scanned by grype`. With
+stderr, e.g. `2 of 9 components not scanned by grype or trivy`. A
+component any one scanner scanned counts as scanned. With
 `Gate.FailOnUnscanned` (`--fail-on unscanned`, or a rule's
 `failOnUnscanned`), any skipped component fails the gate, alongside or
 instead of a severity, and the `GateError` carries them as `Unscanned`.
@@ -104,16 +115,17 @@ VEX never changes a report; it only decides what fails.
 
 `bomify pull`/`load` can scan and gate a package before writing any of
 it, the one thing a separate `security scan` after the pull can't do.
-They take `--scan <type>`, `--fail-on`, and `--skip-scan` (`scanFlags`);
+They take `--scan <scanners>`, `--fail-on`, and `--skip-scan`
+(`scanFlags`);
 `--ignore` and `--vex` stay on `security scan`, and pulls rely on a
 rule's stored VEX. For each package, `pullScanHook` resolves:
 
 1. `--skip-scan`: nothing (warning if a rule would have scanned).
-2. The scanner: `--scan`, else the matching rule's, but only if the rule
-   lists `pull` in `on` (`security.Rule.AppliesOn`).
+2. The scanners: `--scan`, else the matching rule's, but only if the
+   rule lists `pull` in `on` (`security.Rule.AppliesOn`).
 3. The gate, as for `security scan`, under the same condition.
 
-A scan on pull is only a gate, so scanner and `--fail-on` must come
+A scan on pull is only a gate, so scanners and `--fail-on` must come
 together (`Gate.CanFail`). The package is always scanned fresh, never
 judged by the reports its publisher attached. For the same reason, a
 rule's `--on pull` requires `--fail-on`.

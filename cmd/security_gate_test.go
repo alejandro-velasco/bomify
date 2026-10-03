@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
@@ -305,17 +307,19 @@ func TestCheckGateListsSkipped(t *testing.T) {
 		{Component: cdx.Component{Name: "c", Version: "2.0"}, Reason: "no detectable type: no package URL"},
 	}
 	var out bytes.Buffer
-	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, "grype", 5, nil, skipped); err != nil {
+	result := security.ScanResult{Scanners: []string{"grype", "trivy"}, Components: 5, Skipped: skipped}
+	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, result); err != nil {
 		t.Fatalf("checkGate: %v", err)
 	}
-	for _, want := range []string{"2 of 5 components not scanned by grype", "pkg:npm/b@1.0", `unsupported type "npm"`, "c@2.0", "no detectable type"} {
+	for _, want := range []string{"2 of 5 components not scanned by grype or trivy", "pkg:npm/b@1.0", `unsupported type "npm"`, "c@2.0", "no detectable type"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
 		}
 	}
 
 	out.Reset()
-	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, "grype", 5, nil, nil); err != nil || out.Len() != 0 {
+	result.Skipped = nil
+	if err := checkGate(&out, slog.New(slog.DiscardHandler), security.Gate{}, result); err != nil || out.Len() != 0 {
 		t.Errorf("nothing skipped: %v, %q; want no error and no output", err, out.String())
 	}
 }
@@ -333,5 +337,70 @@ func TestFailsOn(t *testing.T) {
 		if got := failsOn(tc.rule); got != tc.want {
 			t.Errorf("failsOn(%+v) = %q, want %q", tc.rule, got, tc.want)
 		}
+	}
+}
+
+// TestSecurityScanSeveralScanners scans a package two scanners each
+// cover part of: grype the image, binscan the binary, and neither the
+// npm package. Both gate it together, and only what neither scanned
+// counts as unscanned.
+func TestSecurityScanSeveralScanners(t *testing.T) {
+	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
+	usePlugin(t, baseDir, "binscan")
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":["oci"],"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":["generic"],"scans":["binary"]}`)
+
+	image := cdx.Component{Name: "app", Version: "1.0", PackageURL: "pkg:oci/app@1.0"}
+	binary := cdx.Component{Name: "tool", Version: "1.0", PackageURL: "pkg:generic/tool@1.0"}
+	npm := cdx.Component{Name: "b", Version: "1.0", PackageURL: "pkg:npm/b@1.0"}
+	writeResponsesFile(t, map[string]string{
+		image.PackageURL:  `{"vulnerabilities":[{"id":"CVE-IMAGE","ratings":[{"severity":"high"}],"affects":[{"ref":"pkg:oci/app@1.0"}]}]}`,
+		binary.PackageURL: `{"vulnerabilities":[{"id":"CVE-BINARY","ratings":[{"severity":"critical"}],"affects":[{"ref":"pkg:generic/tool@1.0"}]}]}`,
+	})
+	// Listed twice each: a repeat is still one component, scanned or not.
+	writePackage(t, baseDir, gatedTag, image, binary, npm, binary, npm)
+
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "grype,binscan", gatedTag, "--fail-on", "high,unscanned")
+	if !errors.As(err, &gateErr) {
+		t.Fatalf("both scanners: %v, want a gate failure", err)
+	}
+	var ids []string
+	for _, f := range gateErr.Findings {
+		ids = append(ids, f.ID)
+	}
+	slices.Sort(ids)
+	if !slices.Equal(ids, []string{"CVE-BINARY", "CVE-IMAGE"}) {
+		t.Errorf("findings = %v, want one from each scanner", ids)
+	}
+	if len(gateErr.Unscanned) != 1 || gateErr.Unscanned[0].Component.PackageURL != npm.PackageURL {
+		t.Errorf("unscanned = %+v, want just %s", gateErr.Unscanned, npm.PackageURL)
+	}
+
+	// Each component has a report from the scanner that supports it.
+	for c, scanner := range map[cdx.Component]string{image: "grype", binary: "binscan"} {
+		if stored, err := security.ReadReports(baseDir, layout.PurlHash(c.PackageURL)); err != nil || len(stored) != 1 || stored[0].Scanner != scanner {
+			t.Errorf("%s's reports = %+v, %v; want one by %s", c.PackageURL, stored, err, scanner)
+		}
+	}
+
+	// grype alone leaves the binary unscanned too.
+	_, err = runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "unscanned")
+	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 2 {
+		t.Errorf("grype alone: %v, want two unscanned components", err)
+	}
+
+	for _, scanners := range []string{"grype,grype", "grype,", "grype,missing"} {
+		if _, err := runRootCmd(t, baseDir, "security", "scan", scanners, gatedTag); err == nil || errors.As(err, new(*security.GateError)) {
+			t.Errorf("scanners %q: %v, want an error naming them", scanners, err)
+		}
+	}
+
+	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype,binscan", "--match", "registry.example.com/team"); err != nil {
+		t.Fatalf("policy create: %v", err)
+	}
+	if out, err := runRootCmd(t, baseDir, "security", "policy", "list"); err != nil || !strings.Contains(out, "grype,binscan") {
+		t.Errorf("policy list = %q, %v; want the rule's scanners listed", out, err)
 	}
 }

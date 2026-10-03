@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // securityMain implements the security scanning contract: "security
@@ -24,15 +26,25 @@ func securityMain() {
 	}
 }
 
+// installedKind is the kind this copy is installed as: its executable's
+// name, less "bomify-plugin-" and any ".exe".
+func installedKind() string {
+	name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	return strings.TrimPrefix(name, "bomify-plugin-")
+}
+
 func usageError() {
 	fmt.Fprintln(os.Stderr, "usage: fakeplugin security <scan --purl <purl>|supported-components>")
 	os.Exit(1)
 }
 
 // supportedComponents prints the JSON object named by
-// FAKESECURITY_SUPPORTED_COMPONENTS, or a reasonable default
-// (oci/helm/generic, sca) if that's unset — so most tests don't need to
-// set it at all, only ones exercising the capability filter itself.
+// FAKESECURITY_SUPPORTED_COMPONENTS_<KIND> — <KIND> being the kind this
+// copy is installed as, upper-cased (e.g. GRYPE for bomify-plugin-grype),
+// so several copies can each support different types — else by
+// FAKESECURITY_SUPPORTED_COMPONENTS, else a reasonable default
+// (oci/helm/generic, sca) — so most tests don't need to set it at all,
+// only ones exercising the capability filter itself.
 // FAKESECURITY_SUPPORTED_COMPONENTS_FAIL simulates this subcommand
 // itself failing (e.g. an out-of-date plugin that doesn't implement it).
 func supportedComponents() {
@@ -41,7 +53,10 @@ func supportedComponents() {
 		os.Exit(1)
 	}
 
-	resp := os.Getenv("FAKESECURITY_SUPPORTED_COMPONENTS")
+	resp := os.Getenv("FAKESECURITY_SUPPORTED_COMPONENTS_" + strings.ToUpper(installedKind()))
+	if resp == "" {
+		resp = os.Getenv("FAKESECURITY_SUPPORTED_COMPONENTS")
+	}
 	if resp == "" {
 		resp = `{"types":["oci","helm","generic"],"scans":["sca"]}`
 	}

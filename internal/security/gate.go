@@ -154,13 +154,19 @@ type ComponentReport struct {
 // purl, then ID), at most once per component. A vulnerability's severity
 // is the highest any of its ratings gives it; ratings that carry no
 // severity (e.g. EPSS or CISA KEV scores) don't count either way.
+//
+// reports may hold several scanners' reports of one component. One
+// vulnerability several report is judged as one: it fails if any report
+// of it does (at the highest severity they give it), and is only
+// exempted if VEX exempts it in every report of it at or above FailOn.
 func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 	var e Evaluation
 	if g.FailOn == SeverityNone {
 		return e
 	}
 
-	seen := map[[2]string]bool{}
+	failing := map[[2]string]Finding{}
+	suppressed := map[[2]string]Suppressed{}
 	for _, r := range reports {
 		if r.Report == nil || r.Report.Vulnerabilities == nil {
 			continue
@@ -177,22 +183,40 @@ func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 				continue
 			}
 			key := [2]string{r.Component.PackageURL, vuln.ID}
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
 			finding := Finding{ID: vuln.ID, Severity: sev, Purl: r.Component.PackageURL}
 			if statement, ok := g.VEX.exempts(r.Component, purlByRef, vuln); ok {
-				e.Suppressed = append(e.Suppressed, Suppressed{Finding: finding, Statement: statement})
+				keepMostSevere(suppressed, key, Suppressed{Finding: finding, Statement: statement})
 				continue
 			}
-			e.Findings = append(e.Findings, finding)
+			keepMostSevere(failing, key, finding)
 		}
+	}
+
+	for key, f := range failing {
+		e.Findings = append(e.Findings, f)
+		delete(suppressed, key)
+	}
+	for _, s := range suppressed {
+		e.Suppressed = append(e.Suppressed, s)
 	}
 
 	slices.SortFunc(e.Findings, compareFindings)
 	slices.SortFunc(e.Suppressed, func(a, b Suppressed) int { return compareFindings(a.Finding, b.Finding) })
 	return e
+}
+
+// severity is f's Severity, for keepMostSevere; Suppressed has it too,
+// through its Finding.
+func (f Finding) severity() Severity { return f.Severity }
+
+// keepMostSevere records v as m's entry for key, unless m already holds
+// one at least as severe: of every report of a vulnerability, Evaluate
+// keeps the most severe.
+func keepMostSevere[V interface{ severity() Severity }](m map[[2]string]V, key [2]string, v V) {
+	if prev, seen := m[key]; seen && prev.severity() >= v.severity() {
+		return
+	}
+	m[key] = v
 }
 
 func compareFindings(a, b Finding) int {

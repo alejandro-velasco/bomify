@@ -6,7 +6,8 @@ Create or update a vulnerability scanning policy rule
 
 Create adds a scan policy rule for packages whose repository starts with
 --match (a "/"-separated prefix; omit it to match every package): the
-scanner to use and, with --fail-on, what fails a matching package (as
+scanners to use, comma-separated, and, with --fail-on, what fails a
+matching package (as
 for "bomify security scan": a severity, and/or "unscanned"). The longest
 matching --match wins, and creating a rule for the same --match replaces
 it.
@@ -24,7 +25,7 @@ and always applies its VEX.
 --on, the rule only applies to "bomify security scan".
 
 ```
-bomify security policy create <scanner> [flags]
+bomify security policy create <scanners> [flags]
 ```
 
 ### Examples
@@ -43,6 +44,9 @@ bomify security policy create <scanner> [flags]
   # ...also refusing any package with a component grype can't scan
   bomify security policy create grype --match registry.example.com/team --fail-on high,unscanned --on pull
 
+  # Scan another team's packages with both grype and trivy
+  bomify security policy create grype,trivy --match registry.example.com/infra --fail-on high,unscanned
+
   # Scan every other package with grype, never failing
   bomify security policy create grype
 ```
@@ -50,7 +54,7 @@ bomify security policy create <scanner> [flags]
 ### Options
 
 ```
-      --fail-on conditions   fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if the scanner skipped any component; default never fails
+      --fail-on conditions   fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if any component no scanner scanned; default never fails
   -h, --help                 help for create
       --match string         apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
       --on strings           lifecycle hooks to scan and gate matching packages at automatically: pull (which covers load too); default none
