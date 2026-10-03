@@ -143,12 +143,13 @@ func findMatches(provider vulnerability.Provider, packages []grypePkg.Package, p
 	return matches, nil
 }
 
-// SupportedTypes returns every purl type (package-url spec naming, e.g.
+// SupportedTypes maps every purl type (package-url spec naming, e.g.
 // "npm", "golang", "maven" — the same vocabulary plugin.Detect derives
-// component purls into on bomify's side) this plugin can scan: every
-// type grype.NewDefaultMatchers' default matcher set has a dedicated,
-// ecosystem-specific matcher for, plus "oci"/"docker" (scanned by
-// cataloging the image with syft first — see image.go).
+// component purls into on bomify's side) this plugin can scan to how it
+// scans it: by purl, every type grype.NewDefaultMatchers' default matcher
+// set has a dedicated, ecosystem-specific matcher for, plus "oci"/"docker"
+// (scanned by cataloging the image with syft first — see image.go); and
+// "generic" from its pulled files (see Input).
 //
 // The ecosystem list is a fixed, hand-maintained table rather than
 // something derived from the matcher set at runtime: each grype
@@ -161,24 +162,25 @@ func findMatches(provider vulnerability.Provider, packages []grypePkg.Package, p
 // one declares, and grype/pkg/purl_provider.go for how a purl of that
 // type resolves to that same syft.Type).
 //
-// Deliberately excluded: "generic" (and any purl type not listed here)
-// — there's no image or package to catalog or look up for it.
-func SupportedTypes() []string {
-	return []string{
-		packageurl.TypeApk,     // Alpine (grype/matcher/apk)
-		packageurl.TypeDebian,  // Debian/Ubuntu (grype/matcher/dpkg)
-		packageurl.TypeRPM,     // Fedora/RHEL/etc. (grype/matcher/rpm)
-		packageurl.TypeAlpm,    // Arch Linux (grype/matcher/pacman)
-		packageurl.TypeBitnami, // Bitnami packages (grype/matcher/bitnami)
-		packageurl.TypeNPM,     // Node.js (grype/matcher/javascript)
-		packageurl.TypeGolang,  // Go modules (grype/matcher/golang)
-		packageurl.TypeMaven,   // Java (grype/matcher/java)
-		packageurl.TypePyPi,    // Python (grype/matcher/python)
-		packageurl.TypeGem,     // Ruby (grype/matcher/ruby)
-		packageurl.TypeCargo,   // Rust (grype/matcher/rust)
-		packageurl.TypeNuget,   // .NET (grype/matcher/dotnet)
-		packageurl.TypeHex,     // Erlang/Elixir (grype/matcher/hex)
-		packageurl.TypeDocker,  // container images, cataloged with syft first (image.go)
-		packageurl.TypeOCI,     // same as "oci" — see plugins/README.md on the alias
+// "generic" names an arbitrary file, so there's nothing to look up for it
+// by purl alone; any purl type not listed here isn't scanned at all.
+func SupportedTypes() map[string]pluginlib.ScanMode {
+	return map[string]pluginlib.ScanMode{
+		packageurl.TypeApk:     pluginlib.ScanByPurl,  // Alpine (grype/matcher/apk)
+		packageurl.TypeDebian:  pluginlib.ScanByPurl,  // Debian/Ubuntu (grype/matcher/dpkg)
+		packageurl.TypeRPM:     pluginlib.ScanByPurl,  // Fedora/RHEL/etc. (grype/matcher/rpm)
+		packageurl.TypeAlpm:    pluginlib.ScanByPurl,  // Arch Linux (grype/matcher/pacman)
+		packageurl.TypeBitnami: pluginlib.ScanByPurl,  // Bitnami packages (grype/matcher/bitnami)
+		packageurl.TypeNPM:     pluginlib.ScanByPurl,  // Node.js (grype/matcher/javascript)
+		packageurl.TypeGolang:  pluginlib.ScanByPurl,  // Go modules (grype/matcher/golang)
+		packageurl.TypeMaven:   pluginlib.ScanByPurl,  // Java (grype/matcher/java)
+		packageurl.TypePyPi:    pluginlib.ScanByPurl,  // Python (grype/matcher/python)
+		packageurl.TypeGem:     pluginlib.ScanByPurl,  // Ruby (grype/matcher/ruby)
+		packageurl.TypeCargo:   pluginlib.ScanByPurl,  // Rust (grype/matcher/rust)
+		packageurl.TypeNuget:   pluginlib.ScanByPurl,  // .NET (grype/matcher/dotnet)
+		packageurl.TypeHex:     pluginlib.ScanByPurl,  // Erlang/Elixir (grype/matcher/hex)
+		packageurl.TypeDocker:  pluginlib.ScanByPurl,  // container images, cataloged with syft first (image.go)
+		packageurl.TypeOCI:     pluginlib.ScanByPurl,  // same as "oci" — see plugins/README.md on the alias
+		packageurl.TypeGeneric: pluginlib.ScanByFiles, // any file, cataloged with syft from its pulled files (input.go)
 	}
 }

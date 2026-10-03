@@ -48,15 +48,24 @@ func (component) Remote(_ context.Context, purl string, _ *slog.Logger) (string,
 	return "remote-of-" + purl, nil
 }
 
-// scanner finds nothing, and supports oci components.
+// scanner finds nothing, and supports oci components, and generic ones
+// given their files. Scanning those, it reports it couldn't analyze them,
+// naming the files it was given.
 type scanner struct{}
 
 func (scanner) Scan(context.Context, string) (plugin.SecurityResult, error) {
 	return plugin.SecurityResult{Vulnerabilities: []cdx.Vulnerability{}}, nil
 }
 
+func (scanner) ScanInput(_ context.Context, _, input string) (plugin.SecurityResult, error) {
+	return plugin.SecurityResult{Unscanned: "nothing to analyze in " + input}, nil
+}
+
 func (scanner) SupportedComponents(context.Context) (plugin.SupportedComponentsResult, error) {
-	return plugin.SupportedComponentsResult{Types: []string{"oci"}, Scans: []string{"sca"}}, nil
+	return plugin.SupportedComponentsResult{
+		Types: map[string]plugin.ScanMode{"oci": plugin.ScanByPurl, "generic": plugin.ScanByFiles},
+		Scans: []string{"sca"},
+	}, nil
 }
 
 // signer's envelope is what it signed, and it reports the reference it

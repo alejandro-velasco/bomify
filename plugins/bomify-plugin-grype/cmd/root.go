@@ -19,7 +19,8 @@ func NewRootCmd() *cobra.Command {
 		}))
 }
 
-// scanner implements pluginlib.SecurityPlugin over internal/scan.
+// scanner implements pluginlib.SecurityPlugin and pluginlib.InputScanner
+// over internal/scan.
 type scanner struct{}
 
 func (scanner) Scan(_ context.Context, purl string) (pluginlib.SecurityResult, error) {
@@ -30,6 +31,18 @@ func (scanner) Scan(_ context.Context, purl string) (pluginlib.SecurityResult, e
 	defer provider.Close()
 
 	return scan.Purl(provider, purl)
+}
+
+// ScanInput catalogs the files of a component of a type it scans from
+// them (see scan.SupportedTypes and scan.Input).
+func (scanner) ScanInput(_ context.Context, _, input string) (pluginlib.SecurityResult, error) {
+	provider, err := scan.Load()
+	if err != nil {
+		return pluginlib.SecurityResult{}, err
+	}
+	defer provider.Close()
+
+	return scan.Input(provider, input)
 }
 
 func (scanner) SupportedComponents(context.Context) (pluginlib.SupportedComponentsResult, error) {

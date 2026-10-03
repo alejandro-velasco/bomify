@@ -307,7 +307,7 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 	usePlugin(t, baseDir, "grype")
 	// This plugin only supports oci — the npm component below must be
 	// skipped rather than sent to "security scan", and gets no report.
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":["oci"],"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl"},"scans":["sca"]}`)
 
 	componentOCI := cdx.Component{Name: "supported", PackageURL: "pkg:oci/supported@1.0"}
 	componentNPM := cdx.Component{Name: "unsupported", PackageURL: "pkg:npm/unsupported@1.0"}

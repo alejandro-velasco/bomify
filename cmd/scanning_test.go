@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -163,7 +164,7 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 // nothing, and it's a gate on its own, needing no --fail-on.
 func TestLoadFailOnUnscanned(t *testing.T) {
 	archive := saveHookPackage(t)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":["oci"],"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl"},"scans":["sca"]}`)
 
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
@@ -190,8 +191,8 @@ func TestLoadFailOnUnscanned(t *testing.T) {
 // --fail-on unscanned lets it through, keeping that scanner's report.
 func TestLoadScanSeveralScanners(t *testing.T) {
 	archive := saveHookPackage(t)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":["oci"],"scans":["sca"]}`)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":["generic"],"scans":["binary"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":{"oci":"purl"},"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"generic":"purl"},"scans":["binary"]}`)
 
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
@@ -206,5 +207,22 @@ func TestLoadScanSeveralScanners(t *testing.T) {
 	stored, err := security.ReadReports(destDir, layout.PurlHash(hookComponent.PackageURL))
 	if err != nil || len(stored) != 1 || stored[0].Scanner != "binscan" {
 		t.Errorf("reports = %+v, %v; want binscan's", stored, err)
+	}
+}
+
+// TestLoadScanSkipsFileTypes loads a package whose one component its
+// scanner only scans from pulled files: a scan on load runs before any
+// are written, so it's skipped, and --fail-on unscanned refuses it.
+func TestLoadScanSkipsFileTypes(t *testing.T) {
+	archive := saveHookPackage(t)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl","generic":"files"},"scans":["binary"]}`)
+
+	destDir := t.TempDir()
+	usePlugin(t, destDir, "grype")
+
+	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "unscanned")
+	var gateErr *security.GateError
+	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 1 || !strings.Contains(gateErr.Unscanned[0].Reason, "pulled files") {
+		t.Fatalf("load: %v, want the component unscanned for want of its files", err)
 	}
 }

@@ -123,7 +123,7 @@ func TestAppendAffectedRefDedups(t *testing.T) {
 }
 
 // TestBuildImageResultAttributesAffectsToPackagesNotTheImage exercises the
-// core nested-component behavior: buildImageResult must report every
+// core nested-component behavior: buildCatalogResult must report every
 // cataloged package as a component, and must point each vulnerability's
 // Affects at the specific package(s) grype matched it against — folding
 // the same vulnerability matched against more than one package into a
@@ -140,7 +140,7 @@ func TestBuildImageResultAttributesAffectsToPackagesNotTheImage(t *testing.T) {
 
 	matches := match.NewMatches(sharedOnA, sharedOnB, aOnly)
 
-	result := buildImageResult([]grypePkg.Package{pkgA, pkgB}, &matches)
+	result := buildCatalogResult([]grypePkg.Package{pkgA, pkgB}, &matches)
 
 	if len(result.Components) != 2 {
 		t.Fatalf("Components = %+v, want 2 (one per cataloged package)", result.Components)

@@ -9,13 +9,20 @@
    with each in turn (`security.ScanAll`), so every component goes to
    every scanner that supports it. A component no scanner scanned is
    skipped; see [Coverage](#coverage).
-3. Asks each once for `security supported-components` and skips any
-   component whose purl type isn't listed, or that has no purl type at
-   all, returning the skipped ones with why (`security.Skipped`; see
-   [Coverage](#coverage)). Duplicate purls are scanned once, and aren't
-   counted as skipped.
-4. Calls `security scan --purl <purl>` per component, up to
-   `--concurrency` at a time (`security.Scan`). The plugin returns
+3. Asks each once for `security supported-components`: the purl types
+   it scans, each by purl or from the component's files
+   (`pluginlib.ScanMode`). It skips any component whose type isn't
+   listed, or that has no purl type at all, and one of a type scanned
+   from files when there are no pulled files to pass
+   (`security.ScanOptions.ContentDir`): `security scan` passes the data
+   directory's layers, and a scan on pull has none yet. It returns the
+   skipped ones with why (`security.Skipped`; see [Coverage](#coverage)).
+   Duplicate purls are scanned once, and aren't counted as skipped.
+4. Calls `security scan --purl <purl>` per component, adding `--input
+   <layer dir>` for a type scanned from files, up to `--concurrency` at a
+   time (`security.ScanAll`). A result marked `unscanned` (the plugin
+   couldn't analyze the component) counts as skipped, with no report.
+   Otherwise the plugin returns
    CycloneDX vulnerabilities, each with `affects` set by the plugin: to
    the purl itself, or, for something it had to unpack (an image), to
    the affected pieces, which it also returns as components.

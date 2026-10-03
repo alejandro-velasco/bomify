@@ -80,18 +80,19 @@ func scanImage(provider vulnerability.Provider, purl packageurl.PackageURL) (plu
 		return pluginlib.SecurityResult{}, fmt.Errorf("find matches for %q: %w", ref, err)
 	}
 
-	return buildImageResult(packages, matches), nil
+	return buildCatalogResult(packages, matches), nil
 }
 
-// buildImageResult reports every package syft found while cataloging the
-// image as a nested CycloneDX component (see toComponent), and every
+// buildCatalogResult reports every package syft found while cataloging a
+// component's content — an image, or its pulled files (see Input) — as a
+// nested CycloneDX component (see toComponent), and every
 // match as a vulnerability whose Affects references the specific
 // package(s) it was matched against — never the image itself, since only
 // this plugin knows which package inside it is actually affected. The
 // same vulnerability matched against more than one package (common: the
 // same CVE often affects several packages in one image) is folded into a
 // single entry naming every affected package, rather than duplicated.
-func buildImageResult(packages []grypePkg.Package, matches *match.Matches) pluginlib.SecurityResult {
+func buildCatalogResult(packages []grypePkg.Package, matches *match.Matches) pluginlib.SecurityResult {
 	components := make([]cdx.Component, 0, len(packages))
 	for _, p := range packages {
 		components = append(components, toComponent(p))
@@ -158,7 +159,7 @@ func evidenceOccurrences(locations file.LocationSet) *[]cdx.EvidenceOccurrence {
 	return &occurrences
 }
 
-// packageRef returns the reference toComponent and buildImageResult's
+// packageRef returns the reference toComponent and buildCatalogResult's
 // Affects entries should name p by: its purl if it has one (true for
 // nearly every package grype matches), falling back to grype's own
 // internally-assigned package ID otherwise.

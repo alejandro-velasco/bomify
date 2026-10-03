@@ -348,8 +348,8 @@ func TestSecurityScanSeveralScanners(t *testing.T) {
 	baseDir := t.TempDir()
 	usePlugin(t, baseDir, "grype")
 	usePlugin(t, baseDir, "binscan")
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":["oci"],"scans":["sca"]}`)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":["generic"],"scans":["binary"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":{"oci":"purl"},"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"generic":"purl"},"scans":["binary"]}`)
 
 	image := cdx.Component{Name: "app", Version: "1.0", PackageURL: "pkg:oci/app@1.0"}
 	binary := cdx.Component{Name: "tool", Version: "1.0", PackageURL: "pkg:generic/tool@1.0"}
@@ -402,5 +402,73 @@ func TestSecurityScanSeveralScanners(t *testing.T) {
 	}
 	if out, err := runRootCmd(t, baseDir, "security", "policy", "list"); err != nil || !strings.Contains(out, "grype,binscan") {
 		t.Errorf("policy list = %q, %v; want the rule's scanners listed", out, err)
+	}
+}
+
+// TestSecurityScanPassesInput scans a package with a scanner that
+// supports images by purl and generic files only from their pulled
+// files: only the file gets --input, its pulled layer.
+func TestSecurityScanPassesInput(t *testing.T) {
+	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "binscan")
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"oci":"purl","generic":"files"},"scans":["binary"]}`)
+	inputs := filepath.Join(t.TempDir(), "inputs")
+	t.Setenv("FAKESECURITY_INPUT_LOG", inputs)
+
+	image := cdx.Component{Name: "app", Version: "1.0", PackageURL: "pkg:oci/app@1.0"}
+	file := cdx.Component{Name: "tool", Version: "1.0", PackageURL: "pkg:generic/tool@1.0"}
+	writePackage(t, baseDir, gatedTag, image, file)
+
+	// The file isn't pulled yet: there's nothing to pass, so it's skipped.
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "binscan", gatedTag, "--fail-on", "unscanned")
+	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 1 || !strings.Contains(gateErr.Unscanned[0].Reason, "pulled files") {
+		t.Fatalf("file not pulled: %v, want it unscanned for want of its files", err)
+	}
+
+	layer := layout.ComponentLayer(baseDir, file.PackageURL)
+	if err := os.MkdirAll(layer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layer, "tool"), []byte("binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(inputs)
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "binscan", gatedTag, "--fail-on", "unscanned"); err != nil {
+		t.Fatalf("file pulled: %v, want both scanned", err)
+	}
+	log, _ := os.ReadFile(inputs)
+	got := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(log)), "\n") {
+		purl, input, _ := strings.Cut(line, "\t")
+		got[purl] = input
+	}
+	if got[image.PackageURL] != "" || got[file.PackageURL] != layer {
+		t.Errorf("--input given = %v, want none for the image and %s for the file", got, layer)
+	}
+	if stored, err := security.ReadReports(baseDir, layout.PurlHash(file.PackageURL)); err != nil || len(stored) != 1 {
+		t.Errorf("file's reports = %+v, %v; want binscan's", stored, err)
+	}
+}
+
+// TestSecurityScanUnanalyzable scans a component the scanner reports it
+// couldn't analyze: it counts as unscanned, with no report.
+func TestSecurityScanUnanalyzable(t *testing.T) {
+	baseDir := t.TempDir()
+	usePlugin(t, baseDir, "grype")
+	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
+	writeResponsesFile(t, map[string]string{component.PackageURL: `{"vulnerabilities":[],"unscanned":"no packages found"}`})
+	writePackage(t, baseDir, gatedTag, component)
+
+	if _, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag); err != nil {
+		t.Fatalf("no gate: %v, want none", err)
+	}
+	var gateErr *security.GateError
+	_, err := runRootCmd(t, baseDir, "security", "scan", "grype", gatedTag, "--fail-on", "unscanned")
+	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 1 || gateErr.Unscanned[0].Reason != "grype couldn't analyze it: no packages found" {
+		t.Errorf("--fail-on unscanned: %v, want it unscanned with grype's reason", err)
+	}
+	if stored, err := security.ReadReports(baseDir, layout.PurlHash(component.PackageURL)); err != nil || len(stored) != 0 {
+		t.Errorf("reports = %+v, %v; want none for a component nothing analyzed", stored, err)
 	}
 }

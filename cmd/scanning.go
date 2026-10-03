@@ -346,7 +346,9 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 		return err
 	}
 	log := s.logger.With("reference", ref)
-	result, err := security.ScanAll(plugins, components, s.concurrency, log)
+	// Nothing of the package is written yet, so there are no files to
+	// pass for the types a scanner scans from them.
+	result, err := security.ScanAll(plugins, components, security.ScanOptions{Concurrency: s.concurrency}, log)
 	if err != nil {
 		return err
 	}

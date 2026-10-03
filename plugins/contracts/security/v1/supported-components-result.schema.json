@@ -8,10 +8,11 @@
   "required": ["types", "scans"],
   "properties": {
     "types": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "type": "string", "minLength": 1 },
-      "description": "Every component purl type (e.g. \"oci\", \"helm\", \"npm\", \"generic\") this plugin knows how to scan. A component whose purl type isn't in this list is never sent to \"security scan\"."
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": { "enum": ["purl", "files"] },
+      "description": "Every component purl type (e.g. \"oci\", \"helm\", \"npm\", \"generic\") this plugin knows how to scan, mapped to how it scans it: \"purl\" from the purl alone, or \"files\" only from the component's pulled files, passed as \"security scan --input\". A component whose purl type isn't in this map is never sent to \"security scan\"."
     },
     "scans": {
       "type": "array",
