@@ -4,20 +4,22 @@ Scan a built package's components for vulnerabilities via a security scanning pl
 
 ### Synopsis
 
-Scan scans every component of the local package <tag> with
-bomify-plugin-<type> (a scanner such as grype) and writes one CycloneDX
-vulnerability report per component to <data-dir>/vulnerabilities/,
-shared by every package containing that component. Each scanner keeps
-its own report of a component, so scanning with another scanner adds to
-this one's rather than replacing it. Components of purl types the
-scanner doesn't support are skipped, and listed on stderr.
+Scan scans every component of the local package <tag> with each of
+<scanners>, comma-separated (bomify-plugin-<scanner>, e.g. grype), and
+writes one CycloneDX vulnerability report per component and scanner to
+<data-dir>/vulnerabilities/, shared by every package containing that
+component. Each component goes to every scanner that supports it, and a
+scanner's report replaces only its own earlier one. Components no
+scanner supports are skipped, and listed on stderr.
 
 --fail-on takes comma-separated conditions that exit non-zero, printing
 what failed to stderr. Reports are written either way.
   - A severity (info, low, medium, high, critical): any vulnerability at
     or above it.
-  - "unscanned": any component the scanner skipped, so nothing passes
+  - "unscanned": any component no scanner scanned, so nothing passes
     unchecked. Skipped components are listed on stderr either way.
+  Every scanner's reports are gated together: a vulnerability several
+  scanners report fails at the highest severity any gives it.
   --ignore (repeatable) exempts vulnerability IDs for this scan only.
   --vex (repeatable) reads an OpenVEX, CSAF, or CycloneDX VEX file; a
   vulnerability it marks not affected or fixed doesn't fail the scan.
@@ -29,7 +31,7 @@ VEX always applies alongside --vex. --skip-gate ignores the rule's
 conditions.
 
 ```
-bomify security scan <type> <tag> [flags]
+bomify security scan <scanners> <tag> [flags]
 ```
 
 ### Examples
@@ -46,13 +48,16 @@ bomify security scan <type> <tag> [flags]
 
   # Also fail if grype skipped any component
   bomify security scan grype myapp:latest --fail-on high,unscanned
+
+  # Scan with two scanners, failing unless one of them scanned every component
+  bomify security scan grype,trivy myapp:latest --fail-on high,unscanned
 ```
 
 ### Options
 
 ```
   -c, --concurrency int      number of components to scan concurrently (default 1)
-      --fail-on conditions   fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if the scanner skipped any component; replaces a matching "bomify security policy" rule's
+      --fail-on conditions   fail on these comma-separated conditions: a severity (info, low, medium, high, critical) that any vulnerability at or above fails, and/or "unscanned", failing if any component no scanner scanned; replaces a matching "bomify security policy" rule's
   -h, --help                 help for scan
       --ignore stringArray   a vulnerability ID not to fail on, for this command only (repeatable); requires --fail-on
       --skip-gate            never fail on vulnerabilities, even if a "bomify security policy" rule matching the package says to

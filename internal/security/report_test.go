@@ -72,3 +72,14 @@ func TestWriteReportNeedsAUsableScanner(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckScanners(t *testing.T) {
+	if err := CheckScanners([]string{"grype", "trivy"}); err != nil {
+		t.Errorf("CheckScanners(grype, trivy) = %v", err)
+	}
+	for _, bad := range [][]string{nil, {""}, {"grype", ""}, {"grype", "grype"}, {"../x"}} {
+		if err := CheckScanners(bad); err == nil {
+			t.Errorf("CheckScanners(%q): nil, want an error", bad)
+		}
+	}
+}

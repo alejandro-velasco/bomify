@@ -184,3 +184,27 @@ func TestLoadFailOnUnscanned(t *testing.T) {
 		t.Errorf("load without --fail-on unscanned: %v, want it loaded", err)
 	}
 }
+
+// TestLoadScanSeveralScanners loads a package whose one component only
+// the second of two scanners supports: together they cover it, so
+// --fail-on unscanned lets it through, keeping that scanner's report.
+func TestLoadScanSeveralScanners(t *testing.T) {
+	archive := saveHookPackage(t)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":["oci"],"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":["generic"],"scans":["binary"]}`)
+
+	destDir := t.TempDir()
+	usePlugin(t, destDir, "grype")
+	usePlugin(t, destDir, "binscan")
+
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "unscanned"); !isGateError(err) {
+		t.Fatalf("load scanned by grype alone: %v, want a gate failure", err)
+	}
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype,binscan", "--fail-on", "unscanned"); err != nil {
+		t.Fatalf("load scanned by both: %v", err)
+	}
+	stored, err := security.ReadReports(destDir, layout.PurlHash(hookComponent.PackageURL))
+	if err != nil || len(stored) != 1 || stored[0].Scanner != "binscan" {
+		t.Errorf("reports = %+v, %v; want binscan's", stored, err)
+	}
+}

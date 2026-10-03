@@ -192,3 +192,39 @@ func TestCycloneDXVEXEscapedBOMLink(t *testing.T) {
 		t.Errorf("escaped BOM-Link: %+v, want CVE-1 suppressed", e)
 	}
 }
+
+// TestEvaluateCombinesScanners gates two scanners' reports of one
+// component, both reporting CVE-1.
+func TestEvaluateCombinesScanners(t *testing.T) {
+	report := func(scanner string, sev cdx.Severity, exempt bool) ComponentReport {
+		r := directReport(pkgA)
+		r.Scanner = scanner
+		v := &(*r.Report.Vulnerabilities)[0]
+		v.Ratings = &[]cdx.VulnerabilityRating{{Severity: sev}}
+		if exempt {
+			v.Analysis = &cdx.VulnerabilityAnalysis{State: cdx.IASFalsePositive}
+		}
+		return r
+	}
+
+	// One finding, at the highest severity either gives it.
+	e := gateWith(nil).Evaluate([]ComponentReport{report("grype", cdx.SeverityHigh, false), report("trivy", cdx.SeverityCritical, false)})
+	if len(e.Findings) != 1 || e.Findings[0].Severity != SeverityCritical {
+		t.Errorf("two severities: %+v, want one critical finding", e.Findings)
+	}
+	// Below the threshold in one report doesn't save it from the other.
+	e = gateWith(nil).Evaluate([]ComponentReport{report("grype", cdx.SeverityLow, false), report("trivy", cdx.SeverityHigh, false)})
+	if len(e.Findings) != 1 || e.Findings[0].Severity != SeverityHigh {
+		t.Errorf("low and high: %+v, want one high finding", e.Findings)
+	}
+	// Exempted in one report but not the other: it still fails.
+	e = gateWith(nil).Evaluate([]ComponentReport{report("grype", cdx.SeverityHigh, true), report("trivy", cdx.SeverityHigh, false)})
+	if len(e.Findings) != 1 || len(e.Suppressed) != 0 {
+		t.Errorf("exempted in one: %+v, want it to fail, not be suppressed", e)
+	}
+	// Exempted in both: suppressed, once.
+	e = gateWith(nil).Evaluate([]ComponentReport{report("grype", cdx.SeverityHigh, true), report("trivy", cdx.SeverityCritical, true)})
+	if len(e.Findings) != 0 || len(e.Suppressed) != 1 || e.Suppressed[0].Severity != SeverityCritical {
+		t.Errorf("exempted in both: %+v, want one critical suppression", e)
+	}
+}

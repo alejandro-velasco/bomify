@@ -66,10 +66,10 @@ func TestRemoveVEXRefusesWhileRuleUsesIt(t *testing.T) {
 	if _, err := AddVEX(baseDir, "team", writeVEX(t, "team.json", storeDoc)); err != nil {
 		t.Fatalf("AddVEX: %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Scanner: "grype", FailOn: "high", VEX: []string{"team"}}); err != nil {
+	if err := SetRule(baseDir, Rule{Scanners: []string{"grype"}, FailOn: "high", VEX: []string{"team"}}); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Match: "x", Scanner: "grype", VEX: []string{"missing"}}); err == nil {
+	if err := SetRule(baseDir, Rule{Match: "x", Scanners: []string{"grype"}, VEX: []string{"missing"}}); err == nil {
 		t.Error("SetRule accepted an unknown VEX name")
 	}
 	if err := RemoveVEX(baseDir, "team"); err == nil {

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -123,6 +124,24 @@ func CheckScanner(scanner string) error {
 	}
 	if !transfer.IsSafeFilename(scanner) {
 		return fmt.Errorf("scanner %q can't name a vulnerability report", scanner)
+	}
+	return nil
+}
+
+// CheckScanners fails unless scanners, scanning plugins' names as given
+// on the command line or in a Rule, are at least one, each named at most
+// once, and each usable as a report's name (see CheckScanner).
+func CheckScanners(scanners []string) error {
+	if len(scanners) == 0 {
+		return fmt.Errorf("no scanner given")
+	}
+	for i, scanner := range scanners {
+		if err := CheckScanner(scanner); err != nil {
+			return err
+		}
+		if slices.Contains(scanners[:i], scanner) {
+			return fmt.Errorf("scanner %q given more than once", scanner)
+		}
 	}
 	return nil
 }

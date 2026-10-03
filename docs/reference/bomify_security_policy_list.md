@@ -6,7 +6,7 @@ List vulnerability scanning policy rules
 
 List prints every scan policy rule. "*" in MATCH means every package.
 FAIL-ON lists what fails a matching package: a severity threshold, and
-"unscanned" for components the scanner skipped.
+"unscanned" for components no scanner scanned.
 "-" means nothing fails it, or no ON hooks.
 
 ```
