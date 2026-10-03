@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
@@ -34,6 +35,9 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 			return fmt.Errorf("provenance verification needs a signature verifier: pass --verify or add a \"bomify trust\" rule matching %s", ref)
 		}
 
+		if !isSHA256(manifest.Digest) {
+			return fmt.Errorf("provenance: manifest digest %s isn't SHA-256, as provenance names packages by", manifest.Digest)
+		}
 		sbom, err := configDigest(ctx, target, manifest)
 		if err != nil {
 			return err
@@ -50,7 +54,8 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 }
 
 // configDigest returns the hex SHA-256 of manifest's config, the
-// package's SBOM.
+// package's SBOM, failing unless it's a SHA-256 digest, as provenance
+// names SBOMs by.
 func configDigest(ctx context.Context, target oras.ReadOnlyTarget, manifest ocispec.Descriptor) (string, error) {
 	if manifest.Size > maxManifestSize {
 		return "", fmt.Errorf("manifest %s is %d bytes, larger than the %d allowed", manifest.Digest, manifest.Size, maxManifestSize)
@@ -63,5 +68,13 @@ func configDigest(ctx context.Context, target oras.ReadOnlyTarget, manifest ocis
 	if err := json.Unmarshal(data, &m); err != nil {
 		return "", fmt.Errorf("parse manifest %s: %w", manifest.Digest, err)
 	}
+	if !isSHA256(m.Config.Digest) {
+		return "", fmt.Errorf("provenance: SBOM digest %q in manifest %s isn't SHA-256", m.Config.Digest, manifest.Digest)
+	}
 	return m.Config.Digest.Encoded(), nil
+}
+
+// isSHA256 reports whether d is a valid SHA-256 digest.
+func isSHA256(d digest.Digest) bool {
+	return d.Validate() == nil && d.Algorithm() == digest.SHA256
 }

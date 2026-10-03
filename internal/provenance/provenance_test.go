@@ -314,8 +314,16 @@ func TestCheck(t *testing.T) {
 			m["predicate"].(map[string]any)["runDetails"].(map[string]any)["builder"] = map[string]any{"id": "https://example.com/builder"}
 		}), subjectSum, sbomHash},
 		"no SBOM": {tamper(func(m map[string]any) {
-			buildDefinition(m)["externalParameters"] = map[string]any{}
+			delete(buildDefinition(m)["externalParameters"].(map[string]any), "sbom")
 		}), subjectSum, sbomHash},
+		"SBOM not a descriptor": {tamper(func(m map[string]any) {
+			buildDefinition(m)["externalParameters"].(map[string]any)["sbom"] = "sha256:" + sbomHash
+		}), subjectSum, sbomHash},
+		// Without the package's SBOM digest, a statement naming no SBOM
+		// mustn't match it.
+		"package with no SBOM digest": {tamper(func(m map[string]any) {
+			delete(buildDefinition(m)["externalParameters"].(map[string]any), "sbom")
+		}), subjectSum, ""},
 	} {
 		if err := Check(tc.statement, tc.manifest, tc.sbomSHA256); err == nil {
 			t.Errorf("Check of %s: nil, want error", name)

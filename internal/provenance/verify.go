@@ -16,6 +16,9 @@ import (
 // SBOM. The subject's name is not checked, since copying the package to
 // another repository doesn't change what was built.
 func Check(statement []byte, manifestSHA256, sbomSHA256 string) error {
+	if manifestSHA256 == "" || sbomSHA256 == "" {
+		return fmt.Errorf("package has no manifest or SBOM digest to check provenance against")
+	}
 	s := &intoto.Statement{}
 	if err := protojson.Unmarshal(statement, s); err != nil {
 		return fmt.Errorf("parse statement: %w", err)
@@ -47,8 +50,12 @@ func Check(statement []byte, manifestSHA256, sbomSHA256 string) error {
 	if got := p.GetRunDetails().GetBuilder().GetId(); got != BuilderID {
 		return fmt.Errorf("builder is %q, want %q", got, BuilderID)
 	}
+	sbomParam := p.GetBuildDefinition().GetExternalParameters().GetFields()["sbom"].GetStructValue()
+	if sbomParam == nil {
+		return fmt.Errorf("externalParameters.sbom is missing or not a resource descriptor")
+	}
 	rd := &intoto.ResourceDescriptor{}
-	if err := fromStruct(p.GetBuildDefinition().GetExternalParameters().GetFields()["sbom"].GetStructValue(), rd); err != nil {
+	if err := fromStruct(sbomParam, rd); err != nil {
 		return fmt.Errorf("externalParameters.sbom: %w", err)
 	}
 	if sbom := rd.GetDigest()["sha256"]; sbom != sbomSHA256 {
