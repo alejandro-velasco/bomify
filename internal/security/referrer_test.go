@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,8 +13,10 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/content/oci"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
@@ -180,6 +184,56 @@ func TestPruneReferrersReportsRefusedDeletes(t *testing.T) {
 	for _, r := range f.reports {
 		if !exists(t, f.store, r) {
 			t.Errorf("%s was deleted despite its signature's delete failing", r.Digest)
+		}
+	}
+}
+
+// TestAttachTitlesReportsByLayoutPath copies a two-scanner report
+// referrer into oras's file store, as "oras pull" would: each report
+// lands at its path under the data directory's vulnerabilities/.
+func TestAttachTitlesReportsByLayoutPath(t *testing.T) {
+	ctx := context.Background()
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseDir := t.TempDir()
+	for _, scanner := range []string{"grype", "trivy"} {
+		report := NewReport(testComponent, pluginlib.SecurityResult{Vulnerabilities: []cdx.Vulnerability{}}, scanner, time.Now())
+		if _, err := WriteReport(baseDir, ComponentReport{Component: testComponent, Scanner: scanner, Report: report}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	referrer, _, ok, err := Attach(ctx, store, manifest, baseDir, []cdx.Component{testComponent}, nil)
+	if err != nil || !ok {
+		t.Fatalf("Attach() = %v, %v", ok, err)
+	}
+
+	pulledDir := t.TempDir()
+	files, err := file.New(pulledDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer files.Close()
+	if err := oras.CopyGraph(ctx, store, files, referrer, oras.DefaultCopyGraphOptions); err != nil {
+		t.Fatalf("copy the referrer into a file store: %v", err)
+	}
+
+	purlHash := layout.PurlHash(testComponent.PackageURL)
+	for _, scanner := range []string{"grype", "trivy"} {
+		got, err := os.ReadFile(filepath.Join(pulledDir, purlHash, scanner+".json"))
+		if err != nil {
+			t.Errorf("%s's report not at <purlHash>/%s.json: %v", scanner, scanner, err)
+			continue
+		}
+		want, _ := os.ReadFile(layout.Report(baseDir, purlHash, scanner))
+		if string(got) != string(want) {
+			t.Errorf("%s's pulled report differs from the one pushed", scanner)
 		}
 	}
 }

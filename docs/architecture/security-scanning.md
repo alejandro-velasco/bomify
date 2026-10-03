@@ -143,8 +143,9 @@ orphans its signature.
   `land.bomify.scan.plugin` with every scanner it carries) with one
   layer per component and scanner (media type
   `application/vnd.bomify.component.vulnerabilities.v1+json`, annotated
-  with its purl and its one scanner, `land.bomify.scan.plugin`, in SBOM
-  order and by scanner). It's dated by the newest report's scan
+  with its purl and its one scanner, `land.bomify.scan.plugin`, and
+  titled with its path under `vulnerabilities/`, so `oras pull` lays the
+  reports out as bomify keeps them; in SBOM order and by scanner). It's dated by the newest report's scan
   time, not the push time, so pushing again without re-scanning
   reproduces it byte for byte. With `--sign` it's signed like the
   package.

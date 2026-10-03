@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -72,12 +73,20 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 			}
 
 			if report, err := sbom.LoadBytes(data); err == nil {
-				if scannedAt, _ := reportProvenance(report); scannedAt.After(newest) {
+				if scannedAt := reportScannedAt(report); scannedAt.After(newest) {
 					newest = scannedAt
 				}
 			}
 			if !slices.Contains(scanners, s.Scanner) {
 				scanners = append(scanners, s.Scanner)
+			}
+
+			// Titled with its path under the data directory's reports, so a
+			// tool pulling the referrer into a directory (e.g. "oras pull")
+			// lays the reports out as bomify keeps them.
+			title, err := filepath.Rel(layout.Reports(baseDir), s.Path)
+			if err != nil {
+				return ocispec.Descriptor{}, nil, false, fmt.Errorf("title vulnerability report %s: %w", s.Path, err)
 			}
 
 			purl := component.PackageURL
@@ -87,7 +96,7 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 				return ocispec.Descriptor{}, nil, false, fmt.Errorf("push vulnerability report %s: %w", label, err)
 			}
 			desc.Annotations = map[string]string{
-				ocispec.AnnotationTitle: purlHash + "." + s.Scanner + ".json",
+				ocispec.AnnotationTitle: filepath.ToSlash(title),
 				transfer.AnnotationPurl: purl,
 				AnnotationScanPlugin:    s.Scanner,
 			}
@@ -120,18 +129,14 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 	return referrer, attached, true, nil
 }
 
-// reportProvenance returns when report was scanned and by which plugin,
-// as NewReport recorded them; either is its zero value if the report
-// doesn't say (e.g. one written before bomify recorded them).
-func reportProvenance(report *cdx.BOM) (scannedAt time.Time, scanner string) {
+// reportScannedAt returns when report was scanned, as NewReport recorded
+// it, or the zero time if the report doesn't say.
+func reportScannedAt(report *cdx.BOM) time.Time {
 	if report.Metadata == nil {
-		return time.Time{}, ""
+		return time.Time{}
 	}
-	scannedAt, _ = time.Parse(time.RFC3339, report.Metadata.Timestamp)
-	if tools := report.Metadata.Tools; tools != nil && tools.Components != nil && len(*tools.Components) > 0 {
-		scanner = (*tools.Components)[0].Name
-	}
-	return scannedAt, scanner
+	scannedAt, _ := time.Parse(time.RFC3339, report.Metadata.Timestamp)
+	return scannedAt
 }
 
 // ReportReferrers lists manifest's vulnerability report referrers in target,
