@@ -41,7 +41,9 @@ const securityScanShort = "Scan a built package's components for vulnerabilities
 const securityScanLong = `Scan scans every component of the local package <tag> with
 bomify-plugin-<type> (a scanner such as grype) and writes one CycloneDX
 vulnerability report per component to <data-dir>/vulnerabilities/,
-shared by every package containing that component. Components of purl
+shared by every package containing that component. Each scanner keeps
+its own report of a component, so scanning with another scanner adds to
+this one's rather than replacing it. Components of purl
 types the scanner doesn't support are skipped, and listed on stderr.
 
 --fail-on takes comma-separated conditions that exit non-zero, printing
@@ -140,7 +142,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	}
 
 	for _, r := range reports {
-		reportPath, err := security.WriteReport(dataDir, r.Component, r.Report)
+		reportPath, err := security.WriteReport(dataDir, r)
 		if err != nil {
 			return err
 		}

@@ -213,7 +213,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 	writeComponentFixture(t, sourceDir, componentB, map[string]string{"artifact": "other contents"})
 
 	reportBytes := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"vulnerabilities":[{"id":"CVE-TEST"}]}`)
-	reportPath := layout.ComponentReport(sourceDir, componentA.PackageURL)
+	reportPath := layout.Report(sourceDir, layout.PurlHash(componentA.PackageURL), "grype")
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 		t.Fatalf("mkdir vulnerabilities dir: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	got, err := os.ReadFile(layout.ComponentReport(destDir, componentA.PackageURL))
+	got, err := os.ReadFile(layout.Report(destDir, layout.PurlHash(componentA.PackageURL), "grype"))
 	if err != nil {
 		t.Fatalf("read restored vulnerability report: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestSaveThenLoadCarriesVulnerabilityReportOnMatch(t *testing.T) {
 		t.Errorf("restored vulnerability report = %q, want %q", got, reportBytes)
 	}
 
-	if _, err := os.Stat(layout.ComponentReport(destDir, componentB.PackageURL)); !os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Report(destDir, layout.PurlHash(componentB.PackageURL), "grype")); !os.IsNotExist(err) {
 		t.Errorf("componentB got a vulnerability report, want none: err = %v", err)
 	}
 }

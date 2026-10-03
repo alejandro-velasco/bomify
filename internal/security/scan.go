@@ -100,7 +100,7 @@ func Scan(pluginPath, scanner string, components []cdx.Component, concurrency in
 	var out []ComponentReport
 	for i, report := range reports {
 		if report != nil {
-			out = append(out, ComponentReport{Component: components[i], Report: report})
+			out = append(out, ComponentReport{Component: components[i], Scanner: scanner, Report: report})
 		}
 	}
 	return out, skipped, nil

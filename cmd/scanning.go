@@ -232,7 +232,7 @@ func (f *scanFlags) validate() error {
 // scan" would.
 func writeReports(reports []security.ComponentReport) error {
 	for _, r := range reports {
-		if _, err := security.WriteReport(dataDir, r.Component, r.Report); err != nil {
+		if _, err := security.WriteReport(dataDir, r); err != nil {
 			return err
 		}
 	}

@@ -31,7 +31,7 @@ func writeVulnerabilityReportFixture(t *testing.T, baseDir string, component cdx
 	}
 	report := security.NewReport(component, result, "", time.Time{})
 
-	path, err := security.WriteReport(baseDir, component, report)
+	path, err := security.WriteReport(baseDir, security.ComponentReport{Component: component, Scanner: "grype", Report: report})
 	if err != nil {
 		t.Fatalf("WriteReport: %v", err)
 	}

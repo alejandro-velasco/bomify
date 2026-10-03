@@ -57,7 +57,7 @@ func newPruneFixture(t *testing.T) pruneFixture {
 	for i := range 3 {
 		scannedAt := time.Date(2026, time.Month(i+1), 1, 0, 0, 0, 0, time.UTC)
 		report := NewReport(testComponent, pluginlib.SecurityResult{Vulnerabilities: []cdx.Vulnerability{{ID: fmt.Sprintf("CVE-%d", i)}}}, "grype", scannedAt)
-		if _, err := WriteReport(baseDir, testComponent, report); err != nil {
+		if _, err := WriteReport(baseDir, ComponentReport{Component: testComponent, Scanner: "grype", Report: report}); err != nil {
 			t.Fatalf("WriteReport: %v", err)
 		}
 		referrer, _, ok, err := Attach(ctx, store, f.manifest, baseDir, []cdx.Component{testComponent}, nil)

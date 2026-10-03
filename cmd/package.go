@@ -16,6 +16,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const packageShort = "Manage individual bomify packages"
@@ -242,7 +243,9 @@ const packageVulnerabilitiesShort = "Print a package's component vulnerability r
 
 const packageVulnerabilitiesLong = `Vulnerabilities prints the vulnerability reports of the local package
 <tag>'s components (from "bomify security scan") as one JSON array on
-stdout, in SBOM order. Components without a report are skipped.
+stdout, in SBOM order: one per component and scanner, ordered by
+scanner, each naming its scanner in metadata.tools. Components without a
+report are skipped.
 
 --purl (repeatable) limits it to specific components. Nothing but the
 array goes to stdout; warnings, such as a --purl matching nothing, go
@@ -321,15 +324,20 @@ func runPackageVulnerabilities(cmd *cobra.Command, opts *packageVulnerabilitiesO
 		}
 		printed[purlHash] = true
 
-		data, err := os.ReadFile(layout.Report(dataDir, purlHash))
+		stored, err := security.ReadReports(dataDir, purlHash)
 		if err != nil {
-			if os.IsNotExist(err) {
-				logger.Debug("no vulnerability report", "purl", component.PackageURL)
-				continue
-			}
-			return fmt.Errorf("read vulnerability report for %s: %w", component.PackageURL, err)
+			return err
 		}
-		reports = append(reports, bytes.TrimSpace(data))
+		if len(stored) == 0 {
+			logger.Debug("no vulnerability report", "purl", component.PackageURL)
+		}
+		for _, s := range stored {
+			data, err := os.ReadFile(s.Path)
+			if err != nil {
+				return fmt.Errorf("read %s's vulnerability report for %s: %w", s.Scanner, component.PackageURL, err)
+			}
+			reports = append(reports, bytes.TrimSpace(data))
+		}
 	}
 
 	for purl := range wantPurls {
