@@ -30,6 +30,10 @@ the build's identity.
   supported-types` lists, and asks `signature verify` about each until
   one passes. If none does, the pull fails with nothing written.
   Everything afterwards is fetched by that verified descriptor.
+- **Verify provenance** (`--verify-provenance`, or a rule's
+  `--require-provenance`): the same plugin then verifies the package's
+  build provenance attestation; see
+  [Build provenance](provenance.md#verifying).
 
 ![Signing flow](../diagrams/signing.svg)
 

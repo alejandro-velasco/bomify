@@ -41,6 +41,10 @@ key or identity to trust. --key-option (option=name) instead names a key
 from "bomify trust key add"; the plugin receives the stored copy's path
 as that option. The same option can't be given both ways.
 
+--require-provenance also requires the package's build provenance (see
+"bomify build --provenance"), attested by a signer the plugin trusts
+with the same options.
+
 "--verify" on pull or load overrides every rule, and
 "--insecure-skip-verify" bypasses them.`
 
@@ -52,12 +56,16 @@ const trustCreateExample = `  # Require packages from a team's repositories to b
 
   # The same, with the key kept in the managed key store
   bomify trust key add org org.pub
-  bomify trust create sigstore --key-option key=org`
+  bomify trust create sigstore --key-option key=org
+
+  # Also require build provenance attested with that key
+  bomify trust create sigstore --key-option key=org --require-provenance`
 
 type trustCreateOptions struct {
 	match      string
 	options    []string
 	keyOptions []string
+	provenance bool
 }
 
 func trustCreateCmd() *cobra.Command {
@@ -77,7 +85,7 @@ func trustCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("trust create: %w", err)
 			}
-			rule := signature.Rule{Match: opts.match, Verifier: args[0], Options: opts.options, KeyOptions: keyOptions}
+			rule := signature.Rule{Match: opts.match, Verifier: args[0], Options: opts.options, KeyOptions: keyOptions, Provenance: opts.provenance}
 			if err := signature.SetRule(dataDir, rule); err != nil {
 				return fmt.Errorf("trust create: %w", err)
 			}
@@ -87,6 +95,7 @@ func trustCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringArrayVar(&opts.options, "option", nil, "a key=value option passed through to the verifier plugin (repeatable)")
+	cmd.Flags().BoolVar(&opts.provenance, "require-provenance", false, "also require the package's build provenance, attested by a signer the verifier trusts with the same options")
 	cmd.Flags().StringArrayVar(&opts.keyOptions, "key-option", nil, "an option=name pair: pass the verifier plugin option=<path of the stored key name> (see \"bomify trust key add\"; repeatable)")
 
 	return cmd
@@ -147,9 +156,9 @@ func runTrustList(cmd *cobra.Command) error {
 
 	rows := make([][]string, 0, len(config))
 	for _, rule := range config {
-		rows = append(rows, []string{rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions)})
+		rows = append(rows, []string{rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions), formatProvenance(rule.Provenance)})
 	}
-	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "VERIFIER", "OPTIONS", "KEY-OPTIONS"}, rows)
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "VERIFIER", "OPTIONS", "KEY-OPTIONS", "PROVENANCE"}, rows)
 }
 
 const trustRemoveShort = "Remove a signature verification rule"
@@ -183,6 +192,14 @@ func trustRemoveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&match, "match", "", "the rule's match prefix, exactly as \"bomify trust list\" prints it (empty for a rule with no --match)")
 
 	return cmd
+}
+
+// formatProvenance renders whether a rule requires provenance.
+func formatProvenance(required bool) string {
+	if required {
+		return "required"
+	}
+	return ""
 }
 
 // formatKeyOptions renders key options as sorted "option=name" pairs.

@@ -138,6 +138,21 @@ type VerifyResult struct {
 	Signer string `json:"signer"`
 }
 
+// VerifyAttestationResult is the JSON object a plugin's "signature
+// verify-attestation" subcommand prints to stdout when the envelope it
+// was given is a valid attestation by a signer its own trust
+// configuration accepts. As for VerifyResult, a failed verification is
+// reported by exiting non-zero instead.
+type VerifyAttestationResult struct {
+	// Signer is a human-readable identity of whoever signed the
+	// attestation, which bomify only logs.
+	Signer string `json:"signer"`
+	// Statement is the in-toto statement the envelope signs, exactly as
+	// signed, base64-encoded (encoding/json's standard encoding of a
+	// []byte). bomify checks it is what it expects.
+	Statement []byte `json:"statement"`
+}
+
 // SupportedSignatureTypesResult is the JSON object a plugin's "signature
 // supported-types" subcommand prints to stdout on success: which
 // referrer artifact types it can verify. bomify only hands a plugin's

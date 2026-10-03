@@ -91,7 +91,9 @@ type Result struct {
 // than the pull failed, if that doesn't pass. Everything fetched afterward is
 // fetched by that same verified descriptor — and each blob checked
 // against the digest it pins — so ref being re-tagged mid-pull can't
-// substitute unverified content.
+// substitute unverified content. A non-nil opts.VerifyProvenance is
+// called with the manifest right after verify, and likewise writes
+// nothing if it fails.
 //
 // A non-nil opts.Scan is then called with the package's SBOM, fetched
 // into memory but not yet written, so a package it rejects also leaves
@@ -117,6 +119,11 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 
 	if opts.Verify != nil {
 		if err := opts.Verify(ctx, target, ref, desc); err != nil {
+			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
+		}
+	}
+	if opts.VerifyProvenance != nil {
+		if err := opts.VerifyProvenance(ctx, target, ref, desc); err != nil {
 			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
 		}
 	}

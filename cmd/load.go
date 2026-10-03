@@ -15,9 +15,9 @@ const loadLong = `Load restores every package in a "bomify save" tarball, as "bo
 pull" would, and records their tags. It reads stdin unless --input is
 given.
 
---verify, --scan, --fail-on, their policy rules, and --quiet work as for
-"bomify pull", applied to each package before anything of it is
-restored. Scanning may need network access; on an air-gapped machine,
+--verify, --verify-provenance, --scan, --fail-on, their policy rules,
+and --quiet work as for "bomify pull", applied to each package before
+anything of it is restored. Scanning may need network access; on an air-gapped machine,
 scan before saving instead.`
 
 const loadExample = `  # Load a tarball piped in from stdin

@@ -20,7 +20,11 @@ or verified, the package is still restored, with a warning.
 
 --verify requires a signature the named plugin verifies; without it, a
 matching "bomify trust" rule applies. The package is verified before
-anything is written. --insecure-skip-verify bypasses a trust rule.
+anything is written. --verify-provenance also requires the package's
+build provenance (see "bomify build --provenance"), attested by a signer
+the same plugin and options trust, as does a trust rule created with
+--require-provenance; --verify replaces a rule's requirement along with
+the rest of it. --insecure-skip-verify bypasses a trust rule.
 
 --scan <type> --fail-on <severity> scans the package fresh, after
 verification and before anything is written, and refuses it if anything
@@ -46,6 +50,9 @@ const pullExample = `  # Pull a tagged reference
 
   # Require a signature made with a specific cosign key
   bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub
+
+  # Also require build provenance attested with that key
+  bomify pull registry.example.com/myapp:latest --verify sigstore --verify-option key=cosign.pub --verify-provenance
 
   # Print just the pinned reference of what was pulled
   pinned=$(bomify pull registry.example.com/myapp:latest --quiet)`

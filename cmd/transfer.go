@@ -83,7 +83,8 @@ type restore struct {
 }
 
 // start validates f and resolves the transfer.Options a pull or load
-// runs with: signature verification, then a fresh scan and gate. Call
+// runs with: signature and provenance verification, then a fresh scan
+// and gate. Call
 // finish once the transfer succeeds.
 func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 	logger := f.logger(cmd)
@@ -100,6 +101,7 @@ func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 
 	opts, done := f.transferOptions(cmd)
 	opts.Verify, opts.Scan = verifier, scan.scan
+	opts.VerifyProvenance = signature.NewProvenanceVerifier(layout.Plugins(dataDir), policy, logger)
 	return &restore{logger: logger, opts: opts, scan: scan, done: done}, nil
 }
 

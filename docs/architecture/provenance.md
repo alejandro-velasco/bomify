@@ -3,9 +3,9 @@
 `bomify build --provenance` records how a package was built, as a
 [SLSA v1 provenance](https://slsa.dev/provenance/v1) predicate. When the
 package is pushed or saved, it's attached as an
-[in-toto](https://in-toto.io) attestation about the package, for tools
-such as `cosign verify-attestation`, `slsa-verifier`, and `gh attestation
-verify` to check. bomify itself doesn't check provenance on pull.
+[in-toto](https://in-toto.io) attestation about the package, which
+`pull`/`load` can require (see [Verifying](#verifying)) and tools such as
+`cosign verify-attestation` and `gh attestation verify` can check.
 
 This page is also the `buildType` of that provenance,
 `https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/provenance.md`,
@@ -57,13 +57,45 @@ pushing again adds nothing new.
   and layer `application/vnd.in-toto+json`), readable but not verifiable
   by other tools.
 
-Package signature verification (`signature.Verify`) skips referrers
+Package signature verification (`signature.VerifySignature`) skips referrers
 annotated `land.bomify.attestation.predicateType`, so an attestation,
 signed by the same plugin and so of the same artifact type, is never
 taken for the package's own signature.
 
 Provenance isn't restored by `pull` or `load`, so re-pushing a pulled
 package doesn't carry it forward.
+
+## Verifying
+
+`pull`/`load --verify-provenance`, or a matching trust rule created with
+`--require-provenance`, requires a package's provenance as well as its
+signature. `signature.Policy.ProvenanceRequired` decides, from the same
+source as the signature's verifier (see [Signing](signing.md)), so
+`--verify` replaces a rule's requirement along with the rest of it, and
+`--insecure-skip-verify` drops both. Provenance can't be required
+without a verifier.
+
+`signature.NewProvenanceVerifier` runs as `transfer.Options.VerifyProvenance`,
+right after the package's signature verifies and before anything is
+written, and only for the package itself, not its other referrers. It
+keeps the referrers annotated `land.bomify.attestation.predicateType`
+with the SLSA predicate type and an artifact type the verifier supports,
+and asks the plugin's `signature verify-attestation` (see the
+[signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/SIGNING-CONTRACT.md#signature-verify-attestation))
+about each, with the manifest digest as the subject, until one passes
+and `provenance.Check` accepts the statement it returns:
+
+- a valid in-toto statement of the SLSA v1 predicate type, naming the
+  package manifest's digest as a subject (its name isn't checked, so a
+  copied package still verifies);
+- valid SLSA provenance with this page's `buildType` and bomify's
+  `builder.id`;
+- `externalParameters.sbom` matching the package's SBOM (its config
+  blob's digest).
+
+If none passes, the pull fails with nothing written. Unsigned provenance
+never counts. `resolvedDependencies` isn't checked against anything:
+the signature already pins every component by digest.
 
 ## SLSA levels
 

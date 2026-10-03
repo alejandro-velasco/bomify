@@ -114,8 +114,9 @@ func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 
 // fakeSigner records the requests SignatureCommand hands it.
 type fakeSigner struct {
-	sign   SignRequest
-	attest AttestRequest
+	sign        SignRequest
+	attest      AttestRequest
+	attestation VerifyAttestationRequest
 }
 
 func (f *fakeSigner) Sign(_ context.Context, req SignRequest) (SignResult, error) {
@@ -130,6 +131,11 @@ func (f *fakeSigner) Attest(_ context.Context, req AttestRequest) (SignResult, e
 
 func (f *fakeSigner) Verify(context.Context, VerifyRequest) (VerifyResult, error) {
 	return VerifyResult{}, nil
+}
+
+func (f *fakeSigner) VerifyAttestation(_ context.Context, req VerifyAttestationRequest) (VerifyAttestationResult, error) {
+	f.attestation = req
+	return VerifyAttestationResult{Signer: "s", Statement: []byte("statement")}, nil
 }
 
 func (f *fakeSigner) SupportedTypes(context.Context) (SupportedSignatureTypesResult, error) {
@@ -154,5 +160,27 @@ func TestSignatureCommandAttest(t *testing.T) {
 	}
 	if p.sign.Payload != nil {
 		t.Error("attest called Sign")
+	}
+}
+
+func TestSignatureCommandVerifyAttestation(t *testing.T) {
+	envelope := filepath.Join(t.TempDir(), "envelope")
+	if err := os.WriteFile(envelope, []byte("envelope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &fakeSigner{}
+	root := NewRootCommand("fake", "fake", SignatureCommand(p, SigningHelp{}))
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"signature", "verify-attestation", "--envelope", envelope, "--media-type", "m", "--subject", "sha256:ab", "--reference", "app:1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("verify-attestation: %v", err)
+	}
+	if string(p.attestation.Envelope) != "envelope" || p.attestation.MediaType != "m" || p.attestation.Subject != "sha256:ab" || p.attestation.Reference != "app:1" {
+		t.Errorf("request = %+v", p.attestation)
+	}
+	if want := `{"signer":"s","statement":"c3RhdGVtZW50"}`; strings.TrimSpace(out.String()) != want {
+		t.Errorf("stdout = %s, want %s", out.String(), want)
 	}
 }

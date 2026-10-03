@@ -14,6 +14,7 @@ package sigstore
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	"github.com/opencontainers/go-digest"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/sign"
@@ -141,17 +143,58 @@ func Verify(payload, envelope []byte, opts Options) (string, error) {
 	if err := b.UnmarshalJSON(envelope); err != nil {
 		return "", fmt.Errorf("parse bundle: %w", err)
 	}
-
-	if keyPath := opts[OptionKey]; keyPath != "" {
-		return verifyWithKey(&b, payload, keyPath)
-	}
-	return verifyKeyless(&b, payload, opts)
+	return verifyBundle(&b, verify.WithArtifact(bytes.NewReader(payload)), opts)
 }
 
-// verifyWithKey verifies b against the PEM public key at keyPath. The
+// VerifyAttestation checks that envelope — a Sigstore bundle as JSON —
+// holds a DSSE envelope of an in-toto statement naming subject
+// ("<algorithm>:<hex>") as a subject, validly signed by the signer opts
+// trusts, as Verify does. It returns that signer and the statement.
+func VerifyAttestation(envelope []byte, subject string, opts Options) (signer string, statement []byte, err error) {
+	var b bundle.Bundle
+	if err := b.UnmarshalJSON(envelope); err != nil {
+		return "", nil, fmt.Errorf("parse bundle: %w", err)
+	}
+	dsse, err := b.Envelope()
+	if err != nil {
+		return "", nil, fmt.Errorf("bundle holds no DSSE envelope: %w", err)
+	}
+	if dsse.PayloadType != pluginlib.InTotoPayloadType {
+		return "", nil, fmt.Errorf("DSSE payload type is %q, want %q", dsse.PayloadType, pluginlib.InTotoPayloadType)
+	}
+
+	d, err := digest.Parse(subject)
+	if err != nil {
+		return "", nil, fmt.Errorf("subject %q: %w", subject, err)
+	}
+	sum, err := hex.DecodeString(d.Encoded())
+	if err != nil {
+		return "", nil, fmt.Errorf("subject %q: %w", subject, err)
+	}
+	if signer, err = verifyBundle(&b, verify.WithArtifactDigest(d.Algorithm().String(), sum), opts); err != nil {
+		return "", nil, err
+	}
+
+	statement, err = dsse.DecodeB64Payload()
+	if err != nil {
+		return "", nil, fmt.Errorf("decode statement: %w", err)
+	}
+	return signer, statement, nil
+}
+
+// verifyBundle verifies b against artifact with the key opts names, or
+// keyless if it names none.
+func verifyBundle(b *bundle.Bundle, artifact verify.ArtifactPolicyOption, opts Options) (string, error) {
+	if keyPath := opts[OptionKey]; keyPath != "" {
+		return verifyWithKey(b, artifact, keyPath)
+	}
+	return verifyKeyless(b, artifact, opts)
+}
+
+// verifyWithKey verifies b, over artifact, against the PEM public key at keyPath. The
 // bundle's own key hint is deliberately ignored: the only key accepted
 // is the one given, whatever the bundle claims.
-func verifyWithKey(b *bundle.Bundle, payload []byte, keyPath string) (string, error) {
+func verifyWithKey(b *bundle.Bundle, artifact verify.ArtifactPolicyOption, keyPath string) (string, error) {
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return "", fmt.Errorf("read key: %w", err)
@@ -173,7 +216,7 @@ func verifyWithKey(b *bundle.Bundle, payload []byte, keyPath string) (string, er
 		return "", err
 	}
 
-	if _, err := v.Verify(b, verify.NewPolicy(verify.WithArtifact(bytes.NewReader(payload)), verify.WithKey())); err != nil {
+	if _, err := v.Verify(b, verify.NewPolicy(artifact, verify.WithKey())); err != nil {
 		return "", err
 	}
 
@@ -184,10 +227,10 @@ func verifyWithKey(b *bundle.Bundle, payload []byte, keyPath string) (string, er
 	return "key sha256:" + hint, nil
 }
 
-// verifyKeyless verifies b against the public-good Sigstore trusted root,
+// verifyKeyless verifies b, over artifact, against the public-good Sigstore trusted root,
 // requiring its certificate to match the identity and issuer opts name,
 // and its signing to be logged in Rekor.
-func verifyKeyless(b *bundle.Bundle, payload []byte, opts Options) (string, error) {
+func verifyKeyless(b *bundle.Bundle, artifact verify.ArtifactPolicyOption, opts Options) (string, error) {
 	identity, issuer := opts[OptionCertificateIdentity], opts[OptionCertificateOIDCIssuer]
 	identityRegexp, issuerRegexp := opts[OptionCertificateIdentityRegexp], opts[OptionCertificateOIDCIssuerRegexp]
 	if (identity == "" && identityRegexp == "") || (issuer == "" && issuerRegexp == "") {
@@ -212,7 +255,7 @@ func verifyKeyless(b *bundle.Bundle, payload []byte, opts Options) (string, erro
 		return "", err
 	}
 
-	result, err := v.Verify(b, verify.NewPolicy(verify.WithArtifact(bytes.NewReader(payload)), verify.WithCertificateIdentity(certID)))
+	result, err := v.Verify(b, verify.NewPolicy(artifact, verify.WithCertificateIdentity(certID)))
 	if err != nil {
 		return "", err
 	}

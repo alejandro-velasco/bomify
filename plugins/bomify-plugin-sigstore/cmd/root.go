@@ -16,10 +16,11 @@ import (
 func NewRootCmd() *cobra.Command {
 	return pluginlib.NewRootCommand("sigstore", "bomify signing plugin producing Sigstore bundles",
 		pluginlib.SignatureCommand(signer{}, pluginlib.SigningHelp{
-			Sign:    "Sign a payload, printing a Sigstore bundle as the envelope",
-			Attest:  "Sign an in-toto statement, printing a Sigstore bundle holding a DSSE envelope",
-			Verify:  "Verify a Sigstore bundle envelope over a payload",
-			Options: "key, or for keyless identity-token, certificate-identity[-regexp], certificate-oidc-issuer[-regexp]",
+			Sign:              "Sign a payload, printing a Sigstore bundle as the envelope",
+			Attest:            "Sign an in-toto statement, printing a Sigstore bundle holding a DSSE envelope",
+			Verify:            "Verify a Sigstore bundle envelope over a payload",
+			VerifyAttestation: "Verify a Sigstore bundle holding a DSSE envelope, printing the in-toto statement it signs",
+			Options:           "key, or for keyless identity-token, certificate-identity[-regexp], certificate-oidc-issuer[-regexp]",
 		}))
 }
 
@@ -69,6 +70,18 @@ func (signer) Verify(_ context.Context, req pluginlib.VerifyRequest) (pluginlib.
 	}
 	signer, err := sigstore.Verify(req.Payload, req.Envelope, opts)
 	return pluginlib.VerifyResult{Signer: signer}, err
+}
+
+func (signer) VerifyAttestation(_ context.Context, req pluginlib.VerifyAttestationRequest) (pluginlib.VerifyAttestationResult, error) {
+	if req.MediaType != sigstore.BundleMediaType {
+		return pluginlib.VerifyAttestationResult{}, fmt.Errorf("unsupported envelope media type %q, want %q", req.MediaType, sigstore.BundleMediaType)
+	}
+	opts, err := sigstore.ParseOptions(req.Options)
+	if err != nil {
+		return pluginlib.VerifyAttestationResult{}, err
+	}
+	signer, statement, err := sigstore.VerifyAttestation(req.Envelope, req.Subject, opts)
+	return pluginlib.VerifyAttestationResult{Signer: signer, Statement: statement}, err
 }
 
 func (signer) SupportedTypes(context.Context) (pluginlib.SupportedSignatureTypesResult, error) {

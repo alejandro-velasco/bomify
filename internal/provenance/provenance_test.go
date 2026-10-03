@@ -274,3 +274,59 @@ func TestWriteReplacesRecord(t *testing.T) {
 		t.Errorf("record not at provenance/<hash>.json: %v", err)
 	}
 }
+
+func TestCheck(t *testing.T) {
+	p, _, _ := Read(record(t, sbomHash), sbomHash)
+	good, err := NewStatement(p, "registry.example.com/app", subjectSum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Check(good, subjectSum, sbomHash); err != nil {
+		t.Errorf("Check of the package's own provenance: %v", err)
+	}
+
+	// Rewrites good's JSON, so each case breaks exactly one thing.
+	tamper := func(edit func(m map[string]any)) []byte {
+		var m map[string]any
+		if err := json.Unmarshal(good, &m); err != nil {
+			t.Fatal(err)
+		}
+		edit(m)
+		data, _ := json.Marshal(m)
+		return data
+	}
+	buildDefinition := func(m map[string]any) map[string]any {
+		return m["predicate"].(map[string]any)["buildDefinition"].(map[string]any)
+	}
+
+	for name, tc := range map[string]struct {
+		statement            []byte
+		manifest, sbomSHA256 string
+	}{
+		"another package":   {good, strings.Repeat("d", 64), sbomHash},
+		"another SBOM":      {good, subjectSum, strings.Repeat("d", 64)},
+		"not JSON":          {[]byte("{"), subjectSum, sbomHash},
+		"another predicate": {tamper(func(m map[string]any) { m["predicateType"] = "https://example.com/other" }), subjectSum, sbomHash},
+		"another build type": {tamper(func(m map[string]any) {
+			buildDefinition(m)["buildType"] = "https://example.com/build"
+		}), subjectSum, sbomHash},
+		"another builder": {tamper(func(m map[string]any) {
+			m["predicate"].(map[string]any)["runDetails"].(map[string]any)["builder"] = map[string]any{"id": "https://example.com/builder"}
+		}), subjectSum, sbomHash},
+		"no SBOM": {tamper(func(m map[string]any) {
+			delete(buildDefinition(m)["externalParameters"].(map[string]any), "sbom")
+		}), subjectSum, sbomHash},
+		"SBOM not a descriptor": {tamper(func(m map[string]any) {
+			buildDefinition(m)["externalParameters"].(map[string]any)["sbom"] = "sha256:" + sbomHash
+		}), subjectSum, sbomHash},
+		// Without the package's SBOM digest, a statement naming no SBOM
+		// mustn't match it.
+		"package with no SBOM digest": {tamper(func(m map[string]any) {
+			delete(buildDefinition(m)["externalParameters"].(map[string]any), "sbom")
+		}), subjectSum, ""},
+	} {
+		if err := Check(tc.statement, tc.manifest, tc.sbomSHA256); err == nil {
+			t.Errorf("Check of %s: nil, want error", name)
+		}
+	}
+}

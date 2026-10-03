@@ -15,9 +15,9 @@ const InTotoPayloadType = "application/vnd.in-toto+json"
 // SigningPlugin is a signing plugin's own logic (see
 // plugins/SIGNING-CONTRACT.md), for SignatureCommand to expose as the
 // contract's "signature sign"/"signature attest"/"signature
-// verify"/"signature supported-types". SignatureCommand reads the
-// payload, statement, and envelope files itself, so a SigningPlugin only
-// ever deals in bytes.
+// verify"/"signature verify-attestation"/"signature supported-types".
+// SignatureCommand reads the payload, statement, and envelope files
+// itself, so a SigningPlugin only ever deals in bytes.
 type SigningPlugin interface {
 	// Sign signs payload on behalf of the package being published as
 	// req.Reference.
@@ -28,6 +28,11 @@ type SigningPlugin interface {
 	// Verify reports who signed req.Envelope over req.Payload, failing if
 	// it isn't a valid signature by a signer req.Options trusts.
 	Verify(ctx context.Context, req VerifyRequest) (VerifyResult, error)
+	// VerifyAttestation reports who signed req.Envelope, a DSSE envelope
+	// of an in-toto statement with a subject of digest req.Subject, and
+	// the statement it carries, failing if it isn't a valid attestation by
+	// a signer req.Options trusts.
+	VerifyAttestation(ctx context.Context, req VerifyAttestationRequest) (VerifyAttestationResult, error)
 	// SupportedTypes reports the referrer artifact types Verify accepts.
 	SupportedTypes(ctx context.Context) (SupportedSignatureTypesResult, error)
 }
@@ -58,10 +63,24 @@ type VerifyRequest struct {
 	Options []string
 }
 
+// VerifyAttestationRequest is one "signature verify-attestation"
+// invocation.
+type VerifyAttestationRequest struct {
+	Envelope  []byte
+	MediaType string
+	// Subject is the digest, "<algorithm>:<hex>", the statement must name
+	// among its subjects.
+	Subject   string
+	Reference string
+	// Options are the --option values, each "key=value", unparsed.
+	Options []string
+}
+
 // SigningHelp is the plugin-specific help text SignatureCommand shows.
 type SigningHelp struct {
-	// Sign, Attest, and Verify are each subcommand's short description.
-	Sign, Attest, Verify string
+	// Sign, Attest, Verify, and VerifyAttestation are each subcommand's
+	// short description.
+	Sign, Attest, Verify, VerifyAttestation string
 	// Options describes the --option keys the plugin understands.
 	Options string
 }
@@ -149,6 +168,31 @@ func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 		_ = verify.MarkFlagRequired(name)
 	}
 
+	var (
+		attestationReq      VerifyAttestationRequest
+		attestationEnvelope string
+	)
+	verifyAttestation := &cobra.Command{
+		Use:   "verify-attestation",
+		Short: help.VerifyAttestation,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if attestationReq.Envelope, err = readFile("envelope", attestationEnvelope); err != nil {
+				return err
+			}
+			result, err := p.VerifyAttestation(cmd.Context(), attestationReq)
+			return print(cmd, result, err)
+		},
+	}
+	verifyAttestation.Flags().StringVar(&attestationEnvelope, "envelope", "", "file holding the attestation envelope (required)")
+	verifyAttestation.Flags().StringVar(&attestationReq.MediaType, "media-type", "", "the envelope's media type (required)")
+	verifyAttestation.Flags().StringVar(&attestationReq.Subject, "subject", "", "digest (<algorithm>:<hex>) the statement must name as a subject (required)")
+	verifyAttestation.Flags().StringVar(&attestationReq.Reference, "reference", "", "reference of the package being verified (required)")
+	verifyAttestation.Flags().StringArrayVar(&attestationReq.Options, "option", nil, optionUsage)
+	for _, name := range []string{"envelope", "media-type", "subject", "reference"} {
+		_ = verifyAttestation.MarkFlagRequired(name)
+	}
+
 	supported := &cobra.Command{
 		Use:   "supported-types",
 		Short: "Report the referrer artifact types this plugin verifies",
@@ -158,7 +202,7 @@ func SignatureCommand(p SigningPlugin, help SigningHelp) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(sign, attest, verify, supported)
+	cmd.AddCommand(sign, attest, verify, verifyAttestation, supported)
 	return cmd
 }
 

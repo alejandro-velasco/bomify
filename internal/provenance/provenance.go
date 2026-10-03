@@ -221,6 +221,15 @@ func toStruct(m proto.Message) (*structpb.Struct, error) {
 	return s, nil
 }
 
+// fromStruct decodes s, a generic Struct, into m: toStruct's inverse.
+func fromStruct(s *structpb.Struct, m proto.Message) error {
+	data, err := protojson.Marshal(s)
+	if err != nil {
+		return err
+	}
+	return protojson.Unmarshal(data, m)
+}
+
 func digest(sha256 string) map[string]string {
 	if sha256 == "" {
 		return nil

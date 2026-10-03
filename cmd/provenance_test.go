@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -24,6 +25,11 @@ import (
 // offline, with --provenance, tagged app:1.0, and returns its data
 // directory and the component's SHA-256.
 func buildWithProvenance(t *testing.T) (string, string) {
+	return buildApp(t, "--provenance")
+}
+
+// buildApp builds buildWithProvenance's package with extra build flags.
+func buildApp(t *testing.T, flags ...string) (string, string) {
 	t.Helper()
 	baseDir := t.TempDir()
 	testutil.InstallFakePlugin(t, layout.Plugins(baseDir), "fakesign")
@@ -41,8 +47,8 @@ func buildWithProvenance(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 
-	if _, err := runRootCmd(t, baseDir, "build", sbomPath, "--tag", "app:1.0", "--provenance"); err != nil {
-		t.Fatalf("build --provenance: %v", err)
+	if _, err := runRootCmd(t, baseDir, append([]string{"build", sbomPath, "--tag", "app:1.0"}, flags...)...); err != nil {
+		t.Fatalf("build %v: %v", flags, err)
 	}
 	return baseDir, hex.EncodeToString(sum[:])
 }
@@ -184,5 +190,98 @@ func TestProvenancePrunedWithBuild(t *testing.T) {
 func TestProvenanceRejectsCheck(t *testing.T) {
 	if _, err := runRootCmd(t, t.TempDir(), "build", "x.json", "--check", "--provenance"); err == nil {
 		t.Error("build --check --provenance: error = nil, want one")
+	}
+}
+
+// savedApp saves buildApp's package, signed with fakesign key k, and
+// returns the tarball.
+func savedApp(t *testing.T, flags ...string) string {
+	t.Helper()
+	baseDir, _ := buildApp(t, flags...)
+	archive := filepath.Join(t.TempDir(), "app.tar")
+	if _, err := runRootCmd(t, baseDir, "save", "app:1.0", "--output", archive, "--sign", "fakesign", "--sign-option", "key=k"); err != nil {
+		t.Fatalf("save --sign: %v", err)
+	}
+	return archive
+}
+
+// loadInto loads archive into a fresh data directory with fakesign
+// installed, after running setup (if any) there.
+func loadInto(t *testing.T, archive string, setup []string, flags ...string) (string, error) {
+	t.Helper()
+	destDir := t.TempDir()
+	testutil.InstallFakePlugin(t, layout.Plugins(destDir), "fakesign")
+	if setup != nil {
+		if _, err := runRootCmd(t, destDir, setup...); err != nil {
+			t.Fatalf("%v: %v", setup, err)
+		}
+	}
+	_, err := runRootCmd(t, destDir, append([]string{"load", "--input", archive}, flags...)...)
+	return destDir, err
+}
+
+// requireNothingRestored fails unless no package was restored into destDir.
+func requireNothingRestored(t *testing.T, destDir string) {
+	t.Helper()
+	if manifests, _ := filepath.Glob(filepath.Join(layout.Manifests(destDir), "*")); len(manifests) != 0 {
+		t.Errorf("a refused package was restored: %v", manifests)
+	}
+}
+
+func TestLoadVerifyProvenance(t *testing.T) {
+	withProvenance := savedApp(t, "--provenance")
+	if _, err := loadInto(t, withProvenance, nil, "--verify", "fakesign", "--verify-option", "key=k", "--verify-provenance"); err != nil {
+		t.Errorf("load --verify-provenance of attested provenance: %v", err)
+	}
+
+	destDir, err := loadInto(t, withProvenance, nil, "--verify", "fakesign", "--verify-option", "key=other", "--verify-provenance")
+	if err == nil {
+		t.Error("load --verify-provenance with an untrusted key: nil, want error")
+	}
+	requireNothingRestored(t, destDir)
+
+	destDir, err = loadInto(t, savedApp(t), nil, "--verify", "fakesign", "--verify-option", "key=k", "--verify-provenance")
+	if err == nil || !strings.Contains(err.Error(), "attestation") {
+		t.Errorf("load --verify-provenance of a package without provenance: %v, want a missing attestation error", err)
+	}
+	requireNothingRestored(t, destDir)
+
+	if _, err := loadInto(t, withProvenance, nil, "--verify-provenance"); err == nil || !strings.Contains(err.Error(), "needs a signature verifier") {
+		t.Errorf("load --verify-provenance without a verifier: %v, want a missing verifier error", err)
+	}
+}
+
+func TestLoadUnsignedProvenanceRefused(t *testing.T) {
+	// Signed package, unsigned provenance: only a signed attestation counts.
+	baseDir, _ := buildApp(t, "--provenance")
+	unsigned := filepath.Join(t.TempDir(), "unsigned.tar")
+	if _, err := runRootCmd(t, baseDir, "save", "app:1.0", "--output", unsigned); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if _, err := loadInto(t, unsigned, nil, "--verify", "fakesign", "--verify-option", "key=k", "--verify-provenance"); err == nil {
+		t.Error("load --verify-provenance of unsigned provenance: nil, want error")
+	}
+}
+
+func TestTrustRuleRequiresProvenance(t *testing.T) {
+	rule := []string{"trust", "create", "fakesign", "--option", "key=k", "--require-provenance"}
+
+	if _, err := loadInto(t, savedApp(t, "--provenance"), rule); err != nil {
+		t.Errorf("load under a --require-provenance rule, with provenance: %v", err)
+	}
+
+	destDir, err := loadInto(t, savedApp(t), rule)
+	if err == nil {
+		t.Error("load under a --require-provenance rule, without provenance: nil, want error")
+	}
+	requireNothingRestored(t, destDir)
+
+	// --verify replaces the rule, its provenance requirement included, and
+	// --insecure-skip-verify bypasses it.
+	if _, err := loadInto(t, savedApp(t), rule, "--verify", "fakesign", "--verify-option", "key=k"); err != nil {
+		t.Errorf("load --verify under a --require-provenance rule: %v", err)
+	}
+	if _, err := loadInto(t, savedApp(t), rule, "--insecure-skip-verify"); err != nil {
+		t.Errorf("load --insecure-skip-verify under a --require-provenance rule: %v", err)
 	}
 }
