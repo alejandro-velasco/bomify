@@ -12,7 +12,7 @@ require (
 	github.com/openvex/go-vex v0.2.9
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/spf13/cobra v1.10.2
-	github.com/vbauerster/mpb/v8 v8.16.1
+	github.com/vbauerster/mpb/v8 v8.16.2
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
 	google.golang.org/protobuf v1.36.12
@@ -87,7 +87,7 @@ require (
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/mattn/go-runewidth v0.0.28 // indirect
+	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -107,7 +107,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tetratelabs/wabin v0.0.0-20230304001439-f6f874872834 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
-	github.com/vbauerster/cupwriter v0.0.4 // indirect
+	github.com/vbauerster/cupwriter v0.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
