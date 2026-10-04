@@ -45,3 +45,6 @@ the build's identity.
 
 Plugins never talk to a registry; bomify moves every envelope itself,
 which is why one plugin works for registries and tarballs alike.
+
+What verification guarantees, and what it doesn't, is in
+[Trust model](trust-model.md).
