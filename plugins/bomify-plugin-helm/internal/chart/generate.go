@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
-	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -16,10 +15,7 @@ import (
 	"helm.sh/helm/v4/pkg/cli"
 	"helm.sh/helm/v4/pkg/cli/values"
 	"helm.sh/helm/v4/pkg/getter"
-	"helm.sh/helm/v4/pkg/registry"
 	"helm.sh/helm/v4/pkg/release"
-
-	"github.com/alejandro-velasco/bomify/pkg/auth"
 )
 
 // GenerateOptions identifies the chart Generate should render and how to
@@ -74,8 +70,7 @@ func Generate(opts GenerateOptions, logger *slog.Logger) (*cdx.BOM, error) {
 		releaseName = "release-name"
 	}
 
-	host := registryHost(opts.RepositoryURL)
-	registryClient, err := newRegistryClient(host)
+	registryClient, err := newRegistryClient(registryHost(opts.RepositoryURL))
 	if err != nil {
 		return nil, err
 	}
@@ -96,24 +91,9 @@ func Generate(opts GenerateOptions, logger *slog.Logger) (*cdx.BOM, error) {
 
 	settings := cli.New()
 
-	// Mirrors Pull's own OCI-vs-classic-repo branching (transfer.go): for
-	// OCI, LocateChart wants a bare "oci://host/path/<name>" ref with no
-	// separate RepoURL; for a classic repo, it wants just the chart name,
-	// with the repo's base URL supplied via RepoURL instead.
-	chartRef := opts.Name
-	if registry.IsOCI(opts.RepositoryURL) {
-		chartRef = strings.TrimSuffix(opts.RepositoryURL, "/") + "/" + opts.Name
-	} else {
-		install.RepoURL = opts.RepositoryURL
-
-		if host != "" {
-			username, password, err := auth.Get(host)
-			if err != nil {
-				return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
-			}
-			install.Username = username
-			install.Password = password
-		}
+	chartRef, err := configureChartPathOptions(opts.RepositoryURL, opts.Name, &install.ChartPathOptions)
+	if err != nil {
+		return nil, err
 	}
 
 	logger.Info("locating chart", "chart", chartRef, "version", opts.Version, "repository_url", opts.RepositoryURL)

@@ -40,23 +40,18 @@ var keychain = authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get))
 // pattern.
 var newRegistryClient = defaultRegistryClient
 
-// defaultRegistryClient builds a Helm OCI registry client authenticated,
-// for host, with whatever bomify's shared credential store (fetched via
-// pkg/auth.Get; see internal/auth for the store itself, the same one
-// `bomify login`/`docker login` write) has for it. A host with nothing
-// stored gets an anonymous client, exactly like a bomify pull/push
-// against a public registry.
+// defaultRegistryClient builds a Helm OCI registry client authenticated
+// with host's credentials. A host with nothing stored gets an anonymous
+// client, exactly like a bomify pull/push against a public registry.
 func defaultRegistryClient(host string) (*registry.Client, error) {
 	var opts []registry.ClientOption
 
-	if host != "" {
-		username, password, err := auth.Get(host)
-		if err != nil {
-			return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
-		}
-		if username != "" || password != "" {
-			opts = append(opts, registry.ClientOptBasicAuth(username, password))
-		}
+	username, password, err := credentials(host)
+	if err != nil {
+		return nil, err
+	}
+	if username != "" || password != "" {
+		opts = append(opts, registry.ClientOptBasicAuth(username, password))
 	}
 
 	client, err := registry.NewClient(opts...)
@@ -89,14 +84,47 @@ func registryHost(repositoryURL string) string {
 	return u.Host
 }
 
+// credentials returns what bomify's shared credential store (see
+// pkg/auth) has for host, or nothing for an empty host.
+func credentials(host string) (username, password string, err error) {
+	if host == "" {
+		return "", "", nil
+	}
+	username, password, err = auth.Get(host)
+	if err != nil {
+		return "", "", fmt.Errorf("look up credentials for %s: %w", host, err)
+	}
+	return username, password, nil
+}
+
+// configureChartPathOptions sets up opts — where Helm's pull and install
+// actions find chart name in repositoryURL, and the credentials they use
+// there — returning the chart reference to pass them. For an OCI registry
+// that's a bare "oci://host/path/<name>", leaving opts alone (the registry
+// client authenticates it; see defaultRegistryClient); for a classic
+// HTTP(S) repository it's just name, with the repository's base URL and
+// credentials in opts.
+func configureChartPathOptions(repositoryURL, name string, opts *action.ChartPathOptions) (string, error) {
+	if registry.IsOCI(repositoryURL) {
+		return strings.TrimSuffix(repositoryURL, "/") + "/" + name, nil
+	}
+
+	username, password, err := credentials(registryHost(repositoryURL))
+	if err != nil {
+		return "", err
+	}
+	opts.RepoURL = repositoryURL
+	opts.Username = username
+	opts.Password = password
+	return name, nil
+}
+
 // Pull downloads the chart ref describes and saves it into outputDir as
 // ref.Filename(), using the Helm SDK's pull action — the same
 // implementation behind the `helm pull` CLI command. It supports both
 // classic HTTP(S) chart repositories and OCI registries, per ref.OCI.
 func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
-	host := registryHost(ref.RepositoryURL)
-
-	registryClient, err := newRegistryClient(host)
+	registryClient, err := newRegistryClient(registryHost(ref.RepositoryURL))
 	if err != nil {
 		return nil, err
 	}
@@ -106,27 +134,9 @@ func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error
 	pull.DestDir = outputDir
 	pull.Version = ref.Version
 
-	// action.Pull.Run takes the chart name/reference to resolve, plus the
-	// version separately. For OCI it wants a bare "oci://.../<name>" ref
-	// (no tag); for a classic repo it wants just the chart name, with the
-	// repo's base URL supplied via RepoURL instead.
-	chartRef := ref.Name
-	if ref.OCI {
-		chartRef = strings.TrimSuffix(ref.RepositoryURL, "/") + "/" + ref.Name
-	} else {
-		pull.RepoURL = ref.RepositoryURL
-
-		// The OCI registry client above only authenticates OCI pulls;
-		// classic HTTP(S) chart repo auth goes through ChartPathOptions
-		// (embedded in Pull) instead.
-		if host != "" {
-			username, password, err := auth.Get(host)
-			if err != nil {
-				return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
-			}
-			pull.Username = username
-			pull.Password = password
-		}
+	chartRef, err := configureChartPathOptions(ref.RepositoryURL, ref.Name, &pull.ChartPathOptions)
+	if err != nil {
+		return nil, err
 	}
 
 	logger.Info("pulling chart", "chart", chartRef, "version", ref.Version, "repository_url", ref.RepositoryURL)
@@ -199,14 +209,12 @@ func checkPullHTTP(ref Ref, logger *slog.Logger) (*plugin.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build GET request for %s: %w", indexURL, err)
 	}
-	if host := registryHost(ref.RepositoryURL); host != "" {
-		username, password, err := auth.Get(host)
-		if err != nil {
-			return nil, fmt.Errorf("look up credentials for %s: %w", host, err)
-		}
-		if username != "" || password != "" {
-			req.SetBasicAuth(username, password)
-		}
+	username, password, err := credentials(registryHost(ref.RepositoryURL))
+	if err != nil {
+		return nil, err
+	}
+	if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
 	}
 
 	logger.Info("GET", "url", indexURL)
