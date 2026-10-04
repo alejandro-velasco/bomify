@@ -23,6 +23,7 @@ nav = [
       { "Distributing a package" = "how-to/distributing-a-package.md" },
       { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
+      { "Composing a multi-medium package" = "how-to/composing-a-multi-medium-package.md" },
       { "Scanning with grype" = "how-to/scanning-with-grype.md" },
       { "Saving packages for airgapped environments" = "how-to/saving-packages-for-airgapped-environments.md" },
       { "Signing and verifying packages" = "how-to/signing-and-verifying-packages.md" },
@@ -49,6 +50,7 @@ nav = [
       { "bomify push" = "usage/reference/bomify_push.md" },
       { "bomify sbom" = [
           { "bomify sbom" = "usage/reference/bomify_sbom.md" },
+          { "bomify sbom compose" = "usage/reference/bomify_sbom_compose.md" },
           { "bomify sbom generate" = "usage/reference/bomify_sbom_generate.md" },
       ] },
       { "bomify security" = [

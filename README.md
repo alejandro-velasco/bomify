@@ -11,7 +11,8 @@ the way Docker builds images from Dockerfiles.
   registry or a tarball; `bomify distribute` republishes each component
   to its own registry.
 - `bomify sbom generate` builds an SBOM from a deployment medium, such as
-  a Helm chart.
+  a Helm chart, and `bomify sbom compose` merges several mediums' SBOMs
+  into one package.
 - `bomify security scan` scans a package's components for
   vulnerabilities, can fail on a severity threshold with VEX exemptions,
   and can gate `pull`/`load` before anything is written. Publishers can

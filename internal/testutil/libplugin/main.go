@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -22,7 +23,31 @@ func main() {
 	plugin.Run(plugin.NewRootCommand("lib", "bomify plugin built with pkg/plugin, for tests",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{}),
 		plugin.SecurityCommand(scanner{}, plugin.SecurityHelp{}),
-		plugin.SignatureCommand(signer{}, plugin.SigningHelp{})))
+		plugin.SignatureCommand(signer{}, plugin.SigningHelp{}),
+		plugin.SBOMCommand(generator{}, plugin.SBOMHelp{})))
+}
+
+// generator takes one option, "name", and describes a pkg:generic
+// component of that name, as both root and its one component.
+type generator struct{}
+
+func (generator) OptionsSchema() []byte {
+	return []byte(`{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string"}}}`)
+}
+
+func (generator) Generate(_ context.Context, options json.RawMessage, _ *slog.Logger) (*cdx.BOM, error) {
+	var o struct {
+		Name string `json:"name"`
+	}
+	if err := plugin.DecodeOptions(options, &o); err != nil {
+		return nil, err
+	}
+	purl := "pkg:generic/" + o.Name + "@1.0"
+	root := cdx.Component{Name: o.Name, Version: "1.0", PackageURL: purl, BOMRef: purl}
+	bom := cdx.NewBOM()
+	bom.Metadata = &cdx.Metadata{Component: &root}
+	bom.Components = &[]cdx.Component{root}
+	return bom, nil
 }
 
 // component pulls a one-file artifact named after the purl's last path

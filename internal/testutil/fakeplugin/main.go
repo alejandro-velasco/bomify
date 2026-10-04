@@ -13,6 +13,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -38,12 +39,29 @@ func main() {
 	}
 }
 
-// sbomMain stands in for "sbom generate", whose arguments bomify passes
-// through unparsed (see plugins/contracts/sbom/v1/CONTRACT.md): it echoes its
-// own arguments to stdout and, if any is exactly "--fail", writes to stderr
-// and exits 7 instead, so tests can check both paths and that the exit code
+// sbomSchema is what "sbom schema" prints: options with one key, "bom",
+// the SBOM "sbom generate --config" prints back.
+const sbomSchema = `{"type":"object","additionalProperties":false,"required":["bom"],"properties":{"bom":{"type":"object"}}}`
+
+// sbomMain stands in for the SBOM generation contract (see
+// plugins/contracts/sbom/v1/CONTRACT.md). "sbom schema" prints sbomSchema,
+// and "sbom generate --config <file>" prints the file's "bom" verbatim,
+// so a test decides the SBOM, conforming or not; each such generate
+// appends its working directory to FAKESBOM_LOG, if set. Any other
+// arguments, which "bomify sbom generate" passes through unparsed, are
+// echoed to stdout, unless one is exactly "--fail": then it writes to
+// stderr and exits 7 instead, so tests can check that the exit code
 // propagates.
 func sbomMain() {
+	if len(os.Args) == 3 && os.Args[2] == "schema" {
+		fmt.Print(sbomSchema)
+		return
+	}
+	if len(os.Args) == 5 && os.Args[2] == "generate" && os.Args[3] == "--config" {
+		sbomGenerate(os.Args[4])
+		return
+	}
+
 	fmt.Fprintln(os.Stdout, strings.Join(os.Args[1:], " "))
 
 	for _, arg := range os.Args[1:] {
@@ -52,4 +70,29 @@ func sbomMain() {
 			os.Exit(7)
 		}
 	}
+}
+
+// sbomGenerate prints the "bom" of the options file at config.
+func sbomGenerate(config string) {
+	if logPath := os.Getenv("FAKESBOM_LOG"); logPath != "" {
+		wd, _ := os.Getwd()
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			fmt.Fprintln(f, wd)
+			f.Close()
+		}
+	}
+
+	var options struct {
+		BOM json.RawMessage `json:"bom"`
+	}
+	data, err := os.ReadFile(config)
+	if err == nil {
+		err = json.Unmarshal(data, &options)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read options:", err)
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, "generating")
+	fmt.Println(string(options.BOM))
 }

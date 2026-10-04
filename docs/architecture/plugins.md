@@ -73,6 +73,16 @@ implements both sides for a Go plugin, and its `ValidateGenerated`
 checks the rules; cyclonedx-go itself checks the CycloneDX objects, as
 bomify decodes them rejecting unknown fields.
 
+`bomify sbom compose` is the unattended caller
+([`internal/sbom`](https://github.com/alejandro-velasco/bomify/tree/main/internal/sbom)'s
+`Composition`). It checks every source's options against its plugin's
+schema before running any, then merges the SBOMs: components by purl
+(sources disagreeing on one's type, name, version, or hashes fail),
+dependencies unioned, and the composition as the root, depending on
+each source's root. Everything is sorted and the spec version pinned,
+so an unchanged composition yields the same SBOM, and `bomify build`
+the same package.
+
 ## Concurrent, idempotent pulls
 
 `plugin.Pull` is safe to call concurrently, even across processes, for

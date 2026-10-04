@@ -37,5 +37,5 @@ bomify sbom generate <medium> [flags]
 
 ### SEE ALSO
 
-* [bomify sbom](bomify_sbom.md)	 - Generate SBOMs for a deployment medium
+* [bomify sbom](bomify_sbom.md)	 - Generate and compose SBOMs for deployment mediums
 
