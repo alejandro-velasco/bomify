@@ -31,6 +31,8 @@ nowhere else.
   [`internal/rules`](https://github.com/alejandro-velasco/bomify/tree/main/internal/rules): a JSON array with one rule per
   identity, written atomically, resolved by the most specific
   `/`-segment prefix match ([`internal/prefix`](https://github.com/alejandro-velasco/bomify/tree/main/internal/prefix)).
+- **`conf/auth.json`** is registry credentials, in Docker's
+  `config.json` format (see [Credentials](registry.md#credentials)).
 - **`vex/` and `keys/`** are named, content-addressed stores
   ([`internal/namedstore`](https://github.com/alejandro-velasco/bomify/tree/main/internal/namedstore)): `<sha256><ext>`
   copies plus an `index.json` of names. Rules refer to entries by name,

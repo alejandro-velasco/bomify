@@ -3,8 +3,8 @@
 // stored for a server, and HelperFunc adapts it to the single-method
 // credential-helper interface several third-party SDKs
 // (docker-credential-helpers, go-containerregistry) expect. The store
-// itself — reading Docker's config.json plus the native OS credential
-// helper — lives in internal/auth; unlike that package, this one is
+// itself — bomify's conf/auth.json, falling back to Docker's
+// config.json — lives in internal/auth; unlike that package, this one is
 // importable from any Go module, so a third-party plugin can depend on
 // it directly.
 package auth

@@ -1,15 +1,15 @@
-// Package auth is bomify's single, shared source of registry credentials:
-// a thin wrapper around the standard Docker config.json plus native OS
-// credential store, the same files and stores `docker login`/`docker
-// logout` read and write. cmd/push.go and cmd/pull.go use Client; see
-// pkg/auth for the Get/HelperFunc library plugins use to reach this same
-// store, importable from outside this module.
+// Package auth is bomify's single, shared source of registry credentials
+// (see Store). cmd/push.go and cmd/pull.go use Client; see pkg/auth for
+// the Get/HelperFunc library plugins use to reach this same store,
+// importable from outside this module.
 package auth
 
 import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/alejandro-velasco/bomify/internal/layout"
 
 	"oras.land/oras-go/v2/registry/remote"
 	orasauth "oras.land/oras-go/v2/registry/remote/auth"
@@ -21,10 +21,16 @@ import (
 // given, matching `docker login`'s own default.
 const DefaultHost = "docker.io"
 
-// Store returns the credential store bomify reads and writes: the
-// standard Docker config file, delegating to the platform's native
-// credential helper exactly as `docker login` does. A bomify login is
-// thus also a docker login, and vice versa.
+// Store returns the credential store bomify reads and writes. Writes go
+// to <dataDir>/conf/auth.json, a Docker-format config that delegates to
+// the platform's native credential helper exactly as `docker login`'s
+// does. Reads try it first, then Docker's own config, so an existing
+// `docker login` still works; Logout never touches Docker's config.
+// dataDir is $BOMIFY_DATA_DIR (which bomify sets for --data-dir) or
+// ~/.bomify.
+//
+// Native helpers key secrets by host alone, so for a host logged into
+// with both tools, they share one secret.
 func Store() (credentials.Store, error) {
 	store, err := newStore()
 	if err != nil {
@@ -37,19 +43,34 @@ func Store() (credentials.Store, error) {
 // substitute an in-memory store instead of touching this machine's real
 // native credential helper.
 var newStore = func() (credentials.Store, error) {
-	return credentials.NewStoreFromDocker(credentials.StoreOptions{
+	primary, err := openAuthConfig(credentials.StoreOptions{
 		DetectDefaultNativeStore: true,
 	})
+	if err != nil {
+		return nil, err
+	}
+	docker, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewStoreWithFallbacks(primary, docker), nil
 }
 
 // newPlaintextStore is Login's fallback when no native credential helper
-// is available: the same config file, but willing to write a credential
-// into it as plaintext rather than refusing. Factored out for the same
+// is available: auth.json again, but willing to write a credential into
+// it as plaintext rather than refusing. Factored out for the same
 // test-isolation reason as newStore.
-var newPlaintextStore = func() (credentials.Store, error) {
-	return credentials.NewStoreFromDocker(credentials.StoreOptions{
-		AllowPlaintextPut: true,
-	})
+var newPlaintextStore = func() (*credentials.DynamicStore, error) {
+	return openAuthConfig(credentials.StoreOptions{AllowPlaintextPut: true})
+}
+
+// openAuthConfig opens bomify's own auth.json (see Store) with opts.
+func openAuthConfig(opts credentials.StoreOptions) (*credentials.DynamicStore, error) {
+	dataDir, err := layout.DefaultDataDir()
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewStore(layout.AuthConfig(dataDir), opts)
 }
 
 // Lookup returns whatever credentials are stored for host, or
@@ -84,11 +105,11 @@ func Client() (*orasauth.Client, error) {
 // LoginResult reports how Login stored a successfully verified
 // credential.
 type LoginResult struct {
-	// PlaintextFallback is true when no native credential helper was
-	// available, so the credential was stored as plaintext in the config
-	// file itself instead — the same fallback `docker login` makes when
-	// no credsStore is configured.
-	PlaintextFallback bool
+	// PlaintextPath is set when no native credential helper was
+	// available, so the credential was stored as plaintext in this config
+	// file instead — the same fallback `docker login` makes when no
+	// credsStore is configured.
+	PlaintextPath string
 }
 
 // Login verifies username/password against host and, only if they work,
@@ -130,7 +151,7 @@ func loginToRegistry(ctx context.Context, reg *remote.Registry, username, passwo
 		if perr := plainStore.Put(ctx, hostname, cred); perr != nil {
 			return LoginResult{}, fmt.Errorf("login to %s: store plaintext credentials: %w", hostname, perr)
 		}
-		return LoginResult{PlaintextFallback: true}, nil
+		return LoginResult{PlaintextPath: plainStore.ConfigPath()}, nil
 	}
 	if err != nil {
 		return LoginResult{}, fmt.Errorf("login to %s: %w", reg.Reference.Registry, err)
@@ -139,7 +160,8 @@ func loginToRegistry(ctx context.Context, reg *remote.Registry, username, passwo
 	return LoginResult{}, nil
 }
 
-// Logout removes any stored credentials for host.
+// Logout removes any credentials for host from bomify's own config (see
+// Store).
 func Logout(ctx context.Context, host string) error {
 	store, err := Store()
 	if err != nil {

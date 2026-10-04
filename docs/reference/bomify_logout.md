@@ -5,7 +5,8 @@ Log out from an OCI registry
 ### Synopsis
 
 Logout removes stored credentials for an OCI registry (default:
-docker.io).
+docker.io) from <data-dir>/conf/auth.json. Credentials stored by docker
+login are left in place and still used.
 
 ```
 bomify logout [server] [flags]

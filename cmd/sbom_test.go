@@ -29,7 +29,7 @@ func useDataDir(t *testing.T, dir string) {
 	origDataDir := dataDir
 	t.Cleanup(func() { dataDir = origDataDir })
 	dataDir = ""
-	t.Setenv(defaultDataDirEnv, dir)
+	t.Setenv(layout.DataDirEnv, dir)
 }
 
 func TestSBOMGenerateDelegatesToPlugin(t *testing.T) {

@@ -17,7 +17,11 @@ const loginShort = "Log in to an OCI registry"
 
 const loginLong = `Login authenticates against an OCI registry (default: docker.io) and
 stores the credentials for later build/distribute/pull/push
-operations to reuse.`
+operations to reuse.
+
+Credentials are stored through <data-dir>/conf/auth.json, in the OS
+credential store when one is available. Registries with nothing stored
+there fall back to docker login's credentials.`
 
 const loginExample = `  # Log in to docker.io, prompting for username and password
   bomify login
@@ -101,8 +105,8 @@ func runLogin(cmd *cobra.Command, host string, opts *loginOptions) error {
 		return err
 	}
 
-	if result.PlaintextFallback {
-		fmt.Fprintln(cmd.ErrOrStderr(), "WARNING! Your credentials are stored unencrypted in your config file.")
+	if result.PlaintextPath != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "WARNING! Your credentials are stored unencrypted in %s.\n", result.PlaintextPath)
 		fmt.Fprintln(cmd.ErrOrStderr(), "Configure a credential helper to remove this warning. See")
 		fmt.Fprintln(cmd.ErrOrStderr(), "https://docs.docker.com/engine/reference/commandline/login/#credentials-store")
 	}

@@ -3,19 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
-)
-
-const (
-	// defaultDataDirEnv is the environment variable for specifying the default data directory for bomify.
-	defaultDataDirEnv = "BOMIFY_DATA_DIR"
-	// defaultDataDirName is the name of the default data directory for bomify.
-	defaultDataDirName = ".bomify"
 )
 
 const rootShort = "bomify builds packages from CycloneDX SBOMs"
@@ -43,7 +36,7 @@ type rootOptions struct {
 
 // NewRootCmd builds the bomify root command and wires up its subcommands.
 func NewRootCmd() (*cobra.Command, error) {
-	defaultDataDir, err := defaultDataDir()
+	defaultDataDir, err := layout.DefaultDataDir()
 	if err != nil {
 		return nil, fmt.Errorf("determine default data dir: %w", err)
 	}
@@ -56,13 +49,19 @@ func NewRootCmd() (*cobra.Command, error) {
 		Example:       rootExample,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			logger := logging.New(rootOpts.verbose)
 			cmd.SetContext(logging.WithContext(cmd.Context(), logger))
 
 			if dataDir == "" {
 				dataDir = defaultDataDir
 			}
+			// internal/auth and plugins (through pkg/auth) find
+			// conf/auth.json from this.
+			if err := os.Setenv(layout.DataDirEnv, dataDir); err != nil {
+				return fmt.Errorf("set %s: %w", layout.DataDirEnv, err)
+			}
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if rootOpts.docsDir != "" {
@@ -103,18 +102,4 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd, nil
-}
-
-// defaultDataDir returns the default data directory for bomify, which is ~/.bomify.
-// BOMIFY_DATA_DIR can be used to override this default.
-func defaultDataDir() (string, error) {
-	if envDir := os.Getenv(defaultDataDirEnv); envDir != "" {
-		return envDir, nil
-	}
-
-	dir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("get user home dir: %w", err)
-	}
-	return filepath.Join(dir, defaultDataDirName), nil
 }

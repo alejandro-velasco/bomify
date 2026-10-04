@@ -8,6 +8,10 @@ Login authenticates against an OCI registry (default: docker.io) and
 stores the credentials for later build/distribute/pull/push
 operations to reuse.
 
+Credentials are stored through <data-dir>/conf/auth.json, in the OS
+credential store when one is available. Registries with nothing stored
+there fall back to docker login's credentials.
+
 ```
 bomify login [server] [flags]
 ```
