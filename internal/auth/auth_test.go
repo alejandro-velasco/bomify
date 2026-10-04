@@ -2,11 +2,16 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alejandro-velasco/bomify/internal/layout"
 
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
@@ -241,5 +246,60 @@ func TestLoginFallsBackToPlaintextWhenNoNativeHelperAvailable(t *testing.T) {
 	}
 	if got.Username != "alice" || got.Password != "s3cret" {
 		t.Errorf("stored credential = %+v, want Username=alice Password=s3cret", got)
+	}
+}
+
+// writePlaintextConfig writes a Docker-format config at path holding
+// username/password for host in plaintext, so the real store reads it
+// without touching any native credential helper.
+func writePlaintextConfig(t *testing.T, path, host, username, password string) {
+	t.Helper()
+
+	encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	content := fmt.Sprintf(`{"auths":{%q:{"auth":%q}}}`, host, encoded)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func TestStorePrefersAuthConfigAndFallsBackToDocker(t *testing.T) {
+	dataDir, dockerDir := t.TempDir(), t.TempDir()
+	t.Setenv(layout.DataDirEnv, dataDir)
+	t.Setenv("DOCKER_CONFIG", dockerDir)
+
+	ctx := context.Background()
+	writePlaintextConfig(t, filepath.Join(dockerDir, "config.json"), "example.com", "docker-user", "docker-pass")
+
+	cred, err := Lookup(ctx, "example.com")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if cred.Username != "docker-user" {
+		t.Errorf("Lookup() with no auth.json = %+v, want docker's credential", cred)
+	}
+
+	writePlaintextConfig(t, layout.AuthConfig(dataDir), "example.com", "bomify-user", "bomify-pass")
+
+	cred, err = Lookup(ctx, "example.com")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if cred.Username != "bomify-user" {
+		t.Errorf("Lookup() = %+v, want auth.json's credential", cred)
+	}
+
+	if err := Logout(ctx, "example.com"); err != nil {
+		t.Fatalf("Logout() error = %v", err)
+	}
+
+	cred, err = Lookup(ctx, "example.com")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if cred.Username != "docker-user" {
+		t.Errorf("Lookup() after Logout = %+v, want docker's credential, left in place", cred)
 	}
 }

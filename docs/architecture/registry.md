@@ -49,8 +49,15 @@ verifies and restores exactly as `pull` does.
 
 [`internal/auth`](https://github.com/alejandro-velasco/bomify/tree/main/internal/auth) is the one source of registry
 credentials, for `login`/`logout`, `push`/`pull`, and plugins through
-[`pkg/auth`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/auth). It uses Docker's own `~/.docker/config.json` and
-native credential store, so `docker login` and `bomify login` are
-interchangeable. `Login` verifies a credential before storing it, and
-falls back to plaintext (with a warning) only when no credential helper
-exists, as `docker login` does.
+[`pkg/auth`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/auth). `login`/`logout` write only
+`<dataDir>/conf/auth.json`, a Docker-format config backed by the native
+credential store as Docker's is. Reads try it first, then Docker's own
+`config.json`, so an existing `docker login` still works and `bomify
+logout` never removes it. Native helpers key secrets by host alone, so
+both tools share one secret for a host logged into with both.
+
+`Login` verifies a credential before storing it, and falls back to
+plaintext in `auth.json` (with a warning) only when no credential helper
+exists, as `docker login` does. bomify exports the data directory in use
+as `BOMIFY_DATA_DIR` to the plugins it runs, so `pkg/auth` finds the
+same `auth.json` under `--data-dir`.

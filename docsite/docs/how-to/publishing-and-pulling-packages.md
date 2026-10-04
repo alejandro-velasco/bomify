@@ -24,8 +24,10 @@ bomify login registry.example.com
 echo "$REGISTRY_TOKEN" | bomify login registry.example.com -u myuser --password-stdin   # CI
 ```
 
-Credentials are checked, then stored where `docker login` stores them,
-so existing `docker login` sessions work too.
+Credentials are checked, then stored through bomify's own
+`~/.bomify/conf/auth.json` (in the OS credential store when there is
+one). Registries you haven't logged into with bomify fall back to your
+`docker login` credentials.
 
 !!! note "TLS only"
     bomify only uses HTTPS. Trust a self-signed certificate in the OS

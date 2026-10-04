@@ -14,8 +14,27 @@ package layout
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"os"
 	"path/filepath"
 )
+
+// DataDirEnv overrides DefaultDataDir. bomify sets it to the data
+// directory in use, so the plugins it runs resolve the same one.
+const DataDirEnv = "BOMIFY_DATA_DIR"
+
+// DefaultDataDir returns $BOMIFY_DATA_DIR, or "~/.bomify" if it's unset.
+func DefaultDataDir() (string, error) {
+	if dir := os.Getenv(DataDirEnv); dir != "" {
+		return dir, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get user home dir: %w", err)
+	}
+	return filepath.Join(home, ".bomify"), nil
+}
 
 // PurlHash returns the hex-encoded SHA-256 of purl: the key every
 // per-component file in the data directory is named by.
@@ -103,6 +122,10 @@ func DistributionConfig(dataDir string) string { return conf(dataDir, "distribut
 
 // TrustConfig returns "<dataDir>/conf/trust.json".
 func TrustConfig(dataDir string) string { return conf(dataDir, "trust.json") }
+
+// AuthConfig returns "<dataDir>/conf/auth.json", the registry
+// credential config (see internal/auth).
+func AuthConfig(dataDir string) string { return conf(dataDir, "auth.json") }
 
 // ScanConfig returns "<dataDir>/conf/scan.json".
 func ScanConfig(dataDir string) string { return conf(dataDir, "scan.json") }

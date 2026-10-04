@@ -101,13 +101,13 @@ func newRepository(ref string) (*remote.Repository, error) {
 	return repo, nil
 }
 
-// resolvedDataDir mirrors root.go's PersistentPreRun default, which
+// resolvedDataDir mirrors root.go's PersistentPreRunE default, which
 // completion invocations skip (cobra's __complete runs without it).
 func resolvedDataDir(cmd *cobra.Command) string {
 	if dir, err := cmd.Flags().GetString("data-dir"); err == nil && dir != "" {
 		return dir
 	}
-	if dir, err := defaultDataDir(); err == nil {
+	if dir, err := layout.DefaultDataDir(); err == nil {
 		return dir
 	}
 	return ""
