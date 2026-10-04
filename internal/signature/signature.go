@@ -17,14 +17,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
-	"oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
@@ -34,14 +35,6 @@ import (
 // AnnotationPlugin is the referrer manifest annotation naming the kind of
 // signing plugin that produced its envelope, purely informational.
 const AnnotationPlugin = "land.bomify.signature.plugin"
-
-// maxEnvelopeSize bounds how large an envelope VerifySignature or
-// VerifyAttestation will fetch from a
-// referrer. Envelopes are published by whoever could push to the
-// repository — not necessarily whoever bomify trusts — so this keeps a
-// hostile referrer from making bomify download something arbitrarily
-// large before a plugin ever looks at it.
-const maxEnvelopeSize = 4 << 20
 
 // Plugin is a signing plugin and the options to pass it.
 type Plugin struct {
@@ -142,25 +135,12 @@ func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Des
 		return ocispec.Descriptor{}, fmt.Errorf("push signature envelope: %w", err)
 	}
 
-	merged := map[string]string{}
-	for k, v := range result.Annotations {
-		merged[k] = v
-	}
-	for k, v := range annotations {
-		merged[k] = v
-	}
+	merged := map[string]string{ocispec.AnnotationCreated: time.Now().UTC().Format(time.RFC3339)}
+	maps.Copy(merged, result.Annotations)
+	maps.Copy(merged, annotations)
 	merged[AnnotationPlugin] = p.Kind
 
-	subject = ocispec.Descriptor{MediaType: subject.MediaType, Digest: subject.Digest, Size: subject.Size}
-	desc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, result.ArtifactType, oras.PackManifestOptions{
-		Subject:             &subject,
-		Layers:              []ocispec.Descriptor{envelopeDesc},
-		ManifestAnnotations: merged,
-	})
-	if err != nil {
-		return ocispec.Descriptor{}, fmt.Errorf("push signature referrer: %w", err)
-	}
-	return desc, nil
+	return transfer.PushReferrer(ctx, target, subject, result.ArtifactType, []ocispec.Descriptor{envelopeDesc}, merged, "signature")
 }
 
 // NewVerifier returns a transfer.Verifier enforcing policy: for each
@@ -205,19 +185,14 @@ func VerifySignature(ctx context.Context, target oras.ReadOnlyTarget, ref string
 		return "", err
 	}
 
-	graph, ok := target.(content.ReadOnlyGraphStorage)
-	if !ok {
-		return "", fmt.Errorf("cannot list signatures: %T does not support referrers", target)
-	}
-
 	supported, err := supportedTypes(path, logger)
 	if err != nil {
 		return "", err
 	}
 
-	referrers, err := registry.Referrers(ctx, graph, manifest, "")
+	referrers, err := transfer.Referrers(ctx, target, manifest, "")
 	if err != nil {
-		return "", fmt.Errorf("list signatures of %s: %w", manifest.Digest, err)
+		return "", err
 	}
 
 	var candidates []ocispec.Descriptor
@@ -244,7 +219,7 @@ func VerifySignature(ctx context.Context, target oras.ReadOnlyTarget, ref string
 
 	var failures []error
 	for _, candidate := range candidates {
-		signer, err := verifyReferrer(ctx, graph, candidate, path, payloadFile, ref, p.Options, logger)
+		signer, err := verifyReferrer(ctx, target, candidate, path, payloadFile, ref, p.Options, logger)
 		if err == nil {
 			return signer, nil
 		}
@@ -274,25 +249,7 @@ func verifyReferrer(ctx context.Context, store content.ReadOnlyStorage, referrer
 // a new temp file, which the caller must remove, returning its path and
 // media type.
 func fetchEnvelope(ctx context.Context, store content.ReadOnlyStorage, referrer ocispec.Descriptor) (string, string, error) {
-	data, err := content.FetchAll(ctx, store, referrer)
-	if err != nil {
-		return "", "", fmt.Errorf("fetch referrer: %w", err)
-	}
-
-	var m ocispec.Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return "", "", fmt.Errorf("parse referrer: %w", err)
-	}
-	if len(m.Layers) != 1 {
-		return "", "", fmt.Errorf("referrer has %d layers, want exactly 1 (the envelope)", len(m.Layers))
-	}
-
-	envelopeDesc := m.Layers[0]
-	if envelopeDesc.Size > maxEnvelopeSize {
-		return "", "", fmt.Errorf("envelope is %d bytes, larger than the %d allowed", envelopeDesc.Size, maxEnvelopeSize)
-	}
-
-	envelope, err := content.FetchAll(ctx, store, envelopeDesc)
+	envelopeDesc, envelope, err := transfer.FetchAttachment(ctx, store, referrer, "")
 	if err != nil {
 		return "", "", fmt.Errorf("fetch envelope: %w", err)
 	}
