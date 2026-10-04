@@ -24,6 +24,8 @@ are done by external `bomify-plugin-<kind>` binaries.
 - [Security scanning](security-scanning.md): scans, gating,
   VEX, scanning on pull, and reports and VEX in a registry.
 - [Signing and verification](signing.md).
+- [Trust model](trust-model.md): what verification, scan gates, and
+  published VEX guarantee, and what they don't.
 - [Build provenance](provenance.md): SLSA provenance, recorded by `build`
   and attached as an in-toto attestation.
 - [Plugin installation](plugin-installation.md), and how

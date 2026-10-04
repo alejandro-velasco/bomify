@@ -223,3 +223,6 @@ Trusted documents apply oldest first, then the rule's stored VEX
 (`security.CombineVEX`), so the consumer's own statements win.
 They're used by that gate only and never stored. Files, stored copies,
 and pulled documents all load through `security.LoadVEXDocuments`.
+
+What scan gates and publisher VEX guarantee, and what they don't, is in
+[Trust model](trust-model.md).
