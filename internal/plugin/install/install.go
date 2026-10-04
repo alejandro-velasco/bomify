@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
@@ -107,24 +106,7 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 		b, ok, err := plugin.ParseBinary(cdx.Component{PackageURL: purl})
 		return err == nil && ok && b.Matches(goos, goarch)
 	}
-	// Checked on the SBOM alone, before any binary is downloaded.
-	checkPackage := func(_ context.Context, _ oras.ReadOnlyTarget, _ string, _ ocispec.Descriptor, sbomData []byte) error {
-		bom, err := sbom.LoadBytes(sbomData)
-		if err != nil {
-			return fmt.Errorf("parse package sbom: %w", err)
-		}
-		candidates, err := selectBinaries(bom, goos, goarch)
-		if err != nil {
-			return err
-		}
-		for _, c := range candidates {
-			if err := checkBinaryContracts(c); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	result, err := pull.PullLayers(ctx, target, ref, staging, transfer.Options{Concurrency: opts.Concurrency, Progress: opts.Progress, Verify: opts.Verify, Scan: checkPackage}, keep)
+	result, err := pull.PullLayers(ctx, target, ref, staging, transfer.Options{Concurrency: opts.Concurrency, Progress: opts.Progress, Verify: opts.Verify}, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +127,9 @@ func Install(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir strin
 	}
 	var ready []staged
 	for _, c := range candidates {
+		if err := checkBinaryContracts(c); err != nil {
+			return nil, err
+		}
 		src := filepath.Join(layout.ComponentLayer(staging, c.component.PackageURL), c.binary.FileName())
 		sum, err := verifyBinary(src, c.component, opts.RequireChecksum)
 		if err != nil {

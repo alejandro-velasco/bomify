@@ -61,7 +61,7 @@ func (f *transferFlags) printPinned(cmd *cobra.Command, ref, digest string) {
 }
 
 // restoreFlags are the flags pull and load share: transferFlags, plus
-// verifying and scanning each package before any of it is restored.
+// verifying and scanning each package before its tag is recorded.
 type restoreFlags struct {
 	transferFlags
 	verify verifyFlags

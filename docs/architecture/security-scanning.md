@@ -12,11 +12,10 @@
 3. Asks each once for `security supported-components`: the purl types
    it scans, each by purl or from the component's files
    (`pluginlib.ScanMode`). It skips any component whose type isn't
-   listed, or that has no purl type at all, and one of a type scanned
-   from files when there are no pulled files to pass
-   (`security.ScanOptions.ContentDir`): `security scan` passes the data
-   directory's layers, and a scan on pull has none yet. It returns the
-   skipped ones with why (`security.Skipped`; see [Coverage](#coverage)).
+   listed, or that has no purl type at all. A type scanned from files is
+   given the component's pulled layer (`security.ScanOptions.ContentDir`,
+   the data directory's layers). It returns the skipped ones with why
+   (`security.Skipped`; see [Coverage](#coverage)).
    Duplicate purls are scanned once, and aren't counted as skipped.
 4. Calls `security scan --purl <purl>` per component, adding `--input
    <layer dir>` for a type scanned from files, up to `--concurrency` at a
@@ -120,8 +119,8 @@ VEX never changes a report; it only decides what fails.
 
 ## Scanning on pull
 
-`bomify pull`/`load` can scan and gate a package before writing any of
-it, the one thing a separate `security scan` after the pull can't do.
+`bomify pull`/`load` can scan and gate a package before tagging it, the
+one thing a separate `security scan` after the pull can't do.
 They take `--scan <scanners>`, `--fail-on`, and `--skip-scan`
 (`scanFlags`);
 `--ignore` and `--vex` stay on `security scan`, and pulls rely on a
@@ -138,12 +137,16 @@ judged by the reports its publisher attached. For the same reason, a
 rule's `--on pull` requires `--fail-on`.
 
 The hook runs as `transfer.Options.Scan`: `pull.PullLayers` hands it the
-SBOM, along with the target and package manifest, after verifying the
-package and before writing anything, so a failure leaves nothing
-behind. Its gate also honors VEX the package's publisher attached, when
-it verifies (see [VEX in a registry](#vex-in-a-registry)). The fresh reports are written after the
-package's own, replacing them. Scanning may need network access, which
-is why nothing scans on pull unless asked.
+SBOM, along with the target and package manifest, once the package's
+component layers are written and before its reports are restored, so a
+type scanned from files is scanned from them (`ContentDir` is the data
+directory). A refused package fails the pull before its tags are
+recorded; what was written stays, untagged, for `bomify package prune`
+to remove. Its gate also honors VEX the package's publisher attached,
+when it verifies (see [VEX in a registry](#vex-in-a-registry)). The
+fresh reports are written after the package's own, replacing them.
+Scanning may need network access, which is why nothing scans on pull
+unless asked.
 
 ![Scanning on pull](../diagrams/scanning.svg)
 

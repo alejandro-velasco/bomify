@@ -72,16 +72,13 @@ func TestLoadScanGate(t *testing.T) {
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
 
-	// A failing gate writes nothing — no SBOM, no tag.
+	// A failing gate records no tag.
 	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high")
 	if !isGateError(err) {
 		t.Fatalf("load --fail-on high: error = %v, want a gate failure", err)
 	}
 	if repos, _ := build.ReadRepositories(destDir); len(repos) != 0 {
 		t.Errorf("tags recorded despite a failing gate: %v", repos)
-	}
-	if _, err := os.Stat(layout.Manifests(destDir)); !os.IsNotExist(err) {
-		t.Errorf("manifests written despite a failing gate: err = %v", err)
 	}
 
 	// A passing gate loads it, keeping the fresh report.
@@ -210,19 +207,36 @@ func TestLoadScanSeveralScanners(t *testing.T) {
 	}
 }
 
-// TestLoadScanSkipsFileTypes loads a package whose one component its
-// scanner only scans from pulled files: a scan on load runs before any
-// are written, so it's skipped, and --fail-on unscanned refuses it.
-func TestLoadScanSkipsFileTypes(t *testing.T) {
+// TestLoadScansFileTypes loads a package whose one component its scanner
+// only scans from its files: the scan on load scans it from its written
+// layer, and a finding there refuses the package, leaving it untagged.
+func TestLoadScansFileTypes(t *testing.T) {
 	archive := saveHookPackage(t)
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl","generic":"files"},"scans":["binary"]}`)
+	inputs := filepath.Join(t.TempDir(), "inputs")
+	t.Setenv("FAKESECURITY_INPUT_LOG", inputs)
 
+	// Passes: scanned from the layer it just pulled, and its report kept.
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "critical,unscanned"); err != nil {
+		t.Fatalf("load: %v, want it scanned from its files and loaded", err)
+	}
+	log, _ := os.ReadFile(inputs)
+	if want := hookComponent.PackageURL + "\t" + layout.ComponentLayer(destDir, hookComponent.PackageURL); strings.TrimSpace(string(log)) != want {
+		t.Errorf("scanned with %q, want %q", strings.TrimSpace(string(log)), want)
+	}
+	if stored, err := security.ReadReports(destDir, layout.PurlHash(hookComponent.PackageURL)); err != nil || len(stored) != 1 {
+		t.Errorf("reports = %+v, %v; want the fresh one", stored, err)
+	}
 
-	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "unscanned")
-	var gateErr *security.GateError
-	if !errors.As(err, &gateErr) || len(gateErr.Unscanned) != 1 || !strings.Contains(gateErr.Unscanned[0].Reason, "pulled files") {
-		t.Fatalf("load: %v, want the component unscanned for want of its files", err)
+	// Refused by what's in its files: the package isn't tagged.
+	refusedDir := t.TempDir()
+	usePlugin(t, refusedDir, "grype")
+	if _, err := runRootCmd(t, refusedDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high"); !isGateError(err) {
+		t.Fatalf("load --fail-on high: %v, want a gate failure", err)
+	}
+	if repos, _ := build.ReadRepositories(refusedDir); len(repos) != 0 {
+		t.Errorf("tags recorded despite a failing gate: %v", repos)
 	}
 }

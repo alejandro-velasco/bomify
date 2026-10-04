@@ -43,9 +43,8 @@ it and when calling it:
 - **Installing**: each binary's component records the versions it
   speaks as the `land.bomify.plugin.contracts` property, e.g.
   `{"component":1}`, which `hack/pluginpackages` gets from the plugin's
-  `contract` subcommand at release. `Install` checks it on the SBOM
-  alone (the pull's `Scan` hook), before any binary is downloaded, with
-  `plugin.CheckCompatible`: every contract bomify speaks that the binary
+  `contract` subcommand at release. `Install` checks it once the binary
+  is staged, before its SHA-256, with `plugin.CheckCompatible`: every contract bomify speaks that the binary
   records must be at bomify's version, since bomify can't yet tell which
   one it will be called through. A binary recording none predates
   contract versions and is refused.

@@ -31,8 +31,8 @@ As for the [component contract](https://github.com/alejandro-velasco/bomify/blob
 1. Resolves `<tag>` to a local package and walks its SBOM.
 2. Calls `security supported-components` once, and skips every component
    whose purl type isn't listed. A type the plugin scans from files is
-   also skipped when bomify doesn't have the component's pulled files
-   (see [Scan modes](#scan-modes)).
+   scanned once bomify has the component's pulled files (see
+   [Scan modes](#scan-modes)).
 3. Calls `security scan --purl <purl>` once per remaining component, adding
    `--input <dir>` for a type scanned from files, up to `--concurrency` at
    a time.
@@ -124,9 +124,9 @@ Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bom
   lookup in an ecosystem, or, for an image, pulling it itself. bomify
   never passes `--input`.
 - **`files`**: the plugin scans the component only from its pulled
-  files, which bomify passes as `--input`. bomify skips the component,
-  counting it as not scanned, when it doesn't have them: a scan on pull
-  or load runs before anything is written.
+  files, which bomify passes as `--input` (a scan on pull or load runs
+  once they're downloaded). bomify skips a component whose files it
+  doesn't have, counting it as not scanned.
 
 A mode bomify doesn't know is skipped the same way, so a newer plugin's
 mode never fails an older bomify's scan.

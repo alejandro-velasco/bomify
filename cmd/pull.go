@@ -27,10 +27,11 @@ the same plugin and options trust, as does a trust rule created with
 the rest of it. --insecure-skip-verify bypasses a trust rule.
 
 --scan <scanners> --fail-on <conditions> scans the package fresh with
-each scanner (comma-separated), after verification and before anything
-is written, and refuses it if any condition is met: anything at or
-above a severity, and/or "unscanned", a component no scanner scanned.
-The two go together. A matching "bomify
+each scanner (comma-separated), once it's downloaded and before it's
+tagged, and refuses it if any condition is met: anything at or above a
+severity, and/or "unscanned", a component no scanner scanned. A refused
+package stays untagged, for "bomify package prune" to remove. The two
+go together. A matching "bomify
 security policy" rule with --on pull does the same without flags, and
 its stored VEX exempts what it covers; flags override the rule, and
 --skip-scan ignores it. VEX the publisher attached (see "bomify push
