@@ -1,6 +1,6 @@
 ---
 name: bomify-plugins
-description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
+description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom schema/generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
 ---
 
 # bomify plugins
@@ -13,7 +13,7 @@ comments or rely on memory of it, since the contracts keep growing.
 | Contract | Subcommands | Spec |
 | --- | --- | --- |
 | Component | `component pull/push/remote` | [`contracts/component/v1`](../../../plugins/contracts/component/v1/CONTRACT.md) |
-| SBOM generation | `sbom generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
+| SBOM generation | `sbom schema/generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
 | Security scanning | `security scan/supported-components` | [`contracts/security/v1`](../../../plugins/contracts/security/v1/CONTRACT.md) |
 | Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`contracts/signing/v1`](../../../plugins/contracts/signing/v1/CONTRACT.md) |
 
@@ -22,13 +22,13 @@ Also relevant:
 - [`pkg/plugin`](../../../pkg/plugin): the Go library for plugins. It has
   one type per JSON result plus `Print`, and one interface and command
   builder per contract (`ComponentCommand`, `SecurityCommand`,
-  `SignatureCommand`, plus `NewRootCommand`/`Run`) that implement the
+  `SignatureCommand`, `SBOMCommand`, plus `NewRootCommand`/`Run`) that implement the
   flags, validation, logging, and output. Contract changes to flags or
   output belong in these builders, not in each plugin. Check the package
-  for its current API. SBOM generation has no equivalent, by design.
+  for its current API.
 - `plugins/contracts/<contract>/v<N>/*.schema.json`: one JSON Schema per
-  result shape bomify parses, next to that version's spec (SBOM
-  generation has none). Glob for the current set.
+  result shape bomify parses, next to that version's spec. Glob for the
+  current set.
   `plugins/contracts/contract-result.schema.json` is the `contract`
   command's, shared by all.
 - [`plugins/README.md`](../../../plugins/README.md): the first-party

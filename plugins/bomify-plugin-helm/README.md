@@ -31,19 +31,20 @@ SBOM can go straight into `bomify build`.
 
 | Flag | Required | Meaning |
 | --- | --- | --- |
-| `--chart` | unless in the manifest | Chart name, e.g. `postgresql`. |
-| `--repo` | unless in the manifest | Chart repository: `https://...` or `oci://...`. |
+| `--chart` | unless in `--config` | Chart name, e.g. `postgresql`. |
+| `--repo` | unless in `--config` | Chart repository: `https://...` or `oci://...`. |
 | `--version` | no | Chart version. Defaults to the latest. |
 | `--values`, `-f` | no | Values file to merge. Repeatable. |
 | `--namespace` | no | `.Release.Namespace`. Default `default`. |
 | `--release-name` | no | `.Release.Name`. Default `release-name`, as in `helm template`. |
 | `--kube-version` | no | Kubernetes version to render for and to check the chart's `kubeVersion` against, e.g. `1.31.0`. Defaults to the Helm SDK's built-in version; set it to what you deploy to. |
 | `--output`, `-o` | no | File to write the SBOM to. Default stdout. |
-| `--manifest` | no | YAML file of default flag values (see below). Default `bomify-helm-sbom.yaml`, used only if present. |
+| `--config` | no | Options file of default flag values, YAML or JSON (see below). Default `bomify-helm-sbom.yaml`, used only if present. `--manifest` is an older name for it. |
 
-### Manifest file
+### Options file
 
-Any flag can be set in a YAML manifest instead, keyed by the flag name:
+Any flag but `--output` can be set in an options file instead, keyed by
+the flag name. `bomify-plugin-helm sbom schema` prints its JSON Schema:
 
 ```yaml
 # bomify-helm-sbom.yaml
@@ -52,17 +53,20 @@ repo: oci://registry-1.docker.io/bitnamicharts
 version: 18.11.6
 values:
   - values.yaml
-output: postgresql.cdx.json
 ```
 
 With that file present, `bomify sbom generate helm` needs no flags.
 
 - The default `bomify-helm-sbom.yaml` may be absent; an explicit
-  `--manifest` path must exist.
-- Command-line flags override the manifest. An explicit `--values`
-  replaces the manifest's list rather than adding to it.
+  `--config` path must exist.
+- Command-line flags override the file. An explicit `--values` replaces
+  the file's list rather than adding to it.
+- Unknown keys are errors.
 - `extraComponents` (a list of CycloneDX components) is appended to the
-  SBOM as-is. It has no flag and isn't validated.
+  SBOM as-is, with a missing `bom-ref` set to the component's `purl`. It
+  has no flag. Like the rest of the SBOM, each needs a `name` and a
+  `purl` (see the
+  [SBOM generation contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md#output)).
 
 ### Examples
 

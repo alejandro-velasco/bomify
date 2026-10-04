@@ -8,7 +8,7 @@ icon: lucide/anchor
 with no cluster) and reports every image it references, plus the chart,
 as a CycloneDX SBOM. Install it with `bomify plugin install helm`. Its
 [README](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md)
-lists every flag and the manifest file format.
+lists every flag and the options file format.
 
 ## 1. Generate an SBOM
 

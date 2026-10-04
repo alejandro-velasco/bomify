@@ -64,6 +64,13 @@ straight through, and propagates the exit code. That's all: no JSON
 result, log file, or caching, so the plugin works exactly the same run
 directly.
 
+Unattended, a plugin takes its options as a `--config` file valid
+against the JSON Schema its `sbom schema` prints. Its SBOM follows
+output rules strict enough to merge several plugins' SBOMs into one:
+every component identified by its purl, nothing nested, no timestamp.
+`pkg/plugin`'s `SBOMCommand` implements both sides for a Go plugin, and
+its `ValidateGenerated` checks the rules.
+
 ## Concurrent, idempotent pulls
 
 `plugin.Pull` is safe to call concurrently, even across processes, for

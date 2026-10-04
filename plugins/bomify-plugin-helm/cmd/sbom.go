@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
-	"io"
+	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
-	"os"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -13,37 +13,19 @@ import (
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
 )
 
-// sbomCmd groups the SBOM generation plugin contract's "generate" subcommand
-// (see plugins/contracts/sbom/v1/CONTRACT.md), kept independent of this
-// binary's own component plugin subcommands under componentCmd.
+// sbomCmd implements the SBOM generation plugin contract (see
+// plugins/contracts/sbom/v1/CONTRACT.md), kept independent of this
+// binary's component contract commands.
 func sbomCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   plugin.SBOMSubcommand,
-		Short: "SBOM generation subcommands — see plugins/contracts/sbom/v1/CONTRACT.md",
-	}
-
-	cmd.AddCommand(newSBOMGenerateCmd())
-
-	return cmd
+	return plugin.SBOMCommand(sbomGenerator{}, plugin.SBOMHelp{
+		Generate:      "Render the chart's templates and report the container images it references",
+		Long:          generateLong,
+		DefaultConfig: defaultConfigPath,
+		Flags:         generateFlags,
+	})
 }
 
-func newSBOMGenerateCmd() *cobra.Command {
-	var (
-		chartName    string
-		repo         string
-		version      string
-		valuesFiles  []string
-		namespace    string
-		releaseName  string
-		kubeVersion  string
-		outputPath   string
-		manifestPath string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "generate",
-		Short: "Render the chart's templates and report the container images it references",
-		Long: `Generate fetches the given chart and renders its templates locally
+const generateLong = `Generate fetches the given chart and renders its templates locally
 via the Helm SDK (the same code path as "helm template"), then walks
 the rendered manifests for Deployment/StatefulSet/DaemonSet/Job/
 CronJob/Pod resources, collecting every container image their pod
@@ -63,87 +45,68 @@ to, so templates render as they would there and a chart whose
 "kubeVersion" constraint excludes that version fails with an
 "incompatible with Kubernetes" error instead of rendering anyway.
 
-Every flag above can instead be set in a YAML manifest — --manifest's
+Every flag can instead be set in an options file, JSON or YAML, with
+the same keys ("sbom schema" prints its JSON Schema). --config's
 default, "bomify-helm-sbom.yaml", is read if present in the working
-directory (silently skipped if it isn't); a --manifest named explicitly
-must exist. A flag given explicitly on the command line always takes
-precedence over the same key in the manifest. The manifest can also
-have an "extraComponents" list of CycloneDX components, appended to the
-generated SBOM as-is.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+directory; a --config named explicitly must exist. A flag given
+explicitly always takes precedence over the same key in the file. The
+file can also have an "extraComponents" list of CycloneDX components,
+appended to the SBOM as-is.`
 
-			m, err := loadManifest(manifestPath, cmd.Flags().Changed("manifest"))
-			if err != nil {
-				return err
-			}
+// sbomGenerator implements plugin.SBOMPlugin over internal/chart.
+type sbomGenerator struct{}
 
-			opts := chart.GenerateOptions{
-				Name:          resolveString(cmd, "chart", chartName, m.Chart),
-				RepositoryURL: resolveString(cmd, "repo", repo, m.Repo),
-				Version:       resolveString(cmd, "version", version, m.Version),
-				ValuesFiles:   resolveValues(cmd, valuesFiles, m.Values),
-				Namespace:     resolveString(cmd, "namespace", namespace, m.Namespace),
-				ReleaseName:   resolveString(cmd, "release-name", releaseName, m.ReleaseName),
-				KubeVersion:   resolveString(cmd, "kube-version", kubeVersion, m.KubeVersion),
-			}
-			resolvedOutput := resolveString(cmd, "output", outputPath, m.Output)
+func (sbomGenerator) OptionsSchema() []byte { return optionsSchema }
 
-			if opts.Name == "" {
-				return fmt.Errorf(`required "chart" not set: pass --chart, or set it in %s`, manifestPath)
-			}
-			if opts.RepositoryURL == "" {
-				return fmt.Errorf(`required "repo" not set: pass --repo, or set it in %s`, manifestPath)
-			}
-
-			bom, err := chart.Generate(opts, logger)
-			if err != nil {
-				return err
-			}
-
-			if len(m.ExtraComponents) > 0 {
-				existing := []cdx.Component{}
-				if bom.Components != nil {
-					existing = *bom.Components
-				}
-				merged := appendExtraComponents(existing, m.ExtraComponents)
-				bom.Components = &merged
-			}
-
-			w := cmd.OutOrStdout()
-			if resolvedOutput != "" {
-				f, err := os.Create(resolvedOutput)
-				if err != nil {
-					return fmt.Errorf("create output file %s: %w", resolvedOutput, err)
-				}
-				defer f.Close()
-				w = f
-			}
-
-			return encodeBOM(w, bom)
-		},
+func (sbomGenerator) Generate(_ context.Context, raw json.RawMessage, logger *slog.Logger) (*cdx.BOM, error) {
+	var o options
+	if err := plugin.DecodeOptions(raw, &o); err != nil {
+		return nil, err
+	}
+	if o.Chart == "" {
+		return nil, errors.New(`required "chart" not set: pass --chart, or set it in --config`)
+	}
+	if o.Repo == "" {
+		return nil, errors.New(`required "repo" not set: pass --repo, or set it in --config`)
 	}
 
-	cmd.Flags().StringVar(&chartName, "chart", "", "chart name (required, unless set in the manifest)")
-	cmd.Flags().StringVar(&repo, "repo", "", "chart repository URL, classic HTTP(S) or oci:// (required, unless set in the manifest)")
-	cmd.Flags().StringVar(&version, "version", "", "chart version (defaults to the latest available)")
-	cmd.Flags().StringArrayVarP(&valuesFiles, "values", "f", nil, "values file to merge into the chart's defaults (repeatable)")
-	cmd.Flags().StringVar(&namespace, "namespace", "default", "namespace templates are rendered as if installed into")
-	cmd.Flags().StringVar(&releaseName, "release-name", "release-name", "release name templates are rendered as if installed under")
-	cmd.Flags().StringVar(&kubeVersion, "kube-version", "", "Kubernetes version to render templates and check Chart.yaml's kubeVersion constraint against, e.g. 1.31.0 (defaults to the Helm SDK's own built-in default)")
-	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "file to write the generated SBOM to (defaults to stdout)")
-	cmd.Flags().StringVar(&manifestPath, "manifest", defaultManifestPath, "YAML manifest of default flag values; flags always take precedence, and a manifest at the default path is optional")
+	bom, err := chart.Generate(chart.GenerateOptions{
+		Name:          o.Chart,
+		RepositoryURL: o.Repo,
+		Version:       o.Version,
+		ValuesFiles:   o.Values,
+		Namespace:     o.Namespace,
+		ReleaseName:   o.ReleaseName,
+		KubeVersion:   o.KubeVersion,
+	}, logger)
+	if err != nil {
+		return nil, err
+	}
 
-	return cmd
+	if len(o.ExtraComponents) > 0 {
+		components := append(componentsOf(bom), withBOMRefs(o.ExtraComponents)...)
+		bom.Components = &components
+	}
+	return bom, nil
 }
 
-// encodeBOM writes bom to w as pretty-printed CycloneDX JSON — the exact
-// output "sbom generate" must produce on success, per
-// plugins/contracts/sbom/v1/CONTRACT.md, whether w is stdout or an --output
-// file.
-func encodeBOM(w io.Writer, bom *cdx.BOM) error {
-	enc := cdx.NewBOMEncoder(w, cdx.BOMFileFormatJSON)
-	enc.SetEscapeHTML(false)
-	enc.SetPretty(true)
-	return enc.Encode(bom)
+// withBOMRefs returns components with each missing bom-ref set to its
+// purl, as the SBOM contract requires.
+func withBOMRefs(components []cdx.Component) []cdx.Component {
+	out := make([]cdx.Component, len(components))
+	for i, c := range components {
+		if c.BOMRef == "" {
+			c.BOMRef = c.PackageURL
+		}
+		out[i] = c
+	}
+	return out
+}
+
+// componentsOf dereferences bom's component list, nil when it has none.
+func componentsOf(bom *cdx.BOM) []cdx.Component {
+	if bom.Components == nil {
+		return nil
+	}
+	return *bom.Components
 }

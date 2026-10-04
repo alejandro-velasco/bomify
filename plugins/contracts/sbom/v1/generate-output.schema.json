@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/sbom/v1/generate-output.schema.json",
+  "title": "bomify plugin \"sbom generate\" output",
+  "description": "What a bomify-plugin-<kind> binary's \"sbom generate\" must print to stdout on success, per plugins/contracts/sbom/v1/CONTRACT.md, on top of CycloneDX's own schema (1.5 or later). Three of its rules can't be expressed here and are checked by pkg/plugin's ValidateGenerated instead: every bom-ref equals its component's purl, bom-refs are unique among components, and every dependencies ref and dependsOn names a bom-ref in the document.",
+  "type": "object",
+  "required": ["bomFormat", "specVersion", "metadata"],
+  "not": { "required": ["serialNumber"] },
+  "properties": {
+    "bomFormat": { "const": "CycloneDX" },
+    "specVersion": {
+      "type": "string",
+      "pattern": "^1\\.([5-9]|[1-9][0-9]+)$",
+      "description": "CycloneDX 1.5 or later."
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["component"],
+      "not": { "required": ["timestamp"] },
+      "properties": {
+        "component": {
+          "allOf": [{ "$ref": "#/definitions/component" }, { "required": ["version"] }],
+          "description": "What the SBOM was generated from, e.g. the chart."
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/component" },
+      "description": "Everything to package, all top-level."
+    }
+  },
+  "definitions": {
+    "component": {
+      "type": "object",
+      "required": ["name", "purl", "bom-ref"],
+      "not": { "required": ["components"] },
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "purl": { "type": "string", "pattern": "^pkg:" },
+        "bom-ref": { "type": "string", "pattern": "^pkg:", "description": "The component's purl." }
+      }
+    }
+  }
+}

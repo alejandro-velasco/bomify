@@ -5,12 +5,16 @@ A plugin reports the contract versions it speaks with
 [contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The spec for a `bomify-plugin-<kind>` binary's **SBOM generation**
-subcommand, `sbom generate`, which `bomify sbom generate <kind> [flags]`
-calls. It's independent of the
+subcommands, `sbom schema` and `sbom generate`. Here `<kind>` names a
+deployment medium (e.g. `helm`). It's independent of the
 [component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md),
 [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md),
 and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)
-contracts. Here `<kind>` names a deployment medium (e.g. `helm`, `oci`).
+contracts.
+
+A Go plugin gets all of this from
+[`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)'s
+`SBOMCommand`, which also checks its own output against the rules below.
 
 ## Naming and discovery
 
@@ -20,30 +24,60 @@ As for the [component contract](https://github.com/alejandro-velasco/bomify/blob
 
 ## What bomify does
 
-bomify finds the plugin and runs
+bomify calls a plugin two ways:
 
-```
-bomify-plugin-<kind> sbom generate [flags]
-```
+- **Unattended**, to combine several sources' SBOMs into one: it
+  validates the options against `sbom schema`, writes them to a JSON
+  file, and runs `sbom generate --config <file>` with stdin closed. It
+  reads the SBOM from stdout and checks it against the rules below.
+- **`bomify sbom generate <kind> [flags]`**: it runs `sbom generate`
+  with `flags` passed through unchanged, stdin/stdout/stderr wired to its
+  own, and the plugin's exit code as its own, so running the plugin
+  directly is exactly equivalent.
 
-with `flags` passed through unchanged, stdin/stdout/stderr wired to its
-own, and the plugin's exit code as its own. It parses nothing, adds no
-flags, and keeps no state, so running the plugin directly is exactly
-equivalent.
+bomify does no caching or concurrency control around a generation.
+Don't depend on the binary's other contracts, if it has any.
 
 ## Commands
 
-`sbom generate` is the only subcommand, and its flags are entirely up to
-the plugin (no `--purl`, `--log`, or `--check`). Document them in
-`--help`.
+### `sbom schema`
+
+No flags. Print the [JSON Schema](https://json-schema.org/) (2020-12) of
+the options object `sbom generate --config` takes, and exit `0`. It must
+always print the same thing. Reject unknown keys
+(`"additionalProperties": false`), so a typo fails before anything runs.
+
+### `sbom generate`
+
+| Flag | Meaning |
+| --- | --- |
+| `--config <file>` | The options, a JSON object valid against `sbom schema`. Relative paths in it are relative to the working directory. |
+
+Any other flags are the plugin's own, for running it directly; document
+them in `--help`. With `--config`, never read stdin or prompt.
 
 ## Output
 
-stdout, stderr, and the exit code are the plugin's to use as it likes,
-including prompts and progress. The one convention: **on success, print
-the SBOM as CycloneDX JSON to stdout**, so `bomify sbom generate <kind>
-... > out.cdx.json` works. There's no bomify-specific wrapper or schema;
-validate against [CycloneDX's own](https://cyclonedx.org/docs/).
+On success, print the SBOM to stdout as one CycloneDX JSON document,
+spec version 1.5 or later, and exit `0`. On failure, exit non-zero;
+stderr is free for logs and the error. Nothing else may go to stdout.
 
-bomify does no caching, concurrency control, or checks around a
-generation. Don't depend on the binary's other contracts, if it has any.
+The SBOM must follow these rules, which
+[`generate-output.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/generate-output.schema.json)
+also expresses, alongside
+[CycloneDX's own schema](https://cyclonedx.org/docs/):
+
+1. `metadata.component` describes what was generated from (e.g. the
+   chart), with a `name`, a `version`, and a `purl`.
+2. Every component, `metadata.component` included, has a `name` and a
+   `purl`, and its `bom-ref` is that purl. Everything to package is in
+   the top-level `components`, with unique `bom-ref`s. That includes
+   what `metadata.component` describes, if it's to be packaged too, so
+   the two share a `bom-ref`.
+3. No component has nested `components`: `bomify build` only packages
+   top-level ones.
+4. Every `dependencies` entry's `ref` and `dependsOn` names a `bom-ref`
+   in the document.
+5. No `serialNumber` or `metadata.timestamp`: the same options and the
+   same upstream content produce the same document, so a composed SBOM,
+   and the package built from it, only changes when its content does.

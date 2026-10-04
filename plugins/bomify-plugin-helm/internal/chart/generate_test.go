@@ -5,6 +5,8 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 func TestImageComponentTag(t *testing.T) {
@@ -95,6 +97,10 @@ func TestBuildBOMIncludesChartMetadataAndComponents(t *testing.T) {
 	}
 	if imageComp.Type != cdx.ComponentTypeContainer || imageComp.Name != "postgresql" || imageComp.BOMRef != imageComp.PackageURL {
 		t.Errorf("components[1] = %+v, want the discovered image component with BOMRef == PackageURL", imageComp)
+	}
+
+	if err := plugin.ValidateGenerated(bom); err != nil {
+		t.Errorf("buildBOM() breaks the SBOM contract: %v", err)
 	}
 }
 
