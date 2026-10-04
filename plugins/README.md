@@ -27,9 +27,14 @@ The first-party plugins. Each directory is a standalone
 ## Contract versions
 
 Each contract has a major version, in its spec's title (e.g. "Signing
-plugin contract v1"), bumped by any change that a plugin or bomify
-written for the previous version would break on. Every first-party
-plugin speaks version 1 of the contracts it implements.
+plugin contract v1"). Every first-party plugin speaks version 1 of the
+contracts it implements. Changes follow this policy:
+
+- **Minor:** adding an optional flag, command, or result field keeps
+  the version. Plugins and bomify written before it ignore it.
+- **Major:** removing or renaming anything, or changing what it means,
+  bumps the version. bomify refuses a plugin that doesn't speak the
+  version it needs (see below).
 
 Each version has its own folder, holding its spec and the JSON Schemas
 of its results:
