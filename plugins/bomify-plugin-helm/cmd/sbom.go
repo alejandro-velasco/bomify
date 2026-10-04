@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
@@ -83,30 +84,39 @@ func (sbomGenerator) Generate(_ context.Context, raw json.RawMessage, logger *sl
 		return nil, err
 	}
 
-	if len(o.ExtraComponents) > 0 {
-		components := append(componentsOf(bom), withBOMRefs(o.ExtraComponents)...)
-		bom.Components = &components
-	}
+	addExtraComponents(bom, o.ExtraComponents)
 	return bom, nil
 }
 
-// withBOMRefs returns components with each missing bom-ref set to its
-// purl, as the SBOM contract requires.
-func withBOMRefs(components []cdx.Component) []cdx.Component {
-	out := make([]cdx.Component, len(components))
-	for i, c := range components {
+// addExtraComponents appends extra to bom's components, each missing
+// bom-ref set to its purl as the SBOM contract requires, with the chart
+// depending on them as it does on its images.
+func addExtraComponents(bom *cdx.BOM, extra []cdx.Component) {
+	if len(extra) == 0 {
+		return
+	}
+	components := deref(bom.Components)
+	var refs []string
+	for _, c := range extra {
 		if c.BOMRef == "" {
 			c.BOMRef = c.PackageURL
 		}
-		out[i] = c
+		components = append(components, c)
+		refs = append(refs, c.BOMRef)
 	}
-	return out
+	bom.Components = &components
+
+	if bom.Dependencies == nil || len(*bom.Dependencies) == 0 {
+		return
+	}
+	chart := &(*bom.Dependencies)[0]
+	on := append(slices.Clone(deref(chart.Dependencies)), refs...)
+	chart.Dependencies = &on
 }
 
-// componentsOf dereferences bom's component list, nil when it has none.
-func componentsOf(bom *cdx.BOM) []cdx.Component {
-	if bom.Components == nil {
+func deref[T any](p *[]T) []T {
+	if p == nil {
 		return nil
 	}
-	return *bom.Components
+	return *p
 }

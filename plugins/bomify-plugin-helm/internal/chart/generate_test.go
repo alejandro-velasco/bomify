@@ -99,6 +99,13 @@ func TestBuildBOMIncludesChartMetadataAndComponents(t *testing.T) {
 		t.Errorf("components[1] = %+v, want the discovered image component with BOMRef == PackageURL", imageComp)
 	}
 
+	if bom.Dependencies == nil || len(*bom.Dependencies) != 1 {
+		t.Fatalf("buildBOM() Dependencies = %v, want the chart's", bom.Dependencies)
+	}
+	if dep := (*bom.Dependencies)[0]; dep.Ref != wantChartPurl || len(*dep.Dependencies) != 1 || (*dep.Dependencies)[0] != imageComp.BOMRef {
+		t.Errorf("dependencies[0] = %+v, want the chart depending on its image", dep)
+	}
+
 	if err := plugin.ValidateGenerated(bom); err != nil {
 		t.Errorf("buildBOM() breaks the SBOM contract: %v", err)
 	}

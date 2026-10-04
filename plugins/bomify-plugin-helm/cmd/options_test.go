@@ -122,12 +122,22 @@ func TestGenerateRequiresChartAndRepo(t *testing.T) {
 	}
 }
 
-func TestWithBOMRefs(t *testing.T) {
-	got := withBOMRefs([]cdx.Component{
+func TestAddExtraComponents(t *testing.T) {
+	const chart, image = "pkg:helm/web@1.0", "pkg:oci/web@1.0"
+	bom := cdx.NewBOM()
+	bom.Components = &[]cdx.Component{{Name: "web", PackageURL: chart, BOMRef: chart}, {Name: "web", PackageURL: image, BOMRef: image}}
+	bom.Dependencies = &[]cdx.Dependency{{Ref: chart, Dependencies: &[]string{image}}}
+
+	addExtraComponents(bom, []cdx.Component{
 		{Name: "lib", PackageURL: "pkg:generic/lib@1.0"},
 		{Name: "kept", PackageURL: "pkg:generic/kept@1.0", BOMRef: "pkg:generic/kept@1.0"},
 	})
-	if got[0].BOMRef != "pkg:generic/lib@1.0" || got[1].BOMRef != "pkg:generic/kept@1.0" {
-		t.Errorf("withBOMRefs = %+v, want each bom-ref its purl", got)
+
+	got := *bom.Components
+	if len(got) != 4 || got[2].BOMRef != "pkg:generic/lib@1.0" || got[3].BOMRef != "pkg:generic/kept@1.0" {
+		t.Errorf("components = %+v, want the extras appended, each bom-ref its purl", got)
+	}
+	if on := *(*bom.Dependencies)[0].Dependencies; !slices.Equal(on, []string{image, "pkg:generic/lib@1.0", "pkg:generic/kept@1.0"}) {
+		t.Errorf("chart depends on %v, want its image and the extras", on)
 	}
 }
