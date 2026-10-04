@@ -74,9 +74,8 @@ func resolvePlugin(component cdx.Component, log *slog.Logger) (kind, path string
 }
 
 // newRepository builds a remote.Repository for ref, authenticating with
-// whatever credentials `bomify login` (or `docker login` — they share a
-// store) has for its registry. A registry with no stored credentials is
-// accessed anonymously.
+// whatever credentials internal/auth has for its registry. A registry with
+// no stored credentials is accessed anonymously.
 func newRepository(ref string) (*remote.Repository, error) {
 	repo, err := remote.NewRepository(ref)
 	if err != nil {
