@@ -33,11 +33,8 @@ contracts it implements. Changes follow this policy:
 - **Minor:** adding an optional flag, command, or result field keeps
   the version. Plugins and bomify written before it ignore it.
 - **Major:** removing or renaming anything, or changing what it means,
-  bumps the version, except before 1.0. bomify refuses a plugin that
-  doesn't speak the version it needs (see below).
-- **Before bomify 1.0:** bomify supports only the current version of
-  each contract, and a major change may keep the version number, so
-  check a contract's history when upgrading bomify.
+  bumps the version. bomify refuses a plugin that doesn't speak the
+  version it needs (see below).
 
 Each version has its own folder, holding its spec and the JSON Schemas
 of its results:
