@@ -126,7 +126,8 @@ jobs:
         id: repo
         run: echo "registry=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/plugins" >> "$GITHUB_OUTPUT"
 
-      # bomify shares Docker's credential store (~/.docker/config.json).
+      # Writes ~/.bomify/conf/auth.json, which push-plugin-packages.sh
+      # copies into its throwaway data directory.
       - name: Log in to GHCR for bomify
         run: echo "${{ secrets.GITHUB_TOKEN }}" | go run . login ghcr.io -u "${{ github.actor }}" --password-stdin
 
