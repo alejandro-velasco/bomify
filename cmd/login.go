@@ -105,9 +105,8 @@ func runLogin(cmd *cobra.Command, host string, opts *loginOptions) error {
 		return err
 	}
 
-	if result.PlaintextFallback {
-		path, _ := auth.ConfigPath()
-		fmt.Fprintf(cmd.ErrOrStderr(), "WARNING! Your credentials are stored unencrypted in %s.\n", path)
+	if result.PlaintextPath != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "WARNING! Your credentials are stored unencrypted in %s.\n", result.PlaintextPath)
 		fmt.Fprintln(cmd.ErrOrStderr(), "Configure a credential helper to remove this warning. See")
 		fmt.Fprintln(cmd.ErrOrStderr(), "https://docs.docker.com/engine/reference/commandline/login/#credentials-store")
 	}

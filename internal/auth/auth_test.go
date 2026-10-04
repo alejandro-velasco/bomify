@@ -109,8 +109,8 @@ func TestLoginVerifiesThenStoresCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loginToRegistry() error = %v", err)
 	}
-	if result.PlaintextFallback {
-		t.Error("PlaintextFallback = true, want false (MemoryStore never rejects Put)")
+	if result.PlaintextPath != "" {
+		t.Errorf("PlaintextPath = %q, want empty (MemoryStore never rejects Put)", result.PlaintextPath)
 	}
 
 	got, err := store.Get(ctx, host)
@@ -212,7 +212,7 @@ func TestLoginFallsBackToPlaintextWhenNoNativeHelperAvailable(t *testing.T) {
 
 	originalStore, originalPlaintext := newStore, newPlaintextStore
 	newStore = func() (credentials.Store, error) { return blockingStore, nil }
-	newPlaintextStore = func() (credentials.Store, error) { return plaintextStore, nil }
+	newPlaintextStore = func() (*credentials.DynamicStore, error) { return plaintextStore, nil }
 	t.Cleanup(func() {
 		newStore = originalStore
 		newPlaintextStore = originalPlaintext
@@ -236,8 +236,8 @@ func TestLoginFallsBackToPlaintextWhenNoNativeHelperAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loginToRegistry() error = %v", err)
 	}
-	if !result.PlaintextFallback {
-		t.Error("PlaintextFallback = false, want true")
+	if result.PlaintextPath != configPath {
+		t.Errorf("PlaintextPath = %q, want %q", result.PlaintextPath, configPath)
 	}
 
 	got, err := plaintextStore.Get(ctx, host)
