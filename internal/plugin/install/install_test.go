@@ -309,18 +309,14 @@ func TestInstallChecksContractVersions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := publishPackage(t, []platformBinary{hostBinary("incompatible")}, packageOptions{contracts: tc.contracts})
-			recorder := &fetchRecorder{ReadOnlyTarget: store}
 			dataDir := t.TempDir()
 
-			_, err := Install(context.Background(), recorder, ref, dataDir, Options{RequireChecksum: true})
+			_, err := Install(context.Background(), store, ref, dataDir, Options{RequireChecksum: true})
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), `"bomify-plugin-fake"`) {
 				t.Fatalf("Install() error = %v, want one naming the plugin and containing %q", err, tc.wantErr)
 			}
 			if !errors.Is(err, plugin.ErrIncompatible) {
 				t.Errorf("Install() error = %v, want it to wrap plugin.ErrIncompatible", err)
-			}
-			if len(recorder.purls) != 0 {
-				t.Errorf("fetched layers for %v, want none", recorder.purls)
 			}
 			assertNothingInstalled(t, dataDir)
 		})

@@ -216,7 +216,7 @@ type scanFlags struct {
 }
 
 func (f *scanFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringSliceVar(&f.scanners, "scan", nil, "scan the package with these comma-separated `scanners` (e.g. grype) before anything is written, refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's")
+	cmd.Flags().StringSliceVar(&f.scanners, "scan", nil, "scan the package with these comma-separated `scanners` (e.g. grype) before it's tagged, refusing it if --fail-on is met; overrides a matching \"bomify security policy\" rule's")
 	f.registerThreshold(cmd, "skip-scan", "don't scan or gate at all, even if a \"bomify security policy\" rule matching the package says to")
 }
 
@@ -257,8 +257,8 @@ func writeReports(reports []security.ComponentReport) error {
 }
 
 // pullScanHook is the transfer.Hooks.Scan hook pull and load run for each
-// package, before anything of it is written: it scans the SBOM's
-// components fresh and gates them, collecting the reports for the
+// package once its layers are written, before it's tagged: it scans the
+// SBOM's components fresh and gates them, collecting the reports for the
 // caller to write once the pull succeeds (see collected).
 type pullScanHook struct {
 	flags       *scanFlags
@@ -346,7 +346,9 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 		return err
 	}
 	log := s.logger.With("reference", ref)
-	result, err := security.ScanAll(plugins, components, s.concurrency, log)
+	// The package's layers are written by now, so a scanner that scans a
+	// type from files gets them.
+	result, err := security.ScanAll(plugins, components, security.ScanOptions{Concurrency: s.concurrency, ContentDir: dataDir}, log)
 	if err != nil {
 		return err
 	}

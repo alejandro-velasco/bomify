@@ -51,6 +51,11 @@
           }
         }
       }
+    },
+    "unscanned": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional. Why the plugin couldn't analyze the component at all, e.g. nothing in its files it recognizes. bomify then counts the component as not scanned rather than clean, and ignores the rest of the result."
     }
   }
 }

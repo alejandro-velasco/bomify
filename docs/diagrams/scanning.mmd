@@ -5,7 +5,7 @@ flowchart TD
     classDef failed fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
     classDef skipped fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,stroke-dasharray:4 2,color:#78350f
 
-    Start(["bomify pull / load"]) --> When["after --verify,<br/>before anything is written"]
+    Start(["bomify pull / load"]) --> When["once the layers are written,<br/>before tagging"]
     When --> Skip{"--skip-scan?"}
 
     Skip -->|"yes"| NoScan["no scan, no gate<br/>(warn if a matching rule's --on<br/>names pull)"]
@@ -19,7 +19,7 @@ flowchart TD
 
     Active -->|"neither"| NoScan
     Active -->|"only one"| NeedBoth["fails: --scan and --fail-on go together<br/>— never gating on the publisher's reports,<br/>never scanning with nothing to refuse on"]
-    Active -->|"both"| PluginScan["bomify-plugin-&lt;type&gt;<br/>security scan --purl &lt;purl&gt;<br/>once per component (security.Scan)"]
+    Active -->|"both"| PluginScan["bomify-plugin-&lt;scanner&gt;<br/>security scan --purl &lt;purl&gt;<br/>[--input &lt;layer dir&gt;]<br/>once per component (security.ScanAll)"]
 
     PluginScan --> PubVEX{"pull verifies signatures,<br/>and the package carries<br/>VEX referrers?"}
     PubVEX -->|"yes"| Verified["keep each VEX document<br/>whose own signature verifies<br/>(warn about the rest)"]
@@ -28,8 +28,8 @@ flowchart TD
 
     Gate --> Left{"anything left?"}
 
-    Left -->|"no"| Continue["carry on: write the package,<br/>then the fresh reports"]
-    Left -->|"yes"| Failed["print the findings table;<br/>the command fails —<br/>nothing written"]
+    Left -->|"no"| Continue["carry on: record the tags,<br/>then write the fresh reports"]
+    Left -->|"yes"| Failed["print the findings table;<br/>the command fails —<br/>the package is left untagged"]
 
     class Start source
     class PluginScan plugin

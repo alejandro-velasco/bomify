@@ -58,7 +58,7 @@ func supportedComponents() {
 		resp = os.Getenv("FAKESECURITY_SUPPORTED_COMPONENTS")
 	}
 	if resp == "" {
-		resp = `{"types":["oci","helm","generic"],"scans":["sca"]}`
+		resp = `{"types":{"oci":"purl","helm":"purl","generic":"purl"},"scans":["sca"]}`
 	}
 	fmt.Println(resp)
 }
@@ -68,11 +68,21 @@ func supportedComponents() {
 // components) if that purl has no entry — or no responses file was
 // given at all. Like a real plugin, whatever "affects" the canned
 // response sets is printed verbatim: this fake never adds or rewrites
-// it itself.
+// it itself. Tests that need to see what --input a scan got point
+// FAKESECURITY_INPUT_LOG at a file; every scan appends
+// "<purl>\t<input>" to it.
 func scan() {
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 	purl := fs.String("purl", "", "component purl")
+	input := fs.String("input", "", "directory of the component's pulled files")
 	fs.Parse(os.Args[3:])
+
+	if logPath := os.Getenv("FAKESECURITY_INPUT_LOG"); logPath != "" {
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			fmt.Fprintf(f, "%s\t%s\n", *purl, *input)
+			f.Close()
+		}
+	}
 
 	// A magic purl tests use to simulate a scan failure, since it's
 	// otherwise never one a real component would carry.

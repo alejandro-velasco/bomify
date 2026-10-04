@@ -22,9 +22,9 @@ import (
 // BOMRef is set to the vulnerability's own ID, per
 // plugins/contracts/security/v1/CONTRACT.md's recommended convention, so a
 // consumer of the resulting vulnerability report can refer to it
-// unambiguously — and so buildImageResult can fold the same vulnerability
+// unambiguously — and so buildCatalogResult can fold the same vulnerability
 // matched against several packages into one entry. Affects is deliberately
-// left unset: Purl and buildImageResult each set it themselves afterward,
+// left unset: Purl and buildCatalogResult each set it themselves afterward,
 // since only they know what this vulnerability should actually be attributed
 // to (see plugins/contracts/security/v1/CONTRACT.md).
 func toVulnerability(m match.Match) cdx.Vulnerability {

@@ -501,21 +501,24 @@ func TestPullFailedVerifyWritesNothing(t *testing.T) {
 	}
 }
 
-// TestPullFailedScanWritesNothing covers the Scan hook: it sees the
-// package's SBOM before anything is written, and rejecting it leaves the
-// data directory as empty as a failed verify does.
-func TestPullFailedScanWritesNothing(t *testing.T) {
+// TestPullFailedScan covers the Scan hook: it sees the package's SBOM
+// once its component layers are written, so it can scan their files, and
+// rejecting it fails the pull.
+func TestPullFailedScan(t *testing.T) {
 	component := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 	store, tag := pushComponentFixture(t, component, []byte("image contents"))
 
+	dataDir := t.TempDir()
 	var scannedRef string
 	var scannedSBOM []byte
+	var layerWritten bool
 	scan := func(_ context.Context, _ oras.ReadOnlyTarget, ref string, _ ocispec.Descriptor, sbom []byte) error {
 		scannedRef, scannedSBOM = ref, sbom
+		_, err := os.Stat(layout.ComponentLayer(dataDir, component.PackageURL))
+		layerWritten = err == nil
 		return errors.New("vulnerable")
 	}
 
-	dataDir := t.TempDir()
 	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1, Scan: scan}); err == nil {
 		t.Fatal("Pull() error = nil, want the scanner's error")
 	}
@@ -525,13 +528,8 @@ func TestPullFailedScanWritesNothing(t *testing.T) {
 	if !bytes.Contains(scannedSBOM, []byte(component.PackageURL)) {
 		t.Errorf("scanner got SBOM %q, want the package's", scannedSBOM)
 	}
-
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		t.Fatalf("read data dir: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("data dir has %d entries after a failed scan, want none", len(entries))
+	if !layerWritten {
+		t.Error("scanner ran before the component's layer was written")
 	}
 
 	// A scanner that passes lets the pull go ahead as usual.

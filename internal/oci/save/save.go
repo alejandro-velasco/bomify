@@ -83,8 +83,8 @@ type Loaded struct {
 // restores every tag it contains into baseDir exactly as `bomify pull`
 // would have for each, recording each in repositories.json. Returns the
 // tags it found and restored. opts.Verify and opts.Scan are applied to
-// each tag before anything of it is restored, exactly as pull.Pull
-// applies them.
+// each tag exactly as pull.Pull applies them, and a tag either fails
+// isn't recorded.
 func Load(ctx context.Context, baseDir string, r io.Reader, opts transfer.Options) ([]Loaded, error) {
 	stageDir, err := os.MkdirTemp("", "bomify-load-*")
 	if err != nil {

@@ -30,10 +30,14 @@ As for the [component contract](https://github.com/alejandro-velasco/bomify/blob
 
 1. Resolves `<tag>` to a local package and walks its SBOM.
 2. Calls `security supported-components` once, and skips every component
-   whose purl type isn't listed.
-3. Calls `security scan --purl <purl>` once per remaining component, up
-   to `--concurrency` at a time.
-4. Writes each result as that component's [report](#reports).
+   whose purl type isn't listed. A type the plugin scans from files is
+   scanned once bomify has the component's pulled files (see
+   [Scan modes](#scan-modes)).
+3. Calls `security scan --purl <purl>` once per remaining component, adding
+   `--input <dir>` for a type scanned from files, up to `--concurrency` at
+   a time.
+4. Writes each result as that component's [report](#reports), unless the
+   plugin reports it couldn't analyze the component (`unscanned`).
 
 The plugin never sees the SBOM or any component but the one it's asked
 about.
@@ -41,18 +45,20 @@ about.
 ## Commands
 
 ```
-bomify-plugin-<type> security scan --purl <purl>
+bomify-plugin-<type> security scan --purl <purl> [--input <dir>]
 bomify-plugin-<type> security supported-components
 ```
 
-- **`security scan`**: `--purl` (required) is the component to scan; the
-  plugin derives everything from it. On success, print one
+- **`security scan`**: `--purl` (required) is the component to scan.
+  `--input` is the directory holding the component's pulled files, as
+  bomify pulled them; it's passed only for a type the plugin scans from
+  files (see [Scan modes](#scan-modes)). On success, print one
   [`SecurityResult`](#securityresult) and exit `0`.
 - **`security supported-components`**: no flags. On success, print one
   [`SupportedComponentsResult`](#supportedcomponentsresult) and exit
   `0`. It must always report the same thing.
 
-There's no `--check`, `--output`/`--input`, or `--log`/`--log-color`.
+There's no `--check`, `--output`, or `--log`/`--log-color`.
 
 ## Standard streams
 
@@ -86,6 +92,7 @@ anything is scanned.
 | --- | --- | --- | --- |
 | `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` affecting `--purl`. Empty means nothing was found; that's a valid result, not an error. |
 | `components` | array | no | CycloneDX `component`s the plugin unpacked `--purl` into to scan it (e.g. the packages inside an image). Omit if it scanned the purl directly. |
+| `unscanned` | string | no | Why the plugin couldn't analyze the component at all, e.g. nothing in its files it recognizes. bomify then counts it as not scanned, not as clean, and ignores the rest of the result. |
 
 **The plugin sets `affects`; bomify never changes it.**
 
@@ -103,13 +110,26 @@ Schema: [`security-result.schema.json`](https://github.com/alejandro-velasco/bom
 ## SupportedComponentsResult
 
 ```json
-{ "types": ["oci", "helm", "generic"], "scans": ["sca"] }
+{ "types": { "oci": "purl", "npm": "purl", "generic": "files" }, "scans": ["sca"] }
 ```
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `types` | array of strings | yes, non-empty | Purl types the plugin can scan (`oci`, `npm`, ...). Components of other types are never sent to `scan`. |
+| `types` | object | yes, non-empty | Each purl type the plugin can scan (`oci`, `npm`, ...), mapped to how it scans it: `purl` or `files` (see [Scan modes](#scan-modes)). Components of other types are never sent to `scan`. |
 | `scans` | array of strings | yes | Scan categories (e.g. `sca`, `sast`). Informational: bomify only logs them. |
+
+### Scan modes
+
+- **`purl`**: the plugin scans the component from its purl alone — a
+  lookup in an ecosystem, or, for an image, pulling it itself. bomify
+  never passes `--input`.
+- **`files`**: the plugin scans the component only from its pulled
+  files, which bomify passes as `--input` (a scan on pull or load runs
+  once they're downloaded). bomify skips a component whose files it
+  doesn't have, counting it as not scanned.
+
+A mode bomify doesn't know is skipped the same way, so a newer plugin's
+mode never fails an older bomify's scan.
 
 Schema: [`supported-components-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/supported-components-result.schema.json).
 

@@ -29,11 +29,16 @@ every package containing that component, alongside any other scanner's
 report of it. To scan with several scanners at once, list them:
 `bomify security scan grype,trivy myapp:1.0`. Each component goes to
 every scanner that supports it, and a component counts as scanned if
-any of them did. Components grype doesn't
-support (such as `generic`) are skipped, and listed on stderr: they have
-no report, so nothing about them can fail a gate. Add `unscanned` to
-`--fail-on` (e.g. `--fail-on high,unscanned`) to fail the scan if any
-were skipped.
+any of them did. Components grype doesn't support are skipped, and
+listed on stderr: they have no report, so nothing about them can fail a
+gate. Add `unscanned` to `--fail-on` (e.g. `--fail-on high,unscanned`)
+to fail the scan if any were skipped.
+
+For `generic` components, such as a downloaded binary, grype catalogs the
+file bomify pulled with [syft](https://github.com/anchore/syft): a Go or
+Rust binary's embedded module list, a Java archive's manifest, or a
+well-known binary's version string. A file syft finds nothing in counts
+as not scanned, not as clean.
 
 For `oci`/`docker` components, grype catalogs the image with
 [syft](https://github.com/anchore/syft) and scans every package inside;
@@ -123,8 +128,9 @@ bomify security scan grype registry.example.com/team/myapp:1.0 --fail-on high \
   && bomify push registry.example.com/team/myapp:1.0
 ```
 
-`pull` and `load` can scan before writing anything, so a failing package
-leaves nothing behind:
+`pull` and `load` can scan a package before tagging it, so a failing
+package is never tagged (`bomify package prune` removes what it
+downloaded):
 
 ```sh
 bomify pull registry.example.com/team/myapp:1.0 --scan grype --fail-on high

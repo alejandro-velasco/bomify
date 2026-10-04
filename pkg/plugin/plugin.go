@@ -81,9 +81,15 @@ type RemoteResult struct {
 //
 // An empty (but non-nil) Vulnerabilities reports that nothing was
 // found, exactly as meaningfully as a populated one.
+//
+// Unscanned, if set, says why the plugin couldn't analyze the component
+// at all — e.g. nothing in the files it was given that it recognizes —
+// so bomify counts it as not scanned rather than as clean. Its
+// Vulnerabilities and Components are then ignored.
 type SecurityResult struct {
 	Vulnerabilities []cdx.Vulnerability `json:"vulnerabilities"`
 	Components      []cdx.Component     `json:"components,omitempty"`
+	Unscanned       string              `json:"unscanned,omitempty"`
 }
 
 // SupportedComponentsResult is the JSON object a plugin's "security
@@ -94,13 +100,28 @@ type SecurityResult struct {
 // scan": a component whose purl type isn't listed in Types is skipped instead
 // (see plugins/contracts/security/v1/CONTRACT.md).
 type SupportedComponentsResult struct {
-	// Types lists the component purl types (e.g. "oci", "helm",
-	// "generic") this plugin can scan.
-	Types []string `json:"types"`
+	// Types maps each component purl type this plugin can scan (e.g.
+	// "oci", "npm", "generic") to how it scans it (see ScanMode).
+	Types map[string]ScanMode `json:"types"`
 	// Scans lists the categories of scan this plugin performs (e.g.
 	// "sca", "sast").
 	Scans []string `json:"scans"`
 }
+
+// ScanMode is how a security scanning plugin scans a component of a purl
+// type it supports (see SupportedComponentsResult.Types).
+type ScanMode string
+
+const (
+	// ScanByPurl scans a component from its purl alone: a lookup in an
+	// ecosystem, or, for an image, pulling it. bomify never passes
+	// "security scan --input".
+	ScanByPurl ScanMode = "purl"
+	// ScanByFiles scans a component only from its pulled files, which
+	// bomify passes as "security scan --input". bomify skips one whose
+	// files it doesn't have, such as on a scan on pull.
+	ScanByFiles ScanMode = "files"
+)
 
 // SignResult is the JSON object a plugin's "signature sign" subcommand prints
 // to stdout on success: the signature envelope it produced over the payload

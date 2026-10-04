@@ -21,7 +21,7 @@ exemption belongs in VEX, which says which component and why. Use
 and always applies its VEX.
 
 --on pull also scans and gates matching packages in "bomify pull" and
-"bomify load" before anything is written. It requires --fail-on. Without
+"bomify load" before they're tagged. It requires --fail-on. Without
 --on, the rule only applies to "bomify security scan".
 
 ```

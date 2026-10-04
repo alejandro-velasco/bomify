@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -71,16 +72,13 @@ func TestLoadScanGate(t *testing.T) {
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
 
-	// A failing gate writes nothing — no SBOM, no tag.
+	// A failing gate records no tag.
 	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high")
 	if !isGateError(err) {
 		t.Fatalf("load --fail-on high: error = %v, want a gate failure", err)
 	}
 	if repos, _ := build.ReadRepositories(destDir); len(repos) != 0 {
 		t.Errorf("tags recorded despite a failing gate: %v", repos)
-	}
-	if _, err := os.Stat(layout.Manifests(destDir)); !os.IsNotExist(err) {
-		t.Errorf("manifests written despite a failing gate: err = %v", err)
 	}
 
 	// A passing gate loads it, keeping the fresh report.
@@ -163,7 +161,7 @@ func TestPolicyRuleOnHooks(t *testing.T) {
 // nothing, and it's a gate on its own, needing no --fail-on.
 func TestLoadFailOnUnscanned(t *testing.T) {
 	archive := saveHookPackage(t)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":["oci"],"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl"},"scans":["sca"]}`)
 
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
@@ -190,8 +188,8 @@ func TestLoadFailOnUnscanned(t *testing.T) {
 // --fail-on unscanned lets it through, keeping that scanner's report.
 func TestLoadScanSeveralScanners(t *testing.T) {
 	archive := saveHookPackage(t)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":["oci"],"scans":["sca"]}`)
-	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":["generic"],"scans":["binary"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":{"oci":"purl"},"scans":["sca"]}`)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"generic":"purl"},"scans":["binary"]}`)
 
 	destDir := t.TempDir()
 	usePlugin(t, destDir, "grype")
@@ -206,5 +204,39 @@ func TestLoadScanSeveralScanners(t *testing.T) {
 	stored, err := security.ReadReports(destDir, layout.PurlHash(hookComponent.PackageURL))
 	if err != nil || len(stored) != 1 || stored[0].Scanner != "binscan" {
 		t.Errorf("reports = %+v, %v; want binscan's", stored, err)
+	}
+}
+
+// TestLoadScansFileTypes loads a package whose one component its scanner
+// only scans from its files: the scan on load scans it from its written
+// layer, and a finding there refuses the package, leaving it untagged.
+func TestLoadScansFileTypes(t *testing.T) {
+	archive := saveHookPackage(t)
+	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl","generic":"files"},"scans":["binary"]}`)
+	inputs := filepath.Join(t.TempDir(), "inputs")
+	t.Setenv("FAKESECURITY_INPUT_LOG", inputs)
+
+	// Passes: scanned from the layer it just pulled, and its report kept.
+	destDir := t.TempDir()
+	usePlugin(t, destDir, "grype")
+	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "critical,unscanned"); err != nil {
+		t.Fatalf("load: %v, want it scanned from its files and loaded", err)
+	}
+	log, _ := os.ReadFile(inputs)
+	if want := hookComponent.PackageURL + "\t" + layout.ComponentLayer(destDir, hookComponent.PackageURL); strings.TrimSpace(string(log)) != want {
+		t.Errorf("scanned with %q, want %q", strings.TrimSpace(string(log)), want)
+	}
+	if stored, err := security.ReadReports(destDir, layout.PurlHash(hookComponent.PackageURL)); err != nil || len(stored) != 1 {
+		t.Errorf("reports = %+v, %v; want the fresh one", stored, err)
+	}
+
+	// Refused by what's in its files: the package isn't tagged.
+	refusedDir := t.TempDir()
+	usePlugin(t, refusedDir, "grype")
+	if _, err := runRootCmd(t, refusedDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high"); !isGateError(err) {
+		t.Fatalf("load --fail-on high: %v, want a gate failure", err)
+	}
+	if repos, _ := build.ReadRepositories(refusedDir); len(repos) != 0 {
+		t.Errorf("tags recorded despite a failing gate: %v", repos)
 	}
 }

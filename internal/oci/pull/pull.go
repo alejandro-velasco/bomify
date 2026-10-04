@@ -95,9 +95,9 @@ type Result struct {
 // called with the manifest right after verify, and likewise writes
 // nothing if it fails.
 //
-// A non-nil opts.Scan is then called with the package's SBOM, fetched
-// into memory but not yet written, so a package it rejects also leaves
-// nothing behind (see transfer.Scanner).
+// A non-nil opts.Scan is called with the package's SBOM once its
+// component layers are written, before its reports are restored (see
+// transfer.Scanner).
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options) (Result, error) {
 	return PullLayers(ctx, target, ref, dataDir, opts, nil)
 }
@@ -137,11 +137,6 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 	if err != nil {
 		return Result{}, fmt.Errorf("fetch config: %w", err)
 	}
-	if opts.Scan != nil {
-		if err := opts.Scan(ctx, target, ref, desc, sbomData); err != nil {
-			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
-		}
-	}
 	sbomHash, bom, err := writeConfig(manifest.Config, sbomData, dataDir)
 	if err != nil {
 		return Result{}, fmt.Errorf("write config: %w", err)
@@ -166,6 +161,11 @@ func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir st
 	}
 	if err := g.Wait(); err != nil {
 		return Result{}, err
+	}
+	if opts.Scan != nil {
+		if err := opts.Scan(ctx, target, ref, desc, sbomData); err != nil {
+			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
+		}
 	}
 
 	result := Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers}
@@ -292,9 +292,8 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec
 }
 
 // fetchConfig downloads desc — the aggregate SBOM manifest — into
-// memory, checked against its digest, without writing anything: a
-// transfer.Scanner gets to see it before anything of the package lands
-// in the data directory (see writeConfig).
+// memory, checked against its digest, without writing anything (see
+// writeConfig).
 func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, progress transfer.ProgressFunc) ([]byte, error) {
 	pw := progress("sbom manifest", desc.Size)
 	defer pw.Close()

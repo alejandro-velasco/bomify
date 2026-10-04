@@ -21,7 +21,7 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
-| [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, plus images | [grype](https://github.com/anchore/grype) | Security scanning |
+| [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
 ## Contract versions
@@ -210,9 +210,12 @@ available, `ratings` include the [EPSS](https://www.first.org/epss/)
 score and a [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
 flag.
 
-`supported-components` lists the types grype has a matcher for (`apk`,
-`deb`, `rpm`, `alpm`, `bitnami`, `npm`, `golang`, `maven`, `pypi`, `gem`,
-`cargo`, `nuget`, `hex`) plus `oci`/`docker`, but not `generic`.
+`supported-components` lists, scanned by purl, the types grype has a
+matcher for (`apk`, `deb`, `rpm`, `alpm`, `bitnami`, `npm`, `golang`,
+`maven`, `pypi`, `gem`, `cargo`, `nuget`, `hex`) plus `oci`/`docker`; and
+`generic`, scanned from its pulled files: syft catalogs the file (a Go
+or Rust binary's modules, a Java archive, a known binary's version), and
+a file it finds nothing in is reported `unscanned`.
 
 ## bomify-plugin-sigstore
 

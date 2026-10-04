@@ -25,8 +25,9 @@ type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, 
 // sbom — may be restored, typically by scanning the components it
 // describes for vulnerabilities (see internal/security); target and
 // manifest let it read what's attached to the package, such as VEX.
-// Pull calls it after Verifier, before writing anything at all, so a
-// failed Scanner leaves nothing behind in the data directory either.
+// Pull calls it once the package's component layers are written, so it
+// can scan their files, and fails if it does: the package is left in the
+// data directory but untagged, for "bomify package prune" to reclaim.
 type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbom []byte) error
 
 // Attester signs statement, an in-toto statement about the package Push

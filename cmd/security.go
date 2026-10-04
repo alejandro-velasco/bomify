@@ -41,8 +41,10 @@ const securityScanLong = `Scan scans every component of the local package <tag> 
 writes one CycloneDX vulnerability report per component and scanner to
 <data-dir>/vulnerabilities/, shared by every package containing that
 component. Each component goes to every scanner that supports it, and a
-scanner's report replaces only its own earlier one. Components no
-scanner supports are skipped, and listed on stderr.
+scanner's report replaces only its own earlier one. A scanner that
+scans a type from its files, such as grype for generic files, is given
+the component's pulled files. Components no scanner supports are
+skipped, and listed on stderr.
 
 --fail-on takes comma-separated conditions that exit non-zero, printing
 what failed to stderr. Reports are written either way.
@@ -139,7 +141,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	components := sbom.Components(bom.Components)
 	logger.Info("loaded sbom", "path", sbomPath, "components", len(components), "concurrency", opts.concurrency)
 
-	result, err := security.ScanAll(plugins, components, opts.concurrency, logger)
+	result, err := security.ScanAll(plugins, components, security.ScanOptions{Concurrency: opts.concurrency, ContentDir: dataDir}, logger)
 	if err != nil {
 		return err
 	}
@@ -254,7 +256,7 @@ exemption belongs in VEX, which says which component and why. Use
 and always applies its VEX.
 
 --on pull also scans and gates matching packages in "bomify pull" and
-"bomify load" before anything is written. It requires --fail-on. Without
+"bomify load" before they're tagged. It requires --fail-on. Without
 --on, the rule only applies to "bomify security scan".`
 
 const securityPolicyCreateExample = `  # Fail any scan of a team's packages on high or critical vulnerabilities
