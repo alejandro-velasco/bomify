@@ -2,7 +2,8 @@
 
 [`internal/oci/push`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/push) and
 [`internal/oci/pull`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/pull) store a package as an ordinary
-OCI artifact (artifact type `application/vnd.bomify.package.v1+json`):
+OCI artifact (artifact type `application/vnd.bomify.package.v1+json`;
+every type and annotation is listed in [Registry format](registry-format.md)):
 
 ![Bomify package to OCI artifact mapping](../diagrams/oci-artifact.svg)
 

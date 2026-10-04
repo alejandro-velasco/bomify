@@ -29,8 +29,10 @@ are done by external `bomify-plugin-<kind>` binaries.
 - [Plugin installation](plugin-installation.md), and how
   releases publish and sign the first-party plugins.
 - [Builds and tagging](builds.md), and pruning.
-- [Push and pull](registry.md): the OCI artifact format,
-  save/load, and credentials.
+- [Push and pull](registry.md): how packages are pushed and
+  pulled, save/load, and credentials.
+- [Registry format](registry-format.md): every media type and
+  annotation bomify writes to a registry, and how they're versioned.
 
 Diagrams are rendered from the Mermaid sources in
 [`docs/diagrams`](https://github.com/alejandro-velasco/bomify/tree/main/docs/diagrams); after editing a `.mmd`, run `make
