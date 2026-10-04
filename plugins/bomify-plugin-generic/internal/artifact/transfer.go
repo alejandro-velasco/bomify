@@ -16,10 +16,8 @@ import (
 )
 
 // setAuth adds HTTP Basic auth to req from bomify's shared credential
-// store (fetched via pkg/auth.Get; see internal/auth for the store
-// itself, the same one `bomify login`/`docker login` write), if any
-// credentials are stored for req's host. A host with nothing stored is
-// left as an anonymous request.
+// store (see pkg/auth), if any credentials are stored for req's host. A
+// host with nothing stored is left as an anonymous request.
 func setAuth(req *http.Request) error {
 	host := req.URL.Host
 	if host == "" {
