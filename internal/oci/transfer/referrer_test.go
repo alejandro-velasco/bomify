@@ -50,11 +50,15 @@ func TestAttach(t *testing.T) {
 	if err != nil || len(referrers) != 2 {
 		t.Fatalf("Referrers = %v, %v; want 2", referrers, err)
 	}
-	data, err := FetchAttachment(ctx, store, a, VEXDocumentMediaType)
+	_, data, err := FetchAttachment(ctx, store, a, VEXDocumentMediaType)
 	if err != nil || string(data) != "document a" {
 		t.Errorf("FetchAttachment = %q, %v; want document a", data, err)
 	}
-	if _, err := FetchAttachment(ctx, store, a, "application/other"); err == nil {
+	layer, data, err := FetchAttachment(ctx, store, a, "")
+	if err != nil || string(data) != "document a" || layer.MediaType != VEXDocumentMediaType {
+		t.Errorf("FetchAttachment of any media type = %v, %q, %v; want document a", layer, data, err)
+	}
+	if _, _, err := FetchAttachment(ctx, store, a, "application/other"); err == nil {
 		t.Error("FetchAttachment of the wrong media type: error = nil, want one")
 	}
 }

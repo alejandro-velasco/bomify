@@ -93,7 +93,8 @@ func createdAt(desc ocispec.Descriptor) time.Time {
 	return t
 }
 
-// ReferrerLayers returns referrer's layers of mediaType.
+// ReferrerLayers returns referrer's layers of mediaType (all of them, if
+// empty).
 func ReferrerLayers(ctx context.Context, target content.ReadOnlyStorage, referrer ocispec.Descriptor, mediaType string) ([]ocispec.Descriptor, error) {
 	if referrer.Size > maxReferrerManifestSize {
 		return nil, fmt.Errorf("referrer %s is %d bytes, larger than the %d allowed", referrer.Digest, referrer.Size, maxReferrerManifestSize)
@@ -106,6 +107,9 @@ func ReferrerLayers(ctx context.Context, target content.ReadOnlyStorage, referre
 	var m ocispec.Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parse referrer %s: %w", referrer.Digest, err)
+	}
+	if mediaType == "" {
+		return m.Layers, nil
 	}
 	return slices.DeleteFunc(m.Layers, func(d ocispec.Descriptor) bool {
 		return d.MediaType != mediaType
@@ -158,22 +162,24 @@ func Attach(ctx context.Context, target oras.Target, manifest ocispec.Descriptor
 	return referrer, true, nil
 }
 
-// FetchAttachment returns the one document an Attach referrer of
-// mediaType carries.
-func FetchAttachment(ctx context.Context, target content.ReadOnlyStorage, referrer ocispec.Descriptor, mediaType string) ([]byte, error) {
+// FetchAttachment returns the one layer of mediaType (of any type, if
+// empty) that referrer carries, such as an Attach document or a signature
+// envelope, along with that layer's descriptor.
+func FetchAttachment(ctx context.Context, target content.ReadOnlyStorage, referrer ocispec.Descriptor, mediaType string) (ocispec.Descriptor, []byte, error) {
 	layers, err := ReferrerLayers(ctx, target, referrer, mediaType)
 	if err != nil {
-		return nil, err
+		return ocispec.Descriptor{}, nil, err
 	}
 	if len(layers) != 1 {
-		return nil, fmt.Errorf("referrer %s has %d %s layers, want exactly 1", referrer.Digest, len(layers), mediaType)
+		return ocispec.Descriptor{}, nil, fmt.Errorf("referrer %s has %d matching layers, want exactly 1", referrer.Digest, len(layers))
 	}
-	if layers[0].Size > maxReferrerLayerSize {
-		return nil, fmt.Errorf("layer of %s is %d bytes, larger than the %d allowed", referrer.Digest, layers[0].Size, maxReferrerLayerSize)
+	layer := layers[0]
+	if layer.Size > maxReferrerLayerSize {
+		return ocispec.Descriptor{}, nil, fmt.Errorf("layer of %s is %d bytes, larger than the %d allowed", referrer.Digest, layer.Size, maxReferrerLayerSize)
 	}
-	data, err := content.FetchAll(ctx, target, layers[0])
+	data, err := content.FetchAll(ctx, target, layer)
 	if err != nil {
-		return nil, fmt.Errorf("fetch layer of %s: %w", referrer.Digest, err)
+		return ocispec.Descriptor{}, nil, fmt.Errorf("fetch layer of %s: %w", referrer.Digest, err)
 	}
-	return data, nil
+	return layer, data, nil
 }

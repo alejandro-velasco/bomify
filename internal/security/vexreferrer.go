@@ -55,7 +55,7 @@ func PublishedVEX(ctx context.Context, target oras.ReadOnlyTarget, ref string, m
 			log.Warn("ignoring an unverified VEX document", "error", err)
 			continue
 		}
-		data, err := transfer.FetchAttachment(ctx, target, referrer, transfer.VEXDocumentMediaType)
+		_, data, err := transfer.FetchAttachment(ctx, target, referrer, transfer.VEXDocumentMediaType)
 		if err != nil {
 			log.Warn("ignoring a VEX document that can't be fetched", "error", err)
 			continue
