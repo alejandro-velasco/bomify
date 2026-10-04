@@ -13,9 +13,10 @@
 # is set up below. Export BOMIFY_INVOCATION_ID (e.g. the CI run's URL) to
 # record which run built it.
 #
-# Uses a throwaway data directory, so nothing here touches (or depends
-# on) the caller's own ~/.bomify. Registry credentials are the ones
-# `bomify login` (or `docker login` — they share a store) already has.
+# Uses a throwaway data directory, so nothing here touches the caller's
+# own ~/.bomify (or $BOMIFY_DATA_DIR). The one thing it takes from there
+# is conf/auth.json, so registry credentials are the ones `bomify login`
+# already has, falling back to `docker login`'s.
 #
 # Every package is signed with bomify-plugin-sigstore when either is set:
 #
@@ -43,6 +44,12 @@ set -euo pipefail
 
 data_dir="$(mktemp -d)"
 trap 'rm -rf "$data_dir"' EXIT
+
+caller_auth="${BOMIFY_DATA_DIR:-$HOME/.bomify}/conf/auth.json"
+if [ -f "$caller_auth" ]; then
+	mkdir -p "$data_dir/conf"
+	cp "$caller_auth" "$data_dir/conf/auth.json"
+fi
 
 bomify() {
 	"$BOMIFY" --data-dir "$data_dir" "$@"
