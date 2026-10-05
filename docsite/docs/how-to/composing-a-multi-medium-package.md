@@ -1,3 +1,7 @@
+---
+icon: lucide/combine
+---
+
 # Composing a multi-medium package
 
 An application often ships through more than one medium: say, two Helm
