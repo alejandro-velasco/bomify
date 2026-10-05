@@ -2,10 +2,12 @@ package sbom
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -184,9 +186,15 @@ type Part struct {
 // components always give the same SBOM.
 func (c *Composition) Merge(parts []Part) (*cdx.BOM, error) {
 	purl := packageurl.NewPackageURL("generic", "", c.Name, c.Version, nil, "").String()
-	root := cdx.Component{Type: cdx.ComponentTypeApplication, Name: c.Name, Version: c.Version, PackageURL: purl, BOMRef: purl}
+	root := cdx.Component{
+		Type:       cdx.ComponentTypeApplication,
+		Name:       c.Name,
+		Version:    c.Version,
+		PackageURL: purl,
+		BOMRef:     purl,
+	}
 
-	m := merger{components: map[string]*mergedComponent{}, deps: map[string]map[string]bool{}}
+	m := newMerger()
 	for _, p := range parts {
 		if err := pluginlib.ValidateGenerated(p.BOM); err != nil {
 			return nil, fmt.Errorf("source %q: %w", p.Source, err)
@@ -202,7 +210,10 @@ func (c *Composition) Merge(parts []Part) (*cdx.BOM, error) {
 		}
 
 		partRoot := p.BOM.Metadata.Component.BOMRef
-		if slices.ContainsFunc(components, func(comp cdx.Component) bool { return comp.BOMRef == partRoot }) {
+		packaged := slices.ContainsFunc(components, func(comp cdx.Component) bool {
+			return comp.BOMRef == partRoot
+		})
+		if packaged {
 			m.depend(root.BOMRef, partRoot)
 			continue
 		}
@@ -253,8 +264,15 @@ type mergedComponent struct {
 
 // merger accumulates Merge's components and dependency edges.
 type merger struct {
-	components map[string]*mergedComponent
-	deps       map[string]map[string]bool
+	components map[string]*mergedComponent // by bom-ref
+	deps       map[string]map[string]bool  // ref -> the refs it depends on
+}
+
+func newMerger() *merger {
+	return &merger{
+		components: map[string]*mergedComponent{},
+		deps:       map[string]map[string]bool{},
+	}
 }
 
 // add records comp from source, or source for a comp already added,
@@ -266,7 +284,8 @@ func (m *merger) add(comp cdx.Component, source string) error {
 		return nil
 	}
 	if diff := conflict(existing.component, comp); diff != "" {
-		return fmt.Errorf("%s: sources %q and %q disagree on its %s", comp.BOMRef, existing.sources[0], source, diff)
+		return fmt.Errorf("%s: sources %q and %q disagree on its %s",
+			comp.BOMRef, existing.sources[0], source, diff)
 	}
 	if !slices.Contains(existing.sources, source) {
 		existing.sources = append(existing.sources, source)
@@ -290,12 +309,18 @@ func conflict(a, b cdx.Component) string {
 	return ""
 }
 
+// sortedHashes returns a copy of hs sorted by algorithm, so hash lists
+// compare equal whatever their order.
 func sortedHashes(hs *[]cdx.Hash) []cdx.Hash {
 	sorted := slices.Clone(sliceutil.Deref(hs))
-	slices.SortFunc(sorted, func(a, b cdx.Hash) int { return strings.Compare(string(a.Algorithm), string(b.Algorithm)) })
+	slices.SortFunc(sorted, func(a, b cdx.Hash) int {
+		return cmp.Compare(a.Algorithm, b.Algorithm)
+	})
 	return sorted
 }
 
+// depend records that ref depends on each of on, creating ref's entry
+// even when on is empty.
 func (m *merger) depend(ref string, on ...string) {
 	if m.deps[ref] == nil {
 		m.deps[ref] = map[string]bool{}
@@ -310,28 +335,29 @@ func (m *merger) sorted() []cdx.Component {
 	components := make([]cdx.Component, 0, len(m.components))
 	for _, mc := range m.components {
 		comp := mc.component
-		sources := slices.Clone(mc.sources)
-		slices.Sort(sources)
-		props := slices.DeleteFunc(slices.Clone(sliceutil.Deref(comp.Properties)), func(p cdx.Property) bool { return p.Name == PropertySources })
+		sources := slices.Sorted(slices.Values(mc.sources))
+
+		// Replace any PropertySources the component already carried.
+		props := slices.DeleteFunc(slices.Clone(sliceutil.Deref(comp.Properties)), func(p cdx.Property) bool {
+			return p.Name == PropertySources
+		})
 		props = append(props, cdx.Property{Name: PropertySources, Value: strings.Join(sources, ",")})
 		comp.Properties = &props
+
 		components = append(components, comp)
 	}
-	slices.SortFunc(components, func(a, b cdx.Component) int { return strings.Compare(a.BOMRef, b.BOMRef) })
+	slices.SortFunc(components, func(a, b cdx.Component) int {
+		return cmp.Compare(a.BOMRef, b.BOMRef)
+	})
 	return components
 }
 
 // dependencies returns the edges by ref, each ref's dependsOn sorted.
 func (m *merger) dependencies() []cdx.Dependency {
 	deps := make([]cdx.Dependency, 0, len(m.deps))
-	for ref, on := range m.deps {
-		list := make([]string, 0, len(on))
-		for o := range on {
-			list = append(list, o)
-		}
-		slices.Sort(list)
-		deps = append(deps, cdx.Dependency{Ref: ref, Dependencies: &list})
+	for _, ref := range slices.Sorted(maps.Keys(m.deps)) {
+		on := slices.Sorted(maps.Keys(m.deps[ref]))
+		deps = append(deps, cdx.Dependency{Ref: ref, Dependencies: &on})
 	}
-	slices.SortFunc(deps, func(a, b cdx.Dependency) int { return strings.Compare(a.Ref, b.Ref) })
 	return deps
 }
