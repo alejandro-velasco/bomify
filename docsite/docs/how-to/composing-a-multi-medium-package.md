@@ -40,8 +40,8 @@ components:
 ```
 
 - A `medium` source runs `bomify-plugin-<medium>`, with `options` as
-  its options, which that plugin checks; for Helm, they're the
-  [plugin's flags](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md#options-file).
+  its options, which that plugin checks; see the
+  [Helm plugin's options](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md#options).
 - An `sbom` source is an existing CycloneDX JSON file.
 - `components` are packaged too.
 - Relative paths, in `options` too, are relative to the composition
