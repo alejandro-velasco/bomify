@@ -1,6 +1,6 @@
 ---
 name: bomify-plugins
-description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom schema/generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
+description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
 ---
 
 # bomify plugins
@@ -13,7 +13,7 @@ comments or rely on memory of it, since the contracts keep growing.
 | Contract | Subcommands | Spec |
 | --- | --- | --- |
 | Component | `component pull/push/remote` | [`contracts/component/v1`](../../../plugins/contracts/component/v1/CONTRACT.md) |
-| SBOM generation | `sbom schema/generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
+| SBOM generation | `sbom generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
 | Security scanning | `security scan/supported-components` | [`contracts/security/v1`](../../../plugins/contracts/security/v1/CONTRACT.md) |
 | Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`contracts/signing/v1`](../../../plugins/contracts/signing/v1/CONTRACT.md) |
 
@@ -30,7 +30,11 @@ Also relevant:
   result shape bomify parses, next to that version's spec. Glob for the
   current set.
   `plugins/contracts/contract-result.schema.json` is the `contract`
-  command's, shared by all.
+  command's, shared by all. A CycloneDX object in a result (a
+  component, a vulnerability, a whole SBOM) `$ref`s CycloneDX's own
+  schema rather than restating it, adding only bomify's constraints
+  beside it in an `allOf`. In Go, the same objects are cyclonedx-go's
+  types, decoded with `DisallowUnknownFields`.
 - [`plugins/README.md`](../../../plugins/README.md): the first-party
   plugins.
 - [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):

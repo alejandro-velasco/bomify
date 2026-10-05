@@ -6,7 +6,7 @@ The first-party plugins. Each directory is a standalone
 - **Component** (`component pull|push|remote`,
   [`contracts/component/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
   fetches and publishes the components an SBOM describes.
-- **SBOM generation** (`sbom schema/generate`,
+- **SBOM generation** (`sbom generate`,
   [`contracts/sbom/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   builds an SBOM for a deployment medium.
 - **Security scanning** (`security scan|supported-components`,

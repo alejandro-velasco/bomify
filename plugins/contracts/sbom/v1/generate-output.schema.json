@@ -2,45 +2,63 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/sbom/v1/generate-output.schema.json",
   "title": "bomify plugin \"sbom generate\" output",
-  "description": "What a bomify-plugin-<kind> binary's \"sbom generate\" must print to stdout on success, per plugins/contracts/sbom/v1/CONTRACT.md, on top of CycloneDX's own schema (1.5 or later). Three of its rules can't be expressed here and are checked by pkg/plugin's ValidateGenerated instead: every bom-ref equals its component's purl, bom-refs are unique among components, and every dependencies ref and dependsOn names a bom-ref in the document.",
+  "description": "What a bomify-plugin-<kind> binary's \"sbom generate\" must print to stdout on success, per plugins/contracts/sbom/v1/CONTRACT.md: the subset of a CycloneDX BOM bomify reads, its metadata, components, and dependencies. Each is CycloneDX's own object, referenced from CycloneDX's schema (1.7's definitions, which cover 1.5 and 1.6 too), with bomify's rules beside it. Three rules can't be expressed here: every bom-ref equals its component's purl, bom-refs are unique among components, and every dependencies ref and dependsOn names a bom-ref in the document.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["bomFormat", "specVersion", "metadata"],
-  "not": { "required": ["serialNumber"] },
   "properties": {
+    "$schema": { "type": "string" },
     "bomFormat": { "const": "CycloneDX" },
     "specVersion": {
       "type": "string",
       "pattern": "^1\\.([5-9]|[1-9][0-9]+)$",
       "description": "CycloneDX 1.5 or later."
     },
+    "version": { "type": "integer" },
     "metadata": {
-      "type": "object",
-      "required": ["component"],
-      "not": { "required": ["timestamp"] },
-      "properties": {
-        "component": {
-          "allOf": [{ "$ref": "#/definitions/component" }, { "required": ["version"] }],
-          "description": "What the SBOM was generated from, e.g. the chart."
+      "allOf": [
+        { "$ref": "https://cyclonedx.org/schema/bom-1.7.schema.json#/definitions/metadata" },
+        {
+          "required": ["component"],
+          "properties": {
+            "timestamp": {
+              "not": {},
+              "description": "Not allowed: the same inputs produce the same document."
+            },
+            "component": {
+              "allOf": [{ "$ref": "#/definitions/packaged" }, { "required": ["version"] }],
+              "description": "What the SBOM was generated from, e.g. the chart."
+            }
+          }
         }
-      }
+      ]
     },
     "components": {
       "type": "array",
-      "items": { "$ref": "#/definitions/component" },
+      "items": { "$ref": "#/definitions/packaged" },
       "description": "Everything to package, all top-level."
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "$ref": "https://cyclonedx.org/schema/bom-1.7.schema.json#/definitions/dependency" },
+      "description": "What depends on what, by bom-ref; optional."
     }
   },
   "definitions": {
-    "component": {
-      "type": "object",
-      "required": ["name", "purl", "bom-ref"],
-      "not": { "required": ["components"] },
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 },
-        "purl": { "type": "string", "pattern": "^pkg:" },
-        "bom-ref": { "type": "string", "pattern": "^pkg:", "description": "The component's purl." }
-      }
+    "packaged": {
+      "description": "A CycloneDX component, identified by its purl, with nothing nested.",
+      "allOf": [
+        { "$ref": "https://cyclonedx.org/schema/bom-1.7.schema.json#/definitions/component" },
+        {
+          "required": ["purl", "bom-ref"],
+          "properties": {
+            "components": {
+              "maxItems": 0,
+              "description": "Nothing nested: bomify build only packages top-level components."
+            }
+          }
+        }
+      ]
     }
   }
 }

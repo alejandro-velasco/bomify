@@ -22,8 +22,8 @@ const (
 // validBOM is a minimal SBOM following every output rule: a root that's
 // also packaged, one more component, and a dependency between them.
 func validBOM() *cdx.BOM {
-	root := cdx.Component{Name: "app", Version: "1.0", PackageURL: rootPurl, BOMRef: rootPurl}
-	image := cdx.Component{Name: "app", Version: "1.0", PackageURL: imagePurl, BOMRef: imagePurl}
+	root := cdx.Component{Type: cdx.ComponentTypeApplication, Name: "app", Version: "1.0", PackageURL: rootPurl, BOMRef: rootPurl}
+	image := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "app", Version: "1.0", PackageURL: imagePurl, BOMRef: imagePurl}
 	bom := cdx.NewBOM()
 	bom.Metadata = &cdx.Metadata{Component: &root}
 	bom.Components = &[]cdx.Component{root, image}
@@ -34,6 +34,16 @@ func validBOM() *cdx.BOM {
 func TestValidateGeneratedAcceptsValid(t *testing.T) {
 	if err := ValidateGenerated(validBOM()); err != nil {
 		t.Errorf("ValidateGenerated = %v, want nil", err)
+	}
+}
+
+func TestValidateGeneratedOlderSpecVersions(t *testing.T) {
+	for _, v := range []cdx.SpecVersion{cdx.SpecVersion1_5, cdx.SpecVersion1_6} {
+		bom := validBOM()
+		bom.SpecVersion = v
+		if err := ValidateGenerated(bom); err != nil {
+			t.Errorf("CycloneDX %s: ValidateGenerated = %v, want nil", v, err)
+		}
 	}
 }
 
@@ -49,7 +59,7 @@ func TestValidateGeneratedRules(t *testing.T) {
 		}, "metadata.component has no purl"},
 		"component has no purl": {func(b *cdx.BOM) {
 			(*b.Components)[1].PackageURL, (*b.Components)[1].BOMRef = "", ""
-		}, "has no purl"},
+		}, "components[1] () has no purl"},
 		"unparseable purl": {func(b *cdx.BOM) {
 			(*b.Components)[1].PackageURL, (*b.Components)[1].BOMRef = "oci/app", "oci/app"
 		}, `purl "oci/app"`},
@@ -58,15 +68,20 @@ func TestValidateGeneratedRules(t *testing.T) {
 			*b.Components = append(*b.Components, (*b.Components)[1])
 		}, "isn't unique"},
 		"nested components": {func(b *cdx.BOM) {
-			(*b.Components)[1].Components = &[]cdx.Component{{Name: "x"}}
-		}, "nested components"},
+			(*b.Components)[1].Components = &[]cdx.Component{{Type: cdx.ComponentTypeFile, Name: "x"}}
+		}, "has nested components"},
+		"older spec version": {func(b *cdx.BOM) { b.SpecVersion = cdx.SpecVersion1_4 }, "specVersion 1.4 is older than 1.5"},
+		"other fields": {func(b *cdx.BOM) {
+			b.Services = &[]cdx.Service{{Name: "api"}}
+			b.Vulnerabilities = &[]cdx.Vulnerability{{ID: "CVE-1"}}
+		}, "has services, vulnerabilities; only metadata, components, and dependencies are allowed"},
 		"dangling ref": {func(b *cdx.BOM) {
 			*b.Dependencies = append(*b.Dependencies, cdx.Dependency{Ref: "pkg:oci/gone@1"})
 		}, `ref "pkg:oci/gone@1" names no bom-ref`},
 		"dangling dependsOn": {func(b *cdx.BOM) {
 			*(*b.Dependencies)[0].Dependencies = append(*(*b.Dependencies)[0].Dependencies, "pkg:oci/gone@1")
 		}, `dependsOn "pkg:oci/gone@1"`},
-		"serial number": {func(b *cdx.BOM) { b.SerialNumber = "urn:uuid:1" }, "serialNumber is set"},
+		"serial number": {func(b *cdx.BOM) { b.SerialNumber = "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79" }, "serialNumber"},
 		"timestamp":     {func(b *cdx.BOM) { b.Metadata.Timestamp = "2026-01-01T00:00:00Z" }, "metadata.timestamp is set"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -86,8 +101,6 @@ type fakeSBOM struct {
 	bom     *cdx.BOM
 }
 
-func (f *fakeSBOM) OptionsSchema() []byte { return []byte(`{"type":"object"}`) }
-
 func (f *fakeSBOM) Generate(_ context.Context, options json.RawMessage, _ *slog.Logger) (*cdx.BOM, error) {
 	f.options = options
 	return f.bom, nil
@@ -105,13 +118,6 @@ func runSBOM(t *testing.T, p SBOMPlugin, help SBOMHelp, dir string, args ...stri
 	root.SetArgs(append([]string{"sbom"}, args...))
 	err := root.Execute()
 	return out.String(), err
-}
-
-func TestSBOMCommandSchema(t *testing.T) {
-	out, err := runSBOM(t, &fakeSBOM{}, SBOMHelp{}, t.TempDir(), "schema")
-	if err != nil || out != `{"type":"object"}` {
-		t.Errorf("schema = %q, %v; want the plugin's schema", out, err)
-	}
 }
 
 func TestSBOMCommandGenerateFromConfig(t *testing.T) {
@@ -214,5 +220,20 @@ func TestDecodeOptionsRejectsUnknownKeys(t *testing.T) {
 	}
 	if err := DecodeOptions(json.RawMessage(`{"chart":"a","chrat":"b"}`), &v); err == nil {
 		t.Error("DecodeOptions = nil, want the unknown key rejected")
+	}
+}
+
+func TestEncodeSBOMAtItsOwnVersion(t *testing.T) {
+	bom := validBOM()
+	bom.SpecVersion = cdx.SpecVersion1_5
+
+	var out bytes.Buffer
+	if err := EncodeSBOM(&out, bom); err != nil {
+		t.Fatalf("EncodeSBOM: %v", err)
+	}
+	for _, want := range []string{`"specVersion": "1.5"`, `"$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("EncodeSBOM wrote:\n%s\nwant it to contain %s", out.String(), want)
+		}
 	}
 }

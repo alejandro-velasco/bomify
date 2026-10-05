@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
@@ -19,11 +20,8 @@ import (
 
 // SBOMPlugin is an SBOM generation plugin's own logic (see
 // plugins/contracts/sbom/v1/CONTRACT.md), for SBOMCommand to expose as
-// the contract's "sbom schema"/"sbom generate".
+// the contract's "sbom generate".
 type SBOMPlugin interface {
-	// OptionsSchema returns the JSON Schema of the options object Generate
-	// takes, which "sbom schema" prints.
-	OptionsSchema() []byte
 	// Generate generates the SBOM options describe. Decode options with
 	// DecodeOptions, so unknown keys are rejected.
 	Generate(ctx context.Context, options json.RawMessage, logger *slog.Logger) (*cdx.BOM, error)
@@ -52,16 +50,6 @@ func SBOMCommand(p SBOMPlugin, help SBOMHelp) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   SBOMSubcommand,
 		Short: "SBOM generation subcommands — see plugins/contracts/sbom/v1/CONTRACT.md",
-	}
-
-	schema := &cobra.Command{
-		Use:   "schema",
-		Short: "Print the JSON Schema of the options \"sbom generate --config\" takes",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := cmd.OutOrStdout().Write(p.OptionsSchema())
-			return err
-		},
 	}
 
 	var config, output string
@@ -105,13 +93,13 @@ func SBOMCommand(p SBOMPlugin, help SBOMHelp) *cobra.Command {
 			return f.Close()
 		},
 	}
-	generate.Flags().StringVar(&config, "config", help.DefaultConfig, "the options, a JSON or YAML file (see \"sbom schema\")")
+	generate.Flags().StringVar(&config, "config", help.DefaultConfig, "the options, a JSON or YAML file")
 	generate.Flags().StringVarP(&output, "output", "o", "", "write the SBOM to this file instead of stdout")
 	if help.Flags != nil {
 		apply = help.Flags(generate.Flags())
 	}
 
-	cmd.AddCommand(schema, generate)
+	cmd.AddCommand(generate)
 	return cmd
 }
 
@@ -151,12 +139,13 @@ func DecodeOptions(options json.RawMessage, v any) error {
 }
 
 // EncodeSBOM writes bom to w as the pretty-printed CycloneDX JSON "sbom
-// generate" prints.
+// generate" prints, at bom's own spec version: fields that version
+// doesn't have are dropped, and its $schema set to match.
 func EncodeSBOM(w io.Writer, bom *cdx.BOM) error {
 	enc := cdx.NewBOMEncoder(w, cdx.BOMFileFormatJSON)
 	enc.SetEscapeHTML(false)
 	enc.SetPretty(true)
-	if err := enc.Encode(bom); err != nil {
+	if err := enc.EncodeVersion(bom, bom.SpecVersion); err != nil {
 		return fmt.Errorf("encode SBOM: %w", err)
 	}
 	return nil
@@ -164,14 +153,22 @@ func EncodeSBOM(w io.Writer, bom *cdx.BOM) error {
 
 // ValidateGenerated checks bom against the SBOM generation contract's
 // output rules (plugins/contracts/sbom/v1/CONTRACT.md), all but
-// determinism, which no single document can show: a described root,
-// every component identified by its purl, nothing nested, dependencies
-// that resolve, and no serial number or timestamp. It reports every
-// broken rule, not just the first.
+// determinism, which no single document can show: CycloneDX 1.5 or
+// later, holding only metadata, components, and dependencies; a
+// described root; every component identified by its purl, unique, with
+// nothing nested; dependencies that resolve; and no serial number or
+// timestamp. It reports every broken rule, not just the first.
+//
+// The CycloneDX objects themselves are cyclonedx-go's to check: decode a
+// plugin's output with DisallowUnknownFields, and encode it with
+// EncodeSBOM, at its own spec version.
 func ValidateGenerated(bom *cdx.BOM) error {
 	var errs []error
-	if bom.SerialNumber != "" {
-		errs = append(errs, errors.New("serialNumber is set"))
+	if bom.SpecVersion < cdx.SpecVersion1_5 {
+		errs = append(errs, fmt.Errorf("specVersion %s is older than 1.5", bom.SpecVersion))
+	}
+	if extra := otherFields(bom); len(extra) > 0 {
+		errs = append(errs, fmt.Errorf("has %s; only metadata, components, and dependencies are allowed", strings.Join(extra, ", ")))
 	}
 
 	check := func(where string, c cdx.Component) {
@@ -186,7 +183,7 @@ func ValidateGenerated(bom *cdx.BOM) error {
 		if c.BOMRef != c.PackageURL {
 			errs = append(errs, fmt.Errorf("%s: bom-ref %q isn't its purl %q", where, c.BOMRef, c.PackageURL))
 		}
-		if c.Components != nil && len(*c.Components) > 0 {
+		if len(deref(c.Components)) > 0 {
 			errs = append(errs, fmt.Errorf("%s has nested components", where))
 		}
 	}
@@ -194,7 +191,7 @@ func ValidateGenerated(bom *cdx.BOM) error {
 	// bom-refs are unique among components; the root may share one,
 	// when it describes a component that's also packaged.
 	refs := map[string]bool{}
-	for i, c := range componentList(bom.Components) {
+	for i, c := range deref(bom.Components) {
 		where := fmt.Sprintf("components[%d] (%s)", i, c.PackageURL)
 		check(where, c)
 		if refs[c.BOMRef] {
@@ -217,18 +214,13 @@ func ValidateGenerated(bom *cdx.BOM) error {
 		errs = append(errs, errors.New("metadata.timestamp is set"))
 	}
 
-	if bom.Dependencies != nil {
-		for _, d := range *bom.Dependencies {
-			if !refs[d.Ref] {
-				errs = append(errs, fmt.Errorf("dependencies: ref %q names no bom-ref", d.Ref))
-			}
-			if d.Dependencies == nil {
-				continue
-			}
-			for _, on := range *d.Dependencies {
-				if !refs[on] {
-					errs = append(errs, fmt.Errorf("dependencies: %q dependsOn %q, which names no bom-ref", d.Ref, on))
-				}
+	for _, d := range deref(bom.Dependencies) {
+		if !refs[d.Ref] {
+			errs = append(errs, fmt.Errorf("dependencies: ref %q names no bom-ref", d.Ref))
+		}
+		for _, on := range deref(d.Dependencies) {
+			if !refs[on] {
+				errs = append(errs, fmt.Errorf("dependencies: %q dependsOn %q, which names no bom-ref", d.Ref, on))
 			}
 		}
 	}
@@ -236,11 +228,38 @@ func ValidateGenerated(bom *cdx.BOM) error {
 	return errors.Join(errs...)
 }
 
-// componentList dereferences a CycloneDX component list, nil when the
-// document has none.
-func componentList(cs *[]cdx.Component) []cdx.Component {
-	if cs == nil {
+// otherFields names the top-level fields bom sets beyond the ones the
+// contract allows, in document order.
+func otherFields(bom *cdx.BOM) []string {
+	var names []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"serialNumber", bom.SerialNumber != ""},
+		{"services", bom.Services != nil},
+		{"externalReferences", bom.ExternalReferences != nil},
+		{"compositions", bom.Compositions != nil},
+		{"properties", bom.Properties != nil},
+		{"vulnerabilities", bom.Vulnerabilities != nil},
+		{"annotations", bom.Annotations != nil},
+		{"formulation", bom.Formulation != nil},
+		{"declarations", bom.Declarations != nil},
+		{"definitions", bom.Definitions != nil},
+		{"citations", bom.Citations != nil},
+		{"signature", bom.Signature != nil},
+	} {
+		if f.set {
+			names = append(names, f.name)
+		}
+	}
+	return names
+}
+
+// deref dereferences a CycloneDX list, nil when the document has none.
+func deref[T any](p *[]T) []T {
+	if p == nil {
 		return nil
 	}
-	return *cs
+	return *p
 }

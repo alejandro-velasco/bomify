@@ -47,7 +47,7 @@ to, so templates render as they would there and a chart whose
 "incompatible with Kubernetes" error instead of rendering anyway.
 
 Every flag can instead be set in an options file, JSON or YAML, with
-the same keys ("sbom schema" prints its JSON Schema). --config's
+the same keys. --config's
 default, "bomify-helm-sbom.yaml", is read if present in the working
 directory; a --config named explicitly must exist. A flag given
 explicitly always takes precedence over the same key in the file. The
@@ -56,8 +56,6 @@ appended to the SBOM as-is.`
 
 // sbomGenerator implements plugin.SBOMPlugin over internal/chart.
 type sbomGenerator struct{}
-
-func (sbomGenerator) OptionsSchema() []byte { return optionsSchema }
 
 func (sbomGenerator) Generate(_ context.Context, raw json.RawMessage, logger *slog.Logger) (*cdx.BOM, error) {
 	var o options

@@ -72,44 +72,6 @@ func TestManifestFlagStillNamesConfig(t *testing.T) {
 	}
 }
 
-func TestOptionsSchemaMatchesOptions(t *testing.T) {
-	var schema struct {
-		AdditionalProperties bool                       `json:"additionalProperties"`
-		Properties           map[string]json.RawMessage `json:"properties"`
-	}
-	if err := json.Unmarshal(optionsSchema, &schema); err != nil {
-		t.Fatalf("options.schema.json: %v", err)
-	}
-	if schema.AdditionalProperties {
-		t.Error("options.schema.json allows unknown keys")
-	}
-
-	var keys []string
-	typ := reflect.TypeFor[options]()
-	for i := range typ.NumField() {
-		keys = append(keys, strings.Split(typ.Field(i).Tag.Get("json"), ",")[0])
-	}
-	var props []string
-	for key := range schema.Properties {
-		props = append(props, key)
-	}
-	slices.Sort(keys)
-	slices.Sort(props)
-	if !slices.Equal(keys, props) {
-		t.Errorf("schema properties %v, want options' keys %v", props, keys)
-	}
-}
-
-func TestSchemaCommandPrintsSchema(t *testing.T) {
-	root := NewRootCmd()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetArgs([]string{"sbom", "schema"})
-	if err := root.Execute(); err != nil || !bytes.Equal(out.Bytes(), optionsSchema) {
-		t.Errorf("sbom schema = %q, %v; want options.schema.json", out.String(), err)
-	}
-}
-
 func TestGenerateRequiresChartAndRepo(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	for config, want := range map[string]string{

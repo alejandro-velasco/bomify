@@ -44,7 +44,7 @@ SBOM can go straight into `bomify build`.
 ### Options file
 
 Any flag but `--output` can be set in an options file instead, keyed by
-the flag name. `bomify-plugin-helm sbom schema` prints its JSON Schema:
+the flag name:
 
 ```yaml
 # bomify-helm-sbom.yaml
@@ -64,8 +64,8 @@ With that file present, `bomify sbom generate helm` needs no flags.
 - Unknown keys are errors.
 - `extraComponents` (a list of CycloneDX components) is appended to the
   SBOM as-is, with a missing `bom-ref` set to the component's `purl`. It
-  has no flag. Like the rest of the SBOM, each needs a `name` and a
-  `purl` (see the
+  has no flag. Like the rest of the SBOM, each is a CycloneDX component
+  (so it needs a `type` and a `name`) with a `purl` (see the
   [SBOM generation contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md#output)).
 
 ### Examples

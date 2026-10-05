@@ -64,12 +64,14 @@ straight through, and propagates the exit code. That's all: no JSON
 result, log file, or caching, so the plugin works exactly the same run
 directly.
 
-Unattended, a plugin takes its options as a `--config` file valid
-against the JSON Schema its `sbom schema` prints. Its SBOM follows
-output rules strict enough to merge several plugins' SBOMs into one:
-every component identified by its purl, nothing nested, no timestamp.
-`pkg/plugin`'s `SBOMCommand` implements both sides for a Go plugin, and
-its `ValidateGenerated` checks the rules.
+Unattended, a plugin takes its options as a `--config` file, which it
+validates itself. Its SBOM is the part of a CycloneDX BOM bomify reads
+(metadata, components, dependencies), following rules strict enough to
+merge several plugins' SBOMs into one: every component identified by its
+purl, nothing nested, no timestamp. `pkg/plugin`'s `SBOMCommand`
+implements both sides for a Go plugin, and its `ValidateGenerated`
+checks the rules; cyclonedx-go itself checks the CycloneDX objects, as
+bomify decodes them rejecting unknown fields.
 
 ## Concurrent, idempotent pulls
 

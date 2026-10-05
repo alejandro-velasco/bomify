@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	_ "embed"
 	"encoding/json"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -16,7 +15,6 @@ const defaultConfigPath = "bomify-helm-sbom.yaml"
 
 // options is "sbom generate"'s options object: --config's keys, each
 // also settable by the flag of the same name (see generateFlags).
-// options.schema.json, which "sbom schema" prints, describes it.
 type options struct {
 	Chart       string   `json:"chart,omitempty"`
 	Repo        string   `json:"repo,omitempty"`
@@ -31,9 +29,6 @@ type options struct {
 	// spec names).
 	ExtraComponents []cdx.Component `json:"extraComponents,omitempty"`
 }
-
-//go:embed options.schema.json
-var optionsSchema []byte
 
 // generateFlags adds "sbom generate"'s flags, one per options key but
 // extraComponents, and returns how to apply them over --config's
