@@ -182,6 +182,9 @@ sources:
 	if string(c.Sources[0].OptionsJSON()) != `{"chart":"web"}` || string(c.Sources[1].OptionsJSON()) != "{}" {
 		t.Errorf("options = %s, %s", c.Sources[0].OptionsJSON(), c.Sources[1].OptionsJSON())
 	}
+	if c.Sources[0].Type() != SourcePlugin || c.Sources[1].Type() != SourceSBOM {
+		t.Errorf("types = %v, %v; want SourcePlugin, SourceSBOM", c.Sources[0].Type(), c.Sources[1].Type())
+	}
 }
 
 func TestLoadCompositionRejects(t *testing.T) {
