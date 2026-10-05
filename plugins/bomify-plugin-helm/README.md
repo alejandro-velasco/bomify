@@ -4,8 +4,8 @@ bomify's plugin for Helm charts. It implements two independent contracts:
 
 - **SBOM generation** (`sbom generate`,
   [contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
-  renders a chart and reports every image it references. Run this one
-  yourself.
+  renders a chart and reports every image it references. List it as a
+  `helm` source in a `bomify sbom compose` file, or run it yourself.
 - **Component** (`component pull|push|remote`,
   [contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
   fetches and publishes `pkg:helm/...` charts. `bomify build` and `bomify
@@ -13,12 +13,14 @@ bomify's plugin for Helm charts. It implements two independent contracts:
 
 ## SBOM generation
 
-```
-bomify sbom generate helm --chart <name> --repo <repository> [flags]
-```
+List the chart as a `medium: helm` source in a
+[`bomify sbom compose`](https://github.com/alejandro-velasco/bomify/blob/main/docs/reference/bomify_sbom_compose.md)
+file, with the options below. To run the plugin directly, from
+`<data-dir>/plugins`, put them in an options file:
 
-bomify passes every flag after `helm` straight to `bomify-plugin-helm sbom
-generate`, so running the plugin directly is equivalent.
+```
+bomify-plugin-helm sbom generate [--config <file>] [--output <file>]
+```
 
 The chart is rendered locally, as `helm template` does (no cluster is
 contacted). Every image referenced by the pod specs (`containers`,
@@ -27,59 +29,38 @@ contacted). Every image referenced by the pod specs (`containers`,
 resources aren't inspected yet. The chart itself is included too, so the
 SBOM can go straight into `bomify build`.
 
-### Flags
+### Options
 
-| Flag | Required | Meaning |
+| Key | Required | Meaning |
 | --- | --- | --- |
-| `--chart` | unless in the manifest | Chart name, e.g. `postgresql`. |
-| `--repo` | unless in the manifest | Chart repository: `https://...` or `oci://...`. |
-| `--version` | no | Chart version. Defaults to the latest. |
-| `--values`, `-f` | no | Values file to merge. Repeatable. |
-| `--namespace` | no | `.Release.Namespace`. Default `default`. |
-| `--release-name` | no | `.Release.Name`. Default `release-name`, as in `helm template`. |
-| `--kube-version` | no | Kubernetes version to render for and to check the chart's `kubeVersion` against, e.g. `1.31.0`. Defaults to the Helm SDK's built-in version; set it to what you deploy to. |
-| `--output`, `-o` | no | File to write the SBOM to. Default stdout. |
-| `--manifest` | no | YAML file of default flag values (see below). Default `bomify-helm-sbom.yaml`, used only if present. |
+| `chart` | yes | Chart name, e.g. `postgresql`. |
+| `repo` | yes | Chart repository: `https://...` or `oci://...`. |
+| `version` | no | Chart version. Defaults to the latest. |
+| `values` | no | Values files to merge, in order. |
+| `namespace` | no | `.Release.Namespace`. Default `default`. |
+| `release-name` | no | `.Release.Name`. Default `release-name`, as in `helm template`. |
+| `kube-version` | no | Kubernetes version to render for and to check the chart's `kubeVersion` against, e.g. `1.31.0`. Defaults to the Helm SDK's built-in version; set it to what you deploy to. |
 
-### Manifest file
+To package anything rendering can't discover, list it under the
+composition file's `components`.
 
-Any flag can be set in a YAML manifest instead, keyed by the flag name:
+Unknown keys are errors. Run directly, the plugin reads them from
+`--config`, YAML or JSON, or else from `bomify-helm-sbom.yaml` in the
+working directory if present; `--output` writes the SBOM to a file
+instead of stdout.
 
-```yaml
-# bomify-helm-sbom.yaml
-chart: postgresql
-repo: oci://registry-1.docker.io/bitnamicharts
-version: 18.11.6
-values:
-  - values.yaml
-output: postgresql.cdx.json
-```
-
-With that file present, `bomify sbom generate helm` needs no flags.
-
-- The default `bomify-helm-sbom.yaml` may be absent; an explicit
-  `--manifest` path must exist.
-- Command-line flags override the manifest. An explicit `--values`
-  replaces the manifest's list rather than adding to it.
-- `extraComponents` (a list of CycloneDX components) is appended to the
-  SBOM as-is. It has no flag and isn't validated.
-
-### Examples
-
-A public OCI chart:
-
-```
-bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6
-```
+### Example
 
 A chart with a `kubeVersion` constraint and required values, from a
 classic chart repository:
 
-```
-bomify sbom generate helm \
-  --chart enterprise --repo https://charts.anchore.io --version 4.4.0 \
-  --kube-version 1.31.0 \
-  --values values.yaml
+```yaml
+# bomify-helm-sbom.yaml
+chart: enterprise
+repo: https://charts.anchore.io
+version: 4.4.0
+kube-version: 1.31.0
+values: [values.yaml]
 ```
 
 ```yaml

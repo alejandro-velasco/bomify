@@ -90,8 +90,8 @@ anything is scanned.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` affecting `--purl`. Empty means nothing was found; that's a valid result, not an error. |
-| `components` | array | no | CycloneDX `component`s the plugin unpacked `--purl` into to scan it (e.g. the packages inside an image). Omit if it scanned the purl directly. |
+| `vulnerabilities` | array | yes (may be empty) | Every CycloneDX `vulnerability` affecting `--purl`, valid against [CycloneDX's JSON Schema](https://cyclonedx.org/schema/bom-1.7.schema.json). Empty means nothing was found; that's a valid result, not an error. |
+| `components` | array | no | CycloneDX `component`s, valid against CycloneDX's JSON Schema, that the plugin unpacked `--purl` into to scan it (e.g. the packages inside an image). Omit if it scanned the purl directly. |
 | `unscanned` | string | no | Why the plugin couldn't analyze the component at all, e.g. nothing in its files it recognizes. bomify then counts it as not scanned, not as clean, and ignores the rest of the result. |
 
 **The plugin sets `affects`; bomify never changes it.**

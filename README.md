@@ -10,8 +10,8 @@ the way Docker builds images from Dockerfiles.
 - `bomify push`/`pull` and `save`/`load` move packages through an OCI
   registry or a tarball; `bomify distribute` republishes each component
   to its own registry.
-- `bomify sbom generate` builds an SBOM from a deployment medium, such as
-  a Helm chart.
+- `bomify sbom compose` builds one SBOM from the deployment mediums a
+  package spans, such as Helm charts, through each medium's plugin.
 - `bomify security scan` scans a package's components for
   vulnerabilities, can fail on a severity threshold with VEX exemptions,
   and can gate `pull`/`load` before anything is written. Publishers can
@@ -72,10 +72,23 @@ bomify pull registry.example.com/myapp:1.0 --verify sigstore --verify-option key
 bomify trust create sigstore --match registry.example.com --option key=cosign.pub
 ```
 
-Generate an SBOM for a Helm chart, build it, and scan it with grype:
+Compose an SBOM for a Helm chart, build it, and scan it with grype:
+
+```yaml
+# bomify.yaml
+name: postgresql
+version: 18.11.6
+sources:
+  - name: postgresql
+    medium: helm
+    options:
+      chart: postgresql
+      repo: oci://registry-1.docker.io/bitnamicharts
+      version: 18.11.6
+```
 
 ```sh
-bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 18.11.6 > postgresql.cdx.json
+bomify sbom compose bomify.yaml -o postgresql.cdx.json
 bomify build postgresql.cdx.json --tag postgresql:18.11.6
 bomify security scan grype postgresql:18.11.6 --fail-on high
 ```

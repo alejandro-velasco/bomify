@@ -26,6 +26,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/provenance"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 // Layer describes one component layer, or one component's vulnerability
@@ -93,7 +94,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, fmt.Errorf("push config: %w", err)
 	}
 
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 
 	// Layers are slotted by component index rather than appended as each
 	// upload finishes: completion order varies from run to run, and the

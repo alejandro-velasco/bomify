@@ -17,6 +17,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 const packageShort = "Manage individual bomify packages"
@@ -302,7 +303,7 @@ func runPackageVulnerabilities(cmd *cobra.Command, opts *packageVulnerabilitiesO
 		return fmt.Errorf("load sbom: %w", err)
 	}
 
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 
 	wantPurls := make(map[string]bool, len(opts.purls))
 	for _, purl := range opts.purls {

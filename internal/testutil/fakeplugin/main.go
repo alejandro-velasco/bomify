@@ -13,9 +13,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 )
 
 func main() {
@@ -33,23 +33,48 @@ func main() {
 		signatureMain()
 	case "contract":
 		contractMain()
-	default:
+	case "sbom":
 		sbomMain()
+	default:
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin <component|security|signature|contract|sbom> ...")
+		os.Exit(1)
 	}
 }
 
-// sbomMain stands in for "sbom generate", whose arguments bomify passes
-// through unparsed (see plugins/contracts/sbom/v1/CONTRACT.md): it echoes its
-// own arguments to stdout and, if any is exactly "--fail", writes to stderr
-// and exits 7 instead, so tests can check both paths and that the exit code
-// propagates.
+// sbomMain stands in for the SBOM generation contract (see
+// plugins/contracts/sbom/v1/CONTRACT.md): "sbom generate --config <file>"
+// prints the file's "bom" verbatim, so a test decides the SBOM,
+// conforming or not; each generate appends its working directory to
+// FAKESBOM_LOG, if set.
 func sbomMain() {
-	fmt.Fprintln(os.Stdout, strings.Join(os.Args[1:], " "))
+	if len(os.Args) != 5 || os.Args[2] != "generate" || os.Args[3] != "--config" {
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin sbom generate --config <file>")
+		os.Exit(1)
+	}
+	sbomGenerate(os.Args[4])
+}
 
-	for _, arg := range os.Args[1:] {
-		if arg == "--fail" {
-			fmt.Fprintln(os.Stderr, "simulated failure")
-			os.Exit(7)
+// sbomGenerate prints the "bom" of the options file at config.
+func sbomGenerate(config string) {
+	if logPath := os.Getenv("FAKESBOM_LOG"); logPath != "" {
+		wd, _ := os.Getwd()
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			fmt.Fprintln(f, wd)
+			f.Close()
 		}
 	}
+
+	var options struct {
+		BOM json.RawMessage `json:"bom"`
+	}
+	data, err := os.ReadFile(config)
+	if err == nil {
+		err = json.Unmarshal(data, &options)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read options:", err)
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, "generating")
+	fmt.Println(string(options.BOM))
 }

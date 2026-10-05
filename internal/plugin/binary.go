@@ -14,6 +14,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
 
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -127,13 +128,11 @@ func CheckBinary(component cdx.Component, sbomDir string) (*pluginlib.Result, er
 // reference — a plain path, relative ones resolved against sbomDir, or a
 // file:// URL. Remote URLs aren't supported.
 func BinarySource(component cdx.Component, sbomDir string) (string, error) {
-	if component.ExternalReferences != nil {
-		for _, ref := range *component.ExternalReferences {
-			if ref.Type != cdx.ERTypeDistribution || ref.URL == "" {
-				continue
-			}
-			return localPath(ref.URL, sbomDir)
+	for _, ref := range sliceutil.Deref(component.ExternalReferences) {
+		if ref.Type != cdx.ERTypeDistribution || ref.URL == "" {
+			continue
 		}
+		return localPath(ref.URL, sbomDir)
 	}
 	return "", fmt.Errorf("%s has no %q external reference naming its binary", component.PackageURL, cdx.ERTypeDistribution)
 }

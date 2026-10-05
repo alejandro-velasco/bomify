@@ -22,6 +22,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -63,10 +64,7 @@ func NewReport(component cdx.Component, result pluginlib.SecurityResult, scanner
 
 	affected := make(map[string]bool)
 	for _, vuln := range result.Vulnerabilities {
-		if vuln.Affects == nil {
-			continue
-		}
-		for _, affects := range *vuln.Affects {
+		for _, affects := range sliceutil.Deref(vuln.Affects) {
 			affected[affects.Ref] = true
 		}
 	}

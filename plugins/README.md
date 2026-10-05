@@ -43,7 +43,7 @@ of its results:
 plugins/contracts/
 ├── contract-result.schema.json    the "contract" command's result, below
 ├── component/v1/                  CONTRACT.md, result, remote-result
-├── sbom/v1/                       CONTRACT.md (no results to validate)
+├── sbom/v1/                       CONTRACT.md, generate-output
 ├── security/v1/                   CONTRACT.md, security-result, supported-components-result
 └── signing/v1/                    CONTRACT.md, sign-result, verify-result,
                                    verify-attestation-result, supported-signature-types-result

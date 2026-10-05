@@ -22,15 +22,19 @@ Also relevant:
 - [`pkg/plugin`](../../../pkg/plugin): the Go library for plugins. It has
   one type per JSON result plus `Print`, and one interface and command
   builder per contract (`ComponentCommand`, `SecurityCommand`,
-  `SignatureCommand`, plus `NewRootCommand`/`Run`) that implement the
+  `SignatureCommand`, `SBOMCommand`, plus `NewRootCommand`/`Run`) that implement the
   flags, validation, logging, and output. Contract changes to flags or
   output belong in these builders, not in each plugin. Check the package
-  for its current API. SBOM generation has no equivalent, by design.
+  for its current API.
 - `plugins/contracts/<contract>/v<N>/*.schema.json`: one JSON Schema per
-  result shape bomify parses, next to that version's spec (SBOM
-  generation has none). Glob for the current set.
+  result shape bomify parses, next to that version's spec. Glob for the
+  current set.
   `plugins/contracts/contract-result.schema.json` is the `contract`
-  command's, shared by all.
+  command's, shared by all. A CycloneDX object in a result (a
+  component, a vulnerability, a whole SBOM) `$ref`s CycloneDX's own
+  schema rather than restating it, adding only bomify's constraints
+  beside it in an `allOf`. In Go, the same objects are cyclonedx-go's
+  types, decoded with `DisallowUnknownFields`.
 - [`plugins/README.md`](../../../plugins/README.md): the first-party
   plugins.
 - [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):

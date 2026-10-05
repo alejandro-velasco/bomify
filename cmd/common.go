@@ -15,6 +15,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -33,7 +34,7 @@ func forEachComponent(sbomPath string, logger *slog.Logger, concurrency int, fn 
 		name = bom.Metadata.Component.Name
 	}
 
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 	logger.Info("loaded sbom", "name", name, "components", len(components), "concurrency", concurrency)
 
 	if concurrency < 1 {

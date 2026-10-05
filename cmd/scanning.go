@@ -19,6 +19,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -339,7 +340,7 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 	if err != nil {
 		return fmt.Errorf("parse sbom: %w", err)
 	}
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 
 	plugins, err := findScanners(scanners)
 	if err != nil {

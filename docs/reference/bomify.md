@@ -47,7 +47,7 @@ bomify [flags]
 * [bomify push](bomify_push.md)	 - Publish a bomify package to an OCI registry
 * [bomify rmp](bomify_rmp.md)	 - Remove packages by tag (shorthand for "bomify package remove")
 * [bomify save](bomify_save.md)	 - Save packages to a tarball
-* [bomify sbom](bomify_sbom.md)	 - Generate SBOMs for a deployment medium
+* [bomify sbom](bomify_sbom.md)	 - Compose SBOMs from deployment mediums
 * [bomify security](bomify_security.md)	 - Security scanning commands
 * [bomify tag](bomify_tag.md)	 - Create a new tag pointing at an existing package
 * [bomify trust](bomify_trust.md)	 - Manage signature verification rules for bomify pull and load

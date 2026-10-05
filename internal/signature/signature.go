@@ -27,6 +27,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
@@ -99,7 +100,7 @@ func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Atte
 	}
 
 	return func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error) {
-		statementFile, err := writeTemp("bomify-attestation-*.json", statement)
+		statementFile, err := fsutil.WriteTemp("bomify-attestation-*.json", statement)
 		if err != nil {
 			return ocispec.Descriptor{}, err
 		}
@@ -254,7 +255,7 @@ func fetchEnvelope(ctx context.Context, store content.ReadOnlyStorage, referrer 
 		return "", "", fmt.Errorf("fetch envelope: %w", err)
 	}
 
-	envelopeFile, err := writeTemp("bomify-signature-envelope-*", envelope)
+	envelopeFile, err := fsutil.WriteTemp("bomify-signature-envelope-*", envelope)
 	if err != nil {
 		return "", "", err
 	}
@@ -343,25 +344,9 @@ func writePayload(manifest ocispec.Descriptor) (string, func(), error) {
 		return "", nil, fmt.Errorf("encode signature payload: %w", err)
 	}
 
-	path, err := writeTemp("bomify-signature-payload-*.json", data)
+	path, err := fsutil.WriteTemp("bomify-signature-payload-*.json", data)
 	if err != nil {
 		return "", nil, err
 	}
 	return path, func() { os.Remove(path) }, nil
-}
-
-// writeTemp writes data to a new temp file matching pattern and returns
-// its path, which the caller must remove.
-func writeTemp(pattern string, data []byte) (string, error) {
-	f, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
-	}
-	defer f.Close()
-
-	if _, err := f.Write(data); err != nil {
-		os.Remove(f.Name())
-		return "", fmt.Errorf("write %s: %w", f.Name(), err)
-	}
-	return f.Name(), nil
 }

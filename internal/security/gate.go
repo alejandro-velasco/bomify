@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
@@ -168,13 +168,13 @@ func (g Gate) Evaluate(reports []ComponentReport) Evaluation {
 	failing := map[[2]string]Finding{}
 	suppressed := map[[2]string]Suppressed{}
 	for _, r := range reports {
-		if r.Report == nil || r.Report.Vulnerabilities == nil {
+		if r.Report == nil {
 			continue
 		}
 		// Built once per report, since every vulnerability in it resolves
 		// its "affects" against the same components.
-		purlByRef := purlsByBOMRef(sbom.Components(r.Report.Components))
-		for _, vuln := range *r.Report.Vulnerabilities {
+		purlByRef := purlsByBOMRef(sliceutil.Deref(r.Report.Components))
+		for _, vuln := range sliceutil.Deref(r.Report.Vulnerabilities) {
 			if slices.Contains(g.Ignore, vuln.ID) {
 				continue
 			}
@@ -229,10 +229,7 @@ func compareFindings(a, b Finding) int {
 
 func highestSeverity(vuln cdx.Vulnerability) Severity {
 	highest := SeverityNone
-	if vuln.Ratings == nil {
-		return highest
-	}
-	for _, rating := range *vuln.Ratings {
+	for _, rating := range sliceutil.Deref(vuln.Ratings) {
 		highest = max(highest, severityOf(rating.Severity))
 	}
 	return highest

@@ -2,54 +2,42 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/security/v1/security-result.schema.json",
   "title": "bomify plugin SecurityResult",
-  "description": "The single JSON object a bomify-plugin-<type> binary must print to stdout on success for its \"security scan\" subcommand, per plugins/contracts/security/v1/CONTRACT.md. \"vulnerabilities\" is every regular CycloneDX vulnerability object (see https://cyclonedx.org/docs/ for its full schema, not re-specified here) describing something the scanned --purl is affected by. \"components\" is optional: every regular CycloneDX component the plugin found while unpacking the scanned --purl into smaller pieces to scan it at all (e.g. cataloging a container image's contents) - bomify writes them as the top-level components of that component's vulnerability report. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance; it only constrains the bomify-specific parts (the object wrapper, and that each vulnerability's affects is the plugin's own responsibility to set), not every CycloneDX field.",
+  "description": "The single JSON object a bomify-plugin-<type> binary must print to stdout on success for its \"security scan\" subcommand, per plugins/contracts/security/v1/CONTRACT.md. Its vulnerabilities and components are CycloneDX's own objects, referenced from CycloneDX's schema (1.7's definitions); this one adds only the bomify-specific requirements.",
   "type": "object",
   "required": ["vulnerabilities"],
   "properties": {
     "vulnerabilities": {
       "type": "array",
+      "description": "Every vulnerability the scanned --purl is affected by.",
       "items": {
-        "type": "object",
-        "required": ["id"],
-        "properties": {
-          "bom-ref": {
-            "type": "string",
-            "minLength": 1,
-            "description": "A stable identifier for this vulnerability (the vulnerability's own id is a reasonable choice). bomify writes it into the scanned component's vulnerability report unchanged."
-          },
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The vulnerability's own identifier, e.g. a CVE or GHSA id."
-          },
-          "affects": {
-            "type": "array",
-            "minItems": 1,
-            "description": "Set by the plugin, not bomify. For a purl scanned directly (no \"components\" reported), a single entry referencing that same purl string back. For a purl unpacked into pieces (\"components\" is non-empty), one entry per affected piece, referencing its bom-ref from \"components\" - never the top-level purl itself.",
-            "items": {
-              "type": "object",
-              "required": ["ref"],
-              "properties": {
-                "ref": { "type": "string", "minLength": 1 }
+        "allOf": [
+          { "$ref": "https://cyclonedx.org/schema/bom-1.7.schema.json#/definitions/vulnerability" },
+          {
+            "required": ["id"],
+            "properties": {
+              "bom-ref": { "description": "A stable identifier for this vulnerability (its id is a reasonable choice). bomify writes it into the scanned component's vulnerability report unchanged." },
+              "affects": {
+                "minItems": 1,
+                "description": "Set by the plugin, not bomify. For a purl scanned directly (no \"components\" reported), a single entry referencing that same purl string back. For a purl unpacked into pieces (\"components\" is non-empty), one entry per affected piece, referencing its bom-ref from \"components\" - never the top-level purl itself."
               }
             }
           }
-        }
+        ]
       }
     },
     "components": {
       "type": "array",
       "description": "Optional. Every piece the plugin found while unpacking the scanned --purl to scan it at all (e.g. the packages found by cataloging a container image). Omit entirely, or leave empty, if the plugin scanned the purl directly. bomify writes this list as the top-level components of the scanned component's vulnerability report, whose metadata component is the scanned --purl itself.",
       "items": {
-        "type": "object",
-        "required": ["bom-ref"],
-        "properties": {
-          "bom-ref": {
-            "type": "string",
-            "minLength": 1,
-            "description": "A stable identifier for this piece (a purl, if it has one, is a reasonable choice) - this is what a vulnerability's affects[].ref should point at when this piece is the one actually affected."
+        "allOf": [
+          { "$ref": "https://cyclonedx.org/schema/bom-1.7.schema.json#/definitions/component" },
+          {
+            "required": ["bom-ref"],
+            "properties": {
+              "bom-ref": { "description": "A stable identifier for this piece (a purl, if it has one, is a reasonable choice): what a vulnerability's affects[].ref points at when this piece is the one affected." }
+            }
           }
-        }
+        ]
       }
     },
     "unscanned": {

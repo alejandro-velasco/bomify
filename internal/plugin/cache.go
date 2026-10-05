@@ -16,6 +16,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 // This file holds Pull's bookkeeping: the pid file claimed while a pull
@@ -134,11 +135,7 @@ func readManifest(path string) (Manifest, error) {
 // manifestHash returns the SHA-256 m's component declares, or the zero
 // Hash if it declares none.
 func manifestHash(m Manifest) pluginlib.Hash {
-	if m.Component.Hashes == nil {
-		return pluginlib.Hash{}
-	}
-
-	for _, h := range *m.Component.Hashes {
+	for _, h := range sliceutil.Deref(m.Component.Hashes) {
 		if h.Algorithm == pluginlib.HashAlgorithm {
 			return pluginlib.NewHash(h.Value)
 		}
@@ -163,10 +160,7 @@ func WriteManifest(baseDir string, component cdx.Component, computed pluginlib.H
 // the same algorithm or appended, so a component's Hashes always reflects
 // the most recently computed value for that algorithm.
 func mergeHash(existing *[]cdx.Hash, computed pluginlib.Hash) *[]cdx.Hash {
-	hashes := []cdx.Hash{}
-	if existing != nil {
-		hashes = append(hashes, *existing...)
-	}
+	hashes := append([]cdx.Hash{}, sliceutil.Deref(existing)...)
 
 	for i, h := range hashes {
 		if h.Algorithm == computed.Algorithm {
@@ -182,11 +176,11 @@ func mergeHash(existing *[]cdx.Hash, computed pluginlib.Hash) *[]cdx.Hash {
 // verifyHash checks, when component declares an SBOM hash for the same
 // algorithm result.Hash reports, that the two values match.
 func verifyHash(component cdx.Component, result *pluginlib.Result) error {
-	if result.Hash.Algorithm == "" || component.Hashes == nil {
+	if result.Hash.Algorithm == "" {
 		return nil
 	}
 
-	for _, declared := range *component.Hashes {
+	for _, declared := range sliceutil.Deref(component.Hashes) {
 		if declared.Algorithm != result.Hash.Algorithm {
 			continue
 		}

@@ -14,6 +14,8 @@ Task-focused guides. They assume bomify and the plugins you need are
 - [Publishing and pulling packages](publishing-and-pulling-packages.md)
   through an OCI registry.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md).
+- [Composing a multi-medium package](composing-a-multi-medium-package.md)
+  from several mediums' SBOMs.
 - [Scanning with grype](scanning-with-grype.md), and gating on the
   results.
 - [Saving packages for airgapped environments](saving-packages-for-airgapped-environments.md).

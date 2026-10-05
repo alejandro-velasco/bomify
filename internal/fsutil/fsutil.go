@@ -1,5 +1,5 @@
-// Package fsutil holds small filesystem helpers shared across bomify's
-// data directory code.
+// Package fsutil holds small filesystem helpers shared across bomify,
+// mostly for its data directory.
 package fsutil
 
 import (
@@ -10,6 +10,25 @@ import (
 	"os"
 	"path/filepath"
 )
+
+// WriteTemp writes data to a new file in the OS temp directory, named
+// by pattern as os.CreateTemp names it, and returns its path, which the
+// caller must remove. Nothing is left behind if it fails.
+func WriteTemp(pattern string, data []byte) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	_, err = f.Write(data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write %s: %w", f.Name(), err)
+	}
+	return f.Name(), nil
+}
 
 // WriteFileAtomic writes data to path via a temp file renamed into
 // place, so a reader never sees a partial file. path's directory is

@@ -11,6 +11,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -120,10 +121,7 @@ func CheckCompatible(name string, offered map[string]int) error {
 // OfferedBy reads the contract versions component's PropertyContracts
 // records, reporting false if it has none.
 func OfferedBy(component cdx.Component) (map[string]int, bool, error) {
-	if component.Properties == nil {
-		return nil, false, nil
-	}
-	for _, p := range *component.Properties {
+	for _, p := range sliceutil.Deref(component.Properties) {
 		if p.Name != PropertyContracts {
 			continue
 		}

@@ -152,11 +152,13 @@ func chartVersion(chrt *helmchart.Chart) string {
 // and the first entry of its component list — the latter so the chart
 // itself, not just the images it references, is something "bomify
 // build" (which only ever walks a BOM's Components, never its
-// Metadata.Component) can pull into a package.
+// Metadata.Component) can pull into a package. Its dependencies record
+// the chart depending on each image.
 func buildBOM(chrt *helmchart.Chart, repositoryURL string, images []imageRef) (*cdx.BOM, error) {
 	bom := cdx.NewBOM()
 
 	components := make([]cdx.Component, 0, len(images)+1)
+	var imageRefs []string
 
 	if chrt.Metadata != nil {
 		purl := chartPurl(chrt.Metadata.Name, chrt.Metadata.Version, repositoryURL)
@@ -177,8 +179,13 @@ func buildBOM(chrt *helmchart.Chart, repositoryURL string, images []imageRef) (*
 			return nil, fmt.Errorf("build component for image %q (found in %s): %w", img.Reference, img.Source, err)
 		}
 		components = append(components, component)
+		imageRefs = append(imageRefs, component.BOMRef)
 	}
 	bom.Components = &components
+
+	if bom.Metadata != nil {
+		bom.Dependencies = &[]cdx.Dependency{{Ref: bom.Metadata.Component.BOMRef, Dependencies: &imageRefs}}
+	}
 
 	return bom, nil
 }
