@@ -40,7 +40,9 @@ SBOM can go straight into `bomify build`.
 | `namespace` | no | `.Release.Namespace`. Default `default`. |
 | `release-name` | no | `.Release.Name`. Default `release-name`, as in `helm template`. |
 | `kube-version` | no | Kubernetes version to render for and to check the chart's `kubeVersion` against, e.g. `1.31.0`. Defaults to the Helm SDK's built-in version; set it to what you deploy to. |
-| `extraComponents` | no | CycloneDX components appended to the SBOM as-is, for anything rendering can't discover. Each needs a `type`, a `name`, and a `purl`; a missing `bom-ref` is set to the `purl` (see the [SBOM generation contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md#output)). |
+
+To package anything rendering can't discover, list it under the
+composition file's `components`.
 
 Unknown keys are errors. Run directly, the plugin reads them from
 `--config`, YAML or JSON, or else from `bomify-helm-sbom.yaml` in the

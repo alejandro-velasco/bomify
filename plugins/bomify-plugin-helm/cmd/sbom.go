@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
 )
@@ -50,8 +48,6 @@ required:
   namespace        .Release.Namespace; "default" if omitted
   release-name     .Release.Name; "release-name" if omitted
   kube-version     Kubernetes version to render for, e.g. 1.31.0
-  extraComponents  CycloneDX components appended to the SBOM as-is,
-                   each with a purl; bom-ref defaults to it
 
 Rendering happens locally, without a Kubernetes cluster, so
 .Capabilities.KubeVersion and a chart's own Chart.yaml "kubeVersion"
@@ -77,7 +73,7 @@ func (sbomGenerator) Generate(_ context.Context, raw json.RawMessage, logger *sl
 		return nil, errors.New(`required "repo" not set in the options`)
 	}
 
-	bom, err := chart.Generate(chart.GenerateOptions{
+	return chart.Generate(chart.GenerateOptions{
 		Name:          o.Chart,
 		RepositoryURL: o.Repo,
 		Version:       o.Version,
@@ -86,37 +82,4 @@ func (sbomGenerator) Generate(_ context.Context, raw json.RawMessage, logger *sl
 		ReleaseName:   o.ReleaseName,
 		KubeVersion:   o.KubeVersion,
 	}, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	addExtraComponents(bom, o.ExtraComponents)
-	return bom, nil
-}
-
-// addExtraComponents appends extra to bom's components, each missing
-// bom-ref set to its purl as the SBOM contract requires, with the chart
-// depending on them as it does on its images.
-func addExtraComponents(bom *cdx.BOM, extra []cdx.Component) {
-	if len(extra) == 0 {
-		return
-	}
-	components := sliceutil.Deref(bom.Components)
-	var refs []string
-	for _, c := range extra {
-		if c.BOMRef == "" {
-			c.BOMRef = c.PackageURL
-		}
-		components = append(components, c)
-		refs = append(refs, c.BOMRef)
-	}
-	bom.Components = &components
-
-	deps := sliceutil.Deref(bom.Dependencies)
-	if len(deps) == 0 {
-		return
-	}
-	chart := &deps[0]
-	on := append(slices.Clone(sliceutil.Deref(chart.Dependencies)), refs...)
-	chart.Dependencies = &on
 }
