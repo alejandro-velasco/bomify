@@ -5,20 +5,20 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-const sbomShort = "Generate and compose SBOMs for deployment mediums"
+const sbomShort = "Compose SBOMs from deployment mediums"
 
 func sbomCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -26,64 +26,9 @@ func sbomCmd() *cobra.Command {
 		Short: sbomShort,
 	}
 
-	cmd.AddCommand(sbomGenerateCmd())
 	cmd.AddCommand(sbomComposeCmd())
 
 	return cmd
-}
-
-const sbomGenerateShort = "Generate an SBOM for a deployment medium via its plugin"
-
-const sbomGenerateLong = `Generate runs "bomify-plugin-<medium> sbom generate" with every flag
-after <medium> passed through unchanged and stdin, stdout, and stderr
-wired straight through; running the plugin directly is equivalent. See
-the plugin's --help for its flags. bomify's own flags, such as
---data-dir, must come before <medium>.`
-
-const sbomGenerateExample = `  # Generate an SBOM for a Helm chart
-  bomify sbom generate helm --chart postgresql --repo oci://registry-1.docker.io/bitnamicharts --version 15.6.0 --values values.yaml`
-
-func sbomGenerateCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "generate <medium> [flags]",
-		Short:   sbomGenerateShort,
-		Long:    sbomGenerateLong,
-		Example: sbomGenerateExample,
-		Args:    cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := runSBOMGenerate(cmd, args[0], args[1:]); err != nil {
-				return fmt.Errorf("sbom generate: %w", err)
-			}
-			return nil
-		},
-	}
-
-	// Every flag after <medium> belongs to the plugin, not bomify: stop
-	// parsing flags at <medium>, so they (--help included) arrive in args
-	// untouched, while bomify's own flags before it (e.g. --data-dir,
-	// which decides where the plugin is found) are parsed as usual.
-	cmd.Flags().SetInterspersed(false)
-
-	return cmd
-}
-
-// runSBOMGenerate execs "bomify-plugin-<medium> sbom generate" with args
-// passed through exactly as given, wiring cmd's own stdin/stdout/stderr
-// straight to the plugin's. bomify neither parses the plugin's output nor
-// imposes any flags of its own here — see
-// plugins/contracts/sbom/v1/CONTRACT.md.
-func runSBOMGenerate(cmd *cobra.Command, medium string, args []string) error {
-	path, err := plugin.Find(layout.Plugins(dataDir), medium, pluginlib.SBOMContract)
-	if err != nil {
-		return err
-	}
-
-	sub := exec.Command(path, append([]string{pluginlib.SBOMSubcommand, "generate"}, args...)...)
-	sub.Stdin = cmd.InOrStdin()
-	sub.Stdout = cmd.OutOrStdout()
-	sub.Stderr = cmd.ErrOrStderr()
-
-	return sub.Run()
 }
 
 const sbomComposeShort = "Compose one SBOM from several deployment mediums"
@@ -91,12 +36,13 @@ const sbomComposeShort = "Compose one SBOM from several deployment mediums"
 const sbomComposeLong = `Compose merges the SBOMs a composition file lists into one, for
 "bomify build" to build as one package. Each source is either a medium,
 whose plugin generates an SBOM from the source's options, or an existing
-CycloneDX file. The file's own "components" are added too.
+CycloneDX JSON file. The file's own "components" are added too.
 
-Every source's options are checked against its plugin's "sbom schema"
-before any plugin runs. Plugins run in the composition file's directory,
-so relative paths in options resolve against it, as "sbom" paths do.
-Each SBOM must follow the SBOM generation contract's output rules.
+Every medium's plugin is found before any runs. Plugins run in the
+composition file's directory, so relative paths in options resolve
+against it, as "sbom" paths do; each plugin checks its own options.
+Each SBOM must follow the SBOM generation contract's output rules, with
+no field cyclonedx-go doesn't know.
 
 Components are merged by purl, each recording the sources it came from
 in its "land.bomify.compose.sources" property; two sources disagreeing
@@ -115,10 +61,18 @@ const sbomComposeExample = `  # Compose bomify.yaml and build the result
   sources:
     - name: web
       medium: helm
-      options: {chart: web, repo: "oci://registry.example.com/charts", version: 2.1.0, values: [values/web.yaml]}
+      options:
+        chart: web
+        repo: oci://registry.example.com/charts
+        version: 2.1.0
+        values:
+          - values/web.yaml
     - name: db
       medium: helm
-      options: {chart: postgresql, repo: "oci://registry-1.docker.io/bitnamicharts", version: 15.6.0}
+      options:
+        chart: postgresql
+        repo: oci://registry-1.docker.io/bitnamicharts
+        version: 15.6.0
     - name: tools
       sbom: vendor/tools.cdx.json`
 
@@ -150,27 +104,11 @@ func runSBOMCompose(cmd *cobra.Command, path, output string, logger *slog.Logger
 		return err
 	}
 
-	// Find every plugin and check every source's options first, so a
-	// mistake in the last source doesn't wait for the others to generate.
-	plugins := map[string]string{}
-	for _, s := range c.Sources {
-		if s.Medium == "" {
-			continue
-		}
-		bin, ok := plugins[s.Medium]
-		if !ok {
-			if bin, err = plugin.Find(layout.Plugins(dataDir), s.Medium, pluginlib.SBOMContract); err != nil {
-				return fmt.Errorf("source %q: %w", s.Name, err)
-			}
-			plugins[s.Medium] = bin
-		}
-		schema, err := plugin.SBOMSchema(bin)
-		if err != nil {
-			return fmt.Errorf("source %q: %w", s.Name, err)
-		}
-		if err := plugin.ValidateOptions(schema, s.OptionsJSON()); err != nil {
-			return fmt.Errorf("source %q: options: %w", s.Name, err)
-		}
+	// Before any plugin runs, so a missing one doesn't wait for the other
+	// sources to generate.
+	plugins, err := findSBOMPlugins(c.Sources)
+	if err != nil {
+		return err
 	}
 
 	parts := make([]sbom.Part, 0, len(c.Sources))
@@ -186,7 +124,7 @@ func runSBOMCompose(cmd *cobra.Command, path, output string, logger *slog.Logger
 	if err != nil {
 		return err
 	}
-	logger.Info("composed sbom", "name", c.Name, "version", c.Version, "sources", len(parts), "components", len(sbom.Components(bom.Components)))
+	logger.Info("composed sbom", "name", c.Name, "version", c.Version, "sources", len(parts), "components", len(sliceutil.Deref(bom.Components)))
 
 	if output == "" {
 		return sbom.Write(cmd.OutOrStdout(), bom)
@@ -202,27 +140,42 @@ func runSBOMCompose(cmd *cobra.Command, path, output string, logger *slog.Logger
 	return f.Close()
 }
 
+// findSBOMPlugins finds the SBOM generation plugin for each medium
+// sources name, once however many sources share it, mapping the medium
+// to the plugin's path. "sbom" sources have no medium, and no plugin.
+func findSBOMPlugins(sources []sbom.Source) (map[string]string, error) {
+	plugins := map[string]string{}
+	for _, s := range sources {
+		if s.Medium == "" || plugins[s.Medium] != "" {
+			continue
+		}
+		bin, err := plugin.Find(layout.Plugins(dataDir), s.Medium, pluginlib.SBOMContract)
+		if err != nil {
+			return nil, fmt.Errorf("source %q: %w", s.Name, err)
+		}
+		plugins[s.Medium] = bin
+	}
+	return plugins, nil
+}
+
 // sourceSBOM returns s's SBOM: read from its file, or generated by the
 // plugin at bin, which logs to logs.
 func sourceSBOM(c *sbom.Composition, s sbom.Source, bin string, logs io.Writer, logger *slog.Logger) (*cdx.BOM, error) {
 	if s.SBOM != "" {
 		logger.Info("reading sbom", "source", s.Name, "path", s.SBOM)
-		return sbom.Load(c.Path(s.SBOM))
+		data, err := os.ReadFile(c.Path(s.SBOM))
+		if err != nil {
+			return nil, fmt.Errorf("read sbom: %w", err)
+		}
+		return sbom.DecodeStrict(data)
 	}
 
-	config, err := os.CreateTemp("", "bomify-sbom-options-*.json")
+	config, err := fsutil.WriteTemp("bomify-sbom-options-*.json", s.OptionsJSON())
 	if err != nil {
-		return nil, fmt.Errorf("create options file: %w", err)
-	}
-	defer os.Remove(config.Name())
-	if _, err := config.Write(s.OptionsJSON()); err != nil {
-		config.Close()
 		return nil, fmt.Errorf("write options file: %w", err)
 	}
-	if err := config.Close(); err != nil {
-		return nil, fmt.Errorf("write options file: %w", err)
-	}
+	defer os.Remove(config)
 
 	logger.Info("generating sbom", "source", s.Name, "medium", s.Medium)
-	return plugin.GenerateSBOM(bin, filepath.Clean(config.Name()), c.Dir(), logs)
+	return plugin.GenerateSBOM(bin, config, c.Dir(), logs)
 }

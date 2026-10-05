@@ -3,6 +3,8 @@ package sbom
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -64,6 +66,29 @@ func LoadBytes(data []byte) (*cdx.BOM, error) {
 	return bom, nil
 }
 
+// DecodeStrict parses a CycloneDX JSON SBOM from data, rejecting any
+// field cyclonedx-go doesn't know: what bomify reads from an SBOM
+// generation plugin, or a composition's "sbom" file, must be CycloneDX
+// as cyclonedx-go understands it, since a field it drops would be
+// silently lost when merging.
+func DecodeStrict(data []byte) (*cdx.BOM, error) {
+	data = bytes.TrimPrefix(data, utf8BOM)
+	format, err := DetectFormat(data)
+	if err != nil {
+		return nil, fmt.Errorf("detect sbom format: %w", err)
+	}
+	if format != cdx.BOMFileFormatJSON {
+		return nil, errors.New("not a CycloneDX JSON SBOM")
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	bom := new(cdx.BOM)
+	if err := dec.Decode(bom); err != nil {
+		return nil, fmt.Errorf("decode sbom: %w", err)
+	}
+	return bom, nil
+}
+
 // utf8BOM is the UTF-8 byte-order-mark some tools — XML writers
 // especially, and text editors on Windows — prepend to files they save
 // as "UTF-8". It's invisible in most editors and, since it isn't
@@ -112,13 +137,4 @@ func fileFormat(path string) (cdx.BOMFileFormat, error) {
 	default:
 		return 0, fmt.Errorf("unsupported file format %q", fileExt)
 	}
-}
-
-// Components dereferences a CycloneDX component list — a BOM's, or a
-// component's nested one — which is nil when the document has none.
-func Components(cs *[]cdx.Component) []cdx.Component {
-	if cs == nil {
-		return nil
-	}
-	return *cs
 }

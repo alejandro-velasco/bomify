@@ -9,6 +9,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 // PrunedItem describes one manifest or layer Prune removed.
@@ -221,7 +222,7 @@ func markComponents(baseDir, sbomHash string, kept map[string]bool) (ok bool) {
 	if err != nil {
 		return false
 	}
-	for _, component := range sbom.Components(bom.Components) {
+	for _, component := range sliceutil.Deref(bom.Components) {
 		kept[layout.PurlHash(component.PackageURL)] = true
 	}
 	return true

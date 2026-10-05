@@ -51,7 +51,6 @@ nav = [
       { "bomify sbom" = [
           { "bomify sbom" = "usage/reference/bomify_sbom.md" },
           { "bomify sbom compose" = "usage/reference/bomify_sbom_compose.md" },
-          { "bomify sbom generate" = "usage/reference/bomify_sbom_generate.md" },
       ] },
       { "bomify security" = [
           { "bomify security" = "usage/reference/bomify_security.md" },

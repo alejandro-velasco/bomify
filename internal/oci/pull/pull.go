@@ -31,6 +31,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -245,7 +246,7 @@ func indexComponentsByPurl(bom *cdx.BOM) map[string]cdx.Component {
 	if bom == nil {
 		return index
 	}
-	for _, c := range sbom.Components(bom.Components) {
+	for _, c := range sliceutil.Deref(bom.Components) {
 		if c.PackageURL != "" {
 			index[c.PackageURL] = c
 		}

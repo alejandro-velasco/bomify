@@ -31,10 +31,6 @@ func main() {
 // component of that name, as both root and its one component.
 type generator struct{}
 
-func (generator) OptionsSchema() []byte {
-	return []byte(`{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string"}}}`)
-}
-
 func (generator) Generate(_ context.Context, options json.RawMessage, _ *slog.Logger) (*cdx.BOM, error) {
 	var o struct {
 		Name string `json:"name"`

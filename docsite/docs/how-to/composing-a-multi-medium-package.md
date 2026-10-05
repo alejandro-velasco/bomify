@@ -36,10 +36,9 @@ components:
 ```
 
 - A `medium` source runs `bomify-plugin-<medium>`, with `options` as
-  its options. `bomify-plugin-<medium> sbom schema` prints what they
-  can be; for Helm, they're the
+  its options, which that plugin checks; for Helm, they're the
   [plugin's flags](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md#options-file).
-- An `sbom` source is an existing CycloneDX file.
+- An `sbom` source is an existing CycloneDX JSON file.
 - `components` are packaged too.
 - Relative paths, in `options` too, are relative to the composition
   file. Paths inside an `sbom` file, such as a plugin binary's
@@ -58,8 +57,8 @@ purl.
 bomify sbom compose bomify.yaml -o myapp.cdx.json
 ```
 
-Every source's options are checked before any plugin runs. Components
-appearing in several sources, like an image both charts use, are merged
+Every medium's plugin is found before any runs. Components appearing in
+several sources, like an image both charts use, are merged
 by purl; each records the sources it came from in its
 `land.bomify.compose.sources` property. Two sources disagreeing on the
 same purl's version or hashes stop the compose.

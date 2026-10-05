@@ -10,6 +10,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
 )
@@ -93,7 +94,7 @@ func addExtraComponents(bom *cdx.BOM, extra []cdx.Component) {
 	if len(extra) == 0 {
 		return
 	}
-	components := deref(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 	var refs []string
 	for _, c := range extra {
 		if c.BOMRef == "" {
@@ -104,17 +105,11 @@ func addExtraComponents(bom *cdx.BOM, extra []cdx.Component) {
 	}
 	bom.Components = &components
 
-	if bom.Dependencies == nil || len(*bom.Dependencies) == 0 {
+	deps := sliceutil.Deref(bom.Dependencies)
+	if len(deps) == 0 {
 		return
 	}
-	chart := &(*bom.Dependencies)[0]
-	on := append(slices.Clone(deref(chart.Dependencies)), refs...)
+	chart := &deps[0]
+	on := append(slices.Clone(sliceutil.Deref(chart.Dependencies)), refs...)
 	chart.Dependencies = &on
-}
-
-func deref[T any](p *[]T) []T {
-	if p == nil {
-		return nil
-	}
-	return *p
 }

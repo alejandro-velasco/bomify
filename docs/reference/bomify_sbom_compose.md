@@ -7,12 +7,13 @@ Compose one SBOM from several deployment mediums
 Compose merges the SBOMs a composition file lists into one, for
 "bomify build" to build as one package. Each source is either a medium,
 whose plugin generates an SBOM from the source's options, or an existing
-CycloneDX file. The file's own "components" are added too.
+CycloneDX JSON file. The file's own "components" are added too.
 
-Every source's options are checked against its plugin's "sbom schema"
-before any plugin runs. Plugins run in the composition file's directory,
-so relative paths in options resolve against it, as "sbom" paths do.
-Each SBOM must follow the SBOM generation contract's output rules.
+Every medium's plugin is found before any runs. Plugins run in the
+composition file's directory, so relative paths in options resolve
+against it, as "sbom" paths do; each plugin checks its own options.
+Each SBOM must follow the SBOM generation contract's output rules, with
+no field cyclonedx-go doesn't know.
 
 Components are merged by purl, each recording the sources it came from
 in its "land.bomify.compose.sources" property; two sources disagreeing
@@ -38,10 +39,18 @@ bomify sbom compose <file> [flags]
   sources:
     - name: web
       medium: helm
-      options: {chart: web, repo: "oci://registry.example.com/charts", version: 2.1.0, values: [values/web.yaml]}
+      options:
+        chart: web
+        repo: oci://registry.example.com/charts
+        version: 2.1.0
+        values:
+          - values/web.yaml
     - name: db
       medium: helm
-      options: {chart: postgresql, repo: "oci://registry-1.docker.io/bitnamicharts", version: 15.6.0}
+      options:
+        chart: postgresql
+        repo: oci://registry-1.docker.io/bitnamicharts
+        version: 15.6.0
     - name: tools
       sbom: vendor/tools.cdx.json
 ```
@@ -63,5 +72,5 @@ bomify sbom compose <file> [flags]
 
 ### SEE ALSO
 
-* [bomify sbom](bomify_sbom.md)	 - Generate and compose SBOMs for deployment mediums
+* [bomify sbom](bomify_sbom.md)	 - Compose SBOMs from deployment mediums
 

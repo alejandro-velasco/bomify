@@ -15,6 +15,7 @@ import (
 	"github.com/package-url/packageurl-go"
 	"sigs.k8s.io/yaml"
 
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -165,16 +166,14 @@ func (c *Composition) Merge(parts []Part) (*cdx.BOM, error) {
 		if err := pluginlib.ValidateGenerated(p.BOM); err != nil {
 			return nil, fmt.Errorf("source %q: %w", p.Source, err)
 		}
-		components := Components(p.BOM.Components)
+		components := sliceutil.Deref(p.BOM.Components)
 		for _, comp := range components {
 			if err := m.add(comp, p.Source); err != nil {
 				return nil, err
 			}
 		}
-		if p.BOM.Dependencies != nil {
-			for _, d := range *p.BOM.Dependencies {
-				m.depend(d.Ref, deref(d.Dependencies)...)
-			}
+		for _, d := range sliceutil.Deref(p.BOM.Dependencies) {
+			m.depend(d.Ref, sliceutil.Deref(d.Dependencies)...)
 		}
 
 		partRoot := p.BOM.Metadata.Component.BOMRef
@@ -267,7 +266,7 @@ func conflict(a, b cdx.Component) string {
 }
 
 func sortedHashes(hs *[]cdx.Hash) []cdx.Hash {
-	sorted := slices.Clone(deref(hs))
+	sorted := slices.Clone(sliceutil.Deref(hs))
 	slices.SortFunc(sorted, func(a, b cdx.Hash) int { return strings.Compare(string(a.Algorithm), string(b.Algorithm)) })
 	return sorted
 }
@@ -288,7 +287,7 @@ func (m *merger) sorted() []cdx.Component {
 		comp := mc.component
 		sources := slices.Clone(mc.sources)
 		slices.Sort(sources)
-		props := slices.DeleteFunc(slices.Clone(deref(comp.Properties)), func(p cdx.Property) bool { return p.Name == PropertySources })
+		props := slices.DeleteFunc(slices.Clone(sliceutil.Deref(comp.Properties)), func(p cdx.Property) bool { return p.Name == PropertySources })
 		props = append(props, cdx.Property{Name: PropertySources, Value: strings.Join(sources, ",")})
 		comp.Properties = &props
 		components = append(components, comp)
@@ -310,11 +309,4 @@ func (m *merger) dependencies() []cdx.Dependency {
 	}
 	slices.SortFunc(deps, func(a, b cdx.Dependency) int { return strings.Compare(a.Ref, b.Ref) })
 	return deps
-}
-
-func deref[T any](p *[]T) []T {
-	if p == nil {
-		return nil
-	}
-	return *p
 }

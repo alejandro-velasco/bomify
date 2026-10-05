@@ -90,27 +90,6 @@ sources:
 	}
 }
 
-func TestSBOMComposeChecksEveryOptionFirst(t *testing.T) {
-	runs := filepath.Join(t.TempDir(), "runs")
-	t.Setenv("FAKESBOM_LOG", runs)
-
-	_, err := runCompose(t, map[string]string{
-		"bomify.yaml": fmt.Sprintf(`
-name: app
-version: "2.0"
-sources:
-  - {name: good, medium: fake, options: {bom: %s}}
-  - {name: bad, medium: fake, options: {bom: {}, extra: true}}
-`, generatedBOM("good")),
-	})
-	if err == nil || !strings.Contains(err.Error(), `source "bad": options`) {
-		t.Fatalf("sbom compose = %v, want the bad source's options rejected", err)
-	}
-	if _, statErr := os.Stat(runs); statErr == nil {
-		t.Error("a plugin ran before every source's options were checked")
-	}
-}
-
 func TestSBOMComposeRejectsBrokenSource(t *testing.T) {
 	_, err := runCompose(t, map[string]string{
 		"bomify.yaml": "name: app\nversion: '2.0'\nsources: [{name: tools, sbom: tools.cdx.json}]\n",
@@ -122,11 +101,33 @@ func TestSBOMComposeRejectsBrokenSource(t *testing.T) {
 	}
 }
 
-func TestSBOMComposeMissingPlugin(t *testing.T) {
+func TestSBOMComposeFindsEveryPluginFirst(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	t.Setenv("FAKESBOM_LOG", runs)
+
 	_, err := runCompose(t, map[string]string{
-		"bomify.yaml": "name: app\nversion: '2.0'\nsources: [{name: web, medium: nosuch, options: {}}]\n",
+		"bomify.yaml": fmt.Sprintf(`
+name: app
+version: "2.0"
+sources:
+  - {name: good, medium: fake, options: {bom: %s}}
+  - {name: web, medium: nosuch, options: {}}
+`, generatedBOM("good")),
 	})
 	if err == nil || !strings.Contains(err.Error(), `source "web"`) || !strings.Contains(err.Error(), "not installed") {
-		t.Errorf("sbom compose = %v, want the missing plugin named", err)
+		t.Fatalf("sbom compose = %v, want the missing plugin named", err)
+	}
+	if _, statErr := os.Stat(runs); statErr == nil {
+		t.Error("a plugin ran before every source's plugin was found")
+	}
+}
+
+func TestSBOMComposeRejectsUnknownFields(t *testing.T) {
+	_, err := runCompose(t, map[string]string{
+		"bomify.yaml":    "name: app\nversion: '2.0'\nsources: [{name: tools, sbom: tools.cdx.json}]\n",
+		"tools.cdx.json": strings.Replace(generatedBOM("tools"), `"bomFormat"`, `"colour":"red","bomFormat"`, 1),
+	})
+	if err == nil || !strings.Contains(err.Error(), `source "tools"`) || !strings.Contains(err.Error(), `unknown field "colour"`) {
+		t.Errorf("sbom compose = %v, want the unknown field rejected", err)
 	}
 }

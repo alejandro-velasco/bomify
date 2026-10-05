@@ -8,6 +8,7 @@ import (
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 // PackageSize returns the total on-disk size, in bytes, of every
@@ -31,7 +32,7 @@ func PackageSize(baseDir, sbomHash string) (int64, error) {
 	}
 	seen := map[string]bool{}
 	var total int64
-	for _, component := range sbom.Components(bom.Components) {
+	for _, component := range sliceutil.Deref(bom.Components) {
 		hash := layout.PurlHash(component.PackageURL)
 		if seen[hash] {
 			continue

@@ -1,6 +1,6 @@
 ## bomify sbom
 
-Generate and compose SBOMs for deployment mediums
+Compose SBOMs from deployment mediums
 
 ### Options
 
@@ -20,5 +20,4 @@ Generate and compose SBOMs for deployment mediums
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
 * [bomify sbom compose](bomify_sbom_compose.md)	 - Compose one SBOM from several deployment mediums
-* [bomify sbom generate](bomify_sbom_generate.md)	 - Generate an SBOM for a deployment medium via its plugin
 

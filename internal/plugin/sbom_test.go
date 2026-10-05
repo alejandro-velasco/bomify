@@ -22,41 +22,13 @@ func TestSBOMCallsParseWithPkgPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	schema, err := SBOMSchema(bin)
-	if err != nil {
-		t.Fatalf("SBOMSchema: %v", err)
-	}
-	options := []byte(`{"name":"tool"}`)
-	if err := ValidateOptions(schema, options); err != nil {
-		t.Errorf("ValidateOptions(%s): %v", options, err)
-	}
-
-	config := writeOptions(t, string(options))
+	config := writeOptions(t, `{"name":"tool"}`)
 	bom, err := GenerateSBOM(bin, config, t.TempDir(), &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("GenerateSBOM: %v", err)
 	}
 	if got := bom.Metadata.Component.PackageURL; got != "pkg:generic/tool@1.0" {
 		t.Errorf("root purl = %q, want the plugin's", got)
-	}
-}
-
-func TestValidateOptions(t *testing.T) {
-	schema := []byte(`{"type":"object","additionalProperties":false,"required":["chart"],"properties":{"chart":{"type":"string"}}}`)
-	if err := ValidateOptions(schema, []byte(`{"chart":"web"}`)); err != nil {
-		t.Errorf("valid options: %v", err)
-	}
-	for _, bad := range []string{`{}`, `{"chart":1}`, `{"chart":"web","chrat":"x"}`} {
-		if err := ValidateOptions(schema, []byte(bad)); err == nil {
-			t.Errorf("ValidateOptions(%s) = nil, want an error", bad)
-		}
-	}
-	err := ValidateOptions(schema, []byte(`{"chart":"web","chrat":"x"}`))
-	if err == nil || err.Error() != "at '': additional properties 'chrat' not allowed" {
-		t.Errorf("ValidateOptions = %v, want just the violation", err)
-	}
-	if err := ValidateOptions([]byte(`not json`), []byte(`{}`)); err == nil {
-		t.Error("an unparseable schema: error = nil, want one")
 	}
 }
 
@@ -88,6 +60,16 @@ func TestGenerateSBOMRejectsBrokenSBOM(t *testing.T) {
 	_, err := GenerateSBOM(bin, config, t.TempDir(), &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "breaks the SBOM contract") || !strings.Contains(err.Error(), "serialNumber") {
 		t.Errorf("GenerateSBOM = %v, want the contract violation", err)
+	}
+}
+
+func TestGenerateSBOMRejectsUnknownFields(t *testing.T) {
+	bin := testutil.InstallFakePlugin(t, t.TempDir(), "fake")
+	config := writeOptions(t, `{"bom":{"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"component":{"type":"application","name":"a","version":"1","purl":"pkg:generic/a@1","bom-ref":"pkg:generic/a@1","colour":"red"}}}}`)
+
+	_, err := GenerateSBOM(bin, config, t.TempDir(), &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), `unknown field "colour"`) {
+		t.Errorf("GenerateSBOM = %v, want the unknown field rejected", err)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/file"
 
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -173,10 +174,7 @@ func packageRef(p grypePkg.Package) string {
 // appendAffectedRef returns affects with ref appended, unless it's
 // already present.
 func appendAffectedRef(affects *[]cdx.Affects, ref string) *[]cdx.Affects {
-	var list []cdx.Affects
-	if affects != nil {
-		list = *affects
-	}
+	list := sliceutil.Deref(affects)
 	for _, a := range list {
 		if a.Ref == ref {
 			return &list

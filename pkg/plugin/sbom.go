@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/package-url/packageurl-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -183,7 +184,7 @@ func ValidateGenerated(bom *cdx.BOM) error {
 		if c.BOMRef != c.PackageURL {
 			errs = append(errs, fmt.Errorf("%s: bom-ref %q isn't its purl %q", where, c.BOMRef, c.PackageURL))
 		}
-		if len(deref(c.Components)) > 0 {
+		if len(sliceutil.Deref(c.Components)) > 0 {
 			errs = append(errs, fmt.Errorf("%s has nested components", where))
 		}
 	}
@@ -191,7 +192,7 @@ func ValidateGenerated(bom *cdx.BOM) error {
 	// bom-refs are unique among components; the root may share one,
 	// when it describes a component that's also packaged.
 	refs := map[string]bool{}
-	for i, c := range deref(bom.Components) {
+	for i, c := range sliceutil.Deref(bom.Components) {
 		where := fmt.Sprintf("components[%d] (%s)", i, c.PackageURL)
 		check(where, c)
 		if refs[c.BOMRef] {
@@ -214,11 +215,11 @@ func ValidateGenerated(bom *cdx.BOM) error {
 		errs = append(errs, errors.New("metadata.timestamp is set"))
 	}
 
-	for _, d := range deref(bom.Dependencies) {
+	for _, d := range sliceutil.Deref(bom.Dependencies) {
 		if !refs[d.Ref] {
 			errs = append(errs, fmt.Errorf("dependencies: ref %q names no bom-ref", d.Ref))
 		}
-		for _, on := range deref(d.Dependencies) {
+		for _, on := range sliceutil.Deref(d.Dependencies) {
 			if !refs[on] {
 				errs = append(errs, fmt.Errorf("dependencies: %q dependsOn %q, which names no bom-ref", d.Ref, on))
 			}
@@ -254,12 +255,4 @@ func otherFields(bom *cdx.BOM) []string {
 		}
 	}
 	return names
-}
-
-// deref dereferences a CycloneDX list, nil when the document has none.
-func deref[T any](p *[]T) []T {
-	if p == nil {
-		return nil
-	}
-	return *p
 }

@@ -58,14 +58,8 @@ file, manifest, or layer directory, and `build --check` records no build.
 
 ## SBOM generation
 
-`bomify sbom generate <kind> [flags]` finds `bomify-plugin-<kind>`, runs
-its `sbom generate` with the flags unparsed, wires stdin/stdout/stderr
-straight through, and propagates the exit code. That's all: no JSON
-result, log file, or caching, so the plugin works exactly the same run
-directly.
-
-Unattended, a plugin takes its options as a `--config` file, which it
-validates itself. Its SBOM is the part of a CycloneDX BOM bomify reads
+A plugin's `sbom generate` takes its options as a `--config` file, which
+it validates itself. Its SBOM is the part of a CycloneDX BOM bomify reads
 (metadata, components, dependencies), following rules strict enough to
 merge several plugins' SBOMs into one: every component identified by its
 purl, nothing nested, no timestamp. `pkg/plugin`'s `SBOMCommand`
@@ -73,10 +67,11 @@ implements both sides for a Go plugin, and its `ValidateGenerated`
 checks the rules; cyclonedx-go itself checks the CycloneDX objects, as
 bomify decodes them rejecting unknown fields.
 
-`bomify sbom compose` is the unattended caller
+`bomify sbom compose` is its caller
 ([`internal/sbom`](https://github.com/alejandro-velasco/bomify/tree/main/internal/sbom)'s
-`Composition`). It checks every source's options against its plugin's
-schema before running any, then merges the SBOMs: components by purl
+`Composition`). It finds every source's plugin before running any,
+reads each SBOM strictly (`sbom.DecodeStrict`), then merges them:
+components by purl
 (sources disagreeing on one's type, name, version, or hashes fail),
 dependencies unioned, and the composition as the root, depending on
 each source's root. Everything is sorted and the spec version pinned,

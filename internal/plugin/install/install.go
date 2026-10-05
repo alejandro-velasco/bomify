@@ -25,6 +25,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
 // indexFile is the name of the record of installed plugins, inside the
@@ -178,7 +179,7 @@ func selectBinaries(bom *cdx.BOM, goos, goarch string) ([]candidate, error) {
 	seen := map[string]bool{}
 	var platforms []string
 
-	for _, component := range sbom.Components(bom.Components) {
+	for _, component := range sliceutil.Deref(bom.Components) {
 		b, ok, err := plugin.ParseBinary(component)
 		if err != nil {
 			return nil, err
@@ -244,12 +245,10 @@ func verifyBinary(src string, component cdx.Component, required bool) (string, e
 	}
 
 	declared := ""
-	if component.Hashes != nil {
-		for _, h := range *component.Hashes {
-			if h.Algorithm == cdx.HashAlgoSHA256 {
-				declared = h.Value
-				break
-			}
+	for _, h := range sliceutil.Deref(component.Hashes) {
+		if h.Algorithm == cdx.HashAlgoSHA256 {
+			declared = h.Value
+			break
 		}
 	}
 

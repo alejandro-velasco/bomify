@@ -3,13 +3,13 @@ package security
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"github.com/alejandro-velasco/bomify/internal/sbom"
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/openvex/go-vex/pkg/vex"
 )
 
@@ -126,17 +126,13 @@ func loadStatements(data []byte) ([]vex.Statement, error) {
 
 	// go-vex only detects a document's format (OpenVEX versions, YAML,
 	// CSAF) when opening a file.
-	f, err := os.CreateTemp("", "bomify-vex-*")
+	path, err := fsutil.WriteTemp("bomify-vex-*", data)
 	if err != nil {
-		return nil, fmt.Errorf("create temp file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(f.Name())
-	_, writeErr := f.Write(data)
-	if err := errors.Join(writeErr, f.Close()); err != nil {
-		return nil, fmt.Errorf("write temp file: %w", err)
-	}
+	defer os.Remove(path)
 
-	doc, err := vex.Open(f.Name())
+	doc, err := vex.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("neither CycloneDX VEX nor a document go-vex reads (OpenVEX, CSAF): %w", err)
 	}
@@ -154,22 +150,19 @@ func cycloneDXStatements(data []byte) ([]vex.Statement, error) {
 	if err := cdx.NewBOMDecoder(bytes.NewReader(data), cdx.BOMFileFormatJSON).Decode(&bom); err != nil {
 		return nil, err
 	}
-	if bom.Vulnerabilities == nil {
-		return nil, nil
-	}
-
 	// A VEX document's "affects" may name its own components by bom-ref,
 	// or by BOM-Link ("urn:cdx:<serial>/<version>#<bom-ref>"), rather than
 	// by purl; resolve those to purls where it says what they are.
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 	if bom.Metadata != nil && bom.Metadata.Component != nil {
 		components = append(components, *bom.Metadata.Component)
 	}
 	purlByRef := purlsByBOMRef(components)
 
 	var statements []vex.Statement
-	for _, vuln := range *bom.Vulnerabilities {
+	for _, vuln := range sliceutil.Deref(bom.Vulnerabilities) {
 		s, ok := analysisStatement(vuln)
+		// A statement that affects nothing exempts nothing.
 		if !ok || vuln.Affects == nil {
 			continue
 		}
@@ -234,7 +227,7 @@ func purlsByBOMRef(components []cdx.Component) map[string]string {
 			if c.BOMRef != "" && c.PackageURL != "" {
 				purlByRef[c.BOMRef] = c.PackageURL
 			}
-			index(sbom.Components(c.Components))
+			index(sliceutil.Deref(c.Components))
 		}
 	}
 	index(components)
@@ -246,11 +239,9 @@ func purlsByBOMRef(components []cdx.Component) map[string]string {
 // VEX statement naming any of them applies.
 func vulnerabilityIDs(vuln cdx.Vulnerability) []string {
 	ids := []string{vuln.ID}
-	if vuln.References != nil {
-		for _, ref := range *vuln.References {
-			if ref.ID != "" {
-				ids = append(ids, ref.ID)
-			}
+	for _, ref := range sliceutil.Deref(vuln.References) {
+		if ref.ID != "" {
+			ids = append(ids, ref.ID)
 		}
 	}
 	return ids
@@ -271,14 +262,12 @@ func vulnerabilityIDs(vuln cdx.Vulnerability) []string {
 func (v *VEX) exempts(component cdx.Component, purlByRef map[string]string, vuln cdx.Vulnerability) (SourcedStatement, bool) {
 	// Each piece vuln affects, by purl where the report says what it is.
 	var targets []string
-	if vuln.Affects != nil {
-		for _, a := range *vuln.Affects {
-			ref := a.Ref
-			if purl, ok := purlByRef[ref]; ok {
-				ref = purl
-			}
-			targets = append(targets, ref)
+	for _, a := range sliceutil.Deref(vuln.Affects) {
+		ref := a.Ref
+		if purl, ok := purlByRef[ref]; ok {
+			ref = purl
 		}
+		targets = append(targets, ref)
 	}
 	// With no "affects" at all, it can only mean the component itself.
 	if len(targets) == 0 {

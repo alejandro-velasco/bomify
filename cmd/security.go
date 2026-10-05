@@ -15,6 +15,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/rules"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
@@ -138,7 +139,7 @@ func runSecurityScan(cmd *cobra.Command, opts *securityScanOptions, logger *slog
 	if err != nil {
 		return fmt.Errorf("load sbom: %w", err)
 	}
-	components := sbom.Components(bom.Components)
+	components := sliceutil.Deref(bom.Components)
 	logger.Info("loaded sbom", "path", sbomPath, "components", len(components), "concurrency", opts.concurrency)
 
 	result, err := security.ScanAll(plugins, components, security.ScanOptions{Concurrency: opts.concurrency, ContentDir: dataDir}, logger)
