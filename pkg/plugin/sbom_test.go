@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"github.com/spf13/pflag"
 )
 
 const (
@@ -158,35 +157,6 @@ func TestSBOMCommandDefaultConfig(t *testing.T) {
 	}
 	if _, err := runSBOM(t, p, help, dir, "generate"); err != nil || string(p.options) != `{"chart":"app"}` {
 		t.Errorf("present default config: options %s, err %v; want it read", p.options, err)
-	}
-}
-
-func TestSBOMCommandFlagsApplyOverConfig(t *testing.T) {
-	var chart string
-	help := SBOMHelp{Flags: func(flags *pflag.FlagSet) func(json.RawMessage) (json.RawMessage, error) {
-		flags.StringVar(&chart, "chart", "", "")
-		return func(options json.RawMessage) (json.RawMessage, error) {
-			m := map[string]any{}
-			if err := json.Unmarshal(options, &m); err != nil {
-				return nil, err
-			}
-			if flags.Changed("chart") {
-				m["chart"] = chart
-			}
-			return json.Marshal(m)
-		}
-	}}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "opts.json"), []byte(`{"chart":"old","version":"1"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p := &fakeSBOM{bom: validBOM()}
-
-	if _, err := runSBOM(t, p, help, dir, "generate", "--config", "opts.json", "--chart", "new"); err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	if string(p.options) != `{"chart":"new","version":"1"}` {
-		t.Errorf("options = %s, want --chart over the config's chart", p.options)
 	}
 }
 

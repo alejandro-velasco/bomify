@@ -41,9 +41,9 @@ Don't depend on the binary's other contracts, if it has any.
 | --- | --- |
 | `--config <file>` | The options, a JSON object whose keys are the plugin's to define. Relative paths in it are relative to the working directory. Reject unknown keys, so a typo fails rather than being ignored. |
 
-Any other flags are the plugin's own, for running it directly; document
-them in `--help`, and use the same names as the options' keys, so its
-`--help` documents both. With `--config`, never read stdin or prompt.
+Document the options' keys in `--help`. Any other flags are the
+plugin's own, for running it directly (such as `--output`). With
+`--config`, never read stdin or prompt.
 
 ## Output
 

@@ -15,7 +15,6 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 	"github.com/package-url/packageurl-go"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"sigs.k8s.io/yaml"
 )
 
@@ -28,8 +27,7 @@ type SBOMPlugin interface {
 	Generate(ctx context.Context, options json.RawMessage, logger *slog.Logger) (*cdx.BOM, error)
 }
 
-// SBOMHelp is the plugin-specific help, and direct-use interface,
-// SBOMCommand adds.
+// SBOMHelp is the plugin-specific help SBOMCommand adds.
 type SBOMHelp struct {
 	// Generate is "sbom generate"'s short description, and Long its long
 	// one.
@@ -37,10 +35,6 @@ type SBOMHelp struct {
 	// DefaultConfig, if set, is --config's default: read if it exists,
 	// skipped if it doesn't, unlike a --config given explicitly.
 	DefaultConfig string
-	// Flags, if set, adds the plugin's own flags for running "sbom
-	// generate" directly, returning how to apply them, once parsed, over
-	// the options --config gave ("{}" if none).
-	Flags func(flags *pflag.FlagSet) func(options json.RawMessage) (json.RawMessage, error)
 }
 
 // SBOMCommand builds the "sbom" command implementing the SBOM generation
@@ -54,7 +48,6 @@ func SBOMCommand(p SBOMPlugin, help SBOMHelp) *cobra.Command {
 	}
 
 	var config, output string
-	var apply func(json.RawMessage) (json.RawMessage, error)
 	generate := &cobra.Command{
 		Use:   "generate",
 		Short: help.Generate,
@@ -65,12 +58,6 @@ func SBOMCommand(p SBOMPlugin, help SBOMHelp) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if apply != nil {
-				if options, err = apply(options); err != nil {
-					return err
-				}
-			}
-
 			logger := slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))
 			bom, err := p.Generate(cmd.Context(), options, logger)
 			if err != nil {
@@ -96,9 +83,6 @@ func SBOMCommand(p SBOMPlugin, help SBOMHelp) *cobra.Command {
 	}
 	generate.Flags().StringVar(&config, "config", help.DefaultConfig, "the options, a JSON or YAML file")
 	generate.Flags().StringVarP(&output, "output", "o", "", "write the SBOM to this file instead of stdout")
-	if help.Flags != nil {
-		apply = help.Flags(generate.Flags())
-	}
 
 	cmd.AddCommand(generate)
 	return cmd
