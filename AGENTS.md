@@ -63,6 +63,16 @@ command is added, removed, or renamed. Everything else in
 `docsite/docs/` is hand-written; link to `docs/architecture/` and the
 contracts rather than restating them.
 
+## Opening issues
+
+- Use the matching template in [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE):
+  a bug report, or an enhancement (why, scope, and when it's done).
+- Put it in the milestone it's for, if one is decided.
+- Once a pull request implements it, say so in the issue ("Implemented
+  in #<PR>") and in the pull request ("Closes #<issue>"). GitHub only
+  closes the issue on merge into the default branch, so close it by hand
+  otherwise.
+
 ## Opening pull requests
 
 - Fill in [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md).
