@@ -8,3 +8,9 @@
 # commits that still contain it.
 aaaea7452bfecbb0396cffd3abcc566afcf0c795:plugins/SIGNING-CONTRACT.md:generic-api-key:161
 aeabf9536edc31e8a86c875cf262feea862816be:plugins/SIGNING-CONTRACT.md:generic-api-key:161
+
+# internal/logging/logging_test.go: a non-digest test value that began
+# with the fingerprint of a throwaway test *public* key — not a secret.
+# It has since been replaced with a placeholder; this ignores the commit
+# that still contains it.
+a2b675f60d084acd83ef0875e80bfab071002232:internal/logging/logging_test.go:generic-api-key:146
