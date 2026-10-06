@@ -187,3 +187,27 @@ bomify push registry.example.com/prod/myapp:1.0 --signer release --signer securi
 ```
 
 A rule requiring provenance accepts it from any one of its signers.
+
+### Signing at different times
+
+Co-signers rarely sign in the same place: CI signs on release, and the
+security team later, after review. `bomify sign` adds a signature to a
+package that's already published, fetching only its manifests, so each
+environment needs only its own key:
+
+```sh
+# CI
+bomify push registry.example.com/prod/myapp:1.0 --signer release
+
+# The security team, later
+bomify sign registry.example.com/prod/myapp:1.0 --signer security
+```
+
+It signs the package's vulnerability reports and VEX too. For a tarball,
+`bomify sign --input myapp.tar --signer security` signs every package in
+it, in place, or writes a copy with `--output`.
+
+A signature vouches for the package's digest, whatever the tag points
+at when you sign. Verify the package as the earlier signer before adding
+yours, e.g. pull it with `--verify`, or sign by digest
+(`registry.example.com/prod/myapp@sha256:…`) once you have.

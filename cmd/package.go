@@ -39,6 +39,7 @@ func packageCmd() *cobra.Command {
 	cmd.AddCommand(pullCmd())
 	cmd.AddCommand(tagCmd())
 	cmd.AddCommand(saveCmd())
+	cmd.AddCommand(signCmd())
 	cmd.AddCommand(loadCmd())
 	cmd.AddCommand(distributeCmd())
 

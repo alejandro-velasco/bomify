@@ -49,6 +49,7 @@ bomify [flags]
 * [bomify save](bomify_save.md)	 - Save packages to a tarball
 * [bomify sbom](bomify_sbom.md)	 - Compose SBOMs from deployment mediums
 * [bomify security](bomify_security.md)	 - Security scanning commands
+* [bomify sign](bomify_sign.md)	 - Add signatures to a published package
 * [bomify signer](bomify_signer.md)	 - Manage named signers for bomify push and save
 * [bomify tag](bomify_tag.md)	 - Create a new tag pointing at an existing package
 * [bomify trust](bomify_trust.md)	 - Manage signature verification rules for bomify pull and load

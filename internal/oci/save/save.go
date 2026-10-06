@@ -11,13 +11,9 @@
 package save
 
 import (
-	"archive/tar"
 	"context"
 	"fmt"
 	"io"
-	"os"
-
-	"oras.land/oras-go/v2/content/oci"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
@@ -39,32 +35,23 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, opts 
 		return fmt.Errorf("no tags to save")
 	}
 
-	stageDir, err := os.MkdirTemp("", "bomify-save-*")
+	archive, err := NewArchive()
 	if err != nil {
-		return fmt.Errorf("create staging directory: %w", err)
+		return err
 	}
-	defer os.RemoveAll(stageDir)
-
-	store, err := oci.New(stageDir)
-	if err != nil {
-		return fmt.Errorf("create oci layout store: %w", err)
-	}
+	defer archive.Close()
 
 	for _, tag := range tags {
 		sbomHash, err := build.ResolveTag(baseDir, tag)
 		if err != nil {
 			return err
 		}
-		if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, opts); err != nil {
+		if _, err := push.Push(ctx, archive.Store, tag, baseDir, sbomHash, opts); err != nil {
 			return fmt.Errorf("package %s: %w", tag, err)
 		}
 	}
 
-	if err := transfer.WriteTar(stageDir, w); err != nil {
-		return fmt.Errorf("archive: %w", err)
-	}
-
-	return nil
+	return archive.WriteTar(w)
 }
 
 // Loaded is one tag Load restored.
@@ -86,32 +73,20 @@ type Loaded struct {
 // each tag exactly as pull.Pull applies them, and a tag either fails
 // isn't recorded.
 func Load(ctx context.Context, baseDir string, r io.Reader, opts transfer.Options) ([]Loaded, error) {
-	stageDir, err := os.MkdirTemp("", "bomify-load-*")
-	if err != nil {
-		return nil, fmt.Errorf("create staging directory: %w", err)
-	}
-	defer os.RemoveAll(stageDir)
-
-	if err := transfer.ExtractTar(tar.NewReader(r), stageDir); err != nil {
-		return nil, fmt.Errorf("extract archive: %w", err)
-	}
-
-	store, err := oci.New(stageDir)
-	if err != nil {
-		return nil, fmt.Errorf("open oci layout store: %w", err)
-	}
-
-	tags, err := listTags(ctx, store)
+	archive, err := OpenArchive(r)
 	if err != nil {
 		return nil, err
 	}
-	if len(tags) == 0 {
-		return nil, fmt.Errorf("archive contains no tags")
+	defer archive.Close()
+
+	tags, err := archive.Tags(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	loaded := make([]Loaded, 0, len(tags))
 	for _, tag := range tags {
-		result, err := pull.Pull(ctx, store, tag, baseDir, opts)
+		result, err := pull.Pull(ctx, archive.Store, tag, baseDir, opts)
 		if err != nil {
 			return nil, fmt.Errorf("restore %s: %w", tag, err)
 		}
@@ -122,16 +97,4 @@ func Load(ctx context.Context, baseDir string, r io.Reader, opts transfer.Option
 	}
 
 	return loaded, nil
-}
-
-func listTags(ctx context.Context, store *oci.Store) ([]string, error) {
-	var tags []string
-	err := store.Tags(ctx, "", func(page []string) error {
-		tags = append(tags, page...)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list tags: %w", err)
-	}
-	return tags, nil
 }

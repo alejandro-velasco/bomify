@@ -28,6 +28,7 @@ Manage individual bomify packages
 * [bomify package push](bomify_package_push.md)	 - Publish a bomify package to an OCI registry
 * [bomify package remove](bomify_package_remove.md)	 - Remove packages by tag
 * [bomify package save](bomify_package_save.md)	 - Save packages to a tarball
+* [bomify package sign](bomify_package_sign.md)	 - Add signatures to a published package
 * [bomify package tag](bomify_package_tag.md)	 - Create a new tag pointing at an existing package
 * [bomify package vulnerabilities](bomify_package_vulnerabilities.md)	 - Print a package's component vulnerability reports
 
