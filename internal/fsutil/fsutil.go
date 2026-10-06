@@ -5,7 +5,6 @@ package fsutil
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,14 +55,18 @@ func WriteAtomic(path string, write func(io.Writer) error) error {
 	}
 	defer os.Remove(tmp.Name())
 
-	// CreateTemp makes the file 0600; data directory files are 0644.
-	writeErr := write(tmp)
-	chmodErr := tmp.Chmod(0o644)
-	closeErr := tmp.Close()
-	if writeErr != nil {
-		return writeErr
+	// Each failure closes tmp before returning, so the deferred Remove can
+	// delete it, which Windows can't do to an open file.
+	if err := write(tmp); err != nil {
+		tmp.Close()
+		return err
 	}
-	if err := errors.Join(chmodErr, closeErr); err != nil {
+	// CreateTemp makes the file 0600; data directory files are 0644.
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("write %s: %w", tmp.Name(), err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {

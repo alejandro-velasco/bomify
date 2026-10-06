@@ -78,14 +78,8 @@ func signCmd() *cobra.Command {
 func runSign(cmd *cobra.Command, args []string, opts *signOptions) error {
 	logger := logging.FromContext(cmd.Context())
 
-	if len(args) == 0 && opts.input == "" {
-		return errors.New("give a <reference>, or --input with a tarball")
-	}
-	if len(args) == 1 && opts.input != "" {
-		return errors.New("give a <reference> or --input, not both")
-	}
-	if opts.output != "" && opts.input == "" {
-		return errors.New("--output needs --input")
+	if err := opts.validate(args); err != nil {
+		return err
 	}
 
 	plugins, err := opts.sign.plugins(dataDir)
@@ -114,6 +108,21 @@ func runSign(cmd *cobra.Command, args []string, opts *signOptions) error {
 		return err
 	}
 	logSigned(logger, ref, result)
+	return nil
+}
+
+// validate rejects a missing target, a reference and --input together, and
+// --output without --input.
+func (o *signOptions) validate(args []string) error {
+	if len(args) == 0 && o.input == "" {
+		return errors.New("give a <reference>, or --input with a tarball")
+	}
+	if len(args) == 1 && o.input != "" {
+		return errors.New("give a <reference> or --input, not both")
+	}
+	if o.output != "" && o.input == "" {
+		return errors.New("--output needs --input")
+	}
 	return nil
 }
 
