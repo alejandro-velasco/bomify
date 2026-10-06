@@ -5,8 +5,8 @@ package fsutil
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -30,11 +30,21 @@ func WriteTemp(pattern string, data []byte) (string, error) {
 	return f.Name(), nil
 }
 
-// WriteFileAtomic writes data to path via a temp file renamed into
-// place, so a reader never sees a partial file. path's directory is
-// created if needed, and the file ends up 0644, like the rest of the
-// data directory.
+// WriteFileAtomic writes data to path atomically (see WriteAtomic).
 func WriteFileAtomic(path string, data []byte) error {
+	return WriteAtomic(path, func(w io.Writer) error {
+		_, err := w.Write(data)
+		return err
+	})
+}
+
+// WriteAtomic writes path with write, via a temp file renamed into
+// place, so a reader never sees a partial file, and a failed write
+// leaves any existing path untouched. path's directory is created if
+// needed, and the file ends up 0644, like the rest of the data
+// directory. Unlike WriteFileAtomic, it streams, for files too large to
+// hold in memory.
+func WriteAtomic(path string, write func(io.Writer) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
@@ -45,11 +55,18 @@ func WriteFileAtomic(path string, data []byte) error {
 	}
 	defer os.Remove(tmp.Name())
 
+	// Each failure closes tmp before returning, so the deferred Remove can
+	// delete it, which Windows can't do to an open file.
+	if err := write(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	// CreateTemp makes the file 0600; data directory files are 0644.
-	_, writeErr := tmp.Write(data)
-	chmodErr := tmp.Chmod(0o644)
-	closeErr := tmp.Close()
-	if err := errors.Join(writeErr, chmodErr, closeErr); err != nil {
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("write %s: %w", tmp.Name(), err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {

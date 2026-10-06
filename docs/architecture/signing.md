@@ -24,6 +24,14 @@ the build's identity.
   the Referrers API (ghcr.io), bomify sets `SkipReferrersGC`, so the
   superseded tag-schema index is left untagged rather than deleted,
   which those registries refuse.
+- **Sign later** (`bomify sign <reference>`, or `--input <tarball>`):
+  `internal/oci/sign` resolves the reference, checks its manifest is a
+  bomify package's, and signs it and each of its vulnerability report
+  and VEX referrers with the same signer push uses, fetching only
+  manifests. Each signature is one more referrer, so co-signers can
+  sign at different times, in different environments. A tarball is
+  extracted, every tag signed, and re-archived. Provenance isn't
+  attested again: one trusted attestation is enough.
 - **Verify** (`pull`/`load`): before fetching anything,
   `signature.Policy` picks the signers the reference must satisfy:
   `--verify` (one, with only its own `--verify-option`s), else the most
