@@ -143,7 +143,7 @@ func TestDigestsShortened(t *testing.T) {
 		hexDigits:                  "0f0f0f0f0f0f…",
 		"sha256:" + hexDigits[:10]: "sha256:" + hexDigits[:10],
 		strings.ToUpper(hexDigits): strings.ToUpper(hexDigits),
-		"key sha256:WHPRNfgA9wK8":  `"key sha256:WHPRNfgA9wK8"`,
+		"key sha256:not-a-digest":  `"key sha256:not-a-digest"`,
 		"app:1.0":                  "app:1.0",
 	} {
 		var buf strings.Builder
