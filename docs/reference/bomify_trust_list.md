@@ -4,8 +4,10 @@ List signature verification rules
 
 ### Synopsis
 
-List prints every trust rule. "*" in MATCH means every package, and
-KEY-OPTIONS lists each option=name pair naming a stored key.
+List prints every trust rule, one row per signer. "*" in MATCH means
+every package, KEY-OPTIONS lists each option=name pair naming a stored
+key, and REQUIRE is how many of the rule's signers must verify. "-"
+marks an empty field; in SIGNER, it's the rule's unnamed signer.
 
 ```
 bomify trust list [flags]

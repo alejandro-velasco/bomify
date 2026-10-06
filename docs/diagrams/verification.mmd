@@ -11,29 +11,36 @@ flowchart TD
     Skip -->|"yes"| Unverified["restore unverified<br/>(warn if a trust rule matched)"]
     Skip -->|"no"| Flag{"--verify given?"}
 
-    Flag -->|"yes"| UseFlag["use the flag's plugin<br/>and --verify-options<br/>— trust.json not consulted"]
+    Flag -->|"yes"| UseFlag["one signer: the flag's plugin<br/>and --verify-options<br/>— trust.json not consulted"]
     Flag -->|"no"| Rule{"a trust.json rule<br/>matches &lt;ref&gt;'s repository?"}
 
     Rule -->|"no"| Unverified
-    Rule -->|"yes, most specific wins"| UseRule["use the rule's<br/>plugin and options"]
+    Rule -->|"yes, most specific wins"| UseRule["the rule's signers,<br/>and how many it requires"]
 
     UseFlag --> Types
-    UseRule --> Types["bomify-plugin-&lt;kind&gt;<br/>signature supported-types"]
+    UseRule --> Types["next signer:<br/>bomify-plugin-&lt;verifier&gt;<br/>signature supported-types"]
 
     Types --> List["list the manifest's referrers,<br/>keep those of a supported artifactType"]
     List --> Any{"any candidates?"}
 
-    Any -->|"no"| Fail["pull fails<br/>— nothing written to the data directory"]
+    Any -->|"no"| SignerFailed["signer not verified"]
     Any -->|"yes"| Next["next candidate:<br/>fetch referrer manifest (1 layer),<br/>fetch envelope (&lt;= 4 MiB)"]
 
-    Next --> PluginVerify["bomify-plugin-&lt;kind&gt; signature verify<br/>--payload --envelope --media-type<br/>--reference --option..."]
+    Next --> PluginVerify["bomify-plugin-&lt;verifier&gt; signature verify<br/>--payload --envelope --media-type<br/>--reference --option... (the signer's)"]
     PluginVerify --> Passed{"exit 0?"}
 
-    Passed -->|"yes"| Verified["log signer, then fetch config<br/>and layers by the verified descriptor"]
+    Passed -->|"yes"| Enough{"required signers<br/>verified?"}
     Passed -->|"no"| More{"more candidates?"}
 
     More -->|"yes"| Next
-    More -->|"no"| Fail
+    More -->|"no"| SignerFailed
+
+    Enough -->|"yes"| Verified["log signers, then fetch config<br/>and layers by the verified descriptor"]
+    Enough -->|"not yet"| Signers{"more signers?"}
+    SignerFailed --> Signers
+
+    Signers -->|"yes"| Types
+    Signers -->|"no"| Fail["pull fails, naming each signer that didn't verify<br/>— nothing written to the data directory"]
 
     class Start source
     class Types,PluginVerify plugin

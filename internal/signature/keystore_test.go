@@ -90,32 +90,34 @@ func TestKeyOptionRules(t *testing.T) {
 		t.Fatalf("AddKey: %v", err)
 	}
 
-	rule := Rule{Match: "registry.example.com", Verifier: "sigstore", Options: []string{"certificate-identity=x"}, KeyOptions: map[string]string{"key": "team"}}
-	if err := SetRule(baseDir, rule); err != nil {
+	keyed := func(options []string, keyOptions map[string]string) Rule {
+		return Rule{Match: "registry.example.com", Signers: []Signer{{Verifier: "sigstore", Options: options, KeyOptions: keyOptions}}}
+	}
+	if err := SetRule(baseDir, keyed([]string{"certificate-identity=x"}, map[string]string{"key": "team"})); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
-	if err := SetRule(baseDir, Rule{Verifier: "sigstore", KeyOptions: map[string]string{"key": "missing"}}); err == nil {
+	if err := SetRule(baseDir, keyed(nil, map[string]string{"key": "missing"})); err == nil {
 		t.Error("SetRule accepted an unknown key name")
 	}
-	if err := SetRule(baseDir, Rule{Verifier: "sigstore", Options: []string{"key=a.pub"}, KeyOptions: map[string]string{"key": "team"}}); err == nil {
+	if err := SetRule(baseDir, keyed([]string{"key=a.pub"}, map[string]string{"key": "team"})); err == nil {
 		t.Error("SetRule accepted the same option as --option and --key-option")
 	}
 
 	// Resolved, a key option becomes a plain option pointing at the
-	// stored copy, after the rule's own options.
+	// stored copy, after the signer's own options.
 	rules, err := ReadResolved(baseDir)
 	if err != nil {
 		t.Fatalf("ReadResolved: %v", err)
 	}
 	want := []string{"certificate-identity=x", "key=" + keyStore(baseDir).Path(entry.SHA256)}
-	if len(rules) != 1 || !reflect.DeepEqual(rules[0].Options, want) || rules[0].KeyOptions != nil {
+	if len(rules) != 1 || !reflect.DeepEqual(rules[0].Signers[0].Options, want) || rules[0].Signers[0].KeyOptions != nil {
 		t.Fatalf("resolved rules = %+v, want options %v", rules, want)
 	}
 
 	// The policy hands those options to the verifier.
-	p, required := (Policy{Rules: rules}).For("registry.example.com/app:1")
-	if !required || !reflect.DeepEqual(p.Options, want) {
-		t.Errorf("Policy.For = %+v, %v; want options %v", p, required, want)
+	req, required := (Policy{Rules: rules}).For("registry.example.com/app:1")
+	if !required || !reflect.DeepEqual(req.Signers[0].Options, want) {
+		t.Errorf("Policy.For = %+v, %v; want options %v", req, required, want)
 	}
 
 	// The stored copy is what counts: rotating the name updates the rule.
@@ -123,8 +125,8 @@ func TestKeyOptionRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddKey (rotate): %v", err)
 	}
-	if rules, _ := ReadResolved(baseDir); rules[0].Options[1] != "key="+keyStore(baseDir).Path(rotated.SHA256) {
-		t.Errorf("after rotation, options = %v", rules[0].Options)
+	if rules, _ := ReadResolved(baseDir); rules[0].Signers[0].Options[1] != "key="+keyStore(baseDir).Path(rotated.SHA256) {
+		t.Errorf("after rotation, options = %v", rules[0].Signers[0].Options)
 	}
 
 	// A key a rule uses can't be removed.
@@ -156,7 +158,7 @@ func TestVerifyWithStoredKey(t *testing.T) {
 	}
 	sign(t, store, "registry.example.com/team/app:v1", manifest, keyStore(baseDir).Path(entry.SHA256))
 
-	if err := SetRule(baseDir, Rule{Match: "registry.example.com/team", Verifier: fakeKind, KeyOptions: map[string]string{"key": "team"}}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com/team", Signers: []Signer{{Verifier: fakeKind, KeyOptions: map[string]string{"key": "team"}}}}); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
 	verifierFor := func() func() error {

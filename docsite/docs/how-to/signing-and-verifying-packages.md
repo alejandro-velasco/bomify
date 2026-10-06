@@ -157,3 +157,33 @@ bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore   --verify-option certifi
 ```
 
 See [Build provenance](../development/architecture/provenance.md#verifying).
+
+## 8. Require several signers
+
+To require, say, both a release team's and a security team's signature,
+give a trust rule a named signer for each:
+
+```sh
+bomify trust create sigstore --match registry.example.com/prod --signer release --key-option key=release
+bomify trust create sigstore --match registry.example.com/prod --signer security --key-option key=security
+```
+
+A matching package now needs a signature each of them verifies. Name
+every signer: if the rule was first created without `--signer`, that
+unnamed signer (`-` in `bomify trust list`) stays and is required too,
+until `bomify trust remove --match registry.example.com/prod --signer ''`
+drops it. To
+accept any k of them instead, add `--require k`, e.g. two of three
+maintainers. `bomify trust list` shows one row per signer, and `bomify
+trust remove --signer <name>` drops one.
+
+Sign as every signer in the same push or save, so the package's reports
+and VEX carry each signature too. Store each signer under a name first:
+
+```sh
+bomify signer create release sigstore --option key=release.key
+bomify signer create security sigstore --option key=security.key
+bomify push registry.example.com/prod/myapp:1.0 --signer release --signer security
+```
+
+A rule requiring provenance accepts it from any one of its signers.

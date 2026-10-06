@@ -65,6 +65,12 @@ nav = [
           { "bomify security vex list" = "usage/reference/bomify_security_vex_list.md" },
           { "bomify security vex remove" = "usage/reference/bomify_security_vex_remove.md" },
       ] },
+      { "bomify signer" = [
+          { "bomify signer" = "usage/reference/bomify_signer.md" },
+          { "bomify signer create" = "usage/reference/bomify_signer_create.md" },
+          { "bomify signer list" = "usage/reference/bomify_signer_list.md" },
+          { "bomify signer remove" = "usage/reference/bomify_signer_remove.md" },
+      ] },
       { "bomify tag" = "usage/reference/bomify_tag.md" },
       { "bomify trust" = [
           { "bomify trust" = "usage/reference/bomify_trust.md" },

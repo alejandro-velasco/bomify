@@ -129,10 +129,10 @@ func (f *publishFlags) register(cmd *cobra.Command, verb, quietUsage string) {
 }
 
 // transferOptions is transferFlags.transferOptions plus a signer and
-// attester from the plugin --sign names, and the VEX documents --vex
-// names, each attached to the package.
+// attester signing with --sign and every --signer, and the VEX documents
+// --vex names, each attached to the package.
 func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) (transfer.Options, func(), error) {
-	p, signs, err := f.sign.plugin()
+	plugins, err := f.sign.plugins(dataDir)
 	if err != nil {
 		return transfer.Options{}, nil, err
 	}
@@ -140,16 +140,14 @@ func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) 
 		signer   transfer.Signer
 		attester transfer.Attester
 	)
+	signs := len(plugins) > 0
 	if signs {
-		if signer, err = signature.NewSigner(layout.Plugins(dataDir), p, logger); err != nil {
-			return transfer.Options{}, nil, err
-		}
-		if attester, err = signature.NewAttester(layout.Plugins(dataDir), p, logger); err != nil {
+		if signer, attester, err = signature.NewSigners(layout.Plugins(dataDir), plugins, logger); err != nil {
 			return transfer.Options{}, nil, err
 		}
 	}
 	if len(f.vex) > 0 && !signs {
-		logger.Warn("attaching VEX without --sign: pulls only apply a package's VEX when they verify its signature, so this VEX will be ignored", "documents", len(f.vex))
+		logger.Warn("attaching VEX without --sign or --signer: pulls only apply a package's VEX when they verify its signature, so this VEX will be ignored", "documents", len(f.vex))
 	}
 	var attach []transfer.Attachment
 	for _, arg := range f.vex {

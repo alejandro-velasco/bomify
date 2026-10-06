@@ -119,6 +119,48 @@ func NewAttester(pluginDir string, p Plugin, logger *slog.Logger) (transfer.Atte
 	}, nil
 }
 
+// NewSigners returns a transfer.Signer and transfer.Attester that sign
+// with each of plugins in turn (see NewSigner and NewAttester), so a
+// package carries one signature, and one attestation, per plugin. Every
+// plugin is found before any signs. The attester returns the first
+// plugin's attestation.
+func NewSigners(pluginDir string, plugins []Plugin, logger *slog.Logger) (transfer.Signer, transfer.Attester, error) {
+	signers := make([]transfer.Signer, len(plugins))
+	attesters := make([]transfer.Attester, len(plugins))
+	for index, plugin := range plugins {
+		var err error
+		if signers[index], err = NewSigner(pluginDir, plugin, logger); err != nil {
+			return nil, nil, err
+		}
+		if attesters[index], err = NewAttester(pluginDir, plugin, logger); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	sign := func(ctx context.Context, target oras.Target, ref string, manifest ocispec.Descriptor) error {
+		for _, signer := range signers {
+			if err := signer(ctx, target, ref, manifest); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	attest := func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error) {
+		var first ocispec.Descriptor
+		for index, attester := range attesters {
+			desc, err := attester(ctx, target, ref, subject, statement, annotations)
+			if err != nil {
+				return ocispec.Descriptor{}, err
+			}
+			if index == 0 {
+				first = desc
+			}
+		}
+		return first, nil
+	}
+	return sign, attest, nil
+}
+
 // attachEnvelope pushes the envelope in result, from the plugin at path,
 // as a referrer of subject, annotated with annotations, the plugin's own,
 // and AnnotationPlugin.
@@ -145,33 +187,56 @@ func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Des
 }
 
 // NewVerifier returns a transfer.Verifier enforcing policy: for each
-// reference, it asks policy which plugin (if any) must verify it (see
-// Policy.For), and if one must, requires at least one of the manifest's
-// signature referrers to pass that plugin's "signature verify" — failing
-// the pull outright otherwise. A reference no policy applies to is
-// restored unverified, with a warning when --insecure-skip-verify
+// reference, it asks policy which signatures (if any) it must carry (see
+// Policy.For), and if it must, requires them (see VerifySigners),
+// failing the pull outright otherwise. A reference no policy applies to
+// is restored unverified, with a warning when --insecure-skip-verify
 // bypasses a trust rule that matched it, since that's a policy being
 // deliberately bypassed rather than simply absent. pluginDir is where the
 // verifying plugins are installed (see plugin.Dir).
 func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
-		p, required := policy.For(ref)
+		req, required := policy.For(ref)
 		if !required {
 			if rule, ok := Resolve(policy.Rules, ref); ok && policy.Skip {
-				logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+				logger.Warn("skipping signature verification required by trust rule", "reference", ref, "match", rule.Match)
 			}
 			logger.Debug("no signature verification required", "reference", ref)
 			return nil
 		}
-
-		signer, err := VerifySignature(ctx, target, ref, manifest, pluginDir, p, logger)
-		if err != nil {
-			return err
-		}
-
-		logger.Info("verified", "reference", ref, "plugin", p.Kind, "signer", signer)
-		return nil
+		return VerifySigners(ctx, target, ref, manifest, pluginDir, req, logger)
 	}
+}
+
+// VerifySigners requires manifest to carry a signature that each of
+// req's signers verifies (see VerifySignature), or, with req.Require
+// set, that many of them. A single signature can count for two signers
+// only if both trust whoever made it. With one signer, its error is
+// returned as is; with more, each failing signer's error is named.
+func VerifySigners(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, pluginDir string, req Requirement, logger *slog.Logger) error {
+	need := req.required()
+	var verified int
+	var failures []error
+	for _, signer := range req.Signers {
+		identity, err := VerifySignature(ctx, target, ref, manifest, pluginDir, signer.plugin(), logger)
+		if err != nil {
+			failure := &SignerError{
+				Name: signer.Name,
+				Err:  err,
+			}
+			failures = append(failures, failure)
+			continue
+		}
+		logger.Info("verified", "reference", ref, "plugin", signer.Verifier, "signer", identity, "name", signer.Name)
+		if verified++; verified == need {
+			return nil
+		}
+	}
+	if len(req.Signers) == 1 {
+		// A single signer, as with --verify: its own error says it all.
+		return errors.Unwrap(failures[0])
+	}
+	return fmt.Errorf("%s: %d of the %d required signers verified: %w", ref, verified, need, errors.Join(failures...))
 }
 
 // VerifySignature requires at least one of manifest's signature referrers in

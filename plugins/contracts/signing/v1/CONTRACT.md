@@ -40,7 +40,10 @@ envelope is a trusted signature over a payload. bomify does the rest:
 3. **Verify** (pull/load): before fetching anything else, list the
    manifest's referrers, keep those whose artifact type `signature
    supported-types` lists, and call `signature verify` on each until one
-   passes. If none does, the pull fails and nothing is written.
+   passes. If none does, the pull fails and nothing is written. A trust
+   rule can require several signers, each verified this way with its own
+   options, so the same envelope may reach `verify` more than once with
+   different options: judge each call by its own flags alone.
 4. **Verify provenance** (pull/load with `--verify-provenance` or a
    trust rule's `--require-provenance`): the same way, call `signature
    verify-attestation` on each attestation referrer until one passes and
@@ -160,7 +163,7 @@ key=<name>`) arrives as an ordinary `--option key=<path of bomify's
 stored copy>`, so a plugin always gets a file path.
 
 The plugin owns its trust material. bomify only decides whether a
-package is signed or verified, and by which plugin: `--sign`/`--verify`,
+package is signed or verified, and by which plugins: `--sign`/`--verify`,
 else (for verification) the most specific trust rule (see
 [the architecture docs](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/signing.md)).
 

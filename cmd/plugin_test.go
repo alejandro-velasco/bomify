@@ -128,10 +128,11 @@ func TestPluginInstallPolicy(t *testing.T) {
 	origDataDir := dataDir
 	t.Cleanup(func() { dataDir = origDataDir })
 
+	orgSigner := []signature.Signer{{Verifier: pluginVerifier, Options: []string{"key=org.pub"}}}
 	trustRule := func(match string) func(t *testing.T, baseDir string) {
 		return func(t *testing.T, baseDir string) {
 			installFakeVerifier(t, baseDir)
-			if err := signature.SetRule(baseDir, signature.Rule{Match: match, Verifier: pluginVerifier, Options: []string{"key=org.pub"}}); err != nil {
+			if err := signature.SetRule(baseDir, signature.Rule{Match: match, Signers: orgSigner}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -163,7 +164,7 @@ func TestPluginInstallPolicy(t *testing.T) {
 		{
 			name: "matching trust rule", setup: trustRule("ghcr.io/alejandro-velasco"),
 			opts:       pluginInstallOptions{verify: true},
-			wantPolicy: &signature.Policy{Rules: signature.Config{{Match: "ghcr.io/alejandro-velasco", Verifier: pluginVerifier, Options: []string{"key=org.pub"}}}},
+			wantPolicy: &signature.Policy{Rules: signature.Config{{Match: "ghcr.io/alejandro-velasco", Signers: orgSigner}}},
 		},
 		{name: "verify options override a matching trust rule", setup: trustRule("ghcr.io/alejandro-velasco"), opts: pluginInstallOptions{verify: true, verifyOptions: []string{"key=cosign.pub"}}, wantPolicy: keyPolicy},
 		{name: "trust rule for another registry", setup: trustRule("registry.example.com"), opts: pluginInstallOptions{verify: true}, wantErr: true},

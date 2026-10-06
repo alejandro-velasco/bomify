@@ -234,7 +234,7 @@ func pluginInstallPolicy(ref string, opts *pluginInstallOptions, logger *slog.Lo
 		return nil, err
 	}
 	if rule, ok := signature.Resolve(rules, ref); ok {
-		logger.Debug("verifying plugin package per trust rule", "reference", ref, "match", rule.Match, "verifier", rule.Verifier)
+		logger.Debug("verifying plugin package per trust rule", "reference", ref, "match", rule.Match, "signers", len(rule.Signers))
 		return &signature.Policy{Rules: rules}, nil
 	}
 

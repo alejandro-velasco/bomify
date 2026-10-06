@@ -39,7 +39,8 @@ bomify package save <tag>... [flags]
   -h, --help                      help for save
   -o, --output string             write the tarball here instead of stdout
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
-      --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --sign-option stringArray   a key=value option passed through to the --sign plugin (repeatable; e.g. key=cosign.key)
+      --signer stringArray        also sign the package as this signer from "bomify signer create" (repeatable)
       --vex stringArray           attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
 ```
 
