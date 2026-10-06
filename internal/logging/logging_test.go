@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -193,5 +194,16 @@ func TestNewWritesToSetOutput(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "hello") {
 		t.Errorf("redirected output = %q, want the log line", buf.String())
+	}
+}
+
+func TestIsTerminal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if IsTerminal(f) || IsTerminal(&strings.Builder{}) {
+		t.Error("IsTerminal = true for a regular file or a buffer, want false")
 	}
 }
