@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"io"
+	"strings"
 
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -18,19 +19,40 @@ func newMultiBar(out io.Writer) *mpb.Progress {
 	return mpb.New(mpb.WithOutput(out))
 }
 
+// maxBarLabel is the most characters of a blob's label a bar shows (see
+// barLabel), so a long one can't push every bar off a normal terminal.
+const maxBarLabel = 50
+
 // newProgressFunc returns a transfer.ProgressFunc that renders each blob as
 // its own bar under p, shared by every command that transfers OCI blobs
-// (pull, push, save, load).
+// (pull, push, save, load). Labels and counters are each padded to their
+// column's widest, so every bar starts and ends in the same place.
 func newProgressFunc(p *mpb.Progress) transfer.ProgressFunc {
 	return func(name string, size int64) io.WriteCloser {
+		label := decor.Name(barLabel(name), decor.WCSyncSpaceR)
+		current := decor.Current(decor.SizeB1024(0), "% .2f", decor.WCSyncSpace)
+		total := decor.Total(decor.SizeB1024(0), "% .2f", decor.WCSyncSpace)
 		bar := p.AddBar(size,
 			mpb.BarWidth(30),
-			mpb.PrependDecorators(decor.Name(name)),
-			mpb.AppendDecorators(decor.CountersKibiByte("% .2f / % .2f")),
+			mpb.PrependDecorators(label),
+			mpb.AppendDecorators(current, decor.Name(" /"), total),
 		)
 		pw, _ := bar.ProxyWriter(io.Discard)
 		return &barWriteCloser{WriteCloser: pw, bar: bar}
 	}
+}
+
+// barLabel is how a bar shows a blob's label, usually a purl: without its
+// qualifiers (from "?"), which are long and rarely tell components apart,
+// and cut to maxBarLabel characters, ending in "…", if still longer.
+// Errors keep the full label.
+func barLabel(name string) string {
+	label, _, _ := strings.Cut(name, "?")
+	runes := []rune(label)
+	if len(runes) <= maxBarLabel {
+		return label
+	}
+	return string(runes[:maxBarLabel-1]) + "…"
 }
 
 // barWriteCloser aborts its bar on Close if the blob's transfer ended
