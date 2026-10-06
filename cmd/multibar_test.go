@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/vbauerster/mpb/v8"
+
+	"github.com/alejandro-velasco/bomify/internal/logging"
 )
 
 func TestProgressFuncCompletesBarOnFullWrite(t *testing.T) {
@@ -75,5 +77,25 @@ func waitOrTimeout(t *testing.T, mb *mpb.Progress) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Wait did not return after all bars were closed")
+	}
+}
+
+// TestLogAboveBarsOnlyOnTerminal covers output that isn't a terminal,
+// where bars aren't drawn and mpb never flushes what's written to it: log
+// lines must keep going where they did, not into the bars' container.
+func TestLogAboveBarsOnlyOnTerminal(t *testing.T) {
+	var logs strings.Builder
+	restoreCapture := logging.SetOutput(&logs)
+	defer restoreCapture()
+
+	var out bytes.Buffer
+	mb := newMultiBar(&out)
+	restore := logAboveBars(mb, &out)
+	logging.New(false).Info("during transfer")
+	restore()
+	mb.Wait()
+
+	if !strings.Contains(logs.String(), "during transfer") {
+		t.Errorf("log output = %q, want the line written during the transfer", logs.String())
 	}
 }

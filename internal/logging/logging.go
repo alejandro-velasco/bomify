@@ -187,6 +187,15 @@ func SupportsColor(f *os.File) bool {
 	if os.Getenv(noColorEnv) != "" {
 		return false
 	}
+	return IsTerminal(f)
+}
+
+// IsTerminal reports whether w is a terminal.
+func IsTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
 	info, err := f.Stat()
 	if err != nil {
 		return false

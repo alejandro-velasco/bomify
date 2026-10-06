@@ -7,6 +7,7 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 
+	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
@@ -17,6 +18,18 @@ import (
 // anything else writes to out.
 func newMultiBar(out io.Writer) *mpb.Progress {
 	return mpb.New(mpb.WithOutput(out))
+}
+
+// logAboveBars sends bomify's log lines through p, which prints them
+// above its bars rather than through them (see logging.SetOutput), and
+// returns the function that stops it. It does so only when out, where p
+// draws, is a terminal: elsewhere p draws no bars, and never flushes what's
+// written to it, so log lines go straight to stderr as usual.
+func logAboveBars(p *mpb.Progress, out io.Writer) (restore func()) {
+	if !logging.IsTerminal(out) {
+		return func() {}
+	}
+	return logging.SetOutput(p)
 }
 
 // maxBarLabel is the most characters of a blob's label a bar shows (see

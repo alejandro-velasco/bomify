@@ -50,7 +50,7 @@ func (f *transferFlags) transferOptions(cmd *cobra.Command) (opts transfer.Optio
 	}
 	mb := newMultiBar(cmd.ErrOrStderr())
 	opts.Progress = newProgressFunc(mb)
-	restoreLogs := logging.SetOutput(mb)
+	restoreLogs := logAboveBars(mb, cmd.ErrOrStderr())
 	done = func() {
 		mb.Wait()
 		restoreLogs()
