@@ -47,10 +47,10 @@ statement's SHA-256 (`land.bomify.provenance.statement`). If the package
 already carries a referrer with that statement, nothing is attached, so
 pushing again adds nothing new.
 
-- **With `--sign`**: `signature.NewAttester` has the signing plugin sign
-  the statement as a DSSE envelope (`signature attest`, see the
+- **With `--sign`**: `signature.NewAttester` has each signing plugin
+  sign the statement as a DSSE envelope (`signature attest`, see the
   [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-attest)),
-  pushed as a referrer of the plugin's artifact type. With
+  pushed as a referrer of the plugin's artifact type, one per `--sign`. With
   `bomify-plugin-sigstore`, that's a Sigstore bundle carrying Sigstore's
   own annotations, in the form cosign and `gh` read.
 - **Without `--sign`**: the statement is attached unsigned (artifact type
@@ -70,7 +70,7 @@ package doesn't carry it forward.
 `pull`/`load --verify-provenance`, or a matching trust rule created with
 `--require-provenance`, requires a package's provenance as well as its
 signature. `signature.Policy.ProvenanceRequired` decides, from the same
-source as the signature's verifier (see [Signing](signing.md)), so
+source as the signature's signers (see [Signing](signing.md)), so
 `--verify` replaces a rule's requirement along with the rest of it, and
 `--insecure-skip-verify` drops both. Provenance can't be required
 without a verifier.
@@ -78,12 +78,16 @@ without a verifier.
 `signature.NewProvenanceVerifier` runs as `transfer.Options.VerifyProvenance`,
 right after the package's signature verifies and before anything is
 written, and only for the package itself, not its other referrers. It
-keeps the referrers annotated `land.bomify.attestation.predicateType`
-with the SLSA predicate type and an artifact type the verifier supports,
-and asks the plugin's `signature verify-attestation` (see the
+tries each of the signers in turn, stopping at the first that passes;
+one trusted attestation is enough, whatever the rule's `require`. For a
+signer, it keeps the referrers annotated
+`land.bomify.attestation.predicateType` with the SLSA predicate type
+and an artifact type its plugin supports, and asks the plugin's
+`signature verify-attestation` (see the
 [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-verify-attestation))
-about each, with the manifest digest as the subject, until one passes
-and `provenance.Check` accepts the statement it returns:
+about each, with the manifest digest as the subject and the signer's
+options, until one passes and `provenance.Check` accepts the statement
+it returns:
 
 - a valid in-toto statement of the SLSA v1 predicate type, naming the
   package manifest's digest as a subject (its name isn't checked, so a
@@ -93,7 +97,7 @@ and `provenance.Check` accepts the statement it returns:
 - `externalParameters.sbom` matching the package's SBOM (its config
   blob's digest).
 
-If none passes, the pull fails with nothing written. Unsigned provenance
+If no signer's passes, the pull fails with nothing written. Unsigned provenance
 never counts. `resolvedDependencies` isn't checked against anything:
 the signature already pins every component by digest.
 

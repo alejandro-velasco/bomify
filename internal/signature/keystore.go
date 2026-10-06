@@ -102,9 +102,11 @@ func RemoveKey(baseDir, name string) error {
 		return err
 	}
 	uses := func(r Rule) bool {
-		for _, keyName := range r.KeyOptions {
-			if keyName == name {
-				return true
+		for _, signer := range r.Signers {
+			for _, keyName := range signer.KeyOptions {
+				if keyName == name {
+					return true
+				}
 			}
 		}
 		return false
@@ -145,29 +147,44 @@ func keyOptionArgs(baseDir string, keyOptions map[string]string) ([]string, erro
 }
 
 // ReadResolved is Read followed by ResolveKeyOptions: baseDir's trust
-// rules, ready to verify with.
+// rules, ready to verify with. It fails on a rule that doesn't validate
+// (e.g. one edited by hand to have no signers), rather than verifying
+// less than it asks for.
 func ReadResolved(baseDir string) (Config, error) {
-	rules, err := Read(baseDir)
+	config, err := Read(baseDir)
 	if err != nil {
 		return nil, err
 	}
-	return ResolveKeyOptions(baseDir, rules)
+	for _, rule := range config {
+		if err := rule.validate(); err != nil {
+			return nil, fmt.Errorf("trust rule %q: %w", rules.Display(rule.Match), err)
+		}
+	}
+	return ResolveKeyOptions(baseDir, config)
 }
 
-// ResolveKeyOptions returns rules with each rule's KeyOptions turned
+// ResolveKeyOptions returns rules with each signer's KeyOptions turned
 // into plain Options pointing at the stored keys' copies in baseDir, so
 // a verifying plugin gets file paths exactly as if they'd been given
 // with --option. It fails on a key name missing from the store, naming
-// the rule.
+// the rule and signer.
 func ResolveKeyOptions(baseDir string, config Config) (Config, error) {
 	resolved := slices.Clone(config)
-	for i, rule := range resolved {
-		args, err := keyOptionArgs(baseDir, rule.KeyOptions)
-		if err != nil {
-			return nil, fmt.Errorf("trust rule %q: %w", rules.Display(rule.Match), err)
+	for ruleIndex, rule := range resolved {
+		signers := slices.Clone(rule.Signers)
+		for signerIndex, signer := range signers {
+			args, err := keyOptionArgs(baseDir, signer.KeyOptions)
+			if err != nil {
+				signerErr := &SignerError{
+					Name: signer.Name,
+					Err:  err,
+				}
+				return nil, fmt.Errorf("trust rule %q: %w", rules.Display(rule.Match), signerErr)
+			}
+			signers[signerIndex].Options = append(slices.Clone(signer.Options), args...)
+			signers[signerIndex].KeyOptions = nil
 		}
-		resolved[i].Options = append(slices.Clone(rule.Options), args...)
-		resolved[i].KeyOptions = nil
+		resolved[ruleIndex].Signers = signers
 	}
 	return resolved, nil
 }

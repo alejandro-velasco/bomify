@@ -26,7 +26,9 @@ referrers are deleted (best-effort: "bomify security prune" retries if
 the registry refuses).
 
 --sign signs the package, and its reports separately, before the tag
-moves, so the tag never points at an unsigned package.
+moves, so the tag never points at an unsigned package. --signer
+(repeatable) also signs as a signer from "bomify signer create", so one
+push can carry every signature a trust rule requiring several needs.
 
 Provenance recorded by "bomify build --provenance" is attached as an
 in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
@@ -51,6 +53,9 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
 
   # Sign the package with a cosign key while pushing it
   bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key
+
+  # Sign as two stored signers, for a rule requiring both
+  bomify push registry.example.com/myapp:latest --signer release --signer security
 
   # Print just the pinned reference, e.g. to publish it
   pinned=$(bomify push registry.example.com/myapp:latest --quiet)`

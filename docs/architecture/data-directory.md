@@ -31,6 +31,11 @@ nowhere else.
   [`internal/rules`](https://github.com/alejandro-velasco/bomify/tree/main/internal/rules): a JSON array with one rule per
   identity, written atomically, resolved by the most specific
   `/`-segment prefix match ([`internal/prefix`](https://github.com/alejandro-velasco/bomify/tree/main/internal/prefix)).
+- **`conf/signers.json`** is the named signers `push`/`save --sign`
+  use (`bomify signer create`): each a signing plugin and its options,
+  such as a private key's path, never key material. It's stored with
+  `internal/rules` too, one entry per name, but never matched against a
+  reference.
 - **`conf/auth.json`** is registry credentials, in Docker's
   `config.json` format (see [Credentials](registry.md#credentials)).
 - **`vex/` and `keys/`** are named, content-addressed stores

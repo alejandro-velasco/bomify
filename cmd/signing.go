@@ -9,30 +9,62 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/signature"
 )
 
-// signFlags are the --sign/--sign-option flags push and save share.
+// signFlags are the --sign/--sign-option/--signer flags push and save
+// share.
 type signFlags struct {
 	kind    string
 	options []string
+	signers []string
 }
 
 func (f *signFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.kind, "sign", "", "sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer")
-	cmd.Flags().StringArrayVar(&f.options, "sign-option", nil, "a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)")
+	cmd.Flags().StringArrayVar(&f.options, "sign-option", nil, "a key=value option passed through to the --sign plugin (repeatable; e.g. key=cosign.key)")
+	cmd.Flags().StringArrayVar(&f.signers, "signer", nil, "also sign the package as this signer from \"bomify signer create\" (repeatable)")
 }
 
-// plugin returns the signing plugin --sign and --sign-option describe,
-// with ok false if --sign wasn't given.
-func (f *signFlags) plugin() (p signature.Plugin, ok bool, err error) {
-	if f.kind == "" {
-		if len(f.options) > 0 {
-			return signature.Plugin{}, false, fmt.Errorf("--sign-option given without --sign")
-		}
-		return signature.Plugin{}, false, nil
+// plugins returns the signing plugins the flags describe: --sign's with
+// --sign-option, then each --signer's from baseDir, none if neither flag
+// was given.
+func (f *signFlags) plugins(baseDir string) ([]signature.Plugin, error) {
+	if f.kind == "" && len(f.options) > 0 {
+		return nil, fmt.Errorf("--sign-option given without --sign")
 	}
 	if err := validateOptions("--sign-option", f.options); err != nil {
-		return signature.Plugin{}, false, err
+		return nil, err
 	}
-	return signature.Plugin{Kind: f.kind, Options: f.options}, true, nil
+
+	var plugins []signature.Plugin
+	if f.kind != "" {
+		plugin := signature.Plugin{
+			Kind:    f.kind,
+			Options: f.options,
+		}
+		plugins = append(plugins, plugin)
+	}
+	// Without --signer, signers.json isn't needed, so a push that doesn't
+	// use it can't fail on reading it.
+	if len(f.signers) == 0 {
+		return plugins, nil
+	}
+
+	profiles, err := signature.ReadProfiles(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, name := range f.signers {
+		if seen[name] {
+			return nil, fmt.Errorf("--signer %q given more than once", name)
+		}
+		seen[name] = true
+		profile, ok := signature.FindProfile(profiles, name)
+		if !ok {
+			return nil, fmt.Errorf("--signer %q: no such signer (see \"bomify signer list\")", name)
+		}
+		plugins = append(plugins, profile.Plugin())
+	}
+	return plugins, nil
 }
 
 // verifyFlags are the --verify/--verify-option/--verify-provenance/

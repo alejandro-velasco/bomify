@@ -14,7 +14,9 @@ referrers are deleted (best-effort: "bomify security prune" retries if
 the registry refuses).
 
 --sign signs the package, and its reports separately, before the tag
-moves, so the tag never points at an unsigned package.
+moves, so the tag never points at an unsigned package. --signer
+(repeatable) also signs as a signer from "bomify signer create", so one
+push can carry every signature a trust rule requiring several needs.
 
 Provenance recorded by "bomify build --provenance" is attached as an
 in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
@@ -47,6 +49,9 @@ bomify package push <tag> [flags]
   # Sign the package with a cosign key while pushing it
   bomify push registry.example.com/myapp:latest --sign sigstore --sign-option key=cosign.key
 
+  # Sign as two stored signers, for a rule requiring both
+  bomify push registry.example.com/myapp:latest --signer release --signer security
+
   # Print just the pinned reference, e.g. to publish it
   pinned=$(bomify push registry.example.com/myapp:latest --quiet)
 ```
@@ -59,7 +64,8 @@ bomify package push <tag> [flags]
       --keep-reports int          number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all) (default 1)
   -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
       --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
-      --sign-option stringArray   a key=value option passed through to the signing plugin (repeatable; e.g. key=cosign.key)
+      --sign-option stringArray   a key=value option passed through to the --sign plugin (repeatable; e.g. key=cosign.key)
+      --signer stringArray        also sign the package as this signer from "bomify signer create" (repeatable)
       --vex stringArray           attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
 ```
 

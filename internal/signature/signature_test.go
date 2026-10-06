@@ -239,7 +239,7 @@ func TestNewVerifierAppliesPolicy(t *testing.T) {
 	unsigned := pushPackage(t, store, "registry.example.com/other/app:v1", "unsigned")
 	sign(t, store, "registry.example.com/team/app:v1", signed, "secret")
 
-	policy := Policy{Rules: Config{{Match: "registry.example.com/team", Verifier: fakeKind, Options: []string{"key=secret"}}}}
+	policy := Policy{Rules: Config{{Match: "registry.example.com/team", Signers: one(fakeKind, "key=secret")}}}
 	verifier := NewVerifier(pluginDir, policy, discardLogger())
 
 	if err := verifier(ctx, store, "registry.example.com/team/app:v1", signed); err != nil {
@@ -259,6 +259,93 @@ func TestNewVerifierAppliesPolicy(t *testing.T) {
 	verifier = NewVerifier(pluginDir, policy, discardLogger())
 	if err := verifier(ctx, store, "registry.example.com/other/app:v1", unsigned); err != nil {
 		t.Errorf("unsigned package with Skip: %v, want nil", err)
+	}
+}
+
+// signers are a rule's signers, one per key, each verified with the
+// fake plugin.
+func signers(keys ...string) []Signer {
+	s := make([]Signer, len(keys))
+	for i, key := range keys {
+		s[i] = Signer{Name: key, Verifier: fakeKind, Options: []string{"key=" + key}}
+	}
+	return s
+}
+
+func TestVerifySigners(t *testing.T) {
+	installFakeSigner(t)
+	ctx := context.Background()
+	store := newStore(t)
+	manifest := pushPackage(t, store, "app:v1", "app")
+	sign(t, store, "app:v1", manifest, "alice")
+	sign(t, store, "app:v1", manifest, "bob")
+
+	for _, tc := range []struct {
+		name string
+		req  Requirement
+		want string // a substring of the error; "" for success
+	}{
+		{"all signed", Requirement{Signers: signers("alice", "bob")}, ""},
+		{"one missing", Requirement{Signers: signers("alice", "bob", "carol")}, `2 of the 3 required signers verified: signer "carol"`},
+		{"two of three", Requirement{Signers: signers("alice", "carol", "bob"), Require: 2}, ""},
+		{"too few of three", Requirement{Signers: signers("alice", "carol", "dave"), Require: 2}, "1 of the 2 required"},
+		{"one signer keeps its error", Requirement{Signers: signers("carol")}, "does not verify"},
+	} {
+		err := VerifySigners(ctx, store, "app:v1", manifest, pluginDir, tc.req, discardLogger())
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: error = %v, want one containing %q", tc.name, err, tc.want)
+		case tc.want != "" && len(tc.req.Signers) == 1 && strings.Contains(err.Error(), "required signers"):
+			t.Errorf("%s: error = %v, want the single signer's error as is", tc.name, err)
+		}
+	}
+}
+
+func TestNewSignersSignsWithEach(t *testing.T) {
+	installFakeSigner(t)
+	ctx := context.Background()
+	store := newStore(t)
+	manifest := pushPackage(t, store, "app:v1", "app")
+
+	sign, attest, err := NewSigners(pluginDir, []Plugin{
+		{Kind: fakeKind, Options: []string{"key=alice"}},
+		{Kind: fakeKind, Options: []string{"key=bob"}},
+	}, discardLogger())
+	if err != nil {
+		t.Fatalf("NewSigners: %v", err)
+	}
+	if err := sign(ctx, store, "app:v1", manifest); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if err := VerifySigners(ctx, store, "app:v1", manifest, pluginDir, Requirement{Signers: signers("alice", "bob")}, discardLogger()); err != nil {
+		t.Errorf("verify both signers: %v", err)
+	}
+
+	first, err := attest(ctx, store, "app:v1", manifest, []byte(`{}`), map[string]string{transfer.AnnotationAttestation: "https://example.com/predicate"})
+	if err != nil {
+		t.Fatalf("attest: %v", err)
+	}
+	referrers, err := registry.Referrers(ctx, store, manifest, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attestations []ocispec.Descriptor
+	for _, r := range referrers {
+		if r.Annotations[transfer.AnnotationAttestation] != "" {
+			attestations = append(attestations, r)
+		}
+	}
+	if len(attestations) != 2 {
+		t.Errorf("got %d attestations, want one per signer", len(attestations))
+	}
+	if first.Digest == "" {
+		t.Error("attest returned no descriptor")
+	}
+
+	if _, _, err := NewSigners(pluginDir, []Plugin{{Kind: fakeKind}, {Kind: "nope"}}, discardLogger()); err == nil {
+		t.Error("NewSigners with a missing plugin: nil, want error")
 	}
 }
 

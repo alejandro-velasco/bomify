@@ -17,7 +17,8 @@ the way Docker builds images from Dockerfiles.
   and can gate `pull`/`load` before anything is written. Publishers can
   attach VEX to a package (`push --vex`), which a verified pull honors.
 - `--sign` and `--verify` (or `bomify trust` rules) sign whole packages
-  and require a trusted signature before restoring them.
+  and require trusted signatures, from one signer or several, before
+  restoring them.
 - `bomify build --provenance` records SLSA build provenance, attached to
   the pushed package as a signed in-toto attestation, which `pull`/`load
   --verify-provenance` (or a `bomify trust --require-provenance` rule)

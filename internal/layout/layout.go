@@ -123,6 +123,10 @@ func DistributionConfig(dataDir string) string { return conf(dataDir, "distribut
 // TrustConfig returns "<dataDir>/conf/trust.json".
 func TrustConfig(dataDir string) string { return conf(dataDir, "trust.json") }
 
+// SignersConfig returns "<dataDir>/conf/signers.json", the named
+// signing profiles push and save sign with (see internal/signature).
+func SignersConfig(dataDir string) string { return conf(dataDir, "signers.json") }
+
 // AuthConfig returns "<dataDir>/conf/auth.json", the registry
 // credential config (see internal/auth).
 func AuthConfig(dataDir string) string { return conf(dataDir, "auth.json") }

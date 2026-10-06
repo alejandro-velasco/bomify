@@ -3,6 +3,7 @@ package signature
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -21,16 +22,17 @@ const maxManifestSize = 4 << 20
 
 // NewProvenanceVerifier returns a transfer.Verifier requiring, for each
 // reference policy says needs it (see Policy.ProvenanceRequired), build
-// provenance (see internal/provenance) about the package, attested by a
-// signer the plugin policy.For picks trusts, that passes
-// provenance.Check. pluginDir is where that plugin is installed (see
-// plugin.Dir).
+// provenance (see internal/provenance) about the package, attested by
+// someone one of the signers policy.For picks trusts, that passes
+// provenance.Check. One trusted attestation is enough, whatever the
+// rule's Require. pluginDir is where the signers' plugins are installed
+// (see plugin.Dir).
 func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
 		if !policy.ProvenanceRequired(ref) {
 			return nil
 		}
-		p, ok := policy.For(ref)
+		req, ok := policy.For(ref)
 		if !ok {
 			return fmt.Errorf("provenance verification needs a signature verifier: pass --verify or add a \"bomify trust\" rule matching %s", ref)
 		}
@@ -43,13 +45,25 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 			return err
 		}
 		check := func(statement []byte) error { return provenance.Check(statement, manifest.Digest.Encoded(), sbom) }
-		_, signer, err := VerifyAttestation(ctx, target, ref, manifest, provenance.PredicateType, pluginDir, p, check, logger)
-		if err != nil {
-			return fmt.Errorf("provenance: %w", err)
-		}
 
-		logger.Info("provenance verified", "reference", ref, "plugin", p.Kind, "signer", signer)
-		return nil
+		var failures []error
+		for _, signer := range req.Signers {
+			_, identity, err := VerifyAttestation(ctx, target, ref, manifest, provenance.PredicateType, pluginDir, signer.plugin(), check, logger)
+			if err == nil {
+				logger.Info("provenance verified", "reference", ref, "plugin", signer.Verifier, "signer", identity, "name", signer.Name)
+				return nil
+			}
+			failure := &SignerError{
+				Name: signer.Name,
+				Err:  err,
+			}
+			failures = append(failures, failure)
+		}
+		if len(req.Signers) == 1 {
+			// A single signer, as with --verify: its own error says it all.
+			return fmt.Errorf("provenance: %w", errors.Unwrap(failures[0]))
+		}
+		return fmt.Errorf("provenance: no signer verified it: %w", errors.Join(failures...))
 	}
 }
 

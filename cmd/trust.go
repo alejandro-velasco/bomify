@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,11 +31,24 @@ func trustCmd() *cobra.Command {
 
 const trustCreateShort = "Create or update a signature verification rule"
 
-const trustCreateLong = `Create adds a rule requiring packages whose repository starts with
---match (a "/"-separated prefix; omit it to match every package) to
-carry a signature that bomify-plugin-<verifier> verifies before "bomify
-pull" or "bomify load" restores them. The longest matching --match wins,
-and creating a rule for the same --match replaces it.
+const trustCreateLong = `Create adds a signer to the rule for --match (a "/"-separated prefix
+of a package's repository; omit it to match every package), creating the
+rule if needed. "bomify pull" and "bomify load" restore a matching
+package only if, for each of the rule's signers, one of its signatures
+verifies with bomify-plugin-<verifier>. The longest matching --match
+wins.
+
+--signer names the signer to add, or to replace if the rule already has
+one by that name. Without it, the signer is unnamed ("-" in "bomify
+trust list"), so repeating a plain "trust create" replaces the rule's
+one signer. Add signers under different names to require several
+signatures, e.g. from a release team and a security team, and --require
+<k> to accept any k of them instead of all.
+
+An unnamed signer stays when named ones are added: a rule first created
+without --signer and then given "--signer security" requires both.
+Remove it with "bomify trust remove --signer ''", or create the rule
+with names from the start.
 
 --option (key=value) is passed to the plugin's verify unparsed, e.g. the
 key or identity to trust. --key-option (option=name) instead names a key
@@ -42,8 +56,9 @@ from "bomify trust key add"; the plugin receives the stored copy's path
 as that option. The same option can't be given both ways.
 
 --require-provenance also requires the package's build provenance (see
-"bomify build --provenance"), attested by a signer the plugin trusts
-with the same options.
+"bomify build --provenance"), attested by someone one of the rule's
+signers trusts. --require and --require-provenance apply to the whole
+rule, and change only when given.
 
 "--verify" on pull or load overrides every rule, and
 "--insecure-skip-verify" bypasses them.`
@@ -59,12 +74,23 @@ const trustCreateExample = `  # Require packages from a team's repositories to b
   bomify trust create sigstore --key-option key=org
 
   # Also require build provenance attested with that key
-  bomify trust create sigstore --key-option key=org --require-provenance`
+  bomify trust create sigstore --key-option key=org --require-provenance
+
+  # Require signatures from both the release and security teams
+  bomify trust create sigstore --match registry.example.com/prod --signer release --key-option key=release
+  bomify trust create sigstore --match registry.example.com/prod --signer security --key-option key=security
+
+  # Accept any two of three maintainers
+  bomify trust create sigstore --match registry.example.com/oss --signer alice --key-option key=alice
+  bomify trust create sigstore --match registry.example.com/oss --signer bob --key-option key=bob
+  bomify trust create sigstore --match registry.example.com/oss --signer carol --key-option key=carol --require 2`
 
 type trustCreateOptions struct {
 	match      string
+	signer     string
 	options    []string
 	keyOptions []string
+	require    string
 	provenance bool
 }
 
@@ -85,8 +111,21 @@ func trustCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("trust create: %w", err)
 			}
-			rule := signature.Rule{Match: opts.match, Verifier: args[0], Options: opts.options, KeyOptions: keyOptions, Provenance: opts.provenance}
-			if err := signature.SetRule(dataDir, rule); err != nil {
+			require, err := parseRequire(opts.require)
+			if err != nil {
+				return fmt.Errorf("trust create: %w", err)
+			}
+			signer := signature.Signer{Name: opts.signer, Verifier: args[0], Options: opts.options, KeyOptions: keyOptions}
+			err = signature.UpdateRule(dataDir, opts.match, func(rule *signature.Rule) {
+				rule.SetSigner(signer)
+				if cmd.Flags().Changed("require") {
+					rule.Require = require
+				}
+				if cmd.Flags().Changed("require-provenance") {
+					rule.Provenance = opts.provenance
+				}
+			})
+			if err != nil {
 				return fmt.Errorf("trust create: %w", err)
 			}
 			return nil
@@ -94,11 +133,26 @@ func trustCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
+	cmd.Flags().StringVar(&opts.signer, "signer", "", "the name of the rule's signer to add or replace; default is the rule's unnamed signer")
 	cmd.Flags().StringArrayVar(&opts.options, "option", nil, "a key=value option passed through to the verifier plugin (repeatable)")
-	cmd.Flags().BoolVar(&opts.provenance, "require-provenance", false, "also require the package's build provenance, attested by a signer the verifier trusts with the same options")
 	cmd.Flags().StringArrayVar(&opts.keyOptions, "key-option", nil, "an option=name pair: pass the verifier plugin option=<path of the stored key name> (see \"bomify trust key add\"; repeatable)")
+	cmd.Flags().StringVar(&opts.require, "require", "all", "how many of the rule's signers must verify: \"all\", or a number")
+	cmd.Flags().BoolVar(&opts.provenance, "require-provenance", false, "also require the package's build provenance, attested by someone one of the rule's signers trusts")
 
 	return cmd
+}
+
+// parseRequire parses --require: "all" is 0, as signature.Rule stores
+// it, and anything else a positive number.
+func parseRequire(s string) (int, error) {
+	if s == "all" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("--require %s: must be \"all\" or a number of at least 1", s)
+	}
+	return n, nil
 }
 
 // parseKeyOptions turns --key-option "option=name" pairs into a map,
@@ -123,8 +177,10 @@ func parseKeyOptions(pairs []string) (map[string]string, error) {
 
 const trustListShort = "List signature verification rules"
 
-const trustListLong = `List prints every trust rule. "*" in MATCH means every package, and
-KEY-OPTIONS lists each option=name pair naming a stored key.`
+const trustListLong = `List prints every trust rule, one row per signer. "*" in MATCH means
+every package, KEY-OPTIONS lists each option=name pair naming a stored
+key, and REQUIRE is how many of the rule's signers must verify. "-"
+marks an empty field; in SIGNER, it's the rule's unnamed signer.`
 
 const trustListExample = `  # See every configured rule
   bomify trust list`
@@ -154,26 +210,59 @@ func runTrustList(cmd *cobra.Command) error {
 	// when rules are matched against a reference.
 	sort.SliceStable(config, func(i, j int) bool { return config[i].Match < config[j].Match })
 
-	rows := make([][]string, 0, len(config))
+	var rows [][]string
 	for _, rule := range config {
-		rows = append(rows, []string{rules.Display(rule.Match), rule.Verifier, strings.Join(rule.Options, ","), formatKeyOptions(rule.KeyOptions), formatProvenance(rule.Provenance)})
+		for _, signer := range rule.Signers {
+			row := []string{
+				rules.Display(rule.Match),
+				dashIfEmpty(signer.Name),
+				signer.Verifier,
+				dashIfEmpty(strings.Join(signer.Options, ",")),
+				dashIfEmpty(formatKeyOptions(signer.KeyOptions)),
+				formatRequire(rule),
+				formatProvenance(rule.Provenance),
+			}
+			rows = append(rows, row)
+		}
 	}
-	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "VERIFIER", "OPTIONS", "KEY-OPTIONS", "PROVENANCE"}, rows)
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SIGNER", "VERIFIER", "OPTIONS", "KEY-OPTIONS", "REQUIRE", "PROVENANCE"}, rows)
+}
+
+// formatRequire renders how many of rule's signers must verify: "all",
+// or "k of n".
+func formatRequire(rule signature.Rule) string {
+	if rule.Require == 0 {
+		return "all"
+	}
+	return fmt.Sprintf("%d of %d", rule.Require, len(rule.Signers))
 }
 
 const trustRemoveShort = "Remove a signature verification rule"
 
 const trustRemoveLong = `Remove drops the rule matching --match exactly (as "bomify trust
-list" prints it) from <data-dir>/conf/trust.json.`
+list" prints it) from <data-dir>/conf/trust.json, or with --signer just
+that signer, and the rule along with its last one. --signer '' removes
+the rule's unnamed signer ("-" in "bomify trust list").
+
+After --signer removes one, a rule with "--require all" requires every
+signer left. A rule with a number refuses to drop below it: removing a
+signer from a rule requiring 2 of 2 fails until its --require is
+lowered.`
 
 const trustRemoveExample = `  # Remove the rule for a team's repositories
   bomify trust remove --match registry.example.com/team
 
   # Remove the rule applying to every package (no --match)
-  bomify trust remove`
+  bomify trust remove
+
+  # Stop requiring the security team's signature
+  bomify trust remove --match registry.example.com/prod --signer security
+
+  # Drop the unnamed signer a rule kept after named ones were added
+  bomify trust remove --match registry.example.com/prod --signer ''`
 
 func trustRemoveCmd() *cobra.Command {
-	var match string
+	var match, signer string
 
 	cmd := &cobra.Command{
 		Use:     "remove",
@@ -182,7 +271,13 @@ func trustRemoveCmd() *cobra.Command {
 		Example: trustRemoveExample,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := signature.RemoveRule(dataDir, match); err != nil {
+			var err error
+			if cmd.Flags().Changed("signer") {
+				err = signature.RemoveSigner(dataDir, match, signer)
+			} else {
+				err = signature.RemoveRule(dataDir, match)
+			}
+			if err != nil {
 				return fmt.Errorf("trust remove: %w", err)
 			}
 			return nil
@@ -190,6 +285,7 @@ func trustRemoveCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&match, "match", "", "the rule's match prefix, exactly as \"bomify trust list\" prints it (empty for a rule with no --match)")
+	cmd.Flags().StringVar(&signer, "signer", "", "remove only this signer from the rule ('' for its unnamed signer)")
 
 	return cmd
 }
@@ -199,7 +295,7 @@ func formatProvenance(required bool) string {
 	if required {
 		return "required"
 	}
-	return ""
+	return "-"
 }
 
 // formatKeyOptions renders key options as sorted "option=name" pairs.

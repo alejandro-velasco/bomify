@@ -16,9 +16,13 @@ when a `bomify trust` rule matches it (the most specific wins).
 
 **Guarantees:**
 
-- Before one of the package's signatures verifies, bomify fetches only
-  its manifest and signature referrers. If none verifies, the command
-  fails with nothing written.
+- Before the package's signatures verify, bomify fetches only its
+  manifest and signature referrers. If they don't, the command fails
+  with nothing written.
+- A rule with several signers needs a signature each of them, or its
+  `--require` count of them, verifies. Each signer is checked with its
+  own options, so one key can't stand in for another's signer unless
+  both rules name it.
 - The signature covers the manifest digest, which pins the SBOM and
   every layer. Each blob is checked against its digest as it streams,
   and everything is fetched by the verified descriptor, so re-tagging
@@ -44,7 +48,7 @@ A pull trusts each kind of referrer differently:
 
 | Referrer | Trusted when | Otherwise |
 | --- | --- | --- |
-| Signatures | One verifies with the reference's verifier. | Ignored. |
+| Signatures | One verifies for each signer the reference needs (see above). | Ignored. |
 | Provenance | Required by `--verify-provenance` or the rule, signed, and passes the checks in [Build provenance](provenance.md#verifying). Unsigned provenance never counts. | Not read. |
 | Vulnerability reports | Restored after the newest one verifies, or unverified when the pull verifies nothing. | Skipped with a warning. |
 | VEX | The pull verifies, and the document's own signature does too. | Ignored with a warning. |
@@ -98,9 +102,11 @@ before it's tagged. A refused package fails the command untagged, and
 signed SLSA provenance attestation that bomify built the package's SBOM
 (see [Build provenance](provenance.md#verifying)).
 
-**Guarantees:** the attestation is signed by the same trusted signer as
-the package, names the package manifest, records bomify as the builder,
-and matches the package's SBOM.
+**Guarantees:** the attestation is signed by someone one of the
+package's trusted signers trusts, names the package manifest, records
+bomify as the builder, and matches the package's SBOM. One such
+attestation is enough, even where the rule requires several signatures
+on the package.
 
 **Doesn't:**
 
