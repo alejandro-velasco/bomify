@@ -158,25 +158,55 @@ func loginToRegistry(ctx context.Context, reg *remote.Registry, username, passwo
 	err = credentials.Login(ctx, store, reg, cred)
 	if errors.Is(err, credentials.ErrPlaintextPutDisabled) {
 		// Verification already succeeded; only the store step failed for
-		// lack of a native credential helper. Fall back to plaintext, same
-		// as `docker login`, under the same normalized hostname
-		// credentials.Login itself would use so later lookups find it.
-		hostname := credentials.ServerAddressFromRegistry(reg.Reference.Registry)
-
-		plainStore, perr := newPlaintextStore()
-		if perr != nil {
-			return LoginResult{}, perr
-		}
-		if perr := plainStore.Put(ctx, hostname, cred); perr != nil {
-			return LoginResult{}, fmt.Errorf("login to %s: store plaintext credentials: %w", hostname, perr)
-		}
-		return LoginResult{PlaintextPath: plainStore.ConfigPath()}, nil
+		// lack of a native credential helper. Fall back to plaintext under
+		// the same normalized hostname credentials.Login itself would use
+		// so later lookups find it.
+		return putPlaintext(ctx, credentials.ServerAddressFromRegistry(reg.Reference.Registry), cred)
 	}
 	if err != nil {
 		return LoginResult{}, fmt.Errorf("login to %s: %w", reg.Reference.Registry, err)
 	}
 
 	return LoginResult{}, nil
+}
+
+// Save stores username/password for host without verifying them, for a
+// host that isn't an OCI registry, which Login can't check: a Hugging Face
+// hub, or a plain HTTPS server bomify-plugin-generic downloads from.
+// Plugins find them through pkg/auth as they would a registry's.
+func Save(ctx context.Context, host, username, password string) (LoginResult, error) {
+	store, err := Store()
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	cred := orasauth.Credential{Username: username, Password: password}
+	// The same key Logout deletes.
+	hostname := credentials.ServerAddressFromRegistry(host)
+
+	err = store.Put(ctx, hostname, cred)
+	if errors.Is(err, credentials.ErrPlaintextPutDisabled) {
+		return putPlaintext(ctx, hostname, cred)
+	}
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("save credentials for %s: %w", hostname, err)
+	}
+
+	return LoginResult{}, nil
+}
+
+// putPlaintext stores cred for hostname as plaintext in auth.json, the
+// fallback `docker login` also makes when there's no native credential
+// helper.
+func putPlaintext(ctx context.Context, hostname string, cred orasauth.Credential) (LoginResult, error) {
+	plainStore, err := newPlaintextStore()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if err := plainStore.Put(ctx, hostname, cred); err != nil {
+		return LoginResult{}, fmt.Errorf("store plaintext credentials for %s: %w", hostname, err)
+	}
+	return LoginResult{PlaintextPath: plainStore.ConfigPath()}, nil
 }
 
 // Logout removes any credentials for host from bomify's own config (see
