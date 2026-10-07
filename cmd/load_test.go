@@ -14,7 +14,7 @@ import (
 // one pinned reference per tag in the archive, and the tags are still
 // restored exactly as without --quiet.
 func TestLoadQuiet(t *testing.T) {
-	sourceDir := t.TempDir()
+	sourceDir := newDataDir(t)
 	sbomPath := filepath.Join(t.TempDir(), "sbom.cdx.json")
 	if err := os.WriteFile(sbomPath, []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestLoadQuiet(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	out, err := runRootCmd(t, destDir, "load", "--input", archive, "--quiet")
 	if err != nil {
 		t.Fatalf("load --quiet: %v", err)
@@ -47,7 +47,7 @@ func TestLoadQuiet(t *testing.T) {
 	}
 
 	// Without --quiet, the same archive reports the tag as before.
-	out, err = runRootCmd(t, t.TempDir(), "load", "--input", archive)
+	out, err = runRootCmd(t, newDataDir(t), "load", "--input", archive)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveRemotePrefersFlagOverRules(t *testing.T) {
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	flags := map[string]string{"oci": "flag-registry"}
 	rules := distribution.Config{
@@ -25,7 +25,7 @@ func TestResolveRemotePrefersFlagOverRules(t *testing.T) {
 }
 
 func TestResolveRemoteFallsBackToRules(t *testing.T) {
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	flags := map[string]string{}
 	rules := distribution.Config{{Type: "helm", Endpoint: "rule-charts"}}
@@ -40,7 +40,7 @@ func TestResolveRemoteFallsBackToRules(t *testing.T) {
 }
 
 func TestResolveRemotePrefersMostSpecificRule(t *testing.T) {
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	rules := distribution.Config{
 		{Type: "oci", Endpoint: "generic-oci"},
@@ -57,7 +57,7 @@ func TestResolveRemotePrefersMostSpecificRule(t *testing.T) {
 }
 
 func TestResolveRemoteErrorsWhenNothingMatches(t *testing.T) {
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	if _, err := resolveRemote("generic", "example.com", map[string]string{}, distribution.Config{}); err == nil {
 		t.Fatal("resolveRemote: want error for an unconfigured kind, got nil")

@@ -18,7 +18,7 @@ import (
 func TestPackagesListsSize(t *testing.T) {
 	origDataDir := dataDir
 	defer func() { dataDir = origDataDir }()
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
@@ -80,7 +80,7 @@ func TestPackagesListsSize(t *testing.T) {
 func TestPackagesEmptyRepositoriesListsHeaderOnly(t *testing.T) {
 	origDataDir := dataDir
 	defer func() { dataDir = origDataDir }()
-	dataDir = t.TempDir()
+	dataDir = newDataDir(t)
 
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}

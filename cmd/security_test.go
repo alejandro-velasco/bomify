@@ -137,7 +137,7 @@ func usePlugin(t *testing.T, baseDir, scanType string) {
 // no top-level components of its own. A vulnerability two components
 // share is reported in both, never merged across them.
 func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	componentA := cdx.Component{BOMRef: "ref-a", Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
@@ -206,7 +206,7 @@ func TestSecurityScanWritesOneReportPerComponent(t *testing.T) {
 // and every vulnerability's "affects" — exactly as the plugin reported
 // it — references the specific piece, never the image itself.
 func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	image := cdx.Component{BOMRef: "image-ref", Type: cdx.ComponentTypeContainer, Name: "myimage", Version: "1.0", PackageURL: "pkg:oci/myimage@1.0"}
@@ -258,7 +258,7 @@ func TestSecurityScanImageReportNestsUnpackedComponents(t *testing.T) {
 // described by two packages: both resolve to the same report, and
 // scanning either one refreshes it for both.
 func TestSecurityScanSharesReportsAcrossPackages(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	// The same purl, described slightly differently by each package's
@@ -303,7 +303,7 @@ func TestSecurityScanSharesReportsAcrossPackages(t *testing.T) {
 }
 
 func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	// This plugin only supports oci — the npm component below must be
 	// skipped rather than sent to "security scan", and gets no report.
@@ -334,7 +334,7 @@ func TestSecurityScanSkipsComponentsUnsupportedByPlugin(t *testing.T) {
 }
 
 func TestSecurityScanFailsWhenSupportedComponentsFails(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_FAIL", "1")
 
@@ -346,7 +346,7 @@ func TestSecurityScanFailsWhenSupportedComponentsFails(t *testing.T) {
 }
 
 func TestSecurityScanPropagatesComponentFailure(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	writePackage(t, baseDir, "myapp:latest", cdx.Component{Name: "broken", PackageURL: "pkg:generic/fail-me@1.0"})
@@ -357,7 +357,7 @@ func TestSecurityScanPropagatesComponentFailure(t *testing.T) {
 }
 
 func TestSecurityScanUnknownPackage(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	if _, err := runSecurityScanCmd(t, baseDir, "grype", "missing:latest"); err == nil {
@@ -366,7 +366,7 @@ func TestSecurityScanUnknownPackage(t *testing.T) {
 }
 
 func TestSecurityScanMissingPlugin(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	writePackage(t, baseDir, "myapp:latest", cdx.Component{Name: "a", PackageURL: "pkg:oci/a@1.0"})
 
@@ -379,7 +379,7 @@ func TestSecurityScanMissingPlugin(t *testing.T) {
 // scanners, then the first again: each keeps its own report, and
 // "package vulnerabilities" prints both.
 func TestSecurityScanKeepsEveryScannersReport(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	usePlugin(t, baseDir, "trivy")
 	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}

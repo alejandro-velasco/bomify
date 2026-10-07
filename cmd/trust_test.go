@@ -37,7 +37,7 @@ func runRootCmd(t *testing.T, baseDir string, args ...string) (string, error) {
 }
 
 func TestTrustCreateListRemove(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	if _, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--match", "registry.example.com/team", "--option", "key=team.pub"); err != nil {
 		t.Fatalf("trust create: %v", err)
@@ -65,7 +65,7 @@ func TestTrustCreateListRemove(t *testing.T) {
 }
 
 func TestTrustCreateRejectsMalformedOption(t *testing.T) {
-	if _, err := runRootCmd(t, t.TempDir(), "trust", "create", "sigstore", "--option", "novalue"); err == nil {
+	if _, err := runRootCmd(t, newDataDir(t), "trust", "create", "sigstore", "--option", "novalue"); err == nil {
 		t.Fatal("trust create with a non key=value --option: nil, want error")
 	}
 }
@@ -74,7 +74,7 @@ func TestTrustCreateRejectsMalformedOption(t *testing.T) {
 // variable ("certificate-identity=$ME"): the rule must be refused on the
 // spot, not saved to fail every later pull.
 func TestTrustCreateRejectsEmptyOptionValue(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	_, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--match", "localhost/plugins", "--option", "certificate-identity=")
 	if err == nil || !strings.Contains(err.Error(), "empty value") {
@@ -101,7 +101,7 @@ func TestSigningFlagValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runRootCmd(t, t.TempDir(), tt.args...)
+			_, err := runRootCmd(t, newDataDir(t), tt.args...)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error = %v, want one containing %q", err, tt.want)
 			}
@@ -129,7 +129,7 @@ func writePublicKey(t *testing.T) string {
 }
 
 func TestTrustKeyOptions(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	pub := writePublicKey(t)
 
 	if _, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--key-option", "key=team"); err == nil {
@@ -176,7 +176,7 @@ func TestTrustKeyOptions(t *testing.T) {
 }
 
 func TestTrustCreateRequireProvenance(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	if _, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--option", "key=a.pub", "--require-provenance"); err != nil {
 		t.Fatalf("trust create --require-provenance: %v", err)
 	}

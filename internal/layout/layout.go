@@ -117,6 +117,10 @@ func Keys(dataDir string) string { return filepath.Join(dataDir, "keys") }
 // VEX returns "<dataDir>/vex", the managed VEX document store.
 func VEX(dataDir string) string { return filepath.Join(dataDir, "vex") }
 
+// VersionFile returns "<dataDir>/version.json", the data directory's
+// version (see CheckVersion).
+func VersionFile(dataDir string) string { return filepath.Join(dataDir, "version.json") }
+
 // DistributionConfig returns "<dataDir>/conf/distribution.json".
 func DistributionConfig(dataDir string) string { return conf(dataDir, "distribution.json") }
 

@@ -105,7 +105,7 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 // in the SBOM's own order; a component with no report (never scanned)
 // is silently skipped rather than erroring.
 func TestPackageVulnerabilitiesListsReports(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	componentA := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	componentB := cdx.Component{Name: "b", Version: "1.0", PackageURL: "pkg:generic/b@1.0"}
@@ -138,7 +138,7 @@ func TestPackageVulnerabilitiesListsReports(t *testing.T) {
 // only the named components' reports are included, and a --purl naming
 // no component in the SBOM is reported but doesn't fail the command.
 func TestPackageVulnerabilitiesFiltersByPurl(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	componentA := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	componentB := cdx.Component{Name: "b", Version: "1.0", PackageURL: "pkg:generic/b@1.0"}
@@ -168,7 +168,7 @@ func TestPackageVulnerabilitiesFiltersByPurl(t *testing.T) {
 // TestPackageVulnerabilitiesDedupesRepeatedPurl covers a purl the SBOM
 // lists more than once: its report is included only once.
 func TestPackageVulnerabilitiesDedupesRepeatedPurl(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	writePackage(t, baseDir, "myapp:latest", component, component)
@@ -190,7 +190,7 @@ func TestPackageVulnerabilitiesDedupesRepeatedPurl(t *testing.T) {
 // vulnerability reports at all: the output must still be a valid
 // (empty) JSON array, not blank output or an error.
 func TestPackageVulnerabilitiesEmptyList(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	writePackage(t, baseDir, "myapp:latest", component)

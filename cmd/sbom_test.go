@@ -13,7 +13,7 @@ import (
 // directory.
 func buildFakePluginBinary(t *testing.T, medium string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(dir), medium)
 	return dir
 }

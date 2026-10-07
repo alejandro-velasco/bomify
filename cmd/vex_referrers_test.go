@@ -37,7 +37,7 @@ func saveWithVEX(t *testing.T, extra ...string) string {
 // signer installed, ready to load into.
 func loadDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := newDataDir(t)
 	usePlugin(t, dir, "grype")
 	testutil.InstallFakePlugin(t, layout.Plugins(dir), "fakesign")
 	return dir
