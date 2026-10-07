@@ -227,7 +227,7 @@ func VerifySigners(ctx context.Context, target oras.ReadOnlyTarget, ref string, 
 			failures = append(failures, failure)
 			continue
 		}
-		logger.Info("verified", "reference", ref, "plugin", signer.Verifier, "signer", identity, "name", signer.Name)
+		logger.Info("verified", "reference", ref, "plugin", signer.Kind, "signer", identity, "name", signer.Name)
 		if verified++; verified == need {
 			return nil
 		}

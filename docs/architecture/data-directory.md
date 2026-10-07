@@ -83,5 +83,9 @@ reads back: the `conf/` rule files and `signers.json`,
 `repositories.json`, the `keys/` and `vex/` indexes, `installed.json`,
 and the manifest and provenance records. Changing any of them in a way an
 older bomify would misread bumps `layout.CurrentVersion` and adds a
-migration in the same change. Adding a field older readers ignore
-doesn't. `auth.json` isn't covered: it's Docker's format, not bomify's.
+migration in the same change. Adding an optional field doesn't. The
+`conf/` rule files are read strictly, so an older bomify refuses a
+field it doesn't know rather than verifying or gating less than the
+rule says; their fields are in [Signing](signing.md#rule-files) and
+[Security scanning](security-scanning.md#policy-rules). `auth.json`
+isn't covered: it's Docker's format, not bomify's.

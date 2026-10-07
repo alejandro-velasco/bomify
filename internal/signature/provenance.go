@@ -50,7 +50,7 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 		for _, signer := range req.Signers {
 			_, identity, err := VerifyAttestation(ctx, target, ref, manifest, provenance.PredicateType, pluginDir, signer.plugin(), check, logger)
 			if err == nil {
-				logger.Info("provenance verified", "reference", ref, "plugin", signer.Verifier, "signer", identity, "name", signer.Name)
+				logger.Info("provenance verified", "reference", ref, "plugin", signer.Kind, "signer", identity, "name", signer.Name)
 				return nil
 			}
 			failure := &SignerError{

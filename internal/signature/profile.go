@@ -15,7 +15,7 @@ import (
 type Profile struct {
 	Name string `json:"name"`
 	// Kind names the signing plugin, bomify-plugin-<Kind>.
-	Kind string `json:"kind"`
+	Kind string `json:"plugin"`
 	// Options are passed through, unparsed, as --option flags to Kind's
 	// "signature sign" and "signature attest".
 	Options []string `json:"options,omitempty"`

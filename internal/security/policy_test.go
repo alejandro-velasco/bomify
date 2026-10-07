@@ -1,7 +1,12 @@
 package security
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 func TestResolve(t *testing.T) {
@@ -82,5 +87,23 @@ func TestSetRuleOnPullNeedsAGate(t *testing.T) {
 func TestSetRuleNeedsScanners(t *testing.T) {
 	if err := SetRule(t.TempDir(), Rule{FailOn: "high"}); err == nil {
 		t.Error("SetRule with no scanners: nil, want an error")
+	}
+}
+
+// TestReadRejectsUnknownField covers a misspelled field, which would
+// otherwise drop its requirement, here the gate.
+func TestReadRejectsUnknownField(t *testing.T) {
+	baseDir := t.TempDir()
+	path := layout.ScanConfig(baseDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `[{"match":"registry.example.com","scanners":["grype"],"fail_on":"high"}]`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Read(baseDir); err == nil || !strings.Contains(err.Error(), `unknown field "fail_on"`) {
+		t.Errorf("Read = %v, want the misspelled field rejected", err)
 	}
 }

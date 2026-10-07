@@ -267,7 +267,7 @@ func TestNewVerifierAppliesPolicy(t *testing.T) {
 func signers(keys ...string) []Signer {
 	s := make([]Signer, len(keys))
 	for i, key := range keys {
-		s[i] = Signer{Name: key, Verifier: fakeKind, Options: []string{"key=" + key}}
+		s[i] = Signer{Name: key, Kind: fakeKind, Options: []string{"key=" + key}}
 	}
 	return s
 }

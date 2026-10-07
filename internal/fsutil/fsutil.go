@@ -93,6 +93,17 @@ func WriteJSON(path string, v any) error {
 // ReadJSON parses the JSON file at path into v. A missing file is not an
 // error: v is left untouched, so callers pre-set it to their empty value.
 func ReadJSON(path string, v any) error {
+	return readJSON(path, v, false)
+}
+
+// ReadJSONStrict is ReadJSON, but fails on a field v has no place for,
+// so a misspelled field, or one a newer bomify added, is an error rather
+// than silently ignored.
+func ReadJSONStrict(path string, v any) error {
+	return readJSON(path, v, true)
+}
+
+func readJSON(path string, v any, strict bool) error {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -100,8 +111,16 @@ func ReadJSON(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, v); err != nil {
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if strict {
+		decoder.DisallowUnknownFields()
+	}
+	if err := decoder.Decode(v); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if decoder.More() {
+		return fmt.Errorf("parse %s: unexpected data after the JSON value", path)
 	}
 	return nil
 }

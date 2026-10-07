@@ -55,8 +55,8 @@ of its `ratings`; unrated, `none`, or `unknown` never fails.
 
 `--fail-on` lists the conditions (`security.ParseFailOn`): at most one
 severity, and `unscanned`, e.g. `--fail-on high,unscanned`. A rule
-stores them as `failOn` and `failOnUnscanned`, and its scanners as
-`scanners`.
+stores them as `failOn` and `failOnUnscanned` (see
+[Policy rules](#policy-rules)).
 
 Every scanner's reports are gated together. A vulnerability two
 scanners both report on a component is one finding: it fails at the
@@ -68,9 +68,8 @@ if VEX exempts it in every report of it.
 1. `--skip-gate`: nothing fails (warning if a rule would have).
 2. `--fail-on`, plus `--ignore` (which needs a severity in it). It
    replaces all of a matching rule's conditions.
-3. The most specific `conf/scan.json` rule matching the repository.
-   Rules have no ignore list on purpose: a standing exemption belongs in
-   a VEX document that says which component and why.
+3. The most specific `conf/scan.json` rule matching the repository (see
+   [Policy rules](#policy-rules)).
 4. Otherwise nothing fails.
 
 VEX adds up rather than overriding: the rule's stored documents, then
@@ -116,6 +115,26 @@ timestamp, with an `analysis` already in the report counting first.
 
 Every exemption is logged with its status, justification, and source.
 VEX never changes a report; it only decides what fails.
+
+## Policy rules
+
+`conf/scan.json` holds one rule per `match`, written by `bomify security
+policy create`; the most specific `match` applies. It's a JSON array,
+covered by the [data directory version](data-directory.md#versioning)
+and read strictly: an unknown field fails the command rather than being
+ignored, so a misspelling can't drop a gate.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `match` | string | `/`-separated prefix of a package's repository, matched at segment boundaries. Omitted or empty matches every package. |
+| `scanners` | array of strings | At least one scanning plugin, `bomify-plugin-<scanner>`; each scans every component it supports. |
+| `failOn` | string | The severity (`info`, `low`, `medium`, `high`, `critical`) at or above which a finding fails the package. Omitted never fails on severity. |
+| `failOnUnscanned` | boolean | Fail the package if any component went unscanned (see [Coverage](#coverage)). |
+| `vex` | array of strings | Names of documents in `vex/` whose statements exempt findings from `failOn` (see [VEX](#vex)). A document can't be removed while a rule names it. |
+| `on` | array of strings | Hooks that scan and gate a matching package automatically. Only `pull` (which covers `load`) exists, and it needs `failOn` or `failOnUnscanned` (see [Scanning on pull](#scanning-on-pull)). Omitted, the rule applies only to `security scan`. |
+
+There's deliberately no list of vulnerability IDs to ignore: a standing
+exemption belongs in a VEX document that says which component and why.
 
 ## Scanning on pull
 

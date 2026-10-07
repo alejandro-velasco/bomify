@@ -23,7 +23,7 @@ type Rule struct {
 	// matching package fails its scan. Empty never fails it.
 	FailOn string `json:"failOn,omitempty"`
 	// FailOnUnscanned fails a matching package any of whose components
-	// Scanner doesn't support (see Gate.FailOnUnscanned).
+	// none of Scanners supports (see Gate.FailOnUnscanned).
 	FailOnUnscanned bool `json:"failOnUnscanned,omitempty"`
 	// VEX names documents in the data directory's managed VEX store (see
 	// AddVEX and ResolveVEX) whose statements exempt a matching package's
@@ -34,7 +34,7 @@ type Rule struct {
 	// which is what VEX records.
 	VEX []string `json:"vex,omitempty"`
 	// On lists the lifecycle hooks (see Hooks) at which a matching
-	// package is scanned with Scanner and gated on FailOn automatically.
+	// package is scanned with Scanners and gated on FailOn automatically.
 	// Only "pull" (which covers load too) exists: it's the one place a
 	// hook does what running "bomify security scan" separately can't —
 	// refuse a package before anything of it is written. Empty means

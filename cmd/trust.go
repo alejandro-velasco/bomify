@@ -35,7 +35,7 @@ const trustCreateLong = `Create adds a signer to the rule for --match (a "/"-sep
 of a package's repository; omit it to match every package), creating the
 rule if needed. "bomify pull" and "bomify load" restore a matching
 package only if, for each of the rule's signers, one of its signatures
-verifies with bomify-plugin-<verifier>. The longest matching --match
+verifies with bomify-plugin-<plugin>. The longest matching --match
 wins.
 
 --signer names the signer to add, or to replace if the rule already has
@@ -98,7 +98,7 @@ func trustCreateCmd() *cobra.Command {
 	opts := &trustCreateOptions{}
 
 	cmd := &cobra.Command{
-		Use:     "create <verifier>",
+		Use:     "create <plugin>",
 		Short:   trustCreateShort,
 		Long:    trustCreateLong,
 		Example: trustCreateExample,
@@ -115,7 +115,7 @@ func trustCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("trust create: %w", err)
 			}
-			signer := signature.Signer{Name: opts.signer, Verifier: args[0], Options: opts.options, KeyOptions: keyOptions}
+			signer := signature.Signer{Name: opts.signer, Kind: args[0], Options: opts.options, KeyOptions: keyOptions}
 			err = signature.UpdateRule(dataDir, opts.match, func(rule *signature.Rule) {
 				rule.SetSigner(signer)
 				if cmd.Flags().Changed("require") {
@@ -134,8 +134,8 @@ func trustCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.match, "match", "", "apply to packages whose repository starts with this \"/\"-separated prefix; default applies to every package")
 	cmd.Flags().StringVar(&opts.signer, "signer", "", "the name of the rule's signer to add or replace; default is the rule's unnamed signer")
-	cmd.Flags().StringArrayVar(&opts.options, "option", nil, "a key=value option passed through to the verifier plugin (repeatable)")
-	cmd.Flags().StringArrayVar(&opts.keyOptions, "key-option", nil, "an option=name pair: pass the verifier plugin option=<path of the stored key name> (see \"bomify trust key add\"; repeatable)")
+	cmd.Flags().StringArrayVar(&opts.options, "option", nil, "a key=value option passed through to the plugin (repeatable)")
+	cmd.Flags().StringArrayVar(&opts.keyOptions, "key-option", nil, "an option=name pair: pass the plugin option=<path of the stored key name> (see \"bomify trust key add\"; repeatable)")
 	cmd.Flags().StringVar(&opts.require, "require", "all", "how many of the rule's signers must verify: \"all\", or a number")
 	cmd.Flags().BoolVar(&opts.provenance, "require-provenance", false, "also require the package's build provenance, attested by someone one of the rule's signers trusts")
 
@@ -216,7 +216,7 @@ func runTrustList(cmd *cobra.Command) error {
 			row := []string{
 				rules.Display(rule.Match),
 				dashIfEmpty(signer.Name),
-				signer.Verifier,
+				signer.Kind,
 				dashIfEmpty(strings.Join(signer.Options, ",")),
 				dashIfEmpty(formatKeyOptions(signer.KeyOptions)),
 				formatRequire(rule),
@@ -225,7 +225,7 @@ func runTrustList(cmd *cobra.Command) error {
 			rows = append(rows, row)
 		}
 	}
-	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SIGNER", "VERIFIER", "OPTIONS", "KEY-OPTIONS", "REQUIRE", "PROVENANCE"}, rows)
+	return table.Write(cmd.OutOrStdout(), []string{"MATCH", "SIGNER", "PLUGIN", "OPTIONS", "KEY-OPTIONS", "REQUIRE", "PROVENANCE"}, rows)
 }
 
 // formatRequire renders how many of rule's signers must verify: "all",
