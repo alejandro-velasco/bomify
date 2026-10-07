@@ -40,6 +40,22 @@ Also relevant:
 - [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):
   how the contracts fit into bomify.
 
+## Third-party APIs
+
+A first-party plugin that calls an external service directly must match
+that service's own spec. Check every request and response against it,
+not memory, when writing or changing the plugin:
+
+| Plugin | Spec | Covers |
+| --- | --- | --- |
+| `bomify-plugin-huggingface` | Hugging Face Hub [OpenAPI spec](https://huggingface.co/.well-known/openapi.md) | Bearer auth; pull: the tree listing (`/api/models/{namespace}/{repo}/tree/{rev}`, `recursive`, `limit`/`cursor` paging) and file downloads (`/{namespace}/{repo}/resolve/{rev}/{path}`, its redirects); push: `preupload`, the NDJSON `commit`, and `whoami-v2`; `sbom generate`: model info (`/api/models/{namespace}/{repo}/revision/{rev}`). |
+| `bomify-plugin-huggingface` | [Git LFS batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Push's LFS uploads (`{repo}.git/info/lfs/objects/batch`, `basic` and `multipart` transfers), which the Hub's spec leaves out, as it does repo creation (`/api/repos/create`). For those, and the Hub's multipart variant, [`huggingface_hub`](https://github.com/huggingface/huggingface_hub)'s `lfs.py`, `_commit_api.py`, and `HfApi.create_repo` are the reference. |
+
+Where a spec leaves behavior out (the Hub's spec doesn't document its
+`Link` paging header, its `X-Error-*` headers, or some response fields,
+for example), confirm it against the live service or the reference
+client, and test it with a fake server in the plugin's tests.
+
 ## Workflow
 
 1. Read the whole contract, every subcommand: a mode like `--check` can

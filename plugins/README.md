@@ -21,6 +21,7 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
+| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | the [Hub API](https://huggingface.co/.well-known/openapi.md) and [Git LFS](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Component, SBOM generation |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
@@ -199,6 +200,59 @@ Handles `pkg:generic/<name>@<version>?download_url=<url>`: `pull` GETs
 (with a real `Content-Length`), which suits presigned upload URLs.
 `push --check` only tries a HEAD, since a presigned URL can't be checked
 without writing to it.
+
+## bomify-plugin-huggingface
+
+Handles `pkg:huggingface/<namespace>/<name>@<commit>`, the package-url
+type for [Hugging Face Hub](https://huggingface.co) models. A
+`repository_url` qualifier names another hub, as `$HF_ENDPOINT` does
+otherwise.
+
+- **Pull** downloads the whole repository at the commit over the Hub's
+  HTTP API, checking each file against the hash the Hub lists for it.
+  The commit must be the full 40-character hash: a branch would make
+  pulls differ over time. Datasets, Spaces, and subpaths aren't
+  supported. `pull --check` lists the files and asks for one without
+  downloading it, since a gated model lists its files to anyone.
+- **Hash**: SHA-256 of the sorted `sha256sum` listing of every file, so
+  an SBOM author can compute it from a download:
+
+  ```sh
+  cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
+  ```
+
+  (After `hf download --local-dir model`, remove `model/.cache` first:
+  it's `hf`'s download metadata.)
+- **Push** uploads the files to `--remote`, `<hub host>/<namespace>`
+  (e.g. `huggingface.co/my-org`), to the main branch of a repository of
+  the same name, created private if it doesn't exist. Only files main
+  doesn't already hold go up, so pushing again after a failure resumes
+  it, and an unchanged model commits nothing. They go up in commits of
+  at most 256 files and 100 MB of inline content, as the Hub's own
+  client does, and large files through LFS, in parts when the Hub asks.
+  `push` refuses a repository holding files the model doesn't, other
+  than the `.gitattributes` the Hub creates, and reports the last
+  commit's hash: the commits are new. `push --check` only confirms the
+  token, since write access can't be checked without writing.
+- **Retries**: pull and push retry a dropped connection or a `408`,
+  `429`, or `5xx` up to five times, backing off from 1 to 8 seconds, or
+  as long as `Retry-After` asks. A commit carries its parent commit, so a
+  retried one that already went through is noticed, not repeated.
+- **Remote** is `huggingface.co/<namespace>`, or the `repository_url`
+  hub's address and the namespace.
+- **SBOM generation** describes a model (`model: <namespace>/<name>`, an
+  optional `revision`, `main` by default, and `repository-url`) as one
+  `machine-learning-model` component, pinned to the commit the revision
+  resolves to, with the hash above, computed from the Hub's listing
+  without downloading the weights. Its `modelCard` records the Hub's
+  task, architecture, and training datasets, as data rather than
+  components, since datasets aren't packaged. `sbom generate --help`
+  lists the options.
+
+Both authenticate with `$HF_TOKEN`, else a token stored for the hub's
+host with `bomify login <host> --verify=false` (e.g. `echo "$TOKEN" |
+bomify login huggingface.co -u <user> --password-stdin --verify=false`),
+else `hf auth login`'s.
 
 ## bomify-plugin-grype
 
