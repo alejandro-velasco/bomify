@@ -54,3 +54,36 @@ func TestWriteAtomic(t *testing.T) {
 		t.Errorf("directory has %d entries, want no temp file left behind", len(entries))
 	}
 }
+
+func TestReadJSONStrict(t *testing.T) {
+	type record struct {
+		Name string `json:"name"`
+	}
+	path := filepath.Join(t.TempDir(), "record.json")
+
+	if err := os.WriteFile(path, []byte(`{"name":"a","extra":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var lenient record
+	if err := ReadJSON(path, &lenient); err != nil || lenient.Name != "a" {
+		t.Errorf("ReadJSON = %+v, %v; want the unknown field ignored", lenient, err)
+	}
+	var strict record
+	if err := ReadJSONStrict(path, &strict); err == nil || !strings.Contains(err.Error(), `unknown field "extra"`) {
+		t.Errorf("ReadJSONStrict = %v, want the unknown field rejected", err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"name":"a"}{"name":"b"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadJSONStrict(path, &strict); err == nil {
+		t.Error("ReadJSONStrict accepted data after the JSON value")
+	}
+
+	missing := record{
+		Name: "unchanged",
+	}
+	if err := ReadJSONStrict(filepath.Join(t.TempDir(), "missing.json"), &missing); err != nil || missing.Name != "unchanged" {
+		t.Errorf("ReadJSONStrict on a missing file = %+v, %v; want it left untouched", missing, err)
+	}
+}

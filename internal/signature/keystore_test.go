@@ -91,7 +91,7 @@ func TestKeyOptionRules(t *testing.T) {
 	}
 
 	keyed := func(options []string, keyOptions map[string]string) Rule {
-		return Rule{Match: "registry.example.com", Signers: []Signer{{Verifier: "sigstore", Options: options, KeyOptions: keyOptions}}}
+		return Rule{Match: "registry.example.com", Signers: []Signer{{Kind: "sigstore", Options: options, KeyOptions: keyOptions}}}
 	}
 	if err := SetRule(baseDir, keyed([]string{"certificate-identity=x"}, map[string]string{"key": "team"})); err != nil {
 		t.Fatalf("SetRule: %v", err)
@@ -158,7 +158,7 @@ func TestVerifyWithStoredKey(t *testing.T) {
 	}
 	sign(t, store, "registry.example.com/team/app:v1", manifest, keyStore(baseDir).Path(entry.SHA256))
 
-	if err := SetRule(baseDir, Rule{Match: "registry.example.com/team", Signers: []Signer{{Verifier: fakeKind, KeyOptions: map[string]string{"key": "team"}}}}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "registry.example.com/team", Signers: []Signer{{Kind: fakeKind, KeyOptions: map[string]string{"key": "team"}}}}); err != nil {
 		t.Fatalf("SetRule: %v", err)
 	}
 	verifierFor := func() func() error {

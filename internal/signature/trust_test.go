@@ -14,7 +14,7 @@ import (
 // one is a rule's signers when it has just one, unnamed, as "bomify trust
 // create" makes it without --signer.
 func one(verifier string, options ...string) []Signer {
-	return []Signer{{Verifier: verifier, Options: options}}
+	return []Signer{{Kind: verifier, Options: options}}
 }
 
 func TestResolve(t *testing.T) {
@@ -35,7 +35,7 @@ func TestResolve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		rule, ok := Resolve(rules, tt.ref)
-		if !ok || rule.Signers[0].Verifier != tt.want {
+		if !ok || rule.Signers[0].Kind != tt.want {
 			t.Errorf("Resolve(%q) = %+v, %v; want verifier %q", tt.ref, rule, ok, tt.want)
 		}
 	}
@@ -52,14 +52,14 @@ func TestPolicyFlagOverridesRules(t *testing.T) {
 	}
 
 	req, ok := policy.For("registry.example.com/app:v1")
-	want := Requirement{Signers: []Signer{{Verifier: "flag", Options: []string{"key=a"}}}}
+	want := Requirement{Signers: []Signer{{Kind: "flag", Options: []string{"key=a"}}}}
 	if !ok || !reflect.DeepEqual(req, want) {
 		t.Errorf("For = %+v, %v; want just the explicit verifier", req, ok)
 	}
 }
 
 func TestPolicyRuleRequirement(t *testing.T) {
-	signers := []Signer{{Name: "release", Verifier: "sigstore"}, {Name: "security", Verifier: "sigstore"}}
+	signers := []Signer{{Name: "release", Kind: "sigstore"}, {Name: "security", Kind: "sigstore"}}
 	policy := Policy{Rules: Config{{Match: "registry.example.com", Signers: signers, Require: 1}}}
 
 	req, ok := policy.For("registry.example.com/app:v1")
@@ -117,15 +117,15 @@ func TestSetAndRemoveRule(t *testing.T) {
 }
 
 func TestSetRuleRejectsInvalid(t *testing.T) {
-	two := []Signer{{Name: "a", Verifier: "sigstore"}, {Name: "b", Verifier: "sigstore"}}
+	two := []Signer{{Name: "a", Kind: "sigstore"}, {Name: "b", Kind: "sigstore"}}
 	for _, tc := range []struct {
 		name string
 		rule Rule
 		want string
 	}{
 		{"no signers", Rule{}, "no signers"},
-		{"two unnamed signers", Rule{Signers: []Signer{{Verifier: "sigstore"}, {Verifier: "notation"}}}, "the unnamed signer: given more than once"},
-		{"no verifier", Rule{Signers: []Signer{{Name: "a"}}}, "no verifier"},
+		{"two unnamed signers", Rule{Signers: []Signer{{Kind: "sigstore"}, {Kind: "notation"}}}, "the unnamed signer: given more than once"},
+		{"no plugin", Rule{Signers: []Signer{{Name: "a"}}}, "no plugin"},
 		{"duplicate names", Rule{Signers: []Signer{two[0], two[0]}}, "more than once"},
 		{"require too many", Rule{Signers: two, Require: 3}, "requires 3 signers but has 2"},
 		{"negative require", Rule{Signers: two, Require: -1}, "requires -1"},
@@ -151,10 +151,10 @@ func TestUpdateRuleAddsSigners(t *testing.T) {
 		}
 	}
 
-	add(Signer{Name: "release", Verifier: "sigstore", Options: []string{"key=r.pub"}}, func(r *Rule) { r.Provenance = true })
-	add(Signer{Name: "security", Verifier: "sigstore", Options: []string{"key=s.pub"}}, func(r *Rule) { r.Require = 1 })
+	add(Signer{Name: "release", Kind: "sigstore", Options: []string{"key=r.pub"}}, func(r *Rule) { r.Provenance = true })
+	add(Signer{Name: "security", Kind: "sigstore", Options: []string{"key=s.pub"}}, func(r *Rule) { r.Require = 1 })
 	// Replacing a signer keeps the rule's other signers and settings.
-	add(Signer{Name: "release", Verifier: "sigstore", Options: []string{"key=r2.pub"}}, nil)
+	add(Signer{Name: "release", Kind: "sigstore", Options: []string{"key=r2.pub"}}, nil)
 
 	config, err := Read(baseDir)
 	if err != nil {
@@ -163,8 +163,8 @@ func TestUpdateRuleAddsSigners(t *testing.T) {
 	want := Config{{
 		Match: "registry.example.com",
 		Signers: []Signer{
-			{Name: "release", Verifier: "sigstore", Options: []string{"key=r2.pub"}},
-			{Name: "security", Verifier: "sigstore", Options: []string{"key=s.pub"}},
+			{Name: "release", Kind: "sigstore", Options: []string{"key=r2.pub"}},
+			{Name: "security", Kind: "sigstore", Options: []string{"key=s.pub"}},
 		},
 		Require:    1,
 		Provenance: true,
@@ -176,7 +176,7 @@ func TestUpdateRuleAddsSigners(t *testing.T) {
 
 func TestRemoveSigner(t *testing.T) {
 	baseDir := t.TempDir()
-	rule := Rule{Match: "m", Signers: []Signer{{Name: "a", Verifier: "x"}, {Name: "b", Verifier: "x"}, {Name: "c", Verifier: "x"}}, Require: 2}
+	rule := Rule{Match: "m", Signers: []Signer{{Name: "a", Kind: "x"}, {Name: "b", Kind: "x"}, {Name: "c", Kind: "x"}}, Require: 2}
 	if err := SetRule(baseDir, rule); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestRemoveSigner(t *testing.T) {
 		t.Errorf("RemoveSigner below Require = %v, want an error", err)
 	}
 
-	if err := SetRule(baseDir, Rule{Match: "m", Signers: []Signer{{Name: "b", Verifier: "x"}}}); err != nil {
+	if err := SetRule(baseDir, Rule{Match: "m", Signers: []Signer{{Name: "b", Kind: "x"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RemoveSigner(baseDir, "m", "b"); err != nil {
@@ -213,7 +213,7 @@ func TestRemoveSigner(t *testing.T) {
 // removed by its empty name.
 func TestUnnamedSignerStays(t *testing.T) {
 	baseDir := t.TempDir()
-	for _, s := range []Signer{{Verifier: "sigstore"}, {Name: "security", Verifier: "sigstore"}} {
+	for _, s := range []Signer{{Kind: "sigstore"}, {Name: "security", Kind: "sigstore"}} {
 		if err := UpdateRule(baseDir, "m", func(r *Rule) { r.SetSigner(s) }); err != nil {
 			t.Fatal(err)
 		}
@@ -254,24 +254,38 @@ func TestSignerError(t *testing.T) {
 	}
 }
 
-// TestReadResolvedRejectsInvalid covers rules with nothing to verify:
-// they fail rather than restore matching packages unverified.
+// TestReadResolvedRejectsInvalid covers rules that would verify less than
+// written: they fail rather than restore matching packages unverified.
 func TestReadResolvedRejectsInvalid(t *testing.T) {
-	for name, content := range map[string]string{
-		"hand-edited to no signers": `[{"match":"registry.example.com","signers":[]}]`,
+	for name, tc := range map[string]struct {
+		content string
+		want    string
+	}{
+		"hand-edited to no signers": {
+			content: `[{"match":"registry.example.com","signers":[]}]`,
+			want:    "no signers",
+		},
 		// Written before rules had signers; no longer read.
-		"old single-verifier format": `[{"match":"registry.example.com","verifier":"sigstore","options":["key=a.pub"]}]`,
+		"old single-verifier format": {
+			content: `[{"match":"registry.example.com","verifier":"sigstore","options":["key=a.pub"]}]`,
+			want:    `unknown field "verifier"`,
+		},
+		// Would otherwise drop the provenance requirement.
+		"misspelled field": {
+			content: `[{"match":"registry.example.com","signers":[{"plugin":"sigstore"}],"provenence":true}]`,
+			want:    `unknown field "provenence"`,
+		},
 	} {
 		baseDir := t.TempDir()
 		path := layout.TrustConfig(baseDir)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ReadResolved(baseDir); err == nil || !strings.Contains(err.Error(), "no signers") {
-			t.Errorf("%s: ReadResolved = %v, want an error naming the empty rule", name, err)
+		if _, err := ReadResolved(baseDir); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ReadResolved = %v, want an error containing %q", name, err, tc.want)
 		}
 	}
 }

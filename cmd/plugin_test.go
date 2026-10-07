@@ -128,7 +128,7 @@ func TestPluginInstallPolicy(t *testing.T) {
 	origDataDir := dataDir
 	t.Cleanup(func() { dataDir = origDataDir })
 
-	orgSigner := []signature.Signer{{Verifier: pluginVerifier, Options: []string{"key=org.pub"}}}
+	orgSigner := []signature.Signer{{Kind: pluginVerifier, Options: []string{"key=org.pub"}}}
 	trustRule := func(match string) func(t *testing.T, baseDir string) {
 		return func(t *testing.T, baseDir string) {
 			installFakeVerifier(t, baseDir)

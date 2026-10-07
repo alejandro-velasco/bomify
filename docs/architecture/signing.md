@@ -53,12 +53,8 @@ the build's identity.
   build provenance attestation, one of them sufficing; see
   [Build provenance](provenance.md#verifying).
 
-A `trust.json` rule holds `signers`, each a `name`, a `verifier` plugin,
-and its `options` and `keyOptions`, plus `require`. A rule may have one
-unnamed signer, as `trust create` makes without `--signer`. Since each
-signer is
-checked with its own options, one envelope counts for two signers only
-if both trust whoever made it.
+Since each signer is checked with its own options, one envelope counts
+for two signers only if both trust whoever made it.
 
 ![Signing flow](../diagrams/signing.svg)
 
@@ -73,3 +69,42 @@ which is why one plugin works for registries and tarballs alike.
 
 What verification guarantees, and what it doesn't, is in
 [Trust model](trust-model.md).
+
+## Rule files
+
+Both files are JSON arrays, covered by the
+[data directory version](data-directory.md#versioning) and read
+strictly: an unknown field fails the command rather than being ignored,
+so a misspelling can't drop a requirement.
+
+### `conf/trust.json`
+
+One rule per `match`, written by `bomify trust create`; the most
+specific `match` applies.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `match` | string | `/`-separated prefix of a package's repository, matched at segment boundaries, e.g. `registry.example.com/team`. Omitted or empty matches every package. |
+| `signers` | array | At least one signer, below. |
+| `require` | integer | How many of `signers` must verify. Omitted or `0` means all of them. |
+| `provenance` | boolean | Also require build provenance attested by one of `signers` (see [Build provenance](provenance.md#verifying)). |
+
+Each signer:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | Tells a rule's signers apart. At most one per rule may omit it, as `trust create` does without `--signer`. |
+| `plugin` | string | The signing plugin, `bomify-plugin-<plugin>`, that verifies this signer's signature. |
+| `options` | array of strings | `key=value` options passed unparsed to the plugin's `signature verify`. |
+| `keyOptions` | object | Plugin option name to the name of a key in `keys/`, passed as `<option>=<path of the stored copy>`. An option can't also appear in `options`. A key can't be removed while a rule names it. |
+
+### `conf/signers.json`
+
+One entry per `name`, written by `bomify signer create`, for `push`,
+`save`, and `sign --signer`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | The name `--signer` takes. |
+| `plugin` | string | The signing plugin, `bomify-plugin-<plugin>`. |
+| `options` | array of strings | `key=value` options passed unparsed to its `signature sign` and `signature attest`, such as a private key's path. Never key material. |

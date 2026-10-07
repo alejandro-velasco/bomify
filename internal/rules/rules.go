@@ -1,10 +1,12 @@
 // Package rules implements what bomify's JSON rule files under
 // "<data-dir>/conf" — distribution.json (internal/distribution),
-// trust.json (internal/signature), and scan.json (internal/security) —
-// have in common: storage as an unordered JSON array with at most one rule
-// per identity, and resolution by most specific "/"-segment prefix match
-// (see internal/prefix). What a rule means, and what makes one valid, is
-// left to each rule file's own package.
+// trust.json and signers.json (internal/signature), and scan.json
+// (internal/security) — have in common: storage as an unordered JSON
+// array with at most one rule per identity, read strictly (an unknown
+// field is an error, so a typo can't silently drop a requirement), and
+// resolution by most specific "/"-segment prefix match (see
+// internal/prefix). What a rule means, and what makes one valid, is left
+// to each rule file's own package.
 package rules
 
 import (
@@ -24,10 +26,11 @@ type File[R any] struct {
 	Key func(R) string
 }
 
-// Read returns every rule in f, or none if it doesn't exist yet.
+// Read returns every rule in f, or none if it doesn't exist yet. A field
+// R has no place for fails it.
 func (f File[R]) Read() ([]R, error) {
 	rules := []R{}
-	if err := fsutil.ReadJSON(f.Path, &rules); err != nil {
+	if err := fsutil.ReadJSONStrict(f.Path, &rules); err != nil {
 		return nil, err
 	}
 	return rules, nil

@@ -31,18 +31,18 @@ type Rule struct {
 	Provenance bool `json:"provenance,omitempty"`
 }
 
-// Signer is one signature a trust rule asks for: one that Verifier's
-// plugin verifies with Options and KeyOptions.
+// Signer is one signature a trust rule asks for: one that the plugin
+// Kind names verifies with Options and KeyOptions.
 type Signer struct {
 	// Name tells a rule's signers apart, in errors and listings. A rule
 	// may have one unnamed signer, as "bomify trust create" makes without
 	// --signer.
 	Name string `json:"name,omitempty"`
-	// Verifier names the signing plugin (bomify-plugin-<Verifier>) that
+	// Kind names the signing plugin (bomify-plugin-<Kind>) that
 	// verifies this signer's signature.
-	Verifier string `json:"verifier"`
+	Kind string `json:"plugin"`
 	// Options are passed through, unparsed, as --option flags to
-	// Verifier's "signature verify" — e.g. which key or identity to
+	// Kind's "signature verify" — e.g. which key or identity to
 	// trust.
 	Options []string `json:"options,omitempty"`
 	// KeyOptions maps a plugin option name to the name of a key in the
@@ -56,7 +56,7 @@ type Signer struct {
 
 // plugin returns the plugin and options that verify s.
 func (s Signer) plugin() Plugin {
-	return Plugin{Kind: s.Verifier, Options: s.Options}
+	return Plugin{Kind: s.Kind, Options: s.Options}
 }
 
 // SignerError is an error about one of a trust rule's signers, naming it.
@@ -95,7 +95,7 @@ func (r *Rule) SetSigner(signer Signer) {
 }
 
 // validate checks r makes sense on its own: at least one signer, each
-// named uniquely (at most one unnamed) and naming a verifier, no option
+// named uniquely (at most one unnamed) and naming a plugin, no option
 // given both plainly and as a key option, and a Require r's signers can
 // meet.
 func (r Rule) validate() error {
@@ -110,10 +110,10 @@ func (r Rule) validate() error {
 				Err:  errors.New("given more than once"),
 			}
 		}
-		if signer.Verifier == "" {
+		if signer.Kind == "" {
 			return &SignerError{
 				Name: signer.Name,
-				Err:  errors.New("no verifier"),
+				Err:  errors.New("no plugin"),
 			}
 		}
 		seen[signer.Name] = true
@@ -278,7 +278,7 @@ func (p Policy) For(ref string) (Requirement, bool) {
 		return Requirement{}, false
 	}
 	if p.Verifier.Kind != "" {
-		return Requirement{Signers: []Signer{{Verifier: p.Verifier.Kind, Options: p.Verifier.Options}}}, true
+		return Requirement{Signers: []Signer{{Kind: p.Verifier.Kind, Options: p.Verifier.Options}}}, true
 	}
 	if rule, ok := Resolve(p.Rules, ref); ok {
 		return Requirement{Signers: rule.Signers, Require: rule.Require}, true

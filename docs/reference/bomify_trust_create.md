@@ -8,7 +8,7 @@ Create adds a signer to the rule for --match (a "/"-separated prefix
 of a package's repository; omit it to match every package), creating the
 rule if needed. "bomify pull" and "bomify load" restore a matching
 package only if, for each of the rule's signers, one of its signatures
-verifies with bomify-plugin-<verifier>. The longest matching --match
+verifies with bomify-plugin-<plugin>. The longest matching --match
 wins.
 
 --signer names the signer to add, or to replace if the rule already has
@@ -37,7 +37,7 @@ rule, and change only when given.
 "--insecure-skip-verify" bypasses them.
 
 ```
-bomify trust create <verifier> [flags]
+bomify trust create <plugin> [flags]
 ```
 
 ### Examples
@@ -70,9 +70,9 @@ bomify trust create <verifier> [flags]
 
 ```
   -h, --help                     help for create
-      --key-option stringArray   an option=name pair: pass the verifier plugin option=<path of the stored key name> (see "bomify trust key add"; repeatable)
+      --key-option stringArray   an option=name pair: pass the plugin option=<path of the stored key name> (see "bomify trust key add"; repeatable)
       --match string             apply to packages whose repository starts with this "/"-separated prefix; default applies to every package
-      --option stringArray       a key=value option passed through to the verifier plugin (repeatable)
+      --option stringArray       a key=value option passed through to the plugin (repeatable)
       --require string           how many of the rule's signers must verify: "all", or a number (default "all")
       --require-provenance       also require the package's build provenance, attested by someone one of the rule's signers trusts
       --signer string            the name of the rule's signer to add or replace; default is the rule's unnamed signer
