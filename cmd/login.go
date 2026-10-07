@@ -13,7 +13,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/auth"
 )
 
-const loginShort = "Log in to an OCI registry"
+const loginShort = "Log in to an OCI registry, or store credentials for another host"
 
 const loginLong = `Login authenticates against an OCI registry (default: docker.io) and
 stores the credentials for later build/distribute/pull/push
@@ -21,7 +21,12 @@ operations to reuse.
 
 Credentials are stored through <data-dir>/conf/auth.json, in the OS
 credential store when one is available. Registries with nothing stored
-there fall back to docker login's credentials.`
+there fall back to docker login's credentials.
+
+--verify=false stores the credentials without checking them, for a host
+that isn't an OCI registry, so plugins can use them there: a Hugging Face
+hub (the password is an access token), or an HTTPS server
+bomify-plugin-generic downloads from.`
 
 const loginExample = `  # Log in to docker.io, prompting for username and password
   bomify login
@@ -30,12 +35,16 @@ const loginExample = `  # Log in to docker.io, prompting for username and passwo
   bomify login registry.example.com
 
   # Log in non-interactively, e.g. from a script or CI pipeline
-  echo "$PASSWORD" | bomify login registry.example.com -u myuser --password-stdin`
+  echo "$PASSWORD" | bomify login registry.example.com -u myuser --password-stdin
+
+  # Store a Hugging Face access token for bomify-plugin-huggingface
+  echo "$HF_TOKEN" | bomify login huggingface.co -u myuser --password-stdin --verify=false`
 
 type loginOptions struct {
 	username      string
 	password      string
 	passwordStdin bool
+	verify        bool
 }
 
 func loginCmd() *cobra.Command {
@@ -62,6 +71,7 @@ func loginCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "username")
 	cmd.Flags().StringVarP(&opts.password, "password", "p", "", "password (insecure: prefer --password-stdin, or the interactive prompt)")
 	cmd.Flags().BoolVar(&opts.passwordStdin, "password-stdin", false, "read the password from stdin")
+	cmd.Flags().BoolVar(&opts.verify, "verify", true, "check the credentials against the server as an OCI registry before storing them; false stores them unchecked, for a host that isn't a registry")
 
 	return cmd
 }
@@ -100,7 +110,11 @@ func runLogin(cmd *cobra.Command, host string, opts *loginOptions) error {
 		return fmt.Errorf("username and password are required")
 	}
 
-	result, err := auth.Login(cmd.Context(), host, username, password)
+	save := auth.Login
+	if !opts.verify {
+		save = auth.Save
+	}
+	result, err := save(cmd.Context(), host, username, password)
 	if err != nil {
 		return err
 	}
@@ -111,6 +125,10 @@ func runLogin(cmd *cobra.Command, host string, opts *loginOptions) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), "https://docs.docker.com/engine/reference/commandline/login/#credentials-store")
 	}
 
+	if !opts.verify {
+		fmt.Fprintf(cmd.OutOrStdout(), "Credentials stored for %s, unverified\n", host)
+		return nil
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Login Succeeded")
 	return nil
 }

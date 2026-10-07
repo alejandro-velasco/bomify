@@ -71,6 +71,10 @@ both tools share one secret for a host logged into with both.
 
 `Login` verifies a credential before storing it, and falls back to
 plaintext in `auth.json` (with a warning) only when no credential helper
-exists, as `docker login` does. bomify exports the data directory in use
-as `BOMIFY_DATA_DIR` to the plugins it runs, so `pkg/auth` finds the
-same `auth.json` under `--data-dir`.
+exists, as `docker login` does. `login --verify=false` (`Save`) stores
+one unverified instead, the same way, for a host that isn't an OCI
+registry and so can't be checked: a Hugging Face hub
+`bomify-plugin-huggingface` pulls from and pushes to, or an HTTPS server
+`bomify-plugin-generic` downloads from. bomify exports the data
+directory in use as `BOMIFY_DATA_DIR` to the plugins it runs, so
+`pkg/auth` finds the same `auth.json` under `--data-dir`.
