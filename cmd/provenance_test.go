@@ -31,7 +31,7 @@ func buildWithProvenance(t *testing.T) (string, string) {
 // buildApp builds buildWithProvenance's package with extra build flags.
 func buildApp(t *testing.T, flags ...string) (string, string) {
 	t.Helper()
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(baseDir), "fakesign")
 
 	src := t.TempDir()
@@ -166,7 +166,7 @@ func TestBuildProvenanceSavedSigned(t *testing.T) {
 
 	// The attestation, signed with the same plugin, mustn't break
 	// verifying the package's own signature.
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(destDir), "fakesign")
 	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--verify", "fakesign", "--verify-option", "key=k"); err != nil {
 		t.Errorf("load --verify: %v", err)
@@ -188,7 +188,7 @@ func TestProvenancePrunedWithBuild(t *testing.T) {
 }
 
 func TestProvenanceRejectsCheck(t *testing.T) {
-	if _, err := runRootCmd(t, t.TempDir(), "build", "x.json", "--check", "--provenance"); err == nil {
+	if _, err := runRootCmd(t, newDataDir(t), "build", "x.json", "--check", "--provenance"); err == nil {
 		t.Error("build --check --provenance: error = nil, want one")
 	}
 }
@@ -209,7 +209,7 @@ func savedApp(t *testing.T, flags ...string) string {
 // installed, after running setup (if any) there.
 func loadInto(t *testing.T, archive string, setup []string, flags ...string) (string, error) {
 	t.Helper()
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(destDir), "fakesign")
 	if setup != nil {
 		if _, err := runRootCmd(t, destDir, setup...); err != nil {

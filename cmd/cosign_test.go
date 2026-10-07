@@ -31,7 +31,7 @@ func savedCosigned(t *testing.T, signers []string, flags ...string) string {
 // installed, after running each of rules there.
 func loadUnderRules(t *testing.T, archive string, rules ...[]string) (string, error) {
 	t.Helper()
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(destDir), "fakesign")
 	for _, rule := range rules {
 		if _, err := runRootCmd(t, destDir, rule...); err != nil {
@@ -107,7 +107,7 @@ func TestCosignedProvenance(t *testing.T) {
 }
 
 func TestTrustSigners(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	run := func(args ...string) (string, error) {
 		t.Helper()
 		return runRootCmd(t, baseDir, args...)
@@ -150,7 +150,7 @@ func TestTrustSigners(t *testing.T) {
 }
 
 func TestTrustUnnamedSigner(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	if _, err := runRootCmd(t, baseDir, "trust", "create", "sigstore", "--match", "m", "--option", "key=org.pub"); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestTrustUnnamedSigner(t *testing.T) {
 }
 
 func TestSignerCreateListRemove(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	if _, err := runRootCmd(t, baseDir, "signer", "create", "release", "sigstore", "--option", "key=release.key"); err != nil {
 		t.Fatalf("signer create: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestSignerCreateListRemove(t *testing.T) {
 }
 
 func TestSignFlagValidation(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	if _, err := runRootCmd(t, baseDir, "signer", "create", "release", "sigstore", "--option", "key=release.key"); err != nil {
 		t.Fatal(err)
 	}

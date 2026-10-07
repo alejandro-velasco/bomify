@@ -21,7 +21,7 @@ import (
 func setUpGatedPackage(t *testing.T) (baseDir string, component cdx.Component) {
 	t.Helper()
 
-	baseDir = t.TempDir()
+	baseDir = newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 
 	component = cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
@@ -106,7 +106,7 @@ func TestSecurityScanGateFlagValidation(t *testing.T) {
 }
 
 func TestSecurityPolicyCreateListRemove(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	if _, err := runRootCmd(t, baseDir, "security", "policy", "create", "grype", "--match", "registry.example.com/team", "--fail-on", "high"); err != nil {
 		t.Fatalf("policy create: %v", err)
@@ -222,7 +222,7 @@ func TestSecurityPolicyVEX(t *testing.T) {
 }
 
 func TestSecurityVEXAddListRemove(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	vex := writeOpenVEX(t)
 
 	if _, err := runRootCmd(t, baseDir, "security", "vex", "add", "team", vex); err != nil {
@@ -345,7 +345,7 @@ func TestFailsOn(t *testing.T) {
 // npm package. Both gate it together, and only what neither scanned
 // counts as unscanned.
 func TestSecurityScanSeveralScanners(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	usePlugin(t, baseDir, "binscan")
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":{"oci":"purl"},"scans":["sca"]}`)
@@ -409,7 +409,7 @@ func TestSecurityScanSeveralScanners(t *testing.T) {
 // supports images by purl and generic files only from their pulled
 // files: only the file gets --input, its pulled layer.
 func TestSecurityScanPassesInput(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "binscan")
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"oci":"purl","generic":"files"},"scans":["binary"]}`)
 	inputs := filepath.Join(t.TempDir(), "inputs")
@@ -454,7 +454,7 @@ func TestSecurityScanPassesInput(t *testing.T) {
 // TestSecurityScanUnanalyzable scans a component the scanner reports it
 // couldn't analyze: it counts as unscanned, with no report.
 func TestSecurityScanUnanalyzable(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	component := cdx.Component{Name: "a", Version: "1.0", PackageURL: "pkg:generic/a@1.0"}
 	writeResponsesFile(t, map[string]string{component.PackageURL: `{"vulnerabilities":[],"unscanned":"no packages found"}`})

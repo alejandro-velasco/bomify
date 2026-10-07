@@ -25,7 +25,7 @@ const hookTag = "registry.example.com/team/app:1.0"
 // the load tests — with the fake scanner installed as "grype".
 func setUpHookPackage(t *testing.T) string {
 	t.Helper()
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
 	writeHookResponses(t)
 	writePackage(t, baseDir, hookTag, hookComponent)
@@ -69,7 +69,7 @@ func isGateError(err error) bool {
 func TestLoadScanGate(t *testing.T) {
 	archive := saveHookPackage(t)
 
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	usePlugin(t, destDir, "grype")
 
 	// A failing gate records no tag.
@@ -101,7 +101,7 @@ func TestLoadScanGate(t *testing.T) {
 
 	// A scan on pull is only ever a gate: --scan with nothing to refuse
 	// on is an error, not a scan that can't stop anything.
-	emptyDir := t.TempDir()
+	emptyDir := newDataDir(t)
 	usePlugin(t, emptyDir, "grype")
 	if _, err := runRootCmd(t, emptyDir, "load", "--input", archive, "--scan", "grype"); err == nil || isGateError(err) {
 		t.Errorf("load --scan without a threshold: error = %v, want a request for --fail-on", err)
@@ -121,7 +121,7 @@ func TestLoadScanGate(t *testing.T) {
 
 func TestPolicyRuleOnHooks(t *testing.T) {
 	archive := saveHookPackage(t)
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	usePlugin(t, destDir, "grype")
 
 	// A rule without --on doesn't scan at hooks.
@@ -163,7 +163,7 @@ func TestLoadFailOnUnscanned(t *testing.T) {
 	archive := saveHookPackage(t)
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS", `{"types":{"oci":"purl"},"scans":["sca"]}`)
 
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	usePlugin(t, destDir, "grype")
 
 	_, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "unscanned")
@@ -191,7 +191,7 @@ func TestLoadScanSeveralScanners(t *testing.T) {
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_GRYPE", `{"types":{"oci":"purl"},"scans":["sca"]}`)
 	t.Setenv("FAKESECURITY_SUPPORTED_COMPONENTS_BINSCAN", `{"types":{"generic":"purl"},"scans":["binary"]}`)
 
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	usePlugin(t, destDir, "grype")
 	usePlugin(t, destDir, "binscan")
 
@@ -217,7 +217,7 @@ func TestLoadScansFileTypes(t *testing.T) {
 	t.Setenv("FAKESECURITY_INPUT_LOG", inputs)
 
 	// Passes: scanned from the layer it just pulled, and its report kept.
-	destDir := t.TempDir()
+	destDir := newDataDir(t)
 	usePlugin(t, destDir, "grype")
 	if _, err := runRootCmd(t, destDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "critical,unscanned"); err != nil {
 		t.Fatalf("load: %v, want it scanned from its files and loaded", err)
@@ -231,7 +231,7 @@ func TestLoadScansFileTypes(t *testing.T) {
 	}
 
 	// Refused by what's in its files: the package isn't tagged.
-	refusedDir := t.TempDir()
+	refusedDir := newDataDir(t)
 	usePlugin(t, refusedDir, "grype")
 	if _, err := runRootCmd(t, refusedDir, "load", "--input", archive, "--scan", "grype", "--fail-on", "high"); !isGateError(err) {
 		t.Fatalf("load --fail-on high: %v, want a gate failure", err)

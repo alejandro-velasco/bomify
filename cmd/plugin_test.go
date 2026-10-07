@@ -182,7 +182,7 @@ func TestPluginInstallPolicy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dataDir = t.TempDir()
+			dataDir = newDataDir(t)
 			if tt.setup != nil {
 				tt.setup(t, dataDir)
 			}
@@ -244,7 +244,7 @@ func writePluginSBOM(t *testing.T) (string, cdx.Component) {
 }
 
 func TestBuildPluginPackage(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 	sbomPath, component := writePluginSBOM(t)
 
 	// No plugin is installed at all: bomify handles the component itself.
@@ -275,7 +275,7 @@ func TestBuildPluginPackage(t *testing.T) {
 }
 
 func TestPluginListCmd(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir := newDataDir(t)
 
 	out, err := runRootCmd(t, baseDir, "plugin", "list")
 	if err != nil {

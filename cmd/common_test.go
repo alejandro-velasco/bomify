@@ -7,7 +7,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 )
+
+// newDataDir returns an empty data directory at the current version, so
+// a test can seed it before running a command, which refuses a
+// non-empty one with no version.
+func newDataDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := layout.CheckVersion(dir); err != nil {
+		t.Fatalf("version data directory: %v", err)
+	}
+	return dir
+}
 
 func TestResolvedDataDirPrefersDataDirFlag(t *testing.T) {
 	c := &cobra.Command{}

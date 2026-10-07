@@ -15,7 +15,7 @@ import (
 // other signer's key.
 func signingDataDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := newDataDir(t)
 	testutil.InstallFakePlugin(t, layout.Plugins(dir), "fakesign")
 	return dir
 }

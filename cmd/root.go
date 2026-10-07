@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
@@ -22,6 +23,11 @@ const rootExample = `  # Build a package from an SBOM, then publish it
 
   # See what's built locally
   bomify packages`
+
+// commandsWithoutDataDir are the top-level commands that never read or
+// write the data directory, so don't check its version (see usesDataDir).
+// help and completion are cobra's own.
+var commandsWithoutDataDir = []string{"completion", "help", "version"}
 
 var (
 	// DataDir is the directory where bomify stores its data (e.g., built packages).
@@ -61,7 +67,10 @@ func NewRootCmd() (*cobra.Command, error) {
 			if err := os.Setenv(layout.DataDirEnv, dataDir); err != nil {
 				return fmt.Errorf("set %s: %w", layout.DataDirEnv, err)
 			}
-			return nil
+			if !usesDataDir(cmd) {
+				return nil
+			}
+			return layout.CheckVersion(dataDir)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if rootOpts.docsDir != "" {
@@ -104,4 +113,17 @@ func NewRootCmd() (*cobra.Command, error) {
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd, nil
+}
+
+// usesDataDir reports whether cmd reads or writes the data directory: the
+// root command itself only prints help or generates docs.
+func usesDataDir(cmd *cobra.Command) bool {
+	if !cmd.HasParent() {
+		return false
+	}
+	topLevel := cmd
+	for topLevel.Parent().HasParent() {
+		topLevel = topLevel.Parent()
+	}
+	return !slices.Contains(commandsWithoutDataDir, topLevel.Name())
 }

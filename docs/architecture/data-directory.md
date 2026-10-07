@@ -8,6 +8,8 @@ nowhere else.
 
 *Source: [`docs/diagrams/data-directory.mmd`](https://github.com/alejandro-velasco/bomify/blob/main/docs/diagrams/data-directory.mmd)*
 
+- **`version.json`** is the directory's version (see
+  [Versioning](#versioning)).
 - **`manifests/<hash>.json`** holds two kinds of record, told apart by
   hash space:
   - a build's manifest: the SBOM copied verbatim, keyed by its SHA-256
@@ -60,3 +62,26 @@ Every write that matters is atomic: a temp file or directory, renamed
 into place once complete and verified (`fsutil.WriteFileAtomic`,
 `fsutil.WriteJSON`, `internal/oci/pull`). A crash leaves a missing
 file, never a corrupt one, and a missing file just means redo.
+
+## Versioning
+
+`version.json` records which version of this layout the directory is
+in. Every command that uses the directory checks it first
+([`layout.CheckVersion`](https://github.com/alejandro-velasco/bomify/blob/main/internal/layout/version.go));
+`version`, `help`, `completion`, and docs generation skip the check.
+
+| Directory | bomify |
+| --- | --- |
+| Missing or empty | Records the current version. |
+| Current version | Uses it. |
+| Older version | Migrates it in place, one version at a time, recording each step as it completes, so a crash resumes where it stopped. |
+| Newer version | Refuses, naming both versions. |
+| Content but no version | Refuses: a pre-alpha bomify wrote it, and pre-alpha data doesn't carry over. |
+
+The version covers the layout above and the schemas of the files bomify
+reads back: the `conf/` rule files and `signers.json`,
+`repositories.json`, the `keys/` and `vex/` indexes, `installed.json`,
+and the manifest and provenance records. Changing any of them in a way an
+older bomify would misread bumps `layout.CurrentVersion` and adds a
+migration in the same change. Adding a field older readers ignore
+doesn't. `auth.json` isn't covered: it's Docker's format, not bomify's.
