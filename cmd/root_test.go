@@ -11,7 +11,7 @@ import (
 func TestRootChecksDataDirVersion(t *testing.T) {
 	// A pre-alpha data directory: content, but no version.
 	unversioned := t.TempDir()
-	if err := os.MkdirAll(layout.Plugins(unversioned), 0o755); err != nil {
+	if err := os.MkdirAll(layout.Layers(unversioned), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

@@ -3,8 +3,8 @@ package layout
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 )
@@ -28,10 +28,10 @@ type migration func(dataDir string) error
 // always CurrentVersion-1 of them.
 var migrations []migration
 
-// CheckVersion makes dataDir usable by this bomify: it gives a missing or
-// empty directory the current version, migrates an older one in place,
-// and refuses a newer one, or a non-empty one with no version, which a
-// pre-alpha bomify wrote.
+// CheckVersion makes dataDir usable by this bomify: it gives a new
+// directory (see isNewDir) the current version, migrates an older one in
+// place, and refuses a newer one, or one with other content but no
+// version, which a pre-alpha bomify wrote.
 func CheckVersion(dataDir string) error {
 	return checkVersion(dataDir, CurrentVersion, migrations)
 }
@@ -76,15 +76,15 @@ func readVersion(versionPath string) (int, error) {
 	return recorded.Version, nil
 }
 
-// initVersion records version in dataDir, which must be missing or
-// empty: one with content but no version was written by a pre-alpha
-// bomify, whose data never carried over.
+// initVersion records version in dataDir, which must be new (see
+// isNewDir): one with other content but no version was written by a
+// pre-alpha bomify, whose data never carried over.
 func initVersion(dataDir string, version int) error {
-	empty, err := isEmptyDir(dataDir)
+	isNew, err := isNewDir(dataDir)
 	if err != nil {
 		return err
 	}
-	if !empty {
+	if !isNew {
 		return fmt.Errorf("data directory %s has no version, so a pre-alpha bomify wrote it: move or delete it and bomify will start a new one, then rebuild or pull your packages", dataDir)
 	}
 	return writeVersion(VersionFile(dataDir), version)
@@ -97,23 +97,23 @@ func writeVersion(versionPath string, version int) error {
 	return fsutil.WriteJSON(versionPath, recorded)
 }
 
-// isEmptyDir reports whether dir is missing or has no entries.
-func isEmptyDir(dir string) (bool, error) {
-	f, err := os.Open(dir)
+// isNewDir reports whether dataDir is missing, or holds nothing but its
+// plugins directory: plugins can be installed before bomify first runs,
+// as `make install-plugins` does, and their binaries don't depend on the
+// data directory's version.
+func isNewDir(dataDir string) (bool, error) {
+	entries, err := os.ReadDir(dataDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return true, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("open %s: %w", dir, err)
+		return false, fmt.Errorf("read %s: %w", dataDir, err)
 	}
-	defer f.Close()
-
-	_, err = f.ReadDir(1)
-	if errors.Is(err, io.EOF) {
-		return true, nil
+	for _, entry := range entries {
+		isPlugins := entry.IsDir() && entry.Name() == filepath.Base(Plugins(dataDir))
+		if !isPlugins {
+			return false, nil
+		}
 	}
-	if err != nil {
-		return false, fmt.Errorf("read %s: %w", dir, err)
-	}
-	return false, nil
+	return true, nil
 }

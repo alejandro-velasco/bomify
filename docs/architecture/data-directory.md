@@ -72,7 +72,7 @@ in. Every command that uses the directory checks it first
 
 | Directory | bomify |
 | --- | --- |
-| Missing or empty | Records the current version. |
+| Missing, or only `plugins/` | Records the current version. Plugins may be installed before bomify first runs, and don't depend on the version. |
 | Current version | Uses it. |
 | Older version | Migrates it in place, one version at a time, recording each step as it completes, so a crash resumes where it stopped. |
 | Newer version | Refuses, naming both versions. |

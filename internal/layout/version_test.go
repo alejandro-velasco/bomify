@@ -39,9 +39,26 @@ func TestCheckVersionStartsEmptyDirectory(t *testing.T) {
 	}
 }
 
+// TestCheckVersionStartsPluginsOnlyDirectory covers plugins installed
+// before bomify first runs, as `make install-plugins` does.
+func TestCheckVersionStartsPluginsOnlyDirectory(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(Plugins(dataDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CheckVersion(dataDir); err != nil {
+		t.Fatalf("CheckVersion: %v", err)
+	}
+	requireVersion(t, dataDir, CurrentVersion)
+}
+
 func TestCheckVersionRefusesUnversionedDirectory(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.MkdirAll(Plugins(dataDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(Layers(dataDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
