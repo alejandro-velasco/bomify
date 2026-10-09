@@ -13,6 +13,13 @@ name: Release
 # whichever branch is released. Renaming this file, or changing the
 # default branch, changes it.
 #
+# It also means a change to this file only takes effect once it's on
+# main, while semantic-release reads .releaserc.json, and the jobs build,
+# from the commit being released. A change to how releases run must
+# reach main along with the release branch, or a release runs half of
+# each: v1.0.0-alpha.18 ran main's old jobs with the new .releaserc.json
+# and published no container image.
+#
 # Release branches (.releaserc.json): alpha-release cuts 1.0.0-alpha.N,
 # beta-release 1.0.0-beta.N, and main 1.0.0 and later. main is left out
 # of the trigger below until bomify is ready for its first GA release.
