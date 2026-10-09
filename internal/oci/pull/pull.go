@@ -10,7 +10,6 @@
 package pull
 
 import (
-	"archive/tar"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,13 +20,13 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/parallel"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
@@ -35,8 +34,8 @@ import (
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// Layer describes one component layer, or one component's vulnerability
-// report, that was pulled. Path is a directory —
+// RestoredLayer describes one component layer, or one component's
+// vulnerability report, that was pulled. Path is a directory —
 // "<dataDir>/layers/<purl-hash>/", exactly matching what `bomify build`
 // would have produced for this component — when the layer was one
 // bomify itself pushed (see transfer.LayerMediaType), since Pull unpacks
@@ -46,7 +45,7 @@ import (
 // format, Path is the single file Pull wrote the blob to verbatim, since
 // Pull has no way to know how a foreign format ought to be laid out on
 // disk.
-type Layer struct {
+type RestoredLayer struct {
 	Purl string
 	Hash string
 	Path string
@@ -58,13 +57,13 @@ type Result struct {
 	// to — the one verified and restored — as "sha256:...".
 	ManifestDigest string
 	SBOMHash       string
-	Layers         []Layer
+	Layers         []RestoredLayer
 	// VulnerabilityReports lists the components whose vulnerability
 	// report (see internal/security) the package's newest report
 	// referrer carried and Pull restored to
 	// "<dataDir>/vulnerabilities/<purl-hash>.json" — only ever a subset
 	// of Layers, since most components carry none.
-	VulnerabilityReports []Layer
+	VulnerabilityReports []RestoredLayer
 	// ReportsSkipped, if non-nil, is why Pull restored no vulnerability
 	// reports even though the package itself was restored: reports are
 	// advisory, so failing to list, verify, or fetch them never fails a
@@ -111,82 +110,100 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 // always fetched in full, whichever layers are skipped.
 func PullLayers(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options, keep func(purl string) bool) (Result, error) {
 	opts = opts.WithDefaults()
-	concurrency, progress := opts.Concurrency, opts.Progress
 
-	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
+	pkg, err := fetchPackage(ctx, target, ref, dataDir, opts)
 	if err != nil {
-		return Result{}, fmt.Errorf("resolve %s: %w", ref, err)
+		return Result{}, err
+	}
+	descs := filterLayers(pkg.manifest.Layers, keep)
+	restore := newPackageRestore(target, descs, dataDir, pkg.sbom.bom, opts.Concurrency, opts.Progress)
+	layers, err := restore.restoreLayers(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if opts.Scan != nil {
+		if err := opts.Scan(ctx, target, ref, pkg.desc, pkg.sbom.bom); err != nil {
+			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
+		}
 	}
 
+	reports, reportsSkipped := restoreReports(ctx, target, ref, pkg.desc, dataDir, opts.Concurrency, opts.Progress, opts.Verify, keep)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+
+	result := Result{
+		ManifestDigest:       pkg.desc.Digest.String(),
+		SBOMHash:             pkg.sbom.hash,
+		Layers:               layers,
+		VulnerabilityReports: reports,
+		ReportsSkipped:       reportsSkipped,
+	}
+	return result, nil
+}
+
+// fetchedPackage is the package PullLayers is restoring: its manifest's
+// descriptor, the manifest, and its SBOM.
+type fetchedPackage struct {
+	desc     ocispec.Descriptor
+	manifest ocispec.Manifest
+	sbom     packageSBOM
+}
+
+// fetchPackage resolves ref and verifies it as opts asks, its
+// signatures (opts.Verify), then its build provenance
+// (opts.VerifyProvenance), before anything is fetched; then fetches its
+// manifest and SBOM, recording the SBOM in dataDir as `bomify build`
+// would have (see packageSBOM.write).
+func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options) (*fetchedPackage, error) {
+	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", ref, err)
+	}
 	if opts.Verify != nil {
 		if err := opts.Verify(ctx, target, ref, desc); err != nil {
-			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
+			return nil, fmt.Errorf("verify %s: %w", ref, err)
 		}
 	}
 	if opts.VerifyProvenance != nil {
 		if err := opts.VerifyProvenance(ctx, target, ref, desc); err != nil {
-			return Result{}, fmt.Errorf("verify %s: %w", ref, err)
+			return nil, fmt.Errorf("verify %s: %w", ref, err)
 		}
 	}
 
 	manifest, err := fetchManifest(ctx, target, desc)
 	if err != nil {
-		return Result{}, fmt.Errorf("fetch manifest %s: %w", ref, err)
+		return nil, fmt.Errorf("fetch manifest %s: %w", ref, err)
 	}
-
-	sbomData, err := fetchConfig(ctx, target, manifest.Config, progress)
+	config, err := fetchConfig(ctx, target, manifest.Config, opts.Progress)
 	if err != nil {
-		return Result{}, fmt.Errorf("fetch config: %w", err)
+		return nil, fmt.Errorf("fetch config: %w", err)
 	}
-	sbomHash, bom, err := writeConfig(manifest.Config, sbomData, dataDir)
-	if err != nil {
-		return Result{}, fmt.Errorf("write config: %w", err)
-	}
-	componentsByPurl := indexComponentsByPurl(bom)
-
-	componentLayerDescs := filterLayers(manifest.Layers, keep)
-	layers := make([]Layer, len(componentLayerDescs))
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency)
-	for i, layerDesc := range componentLayerDescs {
-		i, layerDesc := i, layerDesc
-		g.Go(func() error {
-			layer, err := fetchLayer(gctx, target, layerDesc, dataDir, componentsByPurl, progress)
-			if err != nil {
-				return fmt.Errorf("fetch layer %s: %w", layerDesc.Digest, err)
-			}
-			layers[i] = layer
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return Result{}, err
-	}
-	if opts.Scan != nil {
-		if err := opts.Scan(ctx, target, ref, desc, sbomData); err != nil {
-			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
-		}
+	if err := config.write(dataDir); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
 	}
 
-	result := Result{ManifestDigest: desc.Digest.String(), SBOMHash: sbomHash, Layers: layers}
-	result.VulnerabilityReports, result.ReportsSkipped = restoreReports(ctx, target, ref, desc, dataDir, concurrency, progress, opts.Verify, keep)
-	if err := ctx.Err(); err != nil {
-		return Result{}, err
+	pkg := fetchedPackage{
+		desc:     desc,
+		manifest: manifest,
+		sbom:     config,
 	}
-
-	return result, nil
+	return &pkg, nil
 }
 
-// filterLayers returns the layers whose purl annotation keep accepts; a
-// nil keep, or a layer with no purl annotation, is always kept.
+// filterLayers returns the layers of descs to pull: all of them for a nil
+// keep, else those whose purl keep accepts, and those naming no purl.
 func filterLayers(descs []ocispec.Descriptor, keep func(purl string) bool) []ocispec.Descriptor {
+	if keep == nil {
+		return descs
+	}
 	var kept []ocispec.Descriptor
-	for _, d := range descs {
-		if purl := d.Annotations[transfer.AnnotationPurl]; keep != nil && purl != "" && !keep(purl) {
-			continue
+	for _, desc := range descs {
+		purl := desc.Annotations[transfer.AnnotationPurl]
+		// A layer naming no component has nothing to judge it by.
+		if purl == "" || keep(purl) {
+			kept = append(kept, desc)
 		}
-		kept = append(kept, d)
 	}
 	return kept
 }
@@ -196,7 +213,7 @@ func filterLayers(descs []ocispec.Descriptor, keep func(purl string) bool) []oci
 // recently scanned — into dataDir, once a non-nil verify accepts that
 // referrer. A package with no report referrer restores none, and no
 // error; any error is why none were restored.
-func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, dataDir string, concurrency int, progress transfer.ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) ([]Layer, error) {
+func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, dataDir string, concurrency int, progress transfer.ProgressFunc, verify transfer.Verifier, keep func(purl string) bool) ([]RestoredLayer, error) {
 	referrers, err := security.ReportReferrers(ctx, target, manifest)
 	if err != nil {
 		return nil, err
@@ -218,24 +235,13 @@ func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string,
 	}
 	reportDescs = filterLayers(reportDescs, keep)
 
-	reports := make([]Layer, len(reportDescs))
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency)
-	for i, layerDesc := range reportDescs {
-		g.Go(func() error {
-			report, err := fetchVulnerabilityReport(gctx, target, layerDesc, dataDir, progress)
-			if err != nil {
-				return fmt.Errorf("fetch vulnerability report %s: %w", layerDesc.Digest, err)
-			}
-			reports[i] = report
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	return reports, nil
+	return parallel.Map(ctx, concurrency, reportDescs, func(ctx context.Context, _ int, layerDesc ocispec.Descriptor) (RestoredLayer, error) {
+		report, err := fetchVulnerabilityReport(ctx, target, layerDesc, dataDir, progress)
+		if err != nil {
+			return RestoredLayer{}, fmt.Errorf("fetch vulnerability report %s: %w", layerDesc.Digest, err)
+		}
+		return report, nil
+	})
 }
 
 // indexComponentsByPurl indexes bom's components by purl, so fetchLayer
@@ -293,90 +299,66 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec
 }
 
 // fetchConfig downloads desc — the aggregate SBOM manifest — into
-// memory, checked against its digest, without writing anything (see
-// writeConfig).
-func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, progress transfer.ProgressFunc) ([]byte, error) {
-	pw := progress("sbom manifest", desc.Size)
-	defer pw.Close()
-
-	data, err := content.FetchAll(ctx, target, desc)
-	if err != nil {
-		return nil, err
-	}
-	pw.Write(data)
-	return data, nil
-}
-
-// writeConfig writes data — desc's content, the aggregate SBOM manifest
-// — to "<dataDir>/manifests/<hash>.json" and parses it, so callers that
-// need to inspect its components (see indexComponentsByPurl) don't have
-// to read the file back themselves.
-func writeConfig(desc ocispec.Descriptor, data []byte, dataDir string) (string, *cdx.BOM, error) {
+// memory, checked against its digest, and parses it, without writing
+// anything (see packageSBOM.write).
+func fetchConfig(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, progress transfer.ProgressFunc) (packageSBOM, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
-		return "", nil, err
+		return packageSBOM{}, err
 	}
+
+	pw := progress("sbom manifest", desc.Size)
+	defer pw.Close()
+	data, err := content.FetchAll(ctx, target, desc)
+	if err != nil {
+		return packageSBOM{}, err
+	}
+	pw.Write(data)
 
 	bom, err := sbom.LoadBytes(data)
 	if err != nil {
-		return "", nil, fmt.Errorf("parse sbom manifest %s: %w", desc.Digest, err)
+		return packageSBOM{}, fmt.Errorf("parse sbom manifest %s: %w", desc.Digest, err)
 	}
-
-	destPath := layout.Manifest(dataDir, hash)
-	if err := fsutil.WriteFileAtomic(destPath, data); err != nil {
-		return "", nil, err
+	config := packageSBOM{
+		data: data,
+		hash: hash,
+		bom:  bom,
 	}
-
-	return hash, bom, nil
+	return config, nil
 }
 
-func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, componentsByPurl map[string]cdx.Component, progress transfer.ProgressFunc) (Layer, error) {
+// packageSBOM is a package's SBOM, its config blob: exactly as fetched,
+// its hash, which names its record in the data directory, and parsed.
+type packageSBOM struct {
+	data []byte
+	hash string
+	bom  *cdx.BOM
+}
+
+// write records s byte for byte at "<dataDir>/manifests/<hash>.json", as
+// `bomify build` would have.
+func (s packageSBOM) write(dataDir string) error {
+	return fsutil.WriteFileAtomic(layout.Manifest(dataDir, s.hash), s.data)
+}
+
+// fetchLayer writes a layer that isn't one of a component's own (see
+// restoreComponent), such as a foreign one, verbatim as a single file,
+// since there's no telling how to unpack it.
+func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress transfer.ProgressFunc) (RestoredLayer, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
-		return Layer{}, err
+		return RestoredLayer{}, err
 	}
 
 	purl := desc.Annotations[transfer.AnnotationPurl]
 	label := transfer.Label(purl, hash)
 
-	// A layer bomify itself pushed is a tar of the exact directory `bomify
-	// build` would have produced for this component; unpack it back to
-	// that same "layers/<purl-hash>/" path rather than leaving it as an
-	// opaque .tar file, so packages/tag/push all see this pull as
-	// equivalent to a local build. purl is required to compute that path;
-	// without one (shouldn't happen for anything bomify pushed, but this
-	// is still someone else's registry data) fall through to the generic
-	// verbatim-file path below instead of erroring.
-	if desc.MediaType == transfer.LayerMediaType && purl != "" {
-		destDir := layout.ComponentLayer(dataDir, purl)
-
-		// downloadAndUntar only ever swaps destDir into place as a whole,
-		// complete unpack (see its atomic rename), never a partial one,
-		// so existence alone is enough to trust it's already correct —
-		// same reasoning build.RecordManifest relies on for its own
-		// content-addressed skip.
-		if info, err := os.Stat(destDir); err == nil && info.IsDir() {
-			if err := recordComponentManifest(dataDir, componentsByPurl, purl); err != nil {
-				return Layer{}, err
-			}
-			return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
-		}
-
-		if err := downloadAndUntar(ctx, target, desc, destDir, label, progress); err != nil {
-			return Layer{}, err
-		}
-		if err := recordComponentManifest(dataDir, componentsByPurl, purl); err != nil {
-			return Layer{}, err
-		}
-		return Layer{Purl: purl, Hash: hash, Path: destDir}, nil
-	}
-
 	destPath := filepath.Join(layout.Layer(dataDir, hash), layerFilename(desc))
 	if err := downloadBlob(ctx, target, desc, destPath, label, progress); err != nil {
-		return Layer{}, err
+		return RestoredLayer{}, err
 	}
 
-	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
+	return RestoredLayer{Purl: purl, Hash: hash, Path: destPath}, nil
 }
 
 // fetchVulnerabilityReport downloads desc — one scanner's vulnerability
@@ -386,27 +368,27 @@ func fetchLayer(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.De
 // replacing that scanner's report (if any) for that purl. The scanner is
 // the layer's own annotation (see security.AnnotationScanPlugin), which it
 // must have.
-func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress transfer.ProgressFunc) (Layer, error) {
+func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, dataDir string, progress transfer.ProgressFunc) (RestoredLayer, error) {
 	hash, err := blobHash(desc)
 	if err != nil {
-		return Layer{}, err
+		return RestoredLayer{}, err
 	}
 
 	purl := desc.Annotations[transfer.AnnotationPurl]
 	if purl == "" {
-		return Layer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, transfer.AnnotationPurl)
+		return RestoredLayer{}, fmt.Errorf("vulnerability report %s has no %s annotation", desc.Digest, transfer.AnnotationPurl)
 	}
 	scanner := desc.Annotations[security.AnnotationScanPlugin]
 	if err := security.CheckScanner(scanner); err != nil {
-		return Layer{}, fmt.Errorf("vulnerability report %s (%s annotation): %w", desc.Digest, security.AnnotationScanPlugin, err)
+		return RestoredLayer{}, fmt.Errorf("vulnerability report %s (%s annotation): %w", desc.Digest, security.AnnotationScanPlugin, err)
 	}
 
 	destPath := layout.Report(dataDir, layout.PurlHash(purl), scanner)
 	if err := downloadBlob(ctx, target, desc, destPath, purl, progress); err != nil {
-		return Layer{}, err
+		return RestoredLayer{}, err
 	}
 
-	return Layer{Purl: purl, Hash: hash, Path: destPath}, nil
+	return RestoredLayer{Purl: purl, Hash: hash, Path: destPath}, nil
 }
 
 // recordComponentManifest writes component's own manifest (matched by
@@ -457,7 +439,7 @@ func downloadBlob(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.
 	defer rc.Close()
 
 	dir := filepath.Dir(destPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, transfer.DirPerm); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 
@@ -485,51 +467,6 @@ func downloadBlob(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.
 
 	if err := os.Rename(tmp.Name(), destPath); err != nil {
 		return fmt.Errorf("rename to %s: %w", destPath, err)
-	}
-
-	return nil
-}
-
-// downloadAndUntar streams desc's content from target, verifying it
-// against desc's size and digest as it flows, and unpacks it as a tar
-// archive into destDir (replacing it if it already exists). Everything is
-// unpacked into a temporary sibling directory first, then swapped into
-// place only once the download is fully verified: a failed or interrupted
-// download/unpack leaves destDir untouched.
-func downloadAndUntar(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor, destDir, label string, progress transfer.ProgressFunc) error {
-	rc, err := target.Fetch(ctx, desc)
-	if err != nil {
-		return fmt.Errorf("fetch %s: %w", desc.Digest, err)
-	}
-	defer rc.Close()
-
-	parent := filepath.Dir(destDir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", parent, err)
-	}
-
-	tmpDir, err := os.MkdirTemp(parent, ".pull-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	pw := progress(label, desc.Size)
-	defer pw.Close()
-
-	verified := content.NewVerifyReader(rc, desc)
-	if err := transfer.ExtractTar(tar.NewReader(io.TeeReader(verified, pw)), tmpDir); err != nil {
-		return fmt.Errorf("unpack %s: %w", desc.Digest, err)
-	}
-	if err := verified.Verify(); err != nil {
-		return fmt.Errorf("verify %s: %w", desc.Digest, err)
-	}
-
-	if err := os.RemoveAll(destDir); err != nil {
-		return fmt.Errorf("remove existing %s: %w", destDir, err)
-	}
-	if err := os.Rename(tmpDir, destDir); err != nil {
-		return fmt.Errorf("rename to %s: %w", destDir, err)
 	}
 
 	return nil

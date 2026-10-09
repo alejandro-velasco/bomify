@@ -19,7 +19,22 @@ a referrer of it, so none changes its digest.
 | --- | --- | --- |
 | Manifest | artifact type `application/vnd.bomify.package.v1+json` | Annotated `org.opencontainers.image.created` with the SBOM's `metadata.timestamp` in UTC (RFC 3339), or the Unix epoch without one, so pushing an unchanged package gives the same digest. |
 | Config | `application/vnd.cyclonedx+json` or `application/vnd.cyclonedx+xml` | The package's CycloneDX SBOM, as `bomify build` assembled it. |
-| Layers | `application/vnd.bomify.component.layer.v1.tar` | One per component with content: a tar of what `build` pulled for it, a single file or a directory tree. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Annotated `land.bomify.purl` (the component's purl) and `org.opencontainers.image.title` (`<purl hash>.tar`). |
+| Tar layers | `application/vnd.bomify.component.layer.v1.tar` | Each component's files under 64 MiB, and its symlinks: a tar of them, with paths relative to what `build` pulled for it. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Split into several tars past 4 GiB; a component with no files has one empty tar. Annotated `land.bomify.purl` and `org.opencontainers.image.title` (`<digest>.tar`). |
+| File part layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as raw bytes, in parts of at most 4 GiB (safely under the 10 GB per layer GHCR and Docker Hub allow), so no layer outgrows a registry, and an unchanged file is the same blob in every package. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
+
+A component's layers come in SBOM order: its tars, then its large
+files' parts, by path and offset.
+
+![Which of a component's files are grouped into tars, and which become file parts](../diagrams/component-layers.svg)
+
+*Source: [`docs/diagrams/component-layers.mmd`](https://github.com/alejandro-velasco/bomify/blob/main/docs/diagrams/component-layers.mmd)*
+
+Pull restores a component only once
+every one of its layers verifies, and refuses parts that name a path
+outside the component, don't cover their file exactly, or a file a tar
+also holds. A symlink must be relative and resolve, through any other
+links, to a file or directory inside its component; push and pull both
+refuse one that doesn't.
 
 ## Referrers
 
@@ -51,12 +66,16 @@ pull restores only the newest.
 | Annotation | On | Value |
 | --- | --- | --- |
 | `land.bomify.purl` | package layers, report layers | The component's purl. |
+| `land.bomify.file.path` | file part layers | The file's `/`-separated path within the component. |
+| `land.bomify.file.mode` | file part layers | The file's permission bits, in octal, e.g. `0755`. |
+| `land.bomify.file.size` | file part layers | The whole file's size in bytes. |
+| `land.bomify.file.offset` | file part layers | Where in the file the part's bytes start. |
 | `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
 | `land.bomify.signature.plugin` | signature and signed attestation referrers | The kind of signing plugin that made it. Informational. |
 | `land.bomify.attestation.predicateType` | provenance referrers | The in-toto predicate type, `https://slsa.dev/provenance/v1`. Marks the referrer as an attestation, which signature verification skips. |
 | `land.bomify.provenance.statement` | provenance referrers | The SHA-256 of the statement, so pushing the same provenance again attaches nothing new. |
 | `org.opencontainers.image.created` | the package and bomify's referrers | See above; orders referrers, newest first. |
-| `org.opencontainers.image.title` | package layers, report layers, VEX layers | A filename. A report's is its path under the data directory's `vulnerabilities/` (`<purl hash>/<scanner>.json`), so `oras pull` lays reports out as bomify keeps them. |
+| `org.opencontainers.image.title` | tar layers, report layers, VEX layers | A filename. A report's is its path under the data directory's `vulnerabilities/` (`<purl hash>/<scanner>.json`), so `oras pull` lays reports out as bomify keeps them. |
 
 A signing plugin may add annotations of its own to its referrers.
 

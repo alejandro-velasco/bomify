@@ -30,8 +30,8 @@ flowchart LR
     end
 
     SBOM -- "pushed verbatim" --> Config
-    C1 -- "tarred, annotated with purl, pushed" --> Layer1
-    C2 -- "tarred, annotated with purl, pushed" --> Layer2
+    C1 -- "small files tarred, large files in parts,<br/>annotated with purl, pushed" --> Layer1
+    C2 -- "small files tarred, large files in parts,<br/>annotated with purl, pushed" --> Layer2
     V1 -- "pushed verbatim, annotated with purl<br/>(only components that were scanned)" --> Vuln1
     Config --> Manifest
     Layer1 --> Manifest

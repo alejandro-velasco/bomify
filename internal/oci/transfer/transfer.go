@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alejandro-velasco/bomify/internal/fsutil"
 )
 
 // ArtifactType identifies a bomify package: an OCI artifact whose config is
@@ -114,51 +116,11 @@ func IsSafeFilename(name string) bool {
 // pushed, even though the content is byte-for-byte identical, making
 // Push treat it as new and re-upload it every time.
 func WriteTar(dir string, w io.Writer) error {
-	tw := tar.NewWriter(w)
-
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		hdr, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = filepath.ToSlash(rel)
-		normalizeHeader(hdr)
-
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		_, err = io.Copy(tw, f)
-		return err
-	})
+	files, err := TarFiles(dir)
 	if err != nil {
 		return err
 	}
-
-	return tw.Close()
+	return WriteTarFiles(dir, files, w)
 }
 
 // normalizeHeader clears every field of hdr that reflects incidental
@@ -179,6 +141,11 @@ func normalizeHeader(hdr *tar.Header) {
 	hdr.Gname = ""
 }
 
+// DirPerm is the permission bits of every directory bomify creates while
+// restoring a package into a data directory: tar entries' parents, large
+// files' parents, and staging directories.
+const DirPerm fs.FileMode = 0o755
+
 // ExtractTar extracts every entry from tr into destDir.
 //
 // Entry names come from the tar stream — untrusted input, whether the
@@ -186,7 +153,29 @@ func normalizeHeader(hdr *tar.Header) {
 // cleaned, it would resolve outside destDir (a "zip slip" path-traversal
 // attempt via "../" segments or an absolute path) rather than being
 // joined into a filesystem write.
+//
+// Every write goes through an os.Root of destDir, so not even a symlink
+// the tar made earlier can lead one outside it, and every symlink is
+// checked once all are in place (see fsutil.CheckSymlinks).
 func ExtractTar(tr *tar.Reader, destDir string) error {
+	if err := extractTar(tr, destDir, os.O_TRUNC); err != nil {
+		return err
+	}
+	return fsutil.CheckSymlinks(destDir)
+}
+
+// extractTar is ExtractTar, opening each file with flag added: O_TRUNC to
+// replace one that exists, O_EXCL to fail on it.
+func extractTar(tr *tar.Reader, destDir string, flag int) error {
+	if err := os.MkdirAll(destDir, DirPerm); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -211,19 +200,18 @@ func ExtractTar(tr *tar.Reader, destDir string) error {
 		if name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("unsafe tar entry name %q: escapes destination", hdr.Name)
 		}
-		target := filepath.Join(destDir, name)
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(name, DirPerm); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), DirPerm); err != nil {
 				return err
 			}
-			mode := os.FileMode(hdr.Mode) & 0o777
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			mode := fs.FileMode(hdr.Mode) & fs.ModePerm
+			f, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|flag, mode)
 			if err != nil {
 				return err
 			}
@@ -234,9 +222,18 @@ func ExtractTar(tr *tar.Reader, destDir string) error {
 			if err := f.Close(); err != nil {
 				return err
 			}
+		case tar.TypeSymlink:
+			if err := root.MkdirAll(filepath.Dir(name), DirPerm); err != nil {
+				return err
+			}
+			// Where it points is checked once every file it might point
+			// to is in place (see fsutil.CheckSymlinks).
+			if err := root.Symlink(filepath.FromSlash(hdr.Linkname), name); err != nil {
+				return err
+			}
 		default:
-			// Bomify's own tar layers only ever contain regular files;
-			// silently skip anything else (symlinks, devices, ...) a
+			// Bomify's own tar layers only ever contain regular files and
+			// symlinks; silently skip anything else (devices, ...) a
 			// foreign tar might contain rather than trying to recreate it.
 		}
 	}

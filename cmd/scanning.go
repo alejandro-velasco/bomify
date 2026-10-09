@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2"
@@ -16,7 +17,6 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
-	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/signature"
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
@@ -288,7 +288,7 @@ type pullScanHook struct {
 // scanner with no threshold, or a threshold with no scanner, is an error
 // rather than a scan that can't refuse anything or a gate on the
 // publisher's own reports.
-func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbomData []byte) error {
+func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, bom *cdx.BOM) error {
 	f := s.flags
 	if err := f.validate(); err != nil {
 		return err
@@ -336,10 +336,6 @@ func (s *pullScanHook) scan(ctx context.Context, target oras.ReadOnlyTarget, ref
 	}
 	gate.VEX = security.CombineVEX(security.PublishedVEX(ctx, target, ref, manifest, verify, s.logger), gate.VEX)
 
-	bom, err := sbom.LoadBytes(sbomData)
-	if err != nil {
-		return fmt.Errorf("parse sbom: %w", err)
-	}
 	components := sliceutil.Deref(bom.Components)
 
 	plugins, err := findScanners(scanners)

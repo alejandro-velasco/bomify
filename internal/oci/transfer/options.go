@@ -3,6 +3,7 @@ package transfer
 import (
 	"context"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 )
@@ -21,14 +22,14 @@ type Signer func(ctx context.Context, target oras.Target, ref string, manifest o
 type Verifier func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error
 
 // Scanner decides whether the package ref resolved to in target — its
-// OCI manifest, manifest, whose SBOM (the package's config blob) is
-// sbom — may be restored, typically by scanning the components it
+// OCI manifest, manifest, whose SBOM (the package's config blob, parsed)
+// is bom — may be restored, typically by scanning the components it
 // describes for vulnerabilities (see internal/security); target and
 // manifest let it read what's attached to the package, such as VEX.
 // Pull calls it once the package's component layers are written, so it
 // can scan their files, and fails if it does: the package is left in the
 // data directory but untagged, for "bomify package prune" to reclaim.
-type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, sbom []byte) error
+type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor, bom *cdx.BOM) error
 
 // Attester signs statement, an in-toto statement about the package Push
 // has just packed into target (its manifest, subject), as a DSSE

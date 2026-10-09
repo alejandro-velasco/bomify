@@ -11,10 +11,14 @@ every type and annotation is listed in [Registry format](registry-format.md)):
 
 - The **config** is the SBOM (`application/vnd.cyclonedx+json` or
   `+xml`, sniffed).
-- Each **layer** is a tar of a component's layer directory, annotated
-  `land.bomify.purl`. `transfer.WriteTar` zeroes mtimes and uid/gid, so
-  the digest depends only on names, modes, and content; otherwise
-  re-pushing a component bomify had pulled would re-upload it.
+- A component's **layers**, annotated `land.bomify.purl`, are tars of
+  its files under `transfer.LargeFileSize` (64 MiB), and each larger
+  file as raw parts of at most `transfer.MaxLayerSize` (4 GiB), so no
+  layer outgrows a registry's limit. `transfer.WriteTar` zeroes mtimes
+  and uid/gid, so a tar's digest depends only on names, modes, and
+  content; otherwise re-pushing a component bomify had pulled would
+  re-upload it. A part is the file's own bytes, so an unchanged large
+  file is the same blob in every package, and uploads once.
 - **Signatures**, the **report referrer**, **VEX referrers**, and the
   **provenance attestation** (see [Build provenance](provenance.md)) are
   OCI referrers, so none changes the package digest.
@@ -31,7 +35,16 @@ Layers transfer concurrently (`--concurrency`), each verified against
 its digest and size as it streams, with a progress bar per blob. `push`
 skips blobs the target already has. That's required, not an
 optimization: a local `content/oci.Store` rejects re-pushing a digest,
-which `save` hits when tags share a component.
+which `save` hits when tags share a component. A part streams straight
+from its file, read once to hash and once to upload, so a large file is
+never copied; tars go through a temporary file.
+
+`pull` restores a component from all its layers into a temporary
+directory and swaps it into place only once every layer verifies (see
+`pull.restoreComponent`). It checks the parts' annotations before
+downloading anything, creates each large file at full size, then
+unpacks the tars, refusing any entry naming a file that exists, and
+writes each part at its offset.
 
 ## Save and load
 

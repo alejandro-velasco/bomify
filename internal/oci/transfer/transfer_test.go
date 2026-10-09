@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"crypto/sha256"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -186,5 +188,93 @@ func TestWriteTarIsStableAcrossExtractRoundTrip(t *testing.T) {
 	second := sha256.Sum256(secondTar.Bytes())
 	if first != second {
 		t.Errorf("tar digest changed across an extract round trip for identical content: %x != %x", first, second)
+	}
+}
+
+func TestParseSize(t *testing.T) {
+	for value, want := range map[string]int64{"0": 0, "4294967296": 4 << 30, "10737418240": 10 << 30} {
+		if got, err := parseSize(value); err != nil || got != want {
+			t.Errorf("parseSize(%q) = %d, %v; want %d", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"", "-1", "1.5", "0x10", "ten"} {
+		if _, err := parseSize(value); err == nil {
+			t.Errorf("parseSize(%q) succeeded", value)
+		}
+	}
+}
+
+// TestTarSize checks a file's content is padded to whole blocks, after
+// a header block of its own.
+func TestTarSize(t *testing.T) {
+	for size, want := range map[int64]int64{0: 512, 1: 1024, 512: 1024, 513: 1536} {
+		if got := TarSize(size); got != want {
+			t.Errorf("TarSize(%d) = %d, want %d", size, got, want)
+		}
+	}
+}
+
+// TestPartCount checks a file takes one part per MaxLayerSize, the last
+// holding the rest.
+func TestPartCount(t *testing.T) {
+	for size, want := range map[int64]int{1: 1, 4 << 30: 1, 4<<30 + 1: 2, 10 << 30: 3} {
+		if got := PartCount(size); got != want {
+			t.Errorf("PartCount(%d) = %d, want %d", size, got, want)
+		}
+	}
+}
+
+func TestPartLabel(t *testing.T) {
+	purl := "pkg:huggingface/org/model@abc"
+	if got, want := PartLabel(purl, "model.gguf", 2, 3), "model.gguf 2/3 "+purl; got != want {
+		t.Errorf("PartLabel = %q, want %q", got, want)
+	}
+	// A file in one part isn't numbered.
+	if got, want := PartLabel(purl, "weights.bin", 1, 1), "weights.bin "+purl; got != want {
+		t.Errorf("PartLabel = %q, want %q", got, want)
+	}
+}
+
+// TestFilePartRoundTrip pins the file part format: ParseFilePart reads
+// back exactly what Annotations writes.
+func TestFilePartRoundTrip(t *testing.T) {
+	part := FilePart{
+		Path:     "dir/model.gguf",
+		Mode:     0o755,
+		FileSize: 10 << 30,
+		Offset:   4 << 30,
+	}
+	annotations := part.Annotations("pkg:huggingface/org/model@abc")
+	if got := annotations[AnnotationPurl]; got != "pkg:huggingface/org/model@abc" {
+		t.Errorf("purl annotation = %q", got)
+	}
+
+	parsed, err := ParseFilePart(annotations)
+	if err != nil {
+		t.Fatalf("ParseFilePart: %v", err)
+	}
+	if parsed != part {
+		t.Errorf("ParseFilePart = %+v, want %+v", parsed, part)
+	}
+}
+
+func TestParseFilePartRejects(t *testing.T) {
+	valid := FilePart{Path: "f", Mode: 0o644, FileSize: 3}.Annotations("p")
+	for name, tc := range map[string]struct {
+		key, value, want string
+	}{
+		"escaping path": {AnnotationFilePath, "../f", "outside its component"},
+		"backslash":     {AnnotationFilePath, `dir\f`, "outside its component"},
+		"NUL byte":      {AnnotationFilePath, "f\x00", "outside its component"},
+		"bad mode":      {AnnotationFileMode, "rwx", "invalid file mode"},
+		"mode too wide": {AnnotationFileMode, "4755", "invalid file mode"},
+		"bad size":      {AnnotationFileSize, "-1", "file size"},
+		"bad offset":    {AnnotationFileOffset, "x", "offset"},
+	} {
+		annotations := maps.Clone(valid)
+		annotations[tc.key] = tc.value
+		if _, err := ParseFilePart(annotations); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ParseFilePart = %v, want an error containing %q", name, err, tc.want)
+		}
 	}
 }
