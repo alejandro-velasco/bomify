@@ -40,9 +40,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     if [ -n "$PLUGIN_VERSION" ]; then \
         make install-bin && \
-        BOMIFY=/usr/local/bin/bomify DATA_DIR=/out/.bomify bash hack/install-release-plugins.sh; \
+        BOMIFY=/usr/local/bin/bomify BOMIFY_DATA_DIR=/out/.bomify bash hack/install-release-plugins.sh; \
     else \
-        make install PLUGIN_DIR=/out/.bomify/plugins; \
+        make install BOMIFY_DATA_DIR=/out/.bomify; \
     fi
 
 # distroless/static: no shell, no package manager, just the binaries below

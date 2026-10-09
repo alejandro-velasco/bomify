@@ -148,12 +148,13 @@ docs-site: docs-site-sync
 docs-site-serve: docs-site-sync
 	cd docsite && zensical serve
 
-# PLUGIN_DIR is where install puts the first-party plugins: bomify only
-# ever looks for plugins in <data-dir>/plugins, never on PATH, so this must
-# be the plugins directory of whichever data directory bomify will run
-# with (~/.bomify by default). install-plugins starts that data directory,
-# versioned, if it's new (see hack/common.sh's init_data_dir).
-PLUGIN_DIR ?= $(HOME)/.bomify/plugins
+# BOMIFY_DATA_DIR is the data directory install puts the first-party
+# plugins into, as bomify only ever looks for plugins in <data-dir>/plugins,
+# never on PATH: the one bomify itself uses, ~/.bomify unless
+# BOMIFY_DATA_DIR is set. install-plugins starts it, versioned, if it's new
+# (see hack/common.sh's init_data_dir).
+BOMIFY_DATA_DIR ?= $(HOME)/.bomify
+PLUGIN_DIR := $(BOMIFY_DATA_DIR)/plugins
 
 # install is install-bin plus install-plugins. They're separate targets so
 # only install-bin (which writes to /usr/local/bin) needs sudo: running
@@ -164,7 +165,7 @@ install-bin: build
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
 
 install-plugins: plugins
-	. ./hack/common.sh && init_data_dir "$(dir $(patsubst %/,%,$(PLUGIN_DIR)))"
+	. ./hack/common.sh && init_data_dir "$(BOMIFY_DATA_DIR)"
 	install -d $(PLUGIN_DIR)
 	install -m755 bin/bomify-plugin-* $(PLUGIN_DIR)/
 	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
