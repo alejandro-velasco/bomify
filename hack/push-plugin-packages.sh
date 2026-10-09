@@ -42,8 +42,13 @@ set -euo pipefail
 : "${PACKAGES_DIR:?PACKAGES_DIR is required}"
 : "${PLUGIN_REGISTRY:?PLUGIN_REGISTRY is required}"
 
+HACK_DIR="$(dirname "$0")"
+. "$HACK_DIR/common.sh"
+
 data_dir="$(mktemp -d)"
 trap 'rm -rf "$data_dir"' EXIT
+# Versioned before anything goes in, or bomify would refuse it.
+init_data_dir "$data_dir"
 
 caller_auth="${BOMIFY_DATA_DIR:-$HOME/.bomify}/conf/auth.json"
 if [ -f "$caller_auth" ]; then

@@ -137,7 +137,8 @@ docs-site-serve: docs-site-sync
 # PLUGIN_DIR is where install puts the first-party plugins: bomify only
 # ever looks for plugins in <data-dir>/plugins, never on PATH, so this must
 # be the plugins directory of whichever data directory bomify will run
-# with (~/.bomify by default).
+# with (~/.bomify by default). install-plugins starts that data directory,
+# versioned, if it's new (see hack/common.sh's init_data_dir).
 PLUGIN_DIR ?= $(HOME)/.bomify/plugins
 
 # install is install-bin plus install-plugins. They're separate targets so
@@ -149,6 +150,7 @@ install-bin: build
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
 
 install-plugins: plugins
+	. ./hack/common.sh && init_data_dir "$(dir $(patsubst %/,%,$(PLUGIN_DIR)))"
 	install -d $(PLUGIN_DIR)
 	install -m755 bin/bomify-plugin-* $(PLUGIN_DIR)/
 	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
