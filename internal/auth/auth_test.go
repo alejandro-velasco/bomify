@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -184,6 +188,60 @@ func TestClientUsesSharedStore(t *testing.T) {
 	}
 	if cred.Username != "alice" || cred.Password != "s3cret" {
 		t.Errorf("client.Credential() = %+v, want Username=alice Password=s3cret", cred)
+	}
+}
+
+// TestClientReusesConnections covers layers transferring at once: a
+// second round of as many concurrent requests reuses the first round's
+// connections, rather than all but 2 of them opening new ones.
+func TestClientReusesConnections(t *testing.T) {
+	useMemoryStore(t)
+	const concurrent = 8
+
+	var arrived sync.WaitGroup
+	var newConnections atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hold every request until the whole round has arrived, so they
+		// overlap and each needs a connection of its own.
+		arrived.Done()
+		arrived.Wait()
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConnections.Add(1)
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	client, err := Client()
+	if err != nil {
+		t.Fatalf("Client() error = %v", err)
+	}
+	for range 2 {
+		arrived.Add(concurrent)
+		var done sync.WaitGroup
+		for range concurrent {
+			done.Go(func() {
+				req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+				if err != nil {
+					t.Errorf("new request: %v", err)
+					return
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Errorf("GET: %v", err)
+					return
+				}
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			})
+		}
+		done.Wait()
+	}
+
+	if got := newConnections.Load(); got != concurrent {
+		t.Errorf("opened %d connections over two rounds of %d requests, want %d", got, concurrent, concurrent)
 	}
 }
 

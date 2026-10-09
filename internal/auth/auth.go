@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 
@@ -96,10 +97,28 @@ func Client() (*orasauth.Client, error) {
 		return nil, err
 	}
 
-	return &orasauth.Client{
+	httpClient := http.Client{
+		Transport: transport,
+	}
+	client := orasauth.Client{
+		Client:     &httpClient,
 		Cache:      orasauth.NewCache(),
 		Credential: credentials.Credential(store),
-	}, nil
+	}
+	return &client, nil
+}
+
+// transport is the HTTP transport every Client shares, so each registry's
+// connections are reused across repositories and layers. It's Go's
+// default, but keeps as many idle connections per registry as overall:
+// the default keeps 2, so with more layers transferring at once, every
+// other one would open a new connection, and TLS handshake, of its own.
+var transport = newTransport()
+
+func newTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = transport.MaxIdleConns
+	return transport
 }
 
 // LoginResult reports how Login stored a successfully verified
