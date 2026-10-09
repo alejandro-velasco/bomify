@@ -1,11 +1,9 @@
-# Shell helpers shared by the build: sourced by hack/*.sh and the
-# Makefile's recipes (which run /bin/sh), so it's POSIX sh.
+# Shell helpers shared by the build scripts in hack/, which source this.
 
 # HACK_DIR is the path to hack/, which the helpers find the repository
-# from. POSIX sh can't tell a sourced file where it is, so a script sets
-# it to its own directory before sourcing this; it defaults to "hack" for
-# the Makefile's recipes, which run from the repository root.
-HACK_DIR="${HACK_DIR:-hack}"
+# from. A sourced file can't reliably tell where it is, so a script sets
+# it to its own directory before sourcing this.
+: "${HACK_DIR:?set HACK_DIR to the path of hack/ before sourcing common.sh}"
 
 # data_dir_version prints the data directory version this checkout's
 # bomify reads and writes: layout.CurrentVersion.

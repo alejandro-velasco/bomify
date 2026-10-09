@@ -151,10 +151,8 @@ docs-site-serve: docs-site-sync
 # BOMIFY_DATA_DIR is the data directory install puts the first-party
 # plugins into, as bomify only ever looks for plugins in <data-dir>/plugins,
 # never on PATH: the one bomify itself uses, ~/.bomify unless
-# BOMIFY_DATA_DIR is set. install-plugins starts it, versioned, if it's new
-# (see hack/common.sh's init_data_dir).
+# BOMIFY_DATA_DIR is set (see hack/install-plugins.sh).
 BOMIFY_DATA_DIR ?= $(HOME)/.bomify
-PLUGIN_DIR := $(BOMIFY_DATA_DIR)/plugins
 
 # install is install-bin plus install-plugins. They're separate targets so
 # only install-bin (which writes to /usr/local/bin) needs sudo: running
@@ -165,11 +163,7 @@ install-bin: build
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
 
 install-plugins: plugins
-	. ./hack/common.sh && init_data_dir "$(BOMIFY_DATA_DIR)"
-	install -d $(PLUGIN_DIR)
-	install -m755 bin/bomify-plugin-* $(PLUGIN_DIR)/
-	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
-	ln -sf bomify-plugin-oci $(PLUGIN_DIR)/bomify-plugin-docker
+	BOMIFY_DATA_DIR="$(BOMIFY_DATA_DIR)" bash hack/install-plugins.sh
 
 test:
 	go test ./...
