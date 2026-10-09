@@ -47,9 +47,23 @@ var (
 	MaxLayerSize  int64 = 4 << 30
 )
 
+// PartCount returns how many file part layers a file of size takes: one
+// per MaxLayerSize, the last holding the rest.
+func PartCount(size int64) int {
+	return int(ceilDiv(size, MaxLayerSize))
+}
+
+// ceilDiv divides dividend by divisor, rounding up where integer division
+// rounds down: adding divisor-1 first carries any remainder of 1 to
+// divisor-1 into one more, while an exact multiple doesn't reach the
+// next.
+func ceilDiv(dividend, divisor int64) int64 {
+	return (dividend + divisor - 1) / divisor
+}
+
 // IsSafePath reports whether path, "/"-separated and from the network,
 // names a file inside the directory it's joined to: relative, with no
-// ".." segment and no backslash.
+// ".." segment, no backslash, and no NUL byte.
 func IsSafePath(path string) bool {
 	if path == "" || strings.ContainsAny(path, "\\\x00") {
 		return false
@@ -107,11 +121,18 @@ func TarFiles(dir string) ([]TarFile, error) {
 	return files, nil
 }
 
+// tarBlockSize is the tar format's block size: an entry's header takes
+// one block, and its content is padded to a whole number of blocks.
+const tarBlockSize = 512
+
 // TarSize returns how much a file of size adds to a tar stream: its
-// header and its content padded to the 512-byte block, not counting the
-// longer headers a long name needs.
+// header block and its content padded to whole blocks, a partly filled
+// last block taking a whole one (see ceilDiv), not counting the longer
+// headers a long name needs.
 func TarSize(size int64) int64 {
-	return 512 + (size+511)/512*512
+	header := int64(tarBlockSize)
+	blocks := ceilDiv(size, tarBlockSize)
+	return header + blocks*tarBlockSize
 }
 
 // WriteTarFiles archives files, some of TarFiles(dir), into w, as
@@ -243,7 +264,7 @@ func parseSize(value string) (int64, error) {
 // parseFileMode parses an AnnotationFileMode value.
 func parseFileMode(value string) (fs.FileMode, error) {
 	var mode uint32
-	if _, err := fmt.Sscanf(value, "%o", &mode); err != nil || mode > 0o777 {
+	if _, err := fmt.Sscanf(value, "%o", &mode); err != nil || mode > uint32(fs.ModePerm) {
 		return 0, fmt.Errorf("invalid file mode %q", value)
 	}
 	return fs.FileMode(mode), nil

@@ -204,6 +204,26 @@ func TestParseSize(t *testing.T) {
 	}
 }
 
+// TestTarSize checks a file's content is padded to whole blocks, after
+// a header block of its own.
+func TestTarSize(t *testing.T) {
+	for size, want := range map[int64]int64{0: 512, 1: 1024, 512: 1024, 513: 1536} {
+		if got := TarSize(size); got != want {
+			t.Errorf("TarSize(%d) = %d, want %d", size, got, want)
+		}
+	}
+}
+
+// TestPartCount checks a file takes one part per MaxLayerSize, the last
+// holding the rest.
+func TestPartCount(t *testing.T) {
+	for size, want := range map[int64]int{1: 1, 4 << 30: 1, 4<<30 + 1: 2, 10 << 30: 3} {
+		if got := PartCount(size); got != want {
+			t.Errorf("PartCount(%d) = %d, want %d", size, got, want)
+		}
+	}
+}
+
 func TestPartLabel(t *testing.T) {
 	purl := "pkg:huggingface/org/model@abc"
 	if got, want := PartLabel(purl, "model.gguf", 2, 3), "model.gguf 2/3 "+purl; got != want {
@@ -244,6 +264,8 @@ func TestParseFilePartRejects(t *testing.T) {
 		key, value, want string
 	}{
 		"escaping path": {AnnotationFilePath, "../f", "outside its component"},
+		"backslash":     {AnnotationFilePath, `dir\f`, "outside its component"},
+		"NUL byte":      {AnnotationFilePath, "f\x00", "outside its component"},
 		"bad mode":      {AnnotationFileMode, "rwx", "invalid file mode"},
 		"mode too wide": {AnnotationFileMode, "4755", "invalid file mode"},
 		"bad size":      {AnnotationFileSize, "-1", "file size"},

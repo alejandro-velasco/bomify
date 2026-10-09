@@ -158,7 +158,7 @@ func tarPlan(component cdx.Component, dir string, files []transfer.TarFile) laye
 // planFileParts plans file, a large file in component's directory dir,
 // as parts of at most transfer.MaxLayerSize, by offset.
 func planFileParts(component cdx.Component, dir string, file transfer.TarFile) []layerPlan {
-	count := int((file.Size + transfer.MaxLayerSize - 1) / transfer.MaxLayerSize)
+	count := transfer.PartCount(file.Size)
 	plans := make([]layerPlan, 0, count)
 	for index := range count {
 		offset := int64(index) * transfer.MaxLayerSize

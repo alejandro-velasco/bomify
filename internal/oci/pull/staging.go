@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
 // staging is a temporary directory a component is restored into, beside
@@ -35,7 +37,7 @@ func writeStaged(destDir string, write func(dir string) error) error {
 // newStaging creates a staging directory for destDir, beside it.
 func newStaging(destDir string) (*staging, error) {
 	parent := filepath.Dir(destDir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, transfer.DirPerm); err != nil {
 		return nil, fmt.Errorf("create %s: %w", parent, err)
 	}
 	dir, err := os.MkdirTemp(parent, ".pull-*")

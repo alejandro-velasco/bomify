@@ -439,7 +439,7 @@ func downloadBlob(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.
 	defer rc.Close()
 
 	dir := filepath.Dir(destPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, transfer.DirPerm); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 

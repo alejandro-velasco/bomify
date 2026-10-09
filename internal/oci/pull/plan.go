@@ -273,7 +273,7 @@ func (p componentPlan) createFiles(dir string) error {
 
 func (f partFile) create(dir string) error {
 	path := filepath.Join(dir, filepath.FromSlash(f.path))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), transfer.DirPerm); err != nil {
 		return err
 	}
 	created, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, f.mode)

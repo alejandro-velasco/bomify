@@ -10,6 +10,7 @@ import (
 	"archive/tar"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,11 @@ func normalizeHeader(hdr *tar.Header) {
 	hdr.Gname = ""
 }
 
+// DirPerm is the permission bits of every directory bomify creates while
+// restoring a package into a data directory: tar entries' parents, large
+// files' parents, and staging directories.
+const DirPerm fs.FileMode = 0o755
+
 // ExtractTar extracts every entry from tr into destDir.
 //
 // Entry names come from the tar stream — untrusted input, whether the
@@ -161,7 +167,7 @@ func ExtractTar(tr *tar.Reader, destDir string) error {
 // extractTar is ExtractTar, opening each file with flag added: O_TRUNC to
 // replace one that exists, O_EXCL to fail on it.
 func extractTar(tr *tar.Reader, destDir string, flag int) error {
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, DirPerm); err != nil {
 		return err
 	}
 	root, err := os.OpenRoot(destDir)
@@ -197,14 +203,14 @@ func extractTar(tr *tar.Reader, destDir string, flag int) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := root.MkdirAll(name, 0o755); err != nil {
+			if err := root.MkdirAll(name, DirPerm); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), DirPerm); err != nil {
 				return err
 			}
-			mode := os.FileMode(hdr.Mode) & 0o777
+			mode := fs.FileMode(hdr.Mode) & fs.ModePerm
 			f, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|flag, mode)
 			if err != nil {
 				return err
@@ -217,7 +223,7 @@ func extractTar(tr *tar.Reader, destDir string, flag int) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), DirPerm); err != nil {
 				return err
 			}
 			// Where it points is checked once every file it might point
