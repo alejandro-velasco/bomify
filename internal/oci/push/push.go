@@ -1,37 +1,31 @@
 // Package push publishes a bomify package as an OCI artifact: the
 // counterpart to internal/oci/pull. Push packages the SBOM manifest a prior
 // `bomify build` recorded (see internal/build) as the artifact's config,
-// and each component that SBOM describes as a layer — tarring up whatever
-// build pulled for it and annotating the layer with its purl — then pushes
-// the whole thing to a registry under a tag.
+// and each component that SBOM describes as layers annotated with its
+// purl — tars of whatever build pulled for it, and each large file in
+// parts (see transfer.FilePartMediaType) — then pushes the whole thing to
+// a registry under a tag.
 package push
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
-	"github.com/alejandro-velasco/bomify/internal/provenance"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
-	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
 )
 
-// Layer describes one component layer, or one component's vulnerability
-// report, that was pushed.
-type Layer struct {
+// PushedLayer describes one component layer, or one component's
+// vulnerability report, that was pushed.
+type PushedLayer struct {
 	Purl string
 	Hash string
 }
@@ -41,12 +35,12 @@ type Result struct {
 	// Manifest is the pushed package manifest ref now points at.
 	Manifest       ocispec.Descriptor
 	ManifestDigest string
-	Layers         []Layer
+	Layers         []PushedLayer
 	// VulnerabilityReports lists the components whose local vulnerability
 	// report (see internal/security) was attached to the package, as
 	// layers of ReportsReferrer — only ever a subset of Layers, since
 	// most components carry none.
-	VulnerabilityReports []Layer
+	VulnerabilityReports []PushedLayer
 	// ReportsReferrer is the vulnerability report referrer attached to
 	// Manifest (see security.Attach), or the zero Descriptor if no
 	// component had a local report.
@@ -76,114 +70,127 @@ type Result struct {
 // ref pointing at an unsigned package.
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
 	opts = opts.WithDefaults()
-	sign, concurrency, progress := opts.Sign, opts.Concurrency, opts.Progress
 
-	manifestPath := layout.Manifest(baseDir, sbomHash)
-	data, err := os.ReadFile(manifestPath)
+	pkg, err := pushPackage(ctx, target, baseDir, sbomHash, opts)
 	if err != nil {
-		return Result{}, fmt.Errorf("read manifest %s: %w", manifestPath, err)
-	}
-
-	bom, err := sbom.LoadBytes(data)
-	if err != nil {
-		return Result{}, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
-	}
-
-	configDesc, err := transfer.PushBytes(ctx, target, data, configMediaType(data), "sbom manifest", progress)
-	if err != nil {
-		return Result{}, fmt.Errorf("push config: %w", err)
-	}
-
-	components := sliceutil.Deref(bom.Components)
-
-	// Layers are slotted by component index rather than appended as each
-	// upload finishes: completion order varies from run to run, and the
-	// manifest's layer order is part of its digest.
-	layerDescs := make([]ocispec.Descriptor, len(components))
-	layers := make([]Layer, len(components))
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency)
-	for i, component := range components {
-		i, component := i, component
-		g.Go(func() error {
-			desc, layer, err := pushComponentLayer(gctx, target, baseDir, component, progress)
-			if err != nil {
-				return fmt.Errorf("%s@%s: %w", component.Name, component.Version, err)
-			}
-			layerDescs[i] = desc
-			layers[i] = layer
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
 		return Result{}, err
 	}
 
-	manifestDesc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
-		ConfigDescriptor: &configDesc,
-		Layers:           layerDescs,
-		ManifestAnnotations: map[string]string{
-			ocispec.AnnotationCreated: createdAnnotation(bom),
-		},
-	})
+	attacher := referrerAttacher{
+		target:   target,
+		ref:      ref,
+		manifest: pkg.desc,
+		signer:   opts.Sign,
+		progress: opts.Progress,
+	}
+	if err := attacher.sign(ctx, pkg.desc, ref); err != nil {
+		return Result{}, err
+	}
+	reportsReferrer, reports, err := attacher.attachReports(ctx, baseDir, pkg.components)
 	if err != nil {
-		return Result{}, fmt.Errorf("pack manifest: %w", err)
+		return Result{}, err
 	}
-
-	if sign != nil {
-		if err := sign(ctx, target, ref, manifestDesc); err != nil {
-			return Result{}, fmt.Errorf("sign %s: %w", ref, err)
-		}
-	}
-
-	result := Result{Manifest: manifestDesc, ManifestDigest: manifestDesc.Digest.String(), Layers: layers}
-
-	referrer, attached, ok, err := security.Attach(ctx, target, manifestDesc, baseDir, components, progress)
+	attached, err := attacher.attachDocuments(ctx, opts.Attach)
 	if err != nil {
-		return Result{}, fmt.Errorf("attach vulnerability reports: %w", err)
+		return Result{}, err
 	}
-	if ok {
-		if sign != nil {
-			if err := sign(ctx, target, ref, referrer); err != nil {
-				return Result{}, fmt.Errorf("sign vulnerability reports of %s: %w", ref, err)
-			}
-		}
-		result.ReportsReferrer = referrer
-		for _, report := range attached {
-			result.VulnerabilityReports = append(result.VulnerabilityReports, Layer{Purl: report.Purl, Hash: report.Hash})
-		}
-	}
-
-	for _, a := range opts.Attach {
-		referrer, attached, err := transfer.Attach(ctx, target, manifestDesc, a, progress)
-		if err != nil {
-			return Result{}, fmt.Errorf("attach %s: %w", a.Name, err)
-		}
-		if !attached {
-			continue
-		}
-		if sign != nil {
-			if err := sign(ctx, target, ref, referrer); err != nil {
-				return Result{}, fmt.Errorf("sign %s of %s: %w", a.Name, ref, err)
-			}
-		}
-		result.Attached = append(result.Attached, referrer)
-	}
-
-	provenanceDesc, attachedProvenance, err := provenance.Attach(ctx, target, ref, baseDir, sbomHash, manifestDesc, opts.Attest)
+	provenanceReferrer, err := attacher.attachProvenance(ctx, baseDir, sbomHash, opts.Attest)
 	if err != nil {
-		return Result{}, fmt.Errorf("attach provenance: %w", err)
-	}
-	if attachedProvenance {
-		result.Provenance = provenanceDesc
+		return Result{}, err
 	}
 
-	if err := target.Tag(ctx, manifestDesc, ref); err != nil {
+	if err := target.Tag(ctx, pkg.desc, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
 
+	result := Result{
+		Manifest:             pkg.desc,
+		ManifestDigest:       pkg.desc.Digest.String(),
+		Layers:               pkg.layers,
+		VulnerabilityReports: reports,
+		ReportsReferrer:      reportsReferrer,
+		Attached:             attached,
+		Provenance:           provenanceReferrer,
+	}
 	return result, nil
+}
+
+// pushedPackage is the package Push has pushed, but not yet tagged: its
+// manifest's descriptor, the components its SBOM describes, and their
+// layers.
+type pushedPackage struct {
+	desc       ocispec.Descriptor
+	components []cdx.Component
+	layers     []PushedLayer
+}
+
+// pushPackage pushes the build recorded under baseDir for sbomHash: its
+// SBOM as the config (see pushConfig), each component's layers, up to
+// opts.Concurrency at once, and then the manifest packing them.
+func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash string, opts transfer.Options) (*pushedPackage, error) {
+	bom, configDesc, err := pushConfig(ctx, target, baseDir, sbomHash, opts.Progress)
+	if err != nil {
+		return nil, err
+	}
+	components := sliceutil.Deref(bom.Components)
+
+	plans, err := planLayers(baseDir, components)
+	if err != nil {
+		return nil, err
+	}
+	layerDescs, err := pushLayers(ctx, target, plans, opts.Concurrency, opts.Progress)
+	if err != nil {
+		return nil, err
+	}
+	desc, err := packManifest(ctx, target, configDesc, layerDescs, bom)
+	if err != nil {
+		return nil, err
+	}
+
+	pkg := pushedPackage{
+		desc:       desc,
+		components: components,
+		layers:     pushedLayers(plans, layerDescs),
+	}
+	return &pkg, nil
+}
+
+// pushConfig pushes the SBOM the build recorded under baseDir for
+// sbomHash (see build.RecordManifest) byte for byte, as the package's
+// config, returning it parsed and its descriptor.
+func pushConfig(ctx context.Context, target oras.Target, baseDir, sbomHash string, progress transfer.ProgressFunc) (*cdx.BOM, ocispec.Descriptor, error) {
+	manifestPath := layout.Manifest(baseDir, sbomHash)
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, ocispec.Descriptor{}, fmt.Errorf("read manifest %s: %w", manifestPath, err)
+	}
+	bom, err := sbom.LoadBytes(data)
+	if err != nil {
+		return nil, ocispec.Descriptor{}, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
+	}
+
+	desc, err := transfer.PushBytes(ctx, target, data, configMediaType(data), "sbom manifest", progress)
+	if err != nil {
+		return nil, ocispec.Descriptor{}, fmt.Errorf("push config: %w", err)
+	}
+	return bom, desc, nil
+}
+
+// packManifest pushes the package manifest of config and layers, in
+// order, created when bom says (see createdAnnotation).
+func packManifest(ctx context.Context, target oras.Target, config ocispec.Descriptor, layers []ocispec.Descriptor, bom *cdx.BOM) (ocispec.Descriptor, error) {
+	packOpts := oras.PackManifestOptions{
+		ConfigDescriptor: &config,
+		Layers:           layers,
+		ManifestAnnotations: map[string]string{
+			ocispec.AnnotationCreated: createdAnnotation(bom),
+		},
+	}
+	desc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, packOpts)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("pack manifest: %w", err)
+	}
+	return desc, nil
 }
 
 // createdAnnotation returns the value Push pins the package manifest's
@@ -215,69 +222,4 @@ func configMediaType(data []byte) string {
 		return "application/vnd.cyclonedx+xml"
 	}
 	return "application/vnd.cyclonedx+json"
-}
-
-// pushComponentLayer archives "<baseDir>/layers/<purl-hash>/" — whatever
-// `bomify build` pulled for component — into a single tar blob and pushes
-// it, annotated with component's purl.
-func pushComponentLayer(ctx context.Context, target oras.Target, baseDir string, component cdx.Component, progress transfer.ProgressFunc) (ocispec.Descriptor, Layer, error) {
-	purl := component.PackageURL
-	dir := layout.ComponentLayer(baseDir, component.PackageURL)
-
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("no local layer at %s (run `bomify build` first)", dir)
-	}
-
-	tarPath, hash, size, err := tarDir(dir)
-	if err != nil {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("archive %s: %w", dir, err)
-	}
-	defer os.Remove(tarPath)
-
-	desc := ocispec.Descriptor{
-		MediaType: transfer.LayerMediaType,
-		Digest:    digest.NewDigestFromEncoded(digest.SHA256, hash),
-		Size:      size,
-		Annotations: map[string]string{
-			ocispec.AnnotationTitle: hash + ".tar",
-			transfer.AnnotationPurl: purl,
-		},
-	}
-
-	f, err := os.Open(tarPath)
-	if err != nil {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("open %s: %w", tarPath, err)
-	}
-	defer f.Close()
-
-	if err := transfer.PushBlob(ctx, target, desc, f, transfer.Label(purl, hash), progress); err != nil {
-		return ocispec.Descriptor{}, Layer{}, fmt.Errorf("push layer: %w", err)
-	}
-	return desc, Layer{Purl: purl, Hash: hash}, nil
-}
-
-// tarDir archives dir's contents (see transfer.WriteTar) into a new
-// temp file (which the caller must remove), returning its path, sha256
-// content digest (hex-encoded, unprefixed, matching bomify's on-disk hash
-// convention elsewhere), and size.
-func tarDir(dir string) (path string, hash string, size int64, err error) {
-	tmp, err := os.CreateTemp("", "bomify-push-layer-*.tar")
-	if err != nil {
-		return "", "", 0, fmt.Errorf("create temp file: %w", err)
-	}
-	defer tmp.Close()
-
-	h := sha256.New()
-	if err := transfer.WriteTar(dir, io.MultiWriter(tmp, h)); err != nil {
-		os.Remove(tmp.Name())
-		return "", "", 0, err
-	}
-
-	info, err := tmp.Stat()
-	if err != nil {
-		os.Remove(tmp.Name())
-		return "", "", 0, err
-	}
-
-	return tmp.Name(), hex.EncodeToString(h.Sum(nil)), info.Size(), nil
 }

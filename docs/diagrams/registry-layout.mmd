@@ -11,8 +11,8 @@ flowchart LR
 
         subgraph Descriptors["manifest descriptors, in this order"]
             Config["config<br/>mediaType: application/vnd.cyclonedx+json (or +xml)"]
-            L1["layers[0]: component A<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
-            L2["layers[1]: component B<br/>(same shape, SBOM order)"]
+            L1["layers[0]: component A's small files<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
+            L2["layers[1..]: component A's large file, in parts<br/>mediaType: application/vnd.bomify.component.file.v1<br/>land.bomify.purl · land.bomify.file.path, .mode, .size, .offset"]
         end
 
         ReportRef{{"report referrer (untagged)<br/>artifactType: application/vnd.bomify.vulnerabilities.v1+json<br/>created: newest report's scan time"}}
@@ -21,7 +21,7 @@ flowchart LR
         subgraph Blobs["blob store — content-addressed, shared across every tag and package in the repository"]
             BConfig[("sha256:… SBOM")]
             BL1[("sha256:… tar A")]
-            BL2[("sha256:… tar B")]
+            BL2[("sha256:… part of A's large file")]
             BR1[("sha256:… report A")]
         end
     end
@@ -37,7 +37,7 @@ flowchart LR
     L2 -- "digest" --> BL2
     R1 -- "digest" --> BR1
 
-    Note["reports never change the package manifest: one referrer per scan,<br/>one report layer per scanned component, in SBOM order —<br/>none for component B (never scanned)"]
+    Note["reports never change the package manifest: one referrer per scan,<br/>one report layer per scanned component, in SBOM order —<br/>none for a component never scanned"]
     Note -.- ReportRef
 
     class Tag ref

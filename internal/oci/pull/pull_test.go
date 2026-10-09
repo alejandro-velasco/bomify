@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -510,10 +509,10 @@ func TestPullFailedScan(t *testing.T) {
 
 	dataDir := t.TempDir()
 	var scannedRef string
-	var scannedSBOM []byte
+	var scannedSBOM *cdx.BOM
 	var layerWritten bool
-	scan := func(_ context.Context, _ oras.ReadOnlyTarget, ref string, _ ocispec.Descriptor, sbom []byte) error {
-		scannedRef, scannedSBOM = ref, sbom
+	scan := func(_ context.Context, _ oras.ReadOnlyTarget, ref string, _ ocispec.Descriptor, bom *cdx.BOM) error {
+		scannedRef, scannedSBOM = ref, bom
 		_, err := os.Stat(layout.ComponentLayer(dataDir, component.PackageURL))
 		layerWritten = err == nil
 		return errors.New("vulnerable")
@@ -525,15 +524,15 @@ func TestPullFailedScan(t *testing.T) {
 	if scannedRef != tag {
 		t.Errorf("scanner got ref %q, want %q", scannedRef, tag)
 	}
-	if !bytes.Contains(scannedSBOM, []byte(component.PackageURL)) {
-		t.Errorf("scanner got SBOM %q, want the package's", scannedSBOM)
+	if scannedSBOM == nil || scannedSBOM.Components == nil || (*scannedSBOM.Components)[0].PackageURL != component.PackageURL {
+		t.Errorf("scanner got SBOM %+v, want the package's", scannedSBOM)
 	}
 	if !layerWritten {
 		t.Error("scanner ran before the component's layer was written")
 	}
 
 	// A scanner that passes lets the pull go ahead as usual.
-	pass := func(context.Context, oras.ReadOnlyTarget, string, ocispec.Descriptor, []byte) error { return nil }
+	pass := func(context.Context, oras.ReadOnlyTarget, string, ocispec.Descriptor, *cdx.BOM) error { return nil }
 	if _, err := Pull(context.Background(), store, tag, dataDir, transfer.Options{Concurrency: 1, Scan: pass}); err != nil {
 		t.Errorf("Pull() with a passing scanner: %v", err)
 	}

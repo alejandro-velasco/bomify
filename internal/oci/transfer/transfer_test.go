@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"crypto/sha256"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -186,5 +188,71 @@ func TestWriteTarIsStableAcrossExtractRoundTrip(t *testing.T) {
 	second := sha256.Sum256(secondTar.Bytes())
 	if first != second {
 		t.Errorf("tar digest changed across an extract round trip for identical content: %x != %x", first, second)
+	}
+}
+
+func TestParseSize(t *testing.T) {
+	for value, want := range map[string]int64{"0": 0, "4294967296": 4 << 30, "10737418240": 10 << 30} {
+		if got, err := parseSize(value); err != nil || got != want {
+			t.Errorf("parseSize(%q) = %d, %v; want %d", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"", "-1", "1.5", "0x10", "ten"} {
+		if _, err := parseSize(value); err == nil {
+			t.Errorf("parseSize(%q) succeeded", value)
+		}
+	}
+}
+
+func TestPartLabel(t *testing.T) {
+	purl := "pkg:huggingface/org/model@abc"
+	if got, want := PartLabel(purl, "model.gguf", 2, 3), "model.gguf 2/3 "+purl; got != want {
+		t.Errorf("PartLabel = %q, want %q", got, want)
+	}
+	// A file in one part isn't numbered.
+	if got, want := PartLabel(purl, "weights.bin", 1, 1), "weights.bin "+purl; got != want {
+		t.Errorf("PartLabel = %q, want %q", got, want)
+	}
+}
+
+// TestFilePartRoundTrip pins the file part format: ParseFilePart reads
+// back exactly what Annotations writes.
+func TestFilePartRoundTrip(t *testing.T) {
+	part := FilePart{
+		Path:     "dir/model.gguf",
+		Mode:     0o755,
+		FileSize: 10 << 30,
+		Offset:   4 << 30,
+	}
+	annotations := part.Annotations("pkg:huggingface/org/model@abc")
+	if got := annotations[AnnotationPurl]; got != "pkg:huggingface/org/model@abc" {
+		t.Errorf("purl annotation = %q", got)
+	}
+
+	parsed, err := ParseFilePart(annotations)
+	if err != nil {
+		t.Fatalf("ParseFilePart: %v", err)
+	}
+	if parsed != part {
+		t.Errorf("ParseFilePart = %+v, want %+v", parsed, part)
+	}
+}
+
+func TestParseFilePartRejects(t *testing.T) {
+	valid := FilePart{Path: "f", Mode: 0o644, FileSize: 3}.Annotations("p")
+	for name, tc := range map[string]struct {
+		key, value, want string
+	}{
+		"escaping path": {AnnotationFilePath, "../f", "outside its component"},
+		"bad mode":      {AnnotationFileMode, "rwx", "invalid file mode"},
+		"mode too wide": {AnnotationFileMode, "4755", "invalid file mode"},
+		"bad size":      {AnnotationFileSize, "-1", "file size"},
+		"bad offset":    {AnnotationFileOffset, "x", "offset"},
+	} {
+		annotations := maps.Clone(valid)
+		annotations[tc.key] = tc.value
+		if _, err := ParseFilePart(annotations); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ParseFilePart = %v, want an error containing %q", name, err, tc.want)
+		}
 	}
 }
