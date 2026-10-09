@@ -36,7 +36,11 @@ and put it on your `PATH`.
 ## Container image
 
 `ghcr.io/alejandro-velasco/bomify` has `bomify` as its entrypoint and
-every first-party plugin preinstalled in `/tmp/.bomify/plugins`:
+every first-party plugin preinstalled in `/tmp/.bomify/plugins`: its
+release's signed plugin packages, installed as
+[Installing plugins](installing-plugins.md) describes, with the trust
+rule for bomify's release workflow, so `bomify plugin list` names where
+each came from:
 
 ```sh
 docker run --rm -it \

@@ -79,10 +79,10 @@ in. Every command that uses the directory checks it first
 | Content but no version | Refuses: a pre-alpha bomify wrote it, and pre-alpha data doesn't carry over. |
 
 Build tooling that puts files into a data directory before bomify has
-run (`make install-plugins`, the container image, and
-`hack/push-plugin-packages.sh`) starts it with `version.json` first,
-through `init_data_dir` in
-[`hack/common.sh`](https://github.com/alejandro-velasco/bomify/blob/main/hack/common.sh).
+run starts it with `version.json` first, through `init_data_dir` in
+[`hack/common.sh`](https://github.com/alejandro-velasco/bomify/blob/main/hack/common.sh):
+`make install-plugins` (and so a container image built from a checkout)
+and `hack/push-plugin-packages.sh`.
 
 The version covers the layout above and the schemas of the files bomify
 reads back: the `conf/` rule files and `signers.json`,

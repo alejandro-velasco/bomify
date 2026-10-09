@@ -100,7 +100,8 @@ Every command and flag is in [`docs/reference`](docs/reference).
 
 [`Containerfile`](Containerfile) builds an image with `bomify` as the
 entrypoint and the first-party plugins preinstalled in
-`/tmp/.bomify/plugins`:
+`/tmp/.bomify/plugins`, built from your checkout (a release image
+installs its release's signed plugin packages instead):
 
 ```sh
 make build-container

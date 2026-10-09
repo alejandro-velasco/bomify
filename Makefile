@@ -28,6 +28,15 @@ CONTAINER_REPO ?= alejandro-velasco/bomify
 CONTAINER_TAG ?= latest
 CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
 
+# A release image installs the plugins its release published, from
+# PLUGIN_REGISTRY, rather than building them (see Containerfile): set
+# CONTAINER_PLUGIN_VERSION to the release's version and
+# CONTAINER_SIGSTORE_DIGEST to its sigstore digest from plugin-digests.txt.
+# CONTAINER_PLUGIN_SIGNER is the identity that signed them.
+CONTAINER_PLUGIN_VERSION ?=
+CONTAINER_SIGSTORE_DIGEST ?=
+CONTAINER_PLUGIN_SIGNER ?= https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
+
 ################################################################################
 #
 # Release build settings
@@ -51,7 +60,12 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 build-container:
-	$(CONTAINER_TOOL) build -f Containerfile -t $(CONTAINER_REF) .
+	$(CONTAINER_TOOL) build -f Containerfile \
+		--build-arg PLUGIN_VERSION=$(CONTAINER_PLUGIN_VERSION) \
+		--build-arg PLUGIN_REGISTRY=$(PLUGIN_REGISTRY) \
+		--build-arg SIGSTORE_DIGEST=$(CONTAINER_SIGSTORE_DIGEST) \
+		--build-arg PLUGIN_SIGNER=$(CONTAINER_PLUGIN_SIGNER) \
+		-t $(CONTAINER_REF) .
 
 push-container:
 	$(CONTAINER_TOOL) push $(CONTAINER_REF)

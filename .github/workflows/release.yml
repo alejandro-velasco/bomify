@@ -20,14 +20,17 @@ name: Release
 # The work is split so only one job can sign, and that job runs no
 # third-party npm code:
 #
-#   release          semantic-release: version, tag, GitHub release, and
-#                    container image. No id-token permission.
-#   sign-plugins     builds, signs (keyless), and pushes the plugin
-#                    packages and their build provenance. The only job
-#                    with id-token: write.
-#   publish-digests  attaches every plugin package's pinned reference to
-#                    the GitHub release, so users can bootstrap
-#                    bomify-plugin-sigstore by digest.
+#   release            semantic-release: version, tag, and GitHub release.
+#                      No id-token permission.
+#   sign-plugins       builds, signs (keyless), and pushes the plugin
+#                      packages and their build provenance. The only job
+#                      with id-token: write.
+#   publish-digests    attaches every plugin package's pinned reference to
+#                      the GitHub release, so users can bootstrap
+#                      bomify-plugin-sigstore by digest.
+#   publish-container  builds and pushes the container image, with the
+#                      plugins sign-plugins published installed and
+#                      verified the way a user would (see Containerfile).
 #
 # Every action is pinned to a commit SHA and every npm package to an
 # exact version, so nothing here changes without a commit to this file.
@@ -51,12 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # tag and publish the GitHub release
-      packages: write # push the container image
     outputs:
       version: ${{ steps.release.outputs.version }}
-    env:
-      CONTAINER_TOOL: podman
-      CONTAINER_REGISTRY: ghcr.io
     steps:
       # The exact commit Build just passed, not whatever its branch points
       # at by now. If the branch has moved on since, semantic-release sees this commit
@@ -72,13 +71,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Compute container repo
-        id: repo
-        run: echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-
       # Writes version=<next version> to this step's outputs (see
       # verifyReleaseCmd in .releaserc.json) only when it cuts a release.
       # GITHUB_REF is the default branch in a workflow_run run, so point
@@ -86,7 +78,6 @@ jobs:
       - name: Release
         id: release
         env:
-          CONTAINER_REPO: ${{ steps.repo.outputs.repo }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
@@ -163,3 +154,61 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "v${{ needs.release.outputs.version }}" plugin-digests.txt --clobber
+
+  # After sign-plugins, so the image installs the plugin packages it just
+  # published, verified against this workflow's identity, rather than
+  # building its own: `bomify plugin list` then names where each came from.
+  publish-container:
+    needs: [release, sign-plugins]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # push the container image
+    env:
+      CONTAINER_TOOL: podman
+      VERSION: ${{ needs.release.outputs.version }}
+      # The keyless signer identity at the top of this file.
+      PLUGIN_SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@refs/heads/${{ github.event.repository.default_branch }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Fetch pinned references
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plugin-digests
+          path: ${{ runner.temp }}
+
+      # bomify-plugin-sigstore is installed by digest, since nothing can
+      # verify it before it's installed.
+      - name: Compute repositories and the sigstore digest
+        id: repo
+        run: |
+          repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          digest=$(sed -n 's|^.*/plugins/sigstore@||p' "$RUNNER_TEMP/plugin-digests.txt")
+          if [ -z "$digest" ]; then
+            echo "no sigstore line in plugin-digests.txt" >&2
+            exit 1
+          fi
+          {
+            echo "repo=$repo"
+            echo "plugins=ghcr.io/$repo/plugins"
+            echo "sigstore=$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build container
+        run: >-
+          make build-container
+          CONTAINER_REPO="${{ steps.repo.outputs.repo }}"
+          CONTAINER_TAG="$VERSION"
+          CONTAINER_PLUGIN_VERSION="$VERSION"
+          CONTAINER_SIGSTORE_DIGEST="${{ steps.repo.outputs.sigstore }}"
+          CONTAINER_PLUGIN_SIGNER="$PLUGIN_SIGNER"
+          PLUGIN_REGISTRY="${{ steps.repo.outputs.plugins }}"
+
+      - name: Push container
+        run: make push-container CONTAINER_REPO="${{ steps.repo.outputs.repo }}" CONTAINER_TAG="$VERSION"
