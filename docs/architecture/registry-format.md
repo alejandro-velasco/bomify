@@ -23,7 +23,13 @@ a referrer of it, so none changes its digest.
 | File part layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as raw bytes, in parts of at most 4 GiB (safely under the 10 GB per layer GHCR and Docker Hub allow), so no layer outgrows a registry, and an unchanged file is the same blob in every package. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
 
 A component's layers come in SBOM order: its tars, then its large
-files' parts, by path and offset. Pull restores a component only once
+files' parts, by path and offset.
+
+![Which of a component's files are grouped into tars, and which become file parts](../diagrams/component-layers.svg)
+
+*Source: [`docs/diagrams/component-layers.mmd`](https://github.com/alejandro-velasco/bomify/blob/main/docs/diagrams/component-layers.mmd)*
+
+Pull restores a component only once
 every one of its layers verifies, and refuses parts that name a path
 outside the component, don't cover their file exactly, or a file a tar
 also holds. A symlink must be relative and resolve, through any other
