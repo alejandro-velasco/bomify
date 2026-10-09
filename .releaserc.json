@@ -12,8 +12,7 @@
       "@semantic-release/exec",
       {
         "verifyReleaseCmd": "echo \"version=${nextRelease.version}\" >> $GITHUB_OUTPUT",
-        "prepareCmd": "make dist VERSION=${nextRelease.version} && make build-container CONTAINER_TAG=${nextRelease.version}",
-        "publishCmd": "make push-container CONTAINER_TAG=${nextRelease.version}"
+        "prepareCmd": "make dist VERSION=${nextRelease.version}"
       }
     ],
     [

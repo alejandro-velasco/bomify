@@ -28,6 +28,15 @@ CONTAINER_REPO ?= alejandro-velasco/bomify
 CONTAINER_TAG ?= latest
 CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
 
+# A release image installs the plugins its release published, from
+# PLUGIN_REGISTRY, rather than building them (see Containerfile): set
+# CONTAINER_PLUGIN_VERSION to the release's version and
+# CONTAINER_SIGSTORE_DIGEST to its sigstore digest from plugin-digests.txt.
+# CONTAINER_PLUGIN_SIGNER is the identity that signed them.
+CONTAINER_PLUGIN_VERSION ?=
+CONTAINER_SIGSTORE_DIGEST ?=
+CONTAINER_PLUGIN_SIGNER ?= https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
+
 ################################################################################
 #
 # Release build settings
@@ -51,7 +60,12 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 build-container:
-	$(CONTAINER_TOOL) build -f Containerfile -t $(CONTAINER_REF) .
+	$(CONTAINER_TOOL) build -f Containerfile \
+		--build-arg PLUGIN_VERSION=$(CONTAINER_PLUGIN_VERSION) \
+		--build-arg PLUGIN_REGISTRY=$(PLUGIN_REGISTRY) \
+		--build-arg SIGSTORE_DIGEST=$(CONTAINER_SIGSTORE_DIGEST) \
+		--build-arg PLUGIN_SIGNER=$(CONTAINER_PLUGIN_SIGNER) \
+		-t $(CONTAINER_REF) .
 
 push-container:
 	$(CONTAINER_TOOL) push $(CONTAINER_REF)
@@ -134,11 +148,11 @@ docs-site: docs-site-sync
 docs-site-serve: docs-site-sync
 	cd docsite && zensical serve
 
-# PLUGIN_DIR is where install puts the first-party plugins: bomify only
-# ever looks for plugins in <data-dir>/plugins, never on PATH, so this must
-# be the plugins directory of whichever data directory bomify will run
-# with (~/.bomify by default).
-PLUGIN_DIR ?= $(HOME)/.bomify/plugins
+# BOMIFY_DATA_DIR is the data directory install puts the first-party
+# plugins into, as bomify only ever looks for plugins in <data-dir>/plugins,
+# never on PATH: the one bomify itself uses, ~/.bomify unless
+# BOMIFY_DATA_DIR is set (see hack/install-plugins.sh).
+BOMIFY_DATA_DIR ?= $(HOME)/.bomify
 
 # install is install-bin plus install-plugins. They're separate targets so
 # only install-bin (which writes to /usr/local/bin) needs sudo: running
@@ -149,10 +163,7 @@ install-bin: build
 	install -Dm755 $(BINARY) /usr/local/bin/$(notdir $(BINARY))
 
 install-plugins: plugins
-	install -d $(PLUGIN_DIR)
-	install -m755 bin/bomify-plugin-* $(PLUGIN_DIR)/
-	# Alias bomify-plugin-oci to bomify-plugin-docker for backward compatibility
-	ln -sf bomify-plugin-oci $(PLUGIN_DIR)/bomify-plugin-docker
+	BOMIFY_DATA_DIR="$(BOMIFY_DATA_DIR)" bash hack/install-plugins.sh
 
 test:
 	go test ./...

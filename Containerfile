@@ -20,12 +20,30 @@ COPY . .
 # link against libc.so and fail to start there entirely.
 ENV CGO_ENABLED=0
 
+# A release image (PLUGIN_VERSION set; see release.yml) installs the
+# plugins its release published, signed keyless by release.yml, so
+# `bomify plugin list` names where each came from (see
+# hack/install-release-plugins.sh). SIGSTORE_DIGEST pins
+# bomify-plugin-sigstore, which nothing can verify before it's
+# installed, and PLUGIN_SIGNER is the release workflow's identity the
+# rest must be signed by. Any other image, PLUGIN_VERSION unset, gets the
+# plugins built from this checkout.
+ARG PLUGIN_VERSION=
+ARG PLUGIN_REGISTRY=ghcr.io/alejandro-velasco/bomify/plugins
+ARG SIGSTORE_DIGEST=
+ARG PLUGIN_SIGNER=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main
+
 # bomify only looks for plugins in <data-dir>/plugins, so they're installed
 # into the data directory the final stage runs with ($HOME/.bomify, HOME
 # being /tmp there) rather than onto PATH.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    make install PLUGIN_DIR=/out/.bomify/plugins
+    if [ -n "$PLUGIN_VERSION" ]; then \
+        make install-bin && \
+        BOMIFY=/usr/local/bin/bomify BOMIFY_DATA_DIR=/out/.bomify bash hack/install-release-plugins.sh; \
+    else \
+        make install BOMIFY_DATA_DIR=/out/.bomify; \
+    fi
 
 # distroless/static: no shell, no package manager, just the binaries below
 # plus ca-certificates and tzdata (needed for the registry/HTTP(S) pulls
@@ -46,8 +64,9 @@ COPY --from=builder /usr/local/bin/bomify /usr/local/bin/
 
 # The whole data directory is owned by nobody, since bomify writes
 # packages alongside the plugins there (and "bomify plugin install" adds
-# more). make install also symlinks bomify-plugin-docker ->
-# bomify-plugin-oci, which the copy carries over as-is.
+# more). make install symlinks bomify-plugin-docker -> bomify-plugin-oci,
+# which the copy carries over as-is; a release's oci package installs
+# bomify-plugin-docker itself.
 COPY --from=builder --chown=65534:65534 /out/.bomify /tmp/.bomify
 
 USER nobody:nogroup
