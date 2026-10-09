@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1
 
-# golang:1.27.1-bookworm rather than 1.27.0: Docker Hub only keeps the latest
-# patch tag around for most variants, and 1.27.0 has already been retired
-# for bookworm. go.mod's "go 1.27.0" is a minimum, so the 1.27.1 toolchain
+# Docker's official golang image, pulled from its ECR Public mirror rather
+# than Docker Hub, whose anonymous pull limit CI's shared runners can hit;
+# the two serve the same image digests.
+#
+# golang:1.27.1-bookworm rather than 1.27.0: only the latest patch tag is
+# kept around for most variants, and 1.27.0 has already been retired for
+# bookworm. go.mod's "go 1.27.0" is a minimum, so the 1.27.1 toolchain
 # satisfies it.
-FROM golang:1.27.1-bookworm AS builder
+FROM public.ecr.aws/docker/library/golang:1.27.1-bookworm AS builder
 
 WORKDIR /src
 
