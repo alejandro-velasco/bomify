@@ -11,11 +11,13 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openvex/go-vex v0.2.9
 	github.com/package-url/packageurl-go v0.1.7
+	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/spf13/cobra v1.10.2
 	github.com/vbauerster/mpb/v8 v8.16.1
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
 	google.golang.org/protobuf v1.36.12
+	lukechampine.com/blake3 v1.4.1
 	oras.land/oras-go/v2 v2.6.2
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -29,6 +31,7 @@ require (
 	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.28 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

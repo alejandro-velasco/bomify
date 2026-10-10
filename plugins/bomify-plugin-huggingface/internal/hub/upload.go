@@ -17,6 +17,8 @@ import (
 	"strconv"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-huggingface/internal/xet"
 )
 
 // pushBranch is the branch push commits to.
@@ -233,14 +235,28 @@ type lfsObject struct {
 }
 
 // uploadLFS uploads every file of files that goes through LFS and isn't
-// ignored, concurrentTransfers at a time. A file the Hub already stores
-// gets no upload action, so it's skipped.
+// ignored: through Xet storage, as huggingface_hub does, or, on a hub
+// without it, through Git LFS, concurrentTransfers at a time. A file the
+// Hub already stores gets no upload action, so it's skipped.
 func (c Client) uploadLFS(ctx context.Context, repoID, dir string, files []localFile) error {
 	var pending []localFile
 	for _, file := range files {
 		if file.LFS && !file.Ignored {
 			pending = append(pending, file)
 		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	var uploader *xet.Uploader
+	cas, err := c.newCAS(ctx, repoID)
+	if err == nil {
+		uploader = xet.NewUploader(ctx, cas, c.Logger)
+	} else if errors.Is(err, errNoXet) {
+		c.Logger.Info("the hub has no Xet storage; uploading through Git LFS")
+	} else {
+		return err
 	}
 
 	for batch := range slices.Chunk(pending, batchSize) {
@@ -267,6 +283,12 @@ func (c Client) uploadLFS(ctx context.Context, repoID, dir string, files []local
 				c.Logger.Info("already on the Hub", "file", file.Path)
 				continue
 			}
+			if uploader != nil {
+				if err := c.uploadXet(uploader, dir, file); err != nil {
+					return err
+				}
+				continue
+			}
 			group.Go(func() error {
 				return c.uploadObject(groupCtx, dir, file, object)
 			})
@@ -275,6 +297,35 @@ func (c Client) uploadLFS(ctx context.Context, repoID, dir string, files []local
 			return err
 		}
 	}
+	if uploader != nil {
+		return uploader.Finish()
+	}
+	return nil
+}
+
+// uploadXet adds file to uploader, checking it's still what was scanned:
+// the shard registering it records that SHA-256, which the commit's LFS
+// pointer then names.
+func (c Client) uploadXet(uploader *xet.Uploader, dir string, file localFile) error {
+	opened, err := os.Open(filepath.Join(dir, filepath.FromSlash(file.Path)))
+	if err != nil {
+		return fmt.Errorf("upload %s: %w", file.Path, err)
+	}
+	defer opened.Close()
+
+	scanned, err := hex.DecodeString(file.SHA256)
+	if err != nil || len(scanned) != sha256.Size {
+		return fmt.Errorf("upload %s: its SHA-256 %q isn't valid", file.Path, file.SHA256)
+	}
+	content := sha256.New()
+	added, err := uploader.Add(io.TeeReader(opened, content), [32]byte(scanned))
+	if err != nil {
+		return fmt.Errorf("upload %s: %w", file.Path, err)
+	}
+	if added.Size != file.Size || !bytes.Equal(content.Sum(nil), scanned) {
+		return fmt.Errorf("upload %s: it changed while being uploaded", file.Path)
+	}
+	c.Logger.Info("uploaded", "file", file.Path, "bytes", file.Size, "new_bytes", added.NewBytes, "xet_hash", added.Hash.String())
 	return nil
 }
 

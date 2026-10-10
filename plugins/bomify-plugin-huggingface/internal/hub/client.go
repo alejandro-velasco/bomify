@@ -404,8 +404,11 @@ func (c Client) sendJSON(ctx context.Context, request call, payload, result any)
 	return nil
 }
 
+// maxErrorBody is how much of a refusal's body an error quotes.
+const maxErrorBody = 512
+
 // StatusError is a request the server refused, with the Hub's own
-// X-Error-Message when it sends one.
+// X-Error-Message when it sends one, else the start of its body.
 type StatusError struct {
 	Method, URL string
 	StatusCode  int
@@ -426,6 +429,11 @@ func hubError(response *http.Response, target string) error {
 	message := response.Header.Get("X-Error-Message")
 	if message == "" {
 		message = response.Status
+		// Xet storage explains a refusal in the body instead.
+		body, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
+		if text := strings.TrimSpace(string(body)); text != "" {
+			message += ": " + text
+		}
 	}
 	statusErr := StatusError{
 		Method:     response.Request.Method,

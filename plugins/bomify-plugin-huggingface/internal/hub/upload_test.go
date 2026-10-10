@@ -2,9 +2,11 @@ package hub
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,6 +21,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/pierrec/lz4/v4"
+
+	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-huggingface/internal/xet"
 )
 
 // remoteFile is one file of the fake repository's main branch.
@@ -56,10 +62,13 @@ type fakeUploadHub struct {
 	// RefuseCommit, if set, refuses the commit with that number, counting
 	// the first from 1, with a 400.
 	RefuseCommit int
+	// Xet offers Xet storage, a separate server standing in for its CAS,
+	// which push then uploads through instead of LFS.
+	Xet bool
 
-	hub, storage *httptest.Server
-	mutex        sync.Mutex
-	parts        map[string]map[int][]byte
+	hub, storage, cas *httptest.Server
+	mutex             sync.Mutex
+	parts             map[string]map[int][]byte
 	// Files is main's content, and Head its commit.
 	Files map[string]remoteFile
 	Head  string
@@ -73,6 +82,14 @@ type fakeUploadHub struct {
 	Committed []commitLine
 	// StorageAuthorization records each storage request's Authorization.
 	StorageAuthorization []string
+	// xorbs holds each xorb uploaded to the CAS, as its chunks, by hash;
+	// Shards counts shard uploads, and CASAuthorization records each CAS
+	// request's Authorization.
+	xorbs            map[string][][]byte
+	Shards           int
+	CASAuthorization []string
+	// Compressed counts the chunks uploaded compressed.
+	Compressed int
 }
 
 func startFakeUploadHub(t *testing.T, fake *fakeUploadHub) *fakeUploadHub {
@@ -85,7 +102,10 @@ func startFakeUploadHub(t *testing.T, fake *fakeUploadHub) *fakeUploadHub {
 			fake.Files[path] = remoteFile{Content: content}
 		}
 	}
+	fake.xorbs = map[string][][]byte{}
 	fake.storage = httptest.NewTLSServer(http.HandlerFunc(fake.serveStorage))
+	fake.cas = httptest.NewTLSServer(http.HandlerFunc(fake.serveCAS))
+	t.Cleanup(fake.cas.Close)
 	fake.hub = httptest.NewTLSServer(http.HandlerFunc(fake.serveHub))
 	t.Cleanup(fake.hub.Close)
 	t.Cleanup(fake.storage.Close)
@@ -212,6 +232,12 @@ func (f *fakeUploadHub) serveHub(writer http.ResponseWriter, request *http.Reque
 		if _, ok := f.Uploaded[payload.OID]; !ok {
 			http.Error(writer, "not uploaded", http.StatusNotFound)
 		}
+	case path == "/api/models/my-org/model/xet-write-token/main" && f.Xet:
+		json.NewEncoder(writer).Encode(map[string]any{
+			"accessToken": "xet_write",
+			"exp":         time.Now().Add(time.Hour).Unix(),
+			"casUrl":      f.cas.URL,
+		})
 	case path == "/api/models/my-org/model/commit/main":
 		f.serveCommit(writer, request)
 	default:
@@ -689,4 +715,145 @@ func readTestFile(t *testing.T, dir, path string) string {
 		t.Fatal(err)
 	}
 	return string(content)
+}
+
+// serveCAS stands in for Xet storage: it keeps each xorb's chunks, and
+// for each file a shard registers, rebuilds it from them and records it
+// under the SHA-256 the shard gives, as the Hub then knows it for LFS
+// pointers. Global deduplication finds nothing.
+func (f *fakeUploadHub) serveCAS(writer http.ResponseWriter, request *http.Request) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.CASAuthorization = append(f.CASAuthorization, request.Header.Get("Authorization"))
+	if request.Header.Get("Authorization") != "Bearer xet_write" {
+		writer.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	body, _ := io.ReadAll(request.Body)
+
+	switch path := request.URL.Path; {
+	case strings.HasPrefix(path, "/v1/xorbs/default/") && request.Method == http.MethodPost:
+		var chunks [][]byte
+		for len(body) >= 8 {
+			stored := int(body[1]) | int(body[2])<<8 | int(body[3])<<16
+			chunks = append(chunks, decodeXetChunk(body[4], body[8:8+stored]))
+			if body[4] != 0 {
+				f.Compressed++
+			}
+			body = body[8+stored:]
+		}
+		f.xorbs[strings.TrimPrefix(path, "/v1/xorbs/default/")] = chunks
+		json.NewEncoder(writer).Encode(map[string]bool{"was_inserted": true})
+	case path == "/v1/shards" && request.Method == http.MethodPost:
+		f.Shards++
+		for sum, content := range f.shardFiles(body) {
+			f.Uploaded[sum] = content
+		}
+		json.NewEncoder(writer).Encode(map[string]int{"result": 1})
+	default:
+		http.NotFound(writer, request)
+	}
+}
+
+// shardFiles rebuilds the files a shard registers, by SHA-256 in hex, reading
+// its file section as shard.md lays it out: per file a header, its terms,
+// a verification entry per term, then its SHA-256, each 48 bytes.
+func (f *fakeUploadHub) shardFiles(shard []byte) map[string][]byte {
+	files := map[string][]byte{}
+	entries := shard[48:]
+	for len(entries) >= 48 && entries[0] != 0xff {
+		count := int(binary.LittleEndian.Uint32(entries[36:]))
+		terms := entries[48 : 48+48*count]
+		sum := entries[48+96*count : 48+96*count+32]
+		var content []byte
+		for term := range slices.Chunk(terms, 48) {
+			xorb := xet.Hash(term[:32]).String()
+			start, end := binary.LittleEndian.Uint32(term[40:]), binary.LittleEndian.Uint32(term[44:])
+			for _, chunk := range f.xorbs[xorb][start:end] {
+				content = append(content, chunk...)
+			}
+		}
+		// Xet holds the SHA-256 with each 8-byte word reversed, as it does
+		// its own hashes.
+		files[xet.Hash(sum).String()] = content
+		entries = entries[48+96*count+48:]
+	}
+	return files
+}
+
+func TestPushThroughXet(t *testing.T) {
+	fake := startFakeUploadHub(t, &fakeUploadHub{
+		Token:  "hf_write",
+		Xet:    true,
+		Ignore: map[string]bool{"notes.tmp": true},
+	})
+	input := pushInput(t)
+	// Big enough for several chunks, and compressible, so they're stored
+	// compressed.
+	writeFiles(t, input, map[string]string{"large.safetensors": strings.Repeat("compressible weights ", 50000)})
+
+	if _, err := Push(context.Background(), fake.client("hf_write"), testRef(), input, fake.remote(), discardLogger()); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	fake.requireMirrors(t, input, "notes.tmp")
+	if len(fake.xorbs) == 0 || fake.Shards == 0 {
+		t.Errorf("uploaded %d xorbs and %d shards, want the LFS files through Xet", len(fake.xorbs), fake.Shards)
+	}
+	if fake.Compressed == 0 {
+		t.Error("no chunk was uploaded compressed")
+	}
+	if len(fake.StorageAuthorization) != 0 {
+		t.Errorf("made %d LFS storage requests, want none", len(fake.StorageAuthorization))
+	}
+	for _, authorization := range fake.CASAuthorization {
+		if authorization != "Bearer xet_write" {
+			t.Errorf("CAS saw Authorization %q, want only the Xet token", authorization)
+		}
+	}
+}
+
+func TestPushThroughXetSkipsObjectsTheHubHas(t *testing.T) {
+	input := pushInput(t)
+	fake := startFakeUploadHub(t, &fakeUploadHub{
+		Token:  "hf_write",
+		Xet:    true,
+		Ignore: map[string]bool{"notes.tmp": true},
+		Stored: map[string]bool{
+			sha256Hex(readTestFile(t, input, "model.safetensors")): true,
+			sha256Hex(readTestFile(t, input, "onnx/model.bin")):    true,
+		},
+	})
+
+	if _, err := Push(context.Background(), fake.client("hf_write"), testRef(), input, fake.remote(), discardLogger()); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if len(fake.xorbs) != 0 || fake.Shards != 0 {
+		t.Errorf("uploaded %d xorbs and %d shards, want none: the Hub has every LFS file", len(fake.xorbs), fake.Shards)
+	}
+}
+
+// decodeXetChunk decompresses a chunk stored with scheme (see the Xet
+// spec's xorb.md): as is, LZ4, or LZ4 of its bytes grouped by their
+// position in each 4.
+func decodeXetChunk(scheme byte, stored []byte) []byte {
+	if scheme == 0 {
+		return stored
+	}
+	data, _ := io.ReadAll(lz4.NewReader(bytes.NewReader(stored)))
+	if scheme == 1 {
+		return data
+	}
+	ungrouped := make([]byte, len(data))
+	start := 0
+	for group := range 4 {
+		size := len(data) / 4
+		if group < len(data)%4 {
+			size++
+		}
+		for offset, value := range data[start : start+size] {
+			ungrouped[group+4*offset] = value
+		}
+		start += size
+	}
+	return ungrouped
 }
