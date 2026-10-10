@@ -4,7 +4,7 @@
 // plugins/contracts/sbom/v1/CONTRACT.md:
 //
 //	bomify-plugin-huggingface component pull --purl '<component purl>' --output <dir>
-//	bomify-plugin-huggingface component push --purl '<component purl>' --input <dir> --remote <hub>/<namespace>
+//	bomify-plugin-huggingface component push --purl '<component purl>' --input <dir> --remote https://<hub>/<namespace>
 //	bomify-plugin-huggingface sbom generate --config <options file>
 //
 // It handles pkg:huggingface/<namespace>/<name>@<commit>, the package-url

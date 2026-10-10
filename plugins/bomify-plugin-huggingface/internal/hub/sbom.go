@@ -170,7 +170,7 @@ func modelComponent(ref Ref, endpoint string, info modelInfo, treeHash string, f
 	if ref.Endpoint != "" {
 		qualifiers = packageurl.QualifiersFromMap(map[string]string{"repository_url": ref.Endpoint})
 	}
-	purl := packageurl.NewPackageURL(PurlType, ref.Namespace, ref.Name, ref.Revision, qualifiers, "").ToString()
+	purl := packageurl.NewPackageURL(packageurl.TypeHuggingface, ref.Namespace, ref.Name, ref.Revision, qualifiers, "").ToString()
 	if _, err := Resolve(purl); err != nil {
 		return cdx.Component{}, err
 	}

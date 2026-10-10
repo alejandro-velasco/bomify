@@ -11,11 +11,11 @@ import (
 	"github.com/package-url/packageurl-go"
 )
 
-// PurlType is the package-url type this plugin handles.
-const PurlType = "huggingface"
-
 // DefaultHost is the hub a purl without a repository_url qualifier names.
 const DefaultHost = "huggingface.co"
+
+// DefaultEndpoint is DefaultHost's base URL, the hub used when none is given.
+const DefaultEndpoint = "https://" + DefaultHost
 
 // commitHash matches a full Git commit hash, the only revision a purl may
 // pin: a branch or tag can move, so a pull of it isn't reproducible.
@@ -43,11 +43,11 @@ func Resolve(purlString string) (Ref, error) {
 	if err != nil {
 		return Ref{}, fmt.Errorf("parse purl %q: %w", purlString, err)
 	}
-	if purl.Type != PurlType {
-		return Ref{}, fmt.Errorf("purl %q isn't a %s purl", purlString, PurlType)
+	if purl.Type != packageurl.TypeHuggingface {
+		return Ref{}, fmt.Errorf("purl %q isn't a %s purl", purlString, packageurl.TypeHuggingface)
 	}
 	if purl.Namespace == "" || strings.Contains(purl.Namespace, "/") || purl.Name == "" {
-		return Ref{}, fmt.Errorf("purl %q isn't pkg:%s/<namespace>/<name>@<commit>", purlString, PurlType)
+		return Ref{}, fmt.Errorf("purl %q isn't pkg:%s/<namespace>/<name>@<commit>", purlString, packageurl.TypeHuggingface)
 	}
 	if purl.Subpath != "" {
 		return Ref{}, fmt.Errorf("purl %q has a subpath, but a pull is always the whole repository", purlString)
@@ -93,27 +93,26 @@ func (r Ref) RepoID() string {
 	return r.Namespace + "/" + r.Name
 }
 
-// Remote returns where r comes from: the hub's host (and path, if its
-// repository_url has one) and r's namespace, e.g.
-// "huggingface.co/meta-llama", in the shape push's --remote takes.
+// Remote returns where r comes from: the hub's URL (its repository_url,
+// else DefaultEndpoint) and r's namespace, e.g.
+// "https://huggingface.co/meta-llama", in the shape push's --remote takes.
 func (r Ref) Remote() string {
-	host := DefaultHost
-	if r.Endpoint != "" {
-		host = strings.TrimPrefix(r.Endpoint, "https://")
+	endpoint := r.Endpoint
+	if endpoint == "" {
+		endpoint = DefaultEndpoint
 	}
-	return host + "/" + r.Namespace
+	return endpoint + "/" + r.Namespace
 }
 
-// ParseRemote splits push's --remote, "[https://]<host>[/<path>]/<namespace>",
+// ParseRemote splits push's --remote, "https://<host>[/<path>]/<namespace>",
 // into the hub's base URL and the namespace to upload into.
 func ParseRemote(remote string) (endpoint, namespace string, err error) {
-	trimmed := strings.TrimSuffix(strings.TrimPrefix(remote, "https://"), "/")
-	if strings.Contains(trimmed, "://") {
-		return "", "", fmt.Errorf("--remote %q isn't an https:// hub address", remote)
+	trimmed := strings.TrimSuffix(remote, "/")
+	if slash := strings.LastIndex(trimmed, "/"); slash >= 0 {
+		endpoint, namespace = trimmed[:slash], trimmed[slash+1:]
 	}
-	slash := strings.LastIndex(trimmed, "/")
-	if slash <= 0 || slash == len(trimmed)-1 {
-		return "", "", fmt.Errorf("--remote %q isn't <hub host>/<namespace>, e.g. %s/my-org", remote, DefaultHost)
+	if _, err := endpointOf(endpoint); err != nil || endpoint == "" || namespace == "" {
+		return "", "", fmt.Errorf("--remote %q isn't <hub URL>/<namespace>, e.g. %s/my-org", remote, DefaultEndpoint)
 	}
-	return "https://" + trimmed[:slash], trimmed[slash+1:], nil
+	return endpoint, namespace, nil
 }

@@ -92,12 +92,12 @@ func CheckPull(ctx context.Context, hub Client, ref Ref) (*plugin.Result, error)
 // the pulled model. Its commit hash differs from ref's: the files are the
 // same, but the commits are new.
 func Push(ctx context.Context, hub Client, ref Ref, input, remote string, logger *slog.Logger) (*plugin.Result, error) {
-	_, namespace, err := ParseRemote(remote)
+	endpoint, namespace, err := ParseRemote(remote)
 	if err != nil {
 		return nil, err
 	}
 	repoID := namespace + "/" + ref.Name
-	published := strings.TrimSuffix(strings.TrimPrefix(remote, "https://"), "/") + "/" + ref.Name
+	published := endpoint + "/" + repoID
 
 	files, err := scanLocalFiles(input)
 	if err != nil {
@@ -176,7 +176,7 @@ func Push(ctx context.Context, hub Client, ref Ref, input, remote string, logger
 // CheckPush confirms there's a valid token for remote's hub. Write access
 // to the namespace can't be checked without writing, so it isn't.
 func CheckPush(ctx context.Context, hub Client, ref Ref, remote string) (*plugin.Result, error) {
-	_, namespace, err := ParseRemote(remote)
+	endpoint, namespace, err := ParseRemote(remote)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func CheckPush(ctx context.Context, hub Client, ref Ref, remote string) (*plugin
 	}
 
 	result := plugin.Result{
-		OutputPath: strings.TrimSuffix(strings.TrimPrefix(remote, "https://"), "/") + "/" + ref.Name,
+		OutputPath: endpoint + "/" + namespace + "/" + ref.Name,
 		Message:    fmt.Sprintf("authenticated as %s; write access to %s isn't checked", name, namespace),
 	}
 	return &result, nil

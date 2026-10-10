@@ -12,19 +12,45 @@ import (
 	"github.com/alejandro-velasco/bomify/pkg/auth"
 )
 
+// Environment variables hf itself reads too.
+const (
+	// tokenEnv holds a hub access token.
+	tokenEnv = "HF_TOKEN"
+	// endpointEnv holds the hub's address.
+	endpointEnv = "HF_ENDPOINT"
+	// tokenPathEnv holds the path of the token "hf auth login" stored.
+	tokenPathEnv = "HF_TOKEN_PATH"
+	// homeEnv holds hf's home directory, which holds that token.
+	homeEnv = "HF_HOME"
+	// cacheHomeEnv holds the user's cache directory, hf's home's parent.
+	cacheHomeEnv = "XDG_CACHE_HOME"
+)
+
 // lookupCredentials is pkg/auth's Get, replaced in tests.
 var lookupCredentials = auth.Get
 
 // resolveEndpoint returns the hub to use: endpoint, else $HF_ENDPOINT,
-// else huggingface.co.
-func resolveEndpoint(endpoint string) string {
+// else huggingface.co. It must be an http or https URL with a host.
+func resolveEndpoint(endpoint string) (*url.URL, error) {
 	if endpoint == "" {
-		endpoint = os.Getenv("HF_ENDPOINT")
+		endpoint = os.Getenv(endpointEnv)
 	}
 	if endpoint == "" {
-		endpoint = "https://" + DefaultHost
+		endpoint = DefaultEndpoint
 	}
-	return strings.TrimSuffix(endpoint, "/")
+
+	hub, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse hub address %q: %w", endpoint, err)
+	}
+	if hub.Scheme != "https" && hub.Scheme != "http" {
+		return nil, fmt.Errorf("hub address %q isn't an http or https URL, e.g. %s", endpoint, DefaultEndpoint)
+	}
+	if hub.Host == "" {
+		return nil, fmt.Errorf("hub address %q has no host, e.g. %s", endpoint, DefaultEndpoint)
+	}
+	hub.Path = strings.TrimSuffix(hub.Path, "/")
+	return hub, nil
 }
 
 // Token returns the access token for the hub at endpoint (see
@@ -32,20 +58,20 @@ func resolveEndpoint(endpoint string) string {
 // "bomify login <hub host> --verify=false" stored for the hub's host,
 // else the one "hf auth login" stored.
 func Token(endpoint string, logger *slog.Logger) (string, error) {
-	if token := os.Getenv("HF_TOKEN"); token != "" {
+	if token := os.Getenv(tokenEnv); token != "" {
 		return token, nil
 	}
 
-	parsed, err := url.Parse(resolveEndpoint(endpoint))
+	hub, err := resolveEndpoint(endpoint)
 	if err != nil {
-		return "", fmt.Errorf("parse hub address %q: %w", endpoint, err)
+		return "", err
 	}
-	_, token, err := lookupCredentials(parsed.Host)
+	_, token, err := lookupCredentials(hub.Host)
 	if err != nil {
-		return "", fmt.Errorf("look up credentials for %s: %w", parsed.Host, err)
+		return "", fmt.Errorf("look up credentials for %s: %w", hub.Host, err)
 	}
 	if token != "" {
-		logger.Info("using the token bomify login stored", "host", parsed.Host)
+		logger.Info("using the token bomify login stored", "host", hub.Host)
 		return token, nil
 	}
 
@@ -56,21 +82,17 @@ func Token(endpoint string, logger *slog.Logger) (string, error) {
 // looks for it: $HF_TOKEN_PATH, else "token" under $HF_HOME, else under
 // $XDG_CACHE_HOME/huggingface or ~/.cache/huggingface.
 func hfLoginToken(logger *slog.Logger) (string, error) {
-	path := os.Getenv("HF_TOKEN_PATH")
-	if path == "" {
-		home := os.Getenv("HF_HOME")
-		if home == "" {
-			cache := os.Getenv("XDG_CACHE_HOME")
-			if cache == "" {
-				userHome, err := os.UserHomeDir()
-				if err != nil {
-					return "", nil
-				}
-				cache = filepath.Join(userHome, ".cache")
-			}
-			home = filepath.Join(cache, "huggingface")
-		}
+	var path string
+	if tokenPath := os.Getenv(tokenPathEnv); tokenPath != "" {
+		path = tokenPath
+	} else if home := os.Getenv(homeEnv); home != "" {
 		path = filepath.Join(home, "token")
+	} else if cache := os.Getenv(cacheHomeEnv); cache != "" {
+		path = filepath.Join(cache, "huggingface", "token")
+	} else if userHome, err := os.UserHomeDir(); err == nil {
+		path = filepath.Join(userHome, ".cache", "huggingface", "token")
+	} else {
+		return "", nil
 	}
 
 	data, err := os.ReadFile(path)

@@ -75,7 +75,7 @@ func TestCheckPull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CheckPull: %v", err)
 	}
-	if want := "huggingface.co/org/model@" + testCommit; result.OutputPath != want || result.Hash.Value != "" {
+	if want := DefaultEndpoint + "/org/model@" + testCommit; result.OutputPath != want || result.Hash.Value != "" {
 		t.Errorf("CheckPull = %+v, want %s and no hash", result, want)
 	}
 }
