@@ -11,6 +11,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openvex/go-vex v0.2.9
 	github.com/package-url/packageurl-go v0.1.7
+	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/spf13/cobra v1.10.2
 	github.com/vbauerster/mpb/v8 v8.16.1
 	golang.org/x/sync v0.23.0
@@ -18,6 +19,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 	helm.sh/helm/v4 v4.3.0
 	k8s.io/api v0.37.1
+	lukechampine.com/blake3 v1.4.1
 	oras.land/oras-go/v2 v2.6.2
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -81,6 +83,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/lib/pq v1.12.3 // indirect

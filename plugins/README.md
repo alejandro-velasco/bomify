@@ -21,7 +21,7 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
-| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | the [Hub API](https://huggingface.co/.well-known/openapi.md) and [Git LFS](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Component, SBOM generation |
+| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | the [Hub API](https://huggingface.co/.well-known/openapi.md), [Xet](https://huggingface.co/docs/xet), and [Git LFS](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Component, SBOM generation |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
@@ -229,7 +229,12 @@ otherwise.
   doesn't already hold go up, so pushing again after a failure resumes
   it, and an unchanged model commits nothing. They go up in commits of
   at most 256 files and 100 MB of inline content, as the Hub's own
-  client does, and large files through LFS, in parts when the Hub asks.
+  client does. Large files go through
+  [Xet storage](https://huggingface.co/docs/xet), as `hf` uploads them:
+  chunks the Hub already holds, from this model or any other, are
+  mostly not sent again, and the rest are compressed with LZ4.
+  On a hub without Xet, they go through Git LFS, in parts when the hub
+  asks.
   `push` refuses a repository holding files the model doesn't, other
   than the `.gitattributes` the Hub creates, and reports the last
   commit's hash: the commits are new. `push --check` only confirms the
