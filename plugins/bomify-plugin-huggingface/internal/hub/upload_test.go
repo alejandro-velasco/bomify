@@ -443,7 +443,7 @@ func TestPush(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Push: %v", err)
 			}
-			if want := strings.TrimPrefix(fake.remote(), "https://") + "/model@" + fake.Head; result.OutputPath != want {
+			if want := fake.remote() + "/model@" + fake.Head; result.OutputPath != want {
 				t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
 			}
 			fake.requireMirrors(t, input, "notes.tmp")

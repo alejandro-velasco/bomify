@@ -68,6 +68,10 @@ type Client struct {
 // resolveEndpoint), authenticated with Token: a purl's for pull, push's
 // --remote's for push.
 func NewClient(endpoint string, logger *slog.Logger) (Client, error) {
+	hub, err := resolveEndpoint(endpoint)
+	if err != nil {
+		return Client{}, err
+	}
 	token, err := Token(endpoint, logger)
 	if err != nil {
 		return Client{}, err
@@ -75,7 +79,7 @@ func NewClient(endpoint string, logger *slog.Logger) (Client, error) {
 
 	client := Client{
 		HTTP:     http.DefaultClient,
-		Endpoint: resolveEndpoint(endpoint),
+		Endpoint: hub.String(),
 		Token:    token,
 		Logger:   logger,
 	}

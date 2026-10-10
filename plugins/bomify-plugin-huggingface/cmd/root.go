@@ -19,7 +19,7 @@ func NewRootCmd() *cobra.Command {
 		Pull:       "Download the model repository at the purl's commit from the Hub",
 		Push:       "Upload a pulled model repository to --remote as one commit",
 		Remote:     "Report the hub and namespace this component's purl names",
-		RemoteFlag: "the hub and namespace to upload into, e.g. huggingface.co/my-org; the repository keeps the purl's name, and is created private if it doesn't exist",
+		RemoteFlag: "the hub and namespace to upload into, e.g. https://huggingface.co/my-org; the repository keeps the purl's name, and is created private if it doesn't exist",
 	}
 	return plugin.NewRootCommand("huggingface", "bomify plugin for Hugging Face Hub models",
 		plugin.ComponentCommand(component{}, help),

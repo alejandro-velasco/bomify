@@ -223,8 +223,8 @@ otherwise.
 
   (After `hf download --local-dir model`, remove `model/.cache` first:
   it's `hf`'s download metadata.)
-- **Push** uploads the files to `--remote`, `<hub host>/<namespace>`
-  (e.g. `huggingface.co/my-org`), to the main branch of a repository of
+- **Push** uploads the files to `--remote`, `<hub URL>/<namespace>`
+  (e.g. `https://huggingface.co/my-org`), to the main branch of a repository of
   the same name, created private if it doesn't exist. Only files main
   doesn't already hold go up, so pushing again after a failure resumes
   it, and an unchanged model commits nothing. They go up in commits of
@@ -238,8 +238,8 @@ otherwise.
   `429`, or `5xx` up to five times, backing off from 1 to 8 seconds, or
   as long as `Retry-After` asks. A commit carries its parent commit, so a
   retried one that already went through is noticed, not repeated.
-- **Remote** is `huggingface.co/<namespace>`, or the `repository_url`
-  hub's address and the namespace.
+- **Remote** is `https://huggingface.co/<namespace>`, or the
+  `repository_url` hub's URL and the namespace.
 - **SBOM generation** describes a model (`model: <namespace>/<name>`, an
   optional `revision`, `main` by default, and `repository-url`) as one
   `machine-learning-model` component, pinned to the commit the revision

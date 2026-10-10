@@ -50,8 +50,8 @@ func TestRemote(t *testing.T) {
 		purl string
 		want string
 	}{
-		{"pkg:huggingface/meta-llama/Llama-3.1-8B@" + testCommit, "huggingface.co/meta-llama"},
-		{"pkg:huggingface/org/model@" + testCommit + "?repository_url=https://hub.example.com/mirror", "hub.example.com/mirror/org"},
+		{"pkg:huggingface/meta-llama/Llama-3.1-8B@" + testCommit, "https://huggingface.co/meta-llama"},
+		{"pkg:huggingface/org/model@" + testCommit + "?repository_url=https://hub.example.com/mirror", "https://hub.example.com/mirror/org"},
 	} {
 		ref, err := Resolve(tc.purl)
 		if err != nil {
@@ -67,7 +67,7 @@ func TestParseRemote(t *testing.T) {
 	for _, tc := range []struct {
 		remote, endpoint, namespace string
 	}{
-		{"huggingface.co/my-org", "https://huggingface.co", "my-org"},
+		{"https://huggingface.co/my-org", "https://huggingface.co", "my-org"},
 		{"https://hub.example.com/mirror/my-org/", "https://hub.example.com/mirror", "my-org"},
 	} {
 		endpoint, namespace, err := ParseRemote(tc.remote)
@@ -76,7 +76,7 @@ func TestParseRemote(t *testing.T) {
 		}
 	}
 
-	for _, remote := range []string{"my-org", "huggingface.co/", "/my-org", "http://huggingface.co/my-org"} {
+	for _, remote := range []string{"my-org", "huggingface.co/my-org", "https://huggingface.co/", "https://my-org", "/my-org", "http://huggingface.co/my-org"} {
 		if _, _, err := ParseRemote(remote); err == nil {
 			t.Errorf("ParseRemote(%q) succeeded", remote)
 		}
