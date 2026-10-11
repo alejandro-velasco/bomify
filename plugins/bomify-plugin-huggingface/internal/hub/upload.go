@@ -21,8 +21,9 @@ import (
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-huggingface/internal/xet"
 )
 
-// pushBranch is the branch push commits to.
-const pushBranch = "main"
+// defaultBranch is the branch a Hub repository starts with: push commits
+// to it, and sbom generate describes it unless given a revision.
+const defaultBranch = "main"
 
 // batchSize is how many files one preupload or LFS batch request covers,
 // as huggingface_hub sends them.
@@ -189,7 +190,7 @@ func (c Client) preupload(ctx context.Context, repoID string, files []localFile)
 		}
 		request := call{
 			Method: http.MethodPost,
-			URL:    fmt.Sprintf("%s/api/models/%s/preupload/%s", c.Endpoint, repoID, pushBranch),
+			URL:    fmt.Sprintf("%s/api/models/%s/preupload/%s", c.Endpoint, repoID, defaultBranch),
 		}
 		var response preuploadResponse
 		if err := c.sendJSON(ctx, request, map[string]any{"files": requested}, &response); err != nil {
@@ -344,7 +345,7 @@ func (c Client) lfsBatch(ctx context.Context, repoID string, files []localFile) 
 		"transfers": []string{"basic", "multipart"},
 		"objects":   objects,
 		"hash_algo": "sha256",
-		"ref":       map[string]string{"name": pushBranch},
+		"ref":       map[string]string{"name": defaultBranch},
 	}
 	request := call{
 		Method: http.MethodPost,
@@ -475,10 +476,10 @@ var (
 	commitMaxInlineBytes int64 = 100 << 20
 )
 
-// remoteState returns the commit repoID's pushBranch is at, and its
+// remoteState returns the commit repoID's defaultBranch is at, and its
 // files, or none for an empty repository.
 func (c Client) remoteState(ctx context.Context, namespace, name string) (string, []File, error) {
-	info, err := c.ModelInfo(ctx, namespace+"/"+name, pushBranch)
+	info, err := c.modelInfo(ctx, namespace+"/"+name, defaultBranch)
 	var statusErr *StatusError
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
 		return "", nil, nil
@@ -532,10 +533,10 @@ func commitBatches(files []localFile) [][]localFile {
 	return batches
 }
 
-// commitBatch commits files on top of parent, the commit pushBranch was
+// commitBatch commits files on top of parent, the commit defaultBranch was
 // at, returning the new commit's hash and URL. If the commit fails, for
 // instance because a retry found the first attempt had gone through and
-// pushBranch had moved, it checks whether pushBranch now holds files, as
+// defaultBranch had moved, it checks whether defaultBranch now holds files, as
 // that attempt would have left it, and if so carries on from there.
 func (c Client) commitBatch(ctx context.Context, namespace, name, dir string, files []localFile, message, parent string) (string, string, error) {
 	repoID := namespace + "/" + name
@@ -558,12 +559,12 @@ func (c Client) commitBatch(ctx context.Context, namespace, name, dir string, fi
 		}
 	}
 	c.Logger.Warn("the commit went through after all", "commit", head, "error", err)
-	return head, fmt.Sprintf("%s/%s/commit/%s", c.Endpoint, repoID, head), nil
+	return head, repositoryPage(c.Endpoint, repoID) + "/commit/" + head, nil
 }
 
-// commit commits files to repoID's pushBranch as one commit on top of
+// commit commits files to repoID's defaultBranch as one commit on top of
 // parent (unless it's empty, for an empty repository), so the Hub
-// refuses it if pushBranch has moved: LFS files by hash, after
+// refuses it if defaultBranch has moved: LFS files by hash, after
 // uploadLFS; the rest inline. It returns the commit's hash and URL.
 func (c Client) commit(ctx context.Context, repoID, dir string, files []localFile, message, parent string) (string, string, error) {
 	var body bytes.Buffer
@@ -614,7 +615,7 @@ func (c Client) commit(ctx context.Context, repoID, dir string, files []localFil
 
 	request := call{
 		Method: http.MethodPost,
-		URL:    fmt.Sprintf("%s/api/models/%s/commit/%s", c.Endpoint, repoID, pushBranch),
+		URL:    fmt.Sprintf("%s/api/models/%s/commit/%s", c.Endpoint, repoID, defaultBranch),
 		Body:   bytes.NewReader(body.Bytes()),
 		Size:   int64(body.Len()),
 		Header: http.Header{"Content-Type": {"application/x-ndjson"}},

@@ -25,7 +25,7 @@ const tokenMargin = 30 * time.Second
 // maxDedupeAnswer bounds a global deduplication answer, a shard.
 const maxDedupeAnswer = 64 << 20
 
-// casClient is the Xet storage server for a repository's pushBranch,
+// casClient is the Xet storage server for a repository's defaultBranch,
 // implementing xet.CAS with a write token from the hub, renewed as it
 // expires. Its requests are sent as the Client's are, retried the same
 // way, but with that token rather than the hub's.
@@ -61,7 +61,7 @@ func (c *casClient) connection(ctx context.Context) (string, string, error) {
 		return c.url, c.token, nil
 	}
 
-	target := fmt.Sprintf("%s/api/models/%s/xet-write-token/%s", c.hub.Endpoint, c.repoID, pushBranch)
+	target := fmt.Sprintf("%s/api/models/%s/xet-write-token/%s", c.hub.Endpoint, c.repoID, defaultBranch)
 	response, err := c.hub.get(ctx, http.MethodGet, target)
 	var statusErr *StatusError
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {

@@ -93,6 +93,12 @@ func (r Ref) RepoID() string {
 	return r.Namespace + "/" + r.Name
 }
 
+// repositoryPage is the web page of repoID, "<namespace>/<name>", on the
+// hub at endpoint.
+func repositoryPage(endpoint, repoID string) string {
+	return endpoint + "/" + repoID
+}
+
 // Remote returns where r comes from: the hub's URL (its repository_url,
 // else DefaultEndpoint) and r's namespace, e.g.
 // "https://huggingface.co/meta-llama", in the shape push's --remote takes.

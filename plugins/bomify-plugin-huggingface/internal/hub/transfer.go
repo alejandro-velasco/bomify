@@ -97,7 +97,7 @@ func Push(ctx context.Context, hub Client, ref Ref, input, remote string, logger
 		return nil, err
 	}
 	repoID := namespace + "/" + ref.Name
-	published := endpoint + "/" + repoID
+	published := repositoryPage(endpoint, repoID)
 
 	files, err := scanLocalFiles(input)
 	if err != nil {
@@ -186,7 +186,7 @@ func CheckPush(ctx context.Context, hub Client, ref Ref, remote string) (*plugin
 	}
 
 	result := plugin.Result{
-		OutputPath: endpoint + "/" + namespace + "/" + ref.Name,
+		OutputPath: repositoryPage(endpoint, namespace+"/"+ref.Name),
 		Message:    fmt.Sprintf("authenticated as %s; write access to %s isn't checked", name, namespace),
 	}
 	return &result, nil

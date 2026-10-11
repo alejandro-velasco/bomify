@@ -93,15 +93,9 @@ func (c Client) ListFiles(ctx context.Context, ref Ref) ([]File, error) {
 	next := fmt.Sprintf("%s/api/models/%s/tree/%s?recursive=true", c.Endpoint, ref.RepoID(), ref.Revision)
 	var files []File
 	for next != "" {
-		response, err := c.get(ctx, http.MethodGet, next)
+		entries, following, err := c.treePage(ctx, next)
 		if err != nil {
-			return nil, err
-		}
-		var entries []treeEntry
-		err = json.NewDecoder(response.Body).Decode(&entries)
-		response.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("parse %s's file list: %w", ref.RepoID(), err)
+			return nil, fmt.Errorf("list %s's files: %w", ref.RepoID(), err)
 		}
 
 		for _, entry := range entries {
@@ -121,17 +115,33 @@ func (c Client) ListFiles(ctx context.Context, ref Ref) ([]File, error) {
 			}
 			files = append(files, file)
 		}
-
-		next = ""
-		if match := nextLink.FindStringSubmatch(response.Header.Get("Link")); match != nil {
-			next = match[1]
-			// The token goes with every request, so only ever to the hub.
-			if !strings.HasPrefix(next, c.Endpoint+"/") {
-				return nil, fmt.Errorf("%s's file list continues at %s, outside %s", ref.RepoID(), next, c.Endpoint)
-			}
-		}
+		next = following
 	}
 	return files, nil
+}
+
+// treePage returns one page of the Hub's tree listing at target, and the
+// URL of the next, or "" after the last.
+func (c Client) treePage(ctx context.Context, target string) ([]treeEntry, string, error) {
+	response, err := c.get(ctx, http.MethodGet, target)
+	if err != nil {
+		return nil, "", err
+	}
+	defer response.Body.Close()
+
+	var entries []treeEntry
+	if err := json.NewDecoder(response.Body).Decode(&entries); err != nil {
+		return nil, "", fmt.Errorf("parse the listing: %w", err)
+	}
+	next := ""
+	if match := nextLink.FindStringSubmatch(response.Header.Get("Link")); match != nil {
+		next = match[1]
+		// The token goes with every request, so only ever to the hub.
+		if !strings.HasPrefix(next, c.Endpoint+"/") {
+			return nil, "", fmt.Errorf("the listing continues at %s, outside %s", next, c.Endpoint)
+		}
+	}
+	return entries, next, nil
 }
 
 // CheckReadable confirms file can be downloaded, without downloading it:

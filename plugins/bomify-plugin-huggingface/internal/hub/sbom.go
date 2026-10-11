@@ -54,9 +54,9 @@ func (l *stringList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ModelInfo returns repoID's model info at revision: a branch, tag, or
+// modelInfo returns repoID's model info at revision: a branch, tag, or
 // commit.
-func (c Client) ModelInfo(ctx context.Context, repoID, revision string) (modelInfo, error) {
+func (c Client) modelInfo(ctx context.Context, repoID, revision string) (modelInfo, error) {
 	target := fmt.Sprintf("%s/api/models/%s/revision/%s", c.Endpoint, repoID, url.PathEscape(revision))
 	response, err := c.get(ctx, http.MethodGet, target)
 	if err != nil {
@@ -121,10 +121,10 @@ func Generate(ctx context.Context, hub Client, options GenerateOptions, logger *
 	}
 	revision := options.Revision
 	if revision == "" {
-		revision = "main"
+		revision = defaultBranch
 	}
 
-	info, err := hub.ModelInfo(ctx, options.RepoID, revision)
+	info, err := hub.modelInfo(ctx, options.RepoID, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -175,15 +175,15 @@ func modelComponent(ref Ref, endpoint string, info modelInfo, treeHash string, f
 		return cdx.Component{}, err
 	}
 
-	repositoryPage := endpoint + "/" + ref.RepoID()
+	page := repositoryPage(endpoint, ref.RepoID())
 	references := []cdx.ExternalReference{
-		{Type: cdx.ERTypeWebsite, URL: repositoryPage},
-		{Type: cdx.ERTypeDistribution, URL: repositoryPage + "/tree/" + ref.Revision},
+		{Type: cdx.ERTypeWebsite, URL: page},
+		{Type: cdx.ERTypeDistribution, URL: page + "/tree/" + ref.Revision},
 	}
 	if _, ok := files["README.md"]; ok {
 		modelCard := cdx.ExternalReference{
 			Type: cdx.ERTypeModelCard,
-			URL:  repositoryPage + "/blob/" + ref.Revision + "/README.md",
+			URL:  page + "/blob/" + ref.Revision + "/README.md",
 		}
 		references = append(references, modelCard)
 	}
