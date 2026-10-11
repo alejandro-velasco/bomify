@@ -219,21 +219,29 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
+    /// A config storing credential, "<username>:<secret>", for server, as
+    /// an auths entry does: base64-encoded. Encoded here rather than
+    /// written out, so no secret-looking value is in the source.
+    fn stored(server: &str, credential: &str) -> Config {
+        let auth = base64::engine::general_purpose::STANDARD.encode(credential);
+        config(&format!(
+            r#"{{"auths": {{"{server}": {{"auth": "{auth}"}}}}}}"#
+        ))
+    }
+
     #[test]
     fn reads_plaintext_auths() {
-        // "user:hf_secret"
-        let stored = config(r#"{"auths": {"huggingface.co": {"auth": "dXNlcjpoZl9zZWNyZXQ="}}}"#);
+        let plain = stored("huggingface.co", "user:not-a-token");
         assert_eq!(
-            secret_in(&stored, "huggingface.co").unwrap().as_deref(),
-            Some("hf_secret")
+            secret_in(&plain, "huggingface.co").unwrap().as_deref(),
+            Some("not-a-token")
         );
-        assert_eq!(secret_in(&stored, "hub.example.com").unwrap(), None);
+        assert_eq!(secret_in(&plain, "hub.example.com").unwrap(), None);
 
-        let https =
-            config(r#"{"auths": {"https://huggingface.co": {"auth": "dXNlcjpoZl9zZWNyZXQ="}}}"#);
+        let https = stored("https://huggingface.co", "user:not-a-token");
         assert_eq!(
             secret_in(&https, "huggingface.co").unwrap().as_deref(),
-            Some("hf_secret")
+            Some("not-a-token")
         );
 
         let identity = config(r#"{"auths": {"huggingface.co": {"identitytoken": "hf_identity"}}}"#);
@@ -245,8 +253,7 @@ mod tests {
 
     #[test]
     fn refuses_malformed_auths() {
-        // "no-colon"
-        let stored = config(r#"{"auths": {"huggingface.co": {"auth": "bm8tY29sb24="}}}"#);
-        assert!(secret_in(&stored, "huggingface.co").is_err());
+        let malformed = stored("huggingface.co", "no-colon");
+        assert!(secret_in(&malformed, "huggingface.co").is_err());
     }
 }
