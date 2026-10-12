@@ -86,10 +86,11 @@ first install takes two steps:
       --option certificate-identity=https://github.com/alejandro-velasco/bomify/.github/workflows/release.yml@refs/heads/main \
       --option certificate-oidc-issuer=https://token.actions.githubusercontent.com
 
-    bomify plugin install oci       # container images
-    bomify plugin install helm      # Helm charts, and SBOMs for them
-    bomify plugin install generic   # plain HTTP files
-    bomify plugin install grype     # vulnerability scanning
+    bomify plugin install oci          # container images
+    bomify plugin install helm         # Helm charts, and SBOMs for them
+    bomify plugin install generic      # plain HTTP files
+    bomify plugin install huggingface  # Hugging Face models, and SBOMs for them
+    bomify plugin install grype        # vulnerability scanning
     bomify plugin list
     ```
 
