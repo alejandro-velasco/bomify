@@ -29,7 +29,10 @@ name: Release
 #
 #   release            semantic-release: version, tag, and GitHub release.
 #                      No id-token permission.
-#   sign-plugins       builds, signs (keyless), and pushes the plugin
+#   build-plugins      builds every plugin for every platform (see
+#                      plugins.yml), for sign-plugins to package. No
+#                      id-token permission.
+#   sign-plugins       packages, signs (keyless), and pushes the plugin
 #                      packages and their build provenance. The only job
 #                      with id-token: write.
 #   publish-digests    attaches every plugin package's pinned reference to
@@ -97,8 +100,17 @@ jobs:
             --package=@semantic-release/github@12.0.10 \
             semantic-release
 
-  sign-plugins:
+  build-plugins:
     needs: release
+    if: needs.release.outputs.version != ''
+    uses: ./.github/workflows/plugins.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.workflow_run.head_sha }}
+
+  sign-plugins:
+    needs: [release, build-plugins]
     if: needs.release.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
@@ -128,6 +140,17 @@ jobs:
       # copies into its throwaway data directory.
       - name: Log in to GHCR for bomify
         run: echo "${{ secrets.GITHUB_TOKEN }}" | go run . login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Every plugin's binaries, built by build-plugins, where the Makefile's
+      # plugin-packages takes them from (PREBUILT_PLUGINS_DIR): each
+      # plugins-* artifact holds <kind>/<os>-<arch>/, so they merge into
+      # one tree. This job compiles none of them.
+      - name: Fetch the plugins
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: plugins-*
+          merge-multiple: true
+          path: dist/prebuilt-plugins
 
       - name: Build plugin packages
         run: make plugin-packages VERSION="$VERSION"
@@ -169,6 +192,7 @@ jobs:
     needs: [release, sign-plugins]
     runs-on: ubuntu-latest
     permissions:
+      contents: read # download the release's bomify
       packages: write # push the container image
     env:
       CONTAINER_TOOL: podman
@@ -203,6 +227,19 @@ jobs:
             echo "plugins=ghcr.io/$repo/plugins"
             echo "sigstore=$digest"
           } >> "$GITHUB_OUTPUT"
+
+      # The image takes the bomify this release published (make dist's
+      # static linux/amd64 build), checked against its checksums.txt, into
+      # CONTAINER_BOMIFY_DIR, where make build-container takes it from.
+      - name: Fetch the release's bomify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "v$VERSION" -p "bomify-$VERSION-linux-amd64" -p checksums.txt -D "$RUNNER_TEMP/release"
+          (cd "$RUNNER_TEMP/release" && sha256sum --check --ignore-missing checksums.txt)
+          mkdir -p dist/container
+          mv "$RUNNER_TEMP/release/bomify-$VERSION-linux-amd64" dist/container/bomify
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin

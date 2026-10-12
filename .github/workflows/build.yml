@@ -25,15 +25,52 @@ jobs:
         run: make build
 
       - name: Test
-        run: make test
+        run: make test-go
 
+      # The bomify this job built and tested, static (make build), for
+      # build-container's image: this runner is linux/amd64, the image's
+      # platform.
+      - name: Upload bomify
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bomify-linux-amd64
+          path: bin/bomify
+          if-no-files-found: error
+
+  # Builds every plugin for every platform a release does, so a release
+  # can't be the first to find one that doesn't build.
+  build-plugins:
+    uses: ./.github/workflows/plugins.yml
+    permissions:
+      contents: read
+
+  # The image compiles nothing: it takes the linux/amd64 bomify build
+  # built, and the plugins build-plugins built.
   build-container:
+    needs: [build, build-plugins]
     runs-on: ubuntu-latest
     env:
       CONTAINER_TOOL: podman
     steps:
       - name: Check out code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Where make build-container takes it from (CONTAINER_BOMIFY_DIR).
+      - name: Fetch bomify
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: bomify-linux-amd64
+          path: dist/container
+
+      # Every plugin, whatever its language, into PREBUILT_PLUGINS_DIR,
+      # where make build-container takes them from; the image takes only
+      # its own platform's.
+      - name: Fetch the plugins
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: plugins-*
+          merge-multiple: true
+          path: dist/prebuilt-plugins
 
       - name: Build container
         run: make build-container

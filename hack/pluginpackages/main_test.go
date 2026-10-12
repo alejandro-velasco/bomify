@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -103,20 +105,90 @@ func TestWriteSBOMIsWhatBomifyBuilds(t *testing.T) {
 	}
 }
 
-// TestContractsOf asks a real plugin, in this module and in its own, for
-// the contract versions it reports.
+// buildPlugin builds the Go plugin in plugins/<name>, its own module, for
+// this machine to path, as a stand-in prebuilt binary.
+func buildPlugin(t *testing.T, name, path string) {
+	t.Helper()
+	dir, err := filepath.Abs(filepath.Join("..", "..", "plugins", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", path, ".")
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", name, err, output)
+	}
+}
+
+// TestBuildPackage packages a plugin from its prebuilt binaries: copied as
+// they are, and its contract versions asked of the one for this machine
+// (bomify-plugin-generic, built as a stand-in).
+func TestBuildPackage(t *testing.T) {
+	host := platform{os: runtime.GOOS, arch: runtime.GOARCH}
+	other := platform{os: "plan9", arch: "386"}
+	if host == other {
+		t.Skip("the stand-in platform is this one")
+	}
+	prebuilt := filepath.Join(t.TempDir(), "standin")
+	hostBinary := filepath.Join(prebuilt, filepath.FromSlash(binaryPath("standin", host)))
+	buildPlugin(t, "bomify-plugin-generic", hostBinary)
+	// Not executable, as a binary downloaded from a CI artifact isn't.
+	if err := os.Chmod(hostBinary, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	otherBinary := filepath.Join(prebuilt, filepath.FromSlash(binaryPath("standin", other)))
+	if err := os.MkdirAll(filepath.Dir(otherBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(otherBinary, []byte("binary for plan9"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(t.TempDir(), "standin")
+	if err := buildPackage("standin", "1.12.0", []platform{host, other}, prebuilt, pkgDir); err != nil {
+		t.Fatalf("buildPackage() error = %v", err)
+	}
+	for _, target := range []platform{host, other} {
+		rel := filepath.FromSlash(binaryPath("standin", target))
+		want, _ := sha256File(filepath.Join(prebuilt, rel))
+		if got, err := sha256File(filepath.Join(pkgDir, rel)); err != nil || got != want {
+			t.Errorf("%s/%s: packaged binary = %s, %v; want the prebuilt one, %s", target.os, target.arch, got, err, want)
+		}
+	}
+	bom, err := sbom.Load(filepath.Join(pkgDir, "sbom.cdx.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range *bom.Components {
+		if offered, ok, err := plugin.OfferedBy(c); err != nil || !ok || offered["component"] != 1 {
+			t.Errorf("%s: contract versions = %v, %v, %v; want the stand-in's", c.PackageURL, offered, ok, err)
+		}
+	}
+
+	// A platform without a prebuilt binary fails, rather than going
+	// unpublished.
+	missing := platform{os: "aix", arch: "ppc64"}
+	if err := buildPackage("standin", "1.12.0", []platform{host, missing}, prebuilt, pkgDir); err == nil {
+		t.Error("buildPackage() succeeded without a binary for every platform")
+	}
+}
+
+// TestContractsOf asks real plugins, one in this module and one in its
+// own, for the contract versions they report.
 func TestContractsOf(t *testing.T) {
-	for dir, want := range map[string]string{
-		filepath.Join("..", "..", "plugins", "bomify-plugin-generic"):  `{"component":1}`,
-		filepath.Join("..", "..", "plugins", "bomify-plugin-sigstore"): `{"signing":1}`,
+	for name, want := range map[string]string{
+		"bomify-plugin-generic":  `{"component":1}`,
+		"bomify-plugin-sigstore": `{"signing":1}`,
 	} {
-		got, err := contractsOf(dir)
+		binary := filepath.Join(t.TempDir(), plugin.ExecutableName(name, runtime.GOOS))
+		buildPlugin(t, name, binary)
+		got, err := contractsOf(binary)
 		if err != nil {
-			t.Errorf("contractsOf(%s): %v", dir, err)
+			t.Errorf("contractsOf(%s): %v", name, err)
 			continue
 		}
 		if got != want {
-			t.Errorf("contractsOf(%s) = %s, want %s", dir, got, want)
+			t.Errorf("contractsOf(%s) = %s, want %s", name, got, want)
 		}
 	}
 }

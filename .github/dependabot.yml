@@ -1,10 +1,12 @@
 version: 2
 updates:
-  # bomify and its plugins (plugins/bomify-plugin-*) all share this one
-  # go.mod, so a single entry covers Go dependency updates for the CLI
-  # and every first-party plugin.
+  # bomify and each of its Go plugins (plugins/bomify-plugin-*/, each its
+  # own module; see plugins/README.md#plugin-languages), grouped into one
+  # update.
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/plugins/*"
     schedule:
       interval: "weekly"
     groups:
@@ -13,3 +15,4 @@ updates:
           - "*"
     labels:
       - "dependencies"
+
