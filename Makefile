@@ -62,7 +62,7 @@ RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/a
 #
 ################################################################################
 
-.PHONY: build build-container container-prebuilt container-bomify container-plugins push-container plugins go-plugins dist prebuilt-plugins prebuilt-go-plugins plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test test-go tidy clean
+.PHONY: build build-container container-prebuilt container-bomify container-plugins push-container plugins go-plugins rust-plugins dist prebuilt-plugins prebuilt-go-plugins prebuilt-rust-plugins plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test test-go test-rust tidy clean
 
 # build builds bomify for this machine, statically (CGO_ENABLED=0), as a
 # release does (see dist), so it runs anywhere a release's does, the
@@ -100,9 +100,10 @@ container-bomify:
 		go build -ldflags "$(LDFLAGS)" -o $(CONTAINER_BOMIFY_DIR)/bomify .
 
 # container-plugins builds every plugin for CONTAINER_PLATFORM into
-# PREBUILT_PLUGINS_DIR, statically, for build-container.
+# PREBUILT_PLUGINS_DIR, statically, for build-container. The Rust ones need
+# a Linux machine of that platform with musl-tools.
 container-plugins:
-	$(MAKE) prebuilt-plugins RELEASE_PLATFORMS=$(CONTAINER_PLATFORM)
+	$(MAKE) prebuilt-plugins RELEASE_PLATFORMS=$(CONTAINER_PLATFORM) RUST_PLATFORMS=$(CONTAINER_PLATFORM)
 
 push-container:
 	$(CONTAINER_TOOL) push $(CONTAINER_REF)
@@ -120,6 +121,11 @@ push-container:
 # other plugin's.
 GO_PLUGINS := $(patsubst %/,%,$(dir $(wildcard plugins/bomify-plugin-*/go.mod)))
 
+# Rust: each plugin is a Cargo crate (a Cargo.toml of its own), its
+# toolchain pinned by its rust-toolchain.toml.
+RUST_PLUGINS := $(patsubst %/,%,$(dir $(wildcard plugins/bomify-plugin-*/Cargo.toml)))
+CARGO ?= cargo
+
 # This machine's platform, and where plugins builds its plugins for it.
 HOST_PLATFORM := $(shell go env GOOS)/$(shell go env GOARCH)
 PLUGIN_BUILD_DIR := $(DIST_DIR)/plugins
@@ -127,13 +133,19 @@ PLUGIN_BUILD_DIR := $(DIST_DIR)/plugins
 # plugins builds every plugin for this machine into bin/, one target per
 # plugin (plugin-<kind>), so `make -j plugins` builds them in parallel.
 GO_PLUGIN_TARGETS := $(patsubst plugins/bomify-plugin-%,plugin-%,$(GO_PLUGINS))
-.PHONY: $(GO_PLUGIN_TARGETS)
+RUST_PLUGIN_TARGETS := $(patsubst plugins/bomify-plugin-%,plugin-%,$(RUST_PLUGINS))
+.PHONY: $(GO_PLUGIN_TARGETS) $(RUST_PLUGIN_TARGETS)
 
-plugins: go-plugins
+plugins: go-plugins rust-plugins
 go-plugins: $(GO_PLUGIN_TARGETS)
+rust-plugins: $(RUST_PLUGIN_TARGETS)
 
 $(GO_PLUGIN_TARGETS): plugin-%:
 	OUT_DIR=$(PLUGIN_BUILD_DIR) PLUGINS=plugins/bomify-plugin-$* hack/build-go-plugins.sh
+	mkdir -p bin && cp $(PLUGIN_BUILD_DIR)/$*/$(subst /,-,$(HOST_PLATFORM))/* bin/
+
+$(RUST_PLUGIN_TARGETS): plugin-%:
+	OUT_DIR=$(PLUGIN_BUILD_DIR) PLUGINS=plugins/bomify-plugin-$* hack/build-rust-plugins.sh
 	mkdir -p bin && cp $(PLUGIN_BUILD_DIR)/$*/$(subst /,-,$(HOST_PLATFORM))/* bin/
 
 # dist cross-compiles bomify (not its plugins — see plugin-packages) for
@@ -153,13 +165,23 @@ PLUGIN_PACKAGES_DIR := $(DIST_DIR)/plugin-packages
 # <kind>/<os>-<arch>/bomify-plugin-<kind>[.exe], for plugin-packages.
 PREBUILT_PLUGINS_DIR ?= $(DIST_DIR)/prebuilt-plugins
 
+# RUST_PLATFORMS is the platforms prebuilt-rust-plugins builds for: Rust
+# can't cross-compile to every platform from one machine, so only this
+# one's by default. A release builds each on its own runner (see
+# .github/workflows/plugins.yml).
+RUST_PLATFORMS ?= $(HOST_PLATFORM)
+
 # prebuilt-plugins builds every plugin's release binaries into
-# PREBUILT_PLUGINS_DIR: each Go plugin for each of RELEASE_PLATFORMS.
-# GO_PLUGINS set on the command line builds only those; set empty, none.
-prebuilt-plugins: prebuilt-go-plugins
+# PREBUILT_PLUGINS_DIR: each Go plugin for each of RELEASE_PLATFORMS, and
+# each Rust plugin for each of RUST_PLATFORMS. GO_PLUGINS or RUST_PLUGINS
+# set on the command line builds only those; set empty, none.
+prebuilt-plugins: prebuilt-go-plugins prebuilt-rust-plugins
 
 prebuilt-go-plugins:
 	$(if $(GO_PLUGINS),OUT_DIR=$(PREBUILT_PLUGINS_DIR) PLATFORMS="$(RELEASE_PLATFORMS)" PLUGINS="$(GO_PLUGINS)" hack/build-go-plugins.sh)
+
+prebuilt-rust-plugins:
+	$(if $(RUST_PLUGINS),OUT_DIR=$(PREBUILT_PLUGINS_DIR) PLATFORMS="$(RUST_PLATFORMS)" PLUGINS="$(RUST_PLUGINS)" hack/build-rust-plugins.sh)
 
 # plugin-packages writes, per plugin, its binaries from PREBUILT_PLUGINS_DIR
 # plus an SBOM describing them as pkg:bomify-plugin components under
@@ -228,11 +250,18 @@ install-bin: build
 install-plugins: plugins
 	BOMIFY_DATA_DIR="$(BOMIFY_DATA_DIR)" bash hack/install-plugins.sh
 
-test: test-go
+test: test-go test-rust
 
 test-go:
 	go test ./...
 	for dir in $(GO_PLUGINS); do (cd $$dir && go test ./...) || exit 1; done
+
+# test-rust checks each Rust plugin's formatting and lints as well as
+# running its tests, since cargo doesn't otherwise.
+test-rust:
+	for dir in $(RUST_PLUGINS); do \
+		(cd $$dir && $(CARGO) fmt --check && $(CARGO) clippy --locked --all-targets -- -D warnings && $(CARGO) test --locked) || exit 1; \
+	done
 
 tidy:
 	go mod tidy

@@ -37,12 +37,28 @@ jobs:
           path: bin/bomify
           if-no-files-found: error
 
-  # Builds every plugin for every platform a release does, so a release
-  # can't be the first to find one that doesn't build.
+  # The plugins written in Rust: formatting, lints, and tests (see the
+  # Makefile's test-rust). The runner's rustup installs the toolchain each
+  # crate's rust-toolchain.toml pins.
+  test-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Test
+        run: make test-rust
+
+  # Builds every plugin, so a release can't be the first to find one that
+  # doesn't build: for every platform a release does, except the Rust
+  # ones, which only build for every platform when something Rust-related
+  # changed (see plugins.yml), or on a push to a release branch.
   build-plugins:
     uses: ./.github/workflows/plugins.yml
     permissions:
       contents: read
+    with:
+      all-platforms: ${{ github.event_name == 'push' && contains(fromJSON('["refs/heads/main", "refs/heads/alpha-release", "refs/heads/beta-release"]'), github.ref) }}
 
   # The image compiles nothing: it takes the linux/amd64 bomify build
   # built, and the plugins build-plugins built.

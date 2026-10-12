@@ -1,12 +1,12 @@
 # bomify-plugin-huggingface
 
 What it does is in [plugins/README.md](../README.md#bomify-plugin-huggingface);
-how Rust plugins are built and released, in
-[Rust plugins](../README.md#rust-plugins). This covers the code.
+how plugins are built and released, in
+[Plugin languages](../README.md#plugin-languages). This covers the code.
 
 ```sh
-make rust-plugins   # or: cargo build --release
-make test-rust      # cargo fmt --check, clippy, and cargo test
+make plugin-huggingface   # into bin/; or: cargo build --release
+make test-rust            # cargo fmt --check, clippy, and cargo test
 ```
 
 ## What's ours, and what's hf-hub's

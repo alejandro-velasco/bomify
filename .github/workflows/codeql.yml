@@ -34,8 +34,8 @@ jobs:
         with:
           languages: go
 
-      # Covers bomify itself and every plugin under plugins/ written in Go:
-      # each is its own module (see
+      # Covers bomify itself and every plugin under plugins/ written in Go
+      # (analyze-rust covers the Rust ones): each is its own module (see
       # plugins/README.md#plugin-languages), and CodeQL's Go autobuilder
       # scans the whole checkout for go.mod files and builds each one.
       - name: Autobuild
@@ -47,3 +47,27 @@ jobs:
           category: "/language:go"
           output: sarif-results
 
+  # The plugins written in Rust (each plugins/*/ holding a Cargo.toml).
+  # CodeQL reads Rust source without building it.
+  analyze-rust:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"

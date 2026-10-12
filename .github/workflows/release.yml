@@ -108,6 +108,7 @@ jobs:
       contents: read
     with:
       ref: ${{ github.event.workflow_run.head_sha }}
+      all-platforms: true
 
   sign-plugins:
     needs: [release, build-plugins]

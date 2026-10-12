@@ -320,7 +320,7 @@ rejected.
 
 A first-party plugin's language is named by the manifest in its
 directory, and everything that builds plugins goes by it: the
-`Makefile` (`GO_PLUGINS`),
+`Makefile` (`GO_PLUGINS`, `RUST_PLUGINS`),
 [`plugins.yml`](https://github.com/alejandro-velasco/bomify/blob/main/.github/workflows/plugins.yml),
 CodeQL, and Dependabot. Each language has a build
 script, `hack/build-<lang>-plugins.sh`, writing binaries laid out as
@@ -338,21 +338,22 @@ by default or, given `PLATFORMS`, statically for a release; CI and the
   itself, and reads `bomify login`'s credentials from bomify's
   `auth.json` (and Docker's credential helpers) directly; a contract
   change must be made there too. Its `rust-toolchain.toml` pins the
-  toolchain.
+  toolchain. A static Linux build needs `musl-tools`.
 
 | Target | Does |
 | --- | --- |
 | `make plugins` (or `make plugin-<kind>`) | Builds every plugin (or one) for this machine into `bin/`; `-j` builds them in parallel. |
-| `make test` | `test-go` runs each Go module's tests. |
-| `make prebuilt-plugins` | Builds release binaries for every platform into `PREBUILT_PLUGINS_DIR`. |
+| `make test` | `test-go` runs each Go module's tests; `test-rust` checks each crate's formatting and lints, and runs its tests. |
+| `make prebuilt-plugins` | Builds release binaries into `PREBUILT_PLUGINS_DIR`: each Go plugin for every platform, each Rust one for `RUST_PLATFORMS` (this machine's, since Rust can't cross-compile to every platform from one). |
 | `make plugin-packages` | Packages them all from `PREBUILT_PLUGINS_DIR`, compiling nothing. |
 
 Every plugin is built before it's packaged: `plugins.yml` builds each in
-a job of its own, and release packages what it built, so the job that
-signs compiles none of them. The container image takes them prebuilt
-too, compiling none: CI gives it the `linux/amd64` binaries
-`build-plugins` built, and locally `make container-prebuilt` builds them
-(see the
+a job of its own, the Rust ones on each platform's own runner (outside
+a release, only `linux/amd64` unless something Rust-related changed),
+and release packages what it built, so the job that signs compiles none of
+them. The container image takes them prebuilt too, compiling none: CI
+gives it the `linux/amd64` binaries `build-plugins` built, and locally
+`make container-prebuilt` builds them (see the
 [README](https://github.com/alejandro-velasco/bomify/blob/main/README.md#container)).
 
 A plugin in another language needs a `hack/build-<lang>-plugins.sh`

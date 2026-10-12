@@ -103,7 +103,7 @@ entrypoint and the first-party plugins preinstalled in
 `/tmp/.bomify/plugins`, built from your checkout (a release image
 installs its release's signed plugin packages instead). It compiles
 nothing: `make container-prebuilt` builds bomify and the plugins for it
-first, statically:
+first, statically (the Rust plugins on Linux, with `musl-tools`):
 
 ```sh
 make container-prebuilt build-container
