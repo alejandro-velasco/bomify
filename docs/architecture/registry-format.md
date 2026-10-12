@@ -61,11 +61,52 @@ The vulnerability reports referrer's `created` is its newest report's
 time. A re-scan pushes a new one rather than changing the package, and a
 pull restores only the newest.
 
+## Component repositories
+
+`push` also publishes each component at its own repository beside the
+package's, so tools that don't know bomify can pull it:
+
+```
+<package repository>/<purl type>/<namespace>/<name>:<version>
+```
+
+- Each of the purl's type, namespace segments, and name is one
+  repository segment, lowercased, with any other character than a
+  letter or digit as a separator: a run of them that a repository name
+  doesn't allow (anything but `.`, `_`, `__`, or `-`s) becomes `-`, and
+  none is kept at either end. A purl without a namespace is one level
+  shorter.
+- The version is the tag, with `+` as `_` (as Helm does), or `latest`
+  without one. A version that still isn't a valid tag fails the push.
+- Qualifiers and subpath are left out, except `os` and `arch`:
+  components that differ only in those are published as one index of
+  them, each entry's platform set from them.
+- Two components with different content at one repository and tag fail
+  the push; with the same content, it's published once.
+- Images and charts (`oci`, `docker`, and `helm` purls) aren't published
+  this way yet.
+
+Each artifact is signed like the package, and annotated
+`land.bomify.purl`, `land.bomify.package.digest` (the package it was
+published with), and `org.opencontainers.image.created` (the package's).
+Its layers are what `oras pull` writes out as the component's files:
+
+| Part | Type | Holds |
+| --- | --- | --- |
+| Manifest | artifact type `application/vnd.bomify.component.v1+json`, or ModelPack's `application/vnd.cncf.model.manifest.v1+json` for a `machine-learning-model` component | |
+| Config | empty, or for a model, ModelPack's `application/vnd.cncf.model.config.v1+json`: the component's name and version, and `modelfs.diffIds`, each layer's uncompressed digest | |
+| Small files | `application/vnd.bomify.component.layer.v1.tar+gzip`, or for a model ModelPack's `application/vnd.cncf.model.weight.config.v1.tar+gzip` | One gzipped tar of every file the package's tar layers hold, with an entry for each directory. Titled `.` and annotated `io.deis.oras.content.unpack` and `io.deis.oras.content.digest`, so `oras pull` unpacks it where it pulls to. |
+| Large files | the package's `application/vnd.bomify.component.file.v1`, or for a model ModelPack's `application/vnd.cncf.model.weight.v1.raw` | The package's file part layers, the same blobs and `land.bomify.file.*` annotations. A file that's one part is also titled with its path, so `oras pull` writes it out; one past 8 GiB can't be pulled with plain tools. A model's is also annotated `org.cncf.model.filepath`. |
+
+A model's layer types are chosen by size rather than content, so
+they're annotated `org.cncf.model.file.mediatype.untested`.
+
 ## Annotations
 
 | Annotation | On | Value |
 | --- | --- | --- |
-| `land.bomify.purl` | package layers, report layers | The component's purl. |
+| `land.bomify.purl` | package layers, report layers, component repository artifacts and their layers | The component's purl. |
+| `land.bomify.package.digest` | component repository artifacts | The digest of the package the component was published with. |
 | `land.bomify.file.path` | file part layers | The file's `/`-separated path within the component. |
 | `land.bomify.file.mode` | file part layers | The file's permission bits, in octal, e.g. `0755`. |
 | `land.bomify.file.size` | file part layers | The whole file's size in bytes. |

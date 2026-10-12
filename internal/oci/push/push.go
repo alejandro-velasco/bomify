@@ -52,6 +52,9 @@ type Result struct {
 	// internal/provenance), or the zero Descriptor if the build recorded
 	// none or the package already carried it.
 	Provenance ocispec.Descriptor
+	// Components are the components published at their own repositories,
+	// with opts.ComponentTarget.
+	Components []PublishedComponent
 }
 
 // Push packages the build recorded under baseDir for sbomHash (see
@@ -67,7 +70,9 @@ type Result struct {
 // (see provenance.Attach). A non-nil opts.Sign is called with the packed
 // manifest, and then with every other referrer this push attached, before
 // ref is tagged (see transfer.Signer), so a signing failure never leaves
-// ref pointing at an unsigned package.
+// ref pointing at an unsigned package. With opts.ComponentTarget, each
+// component is then published at its own repository beside the package's
+// (see componentPublisher), signed too, also before ref is tagged.
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
 	opts = opts.WithDefaults()
 
@@ -99,6 +104,19 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, err
 	}
 
+	var components []PublishedComponent
+	if opts.ComponentTarget != nil {
+		publisher := componentPublisher{
+			pkg:     pkg,
+			ref:     ref,
+			targets: opts.ComponentTarget,
+			opts:    opts,
+		}
+		if components, err = publisher.publish(ctx); err != nil {
+			return Result{}, err
+		}
+	}
+
 	if err := target.Tag(ctx, pkg.desc, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
@@ -111,17 +129,21 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		ReportsReferrer:      reportsReferrer,
 		Attached:             attached,
 		Provenance:           provenanceReferrer,
+		Components:           components,
 	}
 	return result, nil
 }
 
 // pushedPackage is the package Push has pushed, but not yet tagged: its
-// manifest's descriptor, the components its SBOM describes, and their
-// layers.
+// manifest's descriptor, its SBOM and the components it describes, and
+// their layers, as planned and as pushed.
 type pushedPackage struct {
 	desc       ocispec.Descriptor
+	bom        *cdx.BOM
 	components []cdx.Component
 	layers     []PushedLayer
+	plans      []layerPlan
+	layerDescs []ocispec.Descriptor
 }
 
 // pushPackage pushes the build recorded under baseDir for sbomHash: its
@@ -149,8 +171,11 @@ func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash stri
 
 	pkg := pushedPackage{
 		desc:       desc,
+		bom:        bom,
 		components: components,
 		layers:     pushedLayers(plans, layerDescs),
+		plans:      plans,
+		layerDescs: layerDescs,
 	}
 	return &pkg, nil
 }

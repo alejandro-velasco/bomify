@@ -61,6 +61,11 @@ type Options struct {
 	// Attach are documents Push attaches to every package it pushes, each
 	// as its own referrer, signed like the package (see transfer.Attach).
 	Attach []Attachment
+	// ComponentTarget, if set, returns the target for another repository
+	// of the registry Push pushes to, where Push publishes each of the
+	// package's components, signed like the package. Nil publishes only
+	// the package.
+	ComponentTarget func(repository string) (oras.Target, error)
 }
 
 // WithDefaults returns o with Concurrency at least 1 and a non-nil
