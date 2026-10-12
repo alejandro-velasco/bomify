@@ -220,12 +220,13 @@ otherwise. It's written in Rust, on Hugging Face's own
 - **Hash**: SHA-256 of the sorted `sha256sum` listing of every file, so
   an SBOM author can compute it from a download:
 
-  ```sh
-  cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
-  ```
+    ```sh
+    cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
+    ```
 
-  (After `hf download --local-dir model`, remove `model/.cache` first:
-  it's `hf`'s download metadata.)
+    (After `hf download --local-dir model`, remove `model/.cache` first:
+    it's `hf`'s download metadata.)
+
 - **Push** uploads the files to `--remote`, `<hub URL>/<namespace>`
   (e.g. `https://huggingface.co/my-org`), to the main branch of a repository of
   the same name, created private if it doesn't exist. Only files main
