@@ -21,6 +21,7 @@ use serde::Serialize;
 
 use crate::hub::Hub;
 use crate::log::Logger;
+use crate::refs::Ref;
 
 #[derive(Parser)]
 #[command(
@@ -187,21 +188,47 @@ fn main() -> ExitCode {
     }
 }
 
+/// Runs a component subcommand: the one place that tells them apart, each
+/// handing its own flags to its own function.
 fn run_component(command: ComponentCommand) -> Result<()> {
-    let common = match &command {
-        ComponentCommand::Pull { common, .. }
-        | ComponentCommand::Push { common, .. }
-        | ComponentCommand::Remote { common } => common,
-    };
+    match command {
+        ComponentCommand::Pull {
+            common,
+            output,
+            check,
+        } => with_reference(&common, |reference, logger| {
+            run_pull(reference, output.as_deref(), check, logger)
+        }),
+        ComponentCommand::Push {
+            common,
+            input,
+            remote,
+            check,
+        } => with_reference(&common, |reference, logger| {
+            run_push(reference, input.as_deref(), &remote, check, logger)
+        }),
+        ComponentCommand::Remote { common } => {
+            with_reference(&common, |reference, _| run_remote(reference))
+        }
+    }
+}
+
+/// What every component subcommand does around its own work: opens the
+/// log, resolves the purl, runs command on it, and logs a failure.
+fn with_reference(
+    common: &CommonFlags,
+    command: impl FnOnce(&Ref, &Logger) -> Result<()>,
+) -> Result<()> {
     let logger = Logger::open(&common.log, common.log_color)?;
-    let outcome = component(&command, &common.purl, &logger);
+    let outcome =
+        resolve_purl(&common.purl, &logger).and_then(|reference| command(&reference, &logger));
     if let Err(error) = &outcome {
         logger.error("failed", &[("error", &format!("{error:#}"))]);
     }
     outcome
 }
 
-fn component(command: &ComponentCommand, purl: &str, logger: &Logger) -> Result<()> {
+fn resolve_purl(purl: &str, logger: &Logger) -> Result<Ref> {
     logger.info("resolving purl", &[("purl", &purl)]);
     let reference = refs::resolve(purl)?;
     logger.info(
@@ -212,48 +239,53 @@ fn component(command: &ComponentCommand, purl: &str, logger: &Logger) -> Result<
             ("endpoint", &reference.endpoint.as_deref().unwrap_or("")),
         ],
     );
+    Ok(reference)
+}
 
-    match command {
-        ComponentCommand::Remote { .. } => {
-            #[derive(Serialize)]
-            struct RemoteResult {
-                remote: String,
-            }
-            print_json(&RemoteResult {
-                remote: reference.remote(),
-            })
-        }
-        ComponentCommand::Pull { output, check, .. } => {
-            let hub = Hub::connect(reference.endpoint.as_deref(), logger)?;
-            let result = if *check {
-                transfer::check_pull(&hub, &reference)?
-            } else {
-                let Some(output) = output else {
-                    bail!("--output is required unless --check");
-                };
-                transfer::pull(&hub, &reference, output, logger)?
-            };
-            print_json(&result)
-        }
-        ComponentCommand::Push {
-            input,
-            remote,
-            check,
-            ..
-        } => {
-            let remote = refs::parse_remote(remote)?;
-            let hub = Hub::connect(Some(&remote.endpoint), logger)?;
-            let result = if *check {
-                transfer::check_push(&hub, &reference, &remote)?
-            } else {
-                let Some(input) = input else {
-                    bail!("--input is required unless --check");
-                };
-                transfer::push(&hub, &reference, input, &remote, logger)?
-            };
-            print_json(&result)
-        }
-    }
+fn run_pull(reference: &Ref, output: Option<&Path>, check: bool, logger: &Logger) -> Result<()> {
+    let hub = Hub::connect(reference.endpoint.as_deref(), logger)?;
+    let result = if check {
+        transfer::check_pull(&hub, reference)?
+    } else {
+        let Some(output) = output else {
+            bail!("--output is required unless --check");
+        };
+        transfer::pull(&hub, reference, output, logger)?
+    };
+    print_json(&result)
+}
+
+fn run_push(
+    reference: &Ref,
+    input: Option<&Path>,
+    remote: &str,
+    check: bool,
+    logger: &Logger,
+) -> Result<()> {
+    let remote = refs::parse_remote(remote)?;
+    let hub = Hub::connect(Some(&remote.endpoint), logger)?;
+    let result = if check {
+        transfer::check_push(&hub, reference, &remote)?
+    } else {
+        let Some(input) = input else {
+            bail!("--input is required unless --check");
+        };
+        transfer::push(&hub, reference, input, &remote, logger)?
+    };
+    print_json(&result)
+}
+
+/// What "component remote" prints, per the component contract.
+#[derive(Serialize)]
+struct RemoteResult {
+    remote: String,
+}
+
+fn run_remote(reference: &Ref) -> Result<()> {
+    let result = RemoteResult {
+        remote: reference.remote(),
+    };
+    print_json(&result)
 }
 
 fn run_generate(config: &Path, output: Option<&Path>) -> Result<()> {
