@@ -1,6 +1,7 @@
 package push
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,8 @@ import (
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/modelpack/model-spec/schema"
+	modelspec "github.com/modelpack/model-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -180,7 +183,7 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 
 	var manifest ocispec.Manifest
 	fetchJSON(t, store, model.Version, &manifest)
-	if manifest.ArtifactType != ModelArtifactType || manifest.Config.MediaType != modelConfigMediaType {
+	if manifest.ArtifactType != modelspec.ArtifactTypeModelManifest || manifest.Config.MediaType != modelspec.MediaTypeModelConfig {
 		t.Errorf("artifact type %s, config %s, want ModelPack's", manifest.ArtifactType, manifest.Config.MediaType)
 	}
 	if manifest.Annotations[AnnotationPackageDigest] != result.ManifestDigest || manifest.Annotations[transfer.AnnotationPurl] != model.PackageURL {
@@ -190,15 +193,18 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 	for _, layer := range manifest.Layers {
 		mediaTypes = append(mediaTypes, layer.MediaType)
 	}
-	wantTypes := []string{modelConfigTarMediaType, modelWeightMediaType, modelWeightMediaType}
+	wantTypes := []string{modelspec.MediaTypeModelWeightConfigGzip, modelspec.MediaTypeModelWeightRaw, modelspec.MediaTypeModelWeightRaw}
 	if !slices.Equal(mediaTypes, wantTypes) {
 		t.Errorf("layer media types = %v, want %v", mediaTypes, wantTypes)
 	}
 
-	var config modelConfig
+	var config modelspec.Model
 	configData, err := content.FetchAll(context.Background(), store, manifest.Config)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := schema.ValidatorMediaTypeModelConfig.Validate(bytes.NewReader(configData)); err != nil {
+		t.Errorf("config isn't valid ModelPack: %v", err)
 	}
 	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatal(err)

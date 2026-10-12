@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	modelspec "github.com/modelpack/model-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -33,18 +34,6 @@ const (
 	ComponentArtifactType   = "application/vnd.bomify.component.v1+json"
 	ComponentTarGzMediaType = "application/vnd.bomify.component.layer.v1.tar+gzip"
 	AnnotationPackageDigest = "land.bomify.package.digest"
-)
-
-// ModelPack's types and annotations
-// (https://github.com/modelpack/model-spec), which a
-// machine-learning-model component is published with instead.
-const (
-	ModelArtifactType       = "application/vnd.cncf.model.manifest.v1+json"
-	modelConfigMediaType    = "application/vnd.cncf.model.config.v1+json"
-	modelWeightMediaType    = "application/vnd.cncf.model.weight.v1.raw"
-	modelConfigTarMediaType = "application/vnd.cncf.model.weight.config.v1.tar+gzip"
-	annotationModelFilepath = "org.cncf.model.filepath"
-	annotationModelUntested = "org.cncf.model.file.mediatype.untested"
 )
 
 // The annotations `oras pull` unpacks a gzipped tar by: into the
@@ -318,7 +307,7 @@ func (p componentPublisher) publishArtifact(ctx context.Context, target oras.Tar
 	}
 	artifactType := ComponentArtifactType
 	if isModel {
-		artifactType = ModelArtifactType
+		artifactType = modelspec.ArtifactTypeModelManifest
 		config, err := p.pushModelConfig(ctx, target, component.component, diffIDs)
 		if err != nil {
 			return ocispec.Descriptor{}, err
@@ -405,10 +394,10 @@ func artifactPart(packaged ocispec.Descriptor, plan layerPlan, isModel bool) oci
 		desc.Annotations[ocispec.AnnotationTitle] = plan.part.Path
 	}
 	if isModel {
-		desc.MediaType = modelWeightMediaType
-		desc.Annotations[annotationModelFilepath] = plan.part.Path
+		desc.MediaType = modelspec.MediaTypeModelWeightRaw
+		desc.Annotations[modelspec.AnnotationFilepath] = plan.part.Path
 		// Large isn't proof of a weight.
-		desc.Annotations[annotationModelUntested] = "true"
+		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
 	}
 	return desc
 }
@@ -451,10 +440,10 @@ func (p componentPublisher) pushTarGz(ctx context.Context, target oras.Target, c
 		},
 	}
 	if isModel {
-		desc.MediaType = modelConfigTarMediaType
+		desc.MediaType = modelspec.MediaTypeModelWeightConfigGzip
 		// Small files are a model's configuration, tokenizer, and docs,
 		// mixed.
-		desc.Annotations[annotationModelUntested] = "true"
+		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return ocispec.Descriptor{}, "", err
@@ -466,33 +455,15 @@ func (p componentPublisher) pushTarGz(ctx context.Context, target oras.Target, c
 	return desc, tarDigest, nil
 }
 
-// modelConfig is a ModelPack model's config: what it is, and the
-// uncompressed digests of its layers.
-type modelConfig struct {
-	Descriptor modelDescriptor `json:"descriptor"`
-	Config     struct{}        `json:"config"`
-	ModelFS    modelFS         `json:"modelfs"`
-}
-
-type modelDescriptor struct {
-	Name    string `json:"name,omitempty"`
-	Version string `json:"version,omitempty"`
-}
-
-type modelFS struct {
-	Type    string          `json:"type"`
-	DiffIDs []digest.Digest `json:"diffIds"`
-}
-
 // pushModelConfig pushes component's ModelPack config, for layers whose
 // uncompressed digests are diffIDs.
 func (p componentPublisher) pushModelConfig(ctx context.Context, target oras.Target, component cdx.Component, diffIDs []digest.Digest) (ocispec.Descriptor, error) {
-	config := modelConfig{
-		Descriptor: modelDescriptor{
+	config := modelspec.Model{
+		Descriptor: modelspec.ModelDescriptor{
 			Name:    component.Name,
 			Version: component.Version,
 		},
-		ModelFS: modelFS{
+		ModelFS: modelspec.ModelFS{
 			Type:    "layers",
 			DiffIDs: append([]digest.Digest{}, diffIDs...),
 		},
@@ -501,7 +472,7 @@ func (p componentPublisher) pushModelConfig(ctx context.Context, target oras.Tar
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
-	desc, err := transfer.PushBytes(ctx, target, data, modelConfigMediaType, "model config", p.opts.Progress)
+	desc, err := transfer.PushBytes(ctx, target, data, modelspec.MediaTypeModelConfig, "model config", p.opts.Progress)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push config: %w", err)
 	}
