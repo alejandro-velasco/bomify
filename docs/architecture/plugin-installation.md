@@ -64,9 +64,13 @@ when bootstrapping it; any other failure to find it is an error.
 
 ## Releases
 
+[`plugins.yml`](https://github.com/alejandro-velasco/bomify/blob/main/.github/workflows/plugins.yml)
+builds every first-party plugin for every platform, each in a job of
+its own, whatever its language (see
+[Plugin languages](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#plugin-languages)).
 `make plugin-packages` ([`hack/pluginpackages`](https://github.com/alejandro-velasco/bomify/tree/main/hack/pluginpackages))
-cross-compiles each first-party plugin and writes its SBOM (plus a
-`docker` alias in `oci`'s). `make push-plugin-packages`
+packages those binaries, compiling nothing, and writes each plugin's
+SBOM (plus a `docker` alias in `oci`'s). `make push-plugin-packages`
 ([`hack/push-plugin-packages.sh`](https://github.com/alejandro-velasco/bomify/blob/main/hack/push-plugin-packages.sh)) pushes
 each as `<registry>/<kind>:<version>` and `:latest`, signed, with its
 [build provenance](provenance.md) attached and signed the same way, and

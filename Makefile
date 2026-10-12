@@ -28,6 +28,14 @@ CONTAINER_REPO ?= alejandro-velasco/bomify
 CONTAINER_TAG ?= latest
 CONTAINER_REF ?= $(CONTAINER_REGISTRY)/$(CONTAINER_REPO):$(CONTAINER_TAG)
 
+# The platform the image is built for, and its prebuilt bomify and plugins
+# (see container-prebuilt).
+CONTAINER_PLATFORM ?= linux/amd64
+
+# CONTAINER_BOMIFY_DIR holds the bomify binary the image takes (see
+# container-bomify).
+CONTAINER_BOMIFY_DIR ?= $(DIST_DIR)/container
+
 # A release image installs the plugins its release published, from
 # PLUGIN_REGISTRY, rather than building them (see Containerfile): set
 # CONTAINER_PLUGIN_VERSION to the release's version and
@@ -54,36 +62,79 @@ RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/a
 #
 ################################################################################
 
-.PHONY: build build-container push-container plugins dist plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test run tidy clean
+.PHONY: build build-container container-prebuilt container-bomify container-plugins push-container plugins go-plugins dist prebuilt-plugins prebuilt-go-plugins plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test test-go tidy clean
 
+# build builds bomify for this machine, statically (CGO_ENABLED=0), as a
+# release does (see dist), so it runs anywhere a release's does, the
+# container image included (see .github/workflows/build.yml).
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
+# build-container builds the image, compiling nothing: bomify from
+# CONTAINER_BOMIFY_DIR, and plugins that are the ones a release published,
+# given CONTAINER_PLUGIN_VERSION, otherwise this checkout's, from
+# PREBUILT_PLUGINS_DIR. Run container-prebuilt first (CI downloads what
+# its build and build-plugins jobs built instead).
 build-container:
 	$(CONTAINER_TOOL) build -f Containerfile \
+		--platform $(CONTAINER_PLATFORM) \
+		--build-context bomify=$(CONTAINER_BOMIFY_DIR) \
+		--build-arg PLUGINS=$(if $(CONTAINER_PLUGIN_VERSION),release,prebuilt) \
+		$(if $(CONTAINER_PLUGIN_VERSION),,--build-context prebuilt-plugins=$(PREBUILT_PLUGINS_DIR)) \
 		--build-arg PLUGIN_VERSION=$(CONTAINER_PLUGIN_VERSION) \
 		--build-arg PLUGIN_REGISTRY=$(PLUGIN_REGISTRY) \
 		--build-arg SIGSTORE_DIGEST=$(CONTAINER_SIGSTORE_DIGEST) \
 		--build-arg PLUGIN_SIGNER=$(CONTAINER_PLUGIN_SIGNER) \
 		-t $(CONTAINER_REF) .
 
+# container-prebuilt builds what build-container takes for an image of
+# this checkout: container-bomify and container-plugins.
+container-prebuilt: container-bomify container-plugins
+
+# container-bomify builds bomify for CONTAINER_PLATFORM into
+# CONTAINER_BOMIFY_DIR, statically, as build does, but for the image's
+# platform, which this machine's may not be. CI uses build's binary instead,
+# built on a linux/amd64 runner.
+container-bomify:
+	GOOS=$(word 1,$(subst /, ,$(CONTAINER_PLATFORM))) GOARCH=$(word 2,$(subst /, ,$(CONTAINER_PLATFORM))) CGO_ENABLED=0 \
+		go build -ldflags "$(LDFLAGS)" -o $(CONTAINER_BOMIFY_DIR)/bomify .
+
+# container-plugins builds every plugin for CONTAINER_PLATFORM into
+# PREBUILT_PLUGINS_DIR, statically, for build-container.
+container-plugins:
+	$(MAKE) prebuilt-plugins RELEASE_PLATFORMS=$(CONTAINER_PLATFORM)
+
 push-container:
 	$(CONTAINER_TOOL) push $(CONTAINER_REF)
 
-# bomify-plugin-grype and bomify-plugin-sigstore are built separately:
-# unlike the other first-party plugins, each is its own Go module (see
-# plugins/bomify-plugin-grype/go.mod, plugins/bomify-plugin-sigstore/go.mod)
-# rather than part of this one, since the grype SDK's and sigstore-go's
-# transitive dependency trees (syft, stereoscope, TUF, cloud SDKs, ...)
-# are large enough that pulling them into the root module's go.mod/go.sum
-# would bloat every other build in this repo. "./plugins/..." from the
-# root module can't see across that module boundary, so each needs its
-# own build step.
-SEPARATE_MODULE_PLUGINS := plugins/bomify-plugin-grype plugins/bomify-plugin-sigstore
+# A plugin's language is named by the manifest in its directory, and each
+# language's plugins are found, built, and tested by it, built by a
+# hack/build-<lang>-plugins.sh script into the layout
+# <dir>/<kind>/<os>-<arch>/bomify-plugin-<kind>[.exe]. A plugin in a new
+# language adds its own <LANG>_PLUGINS, script, and targets here, and a job
+# in .github/workflows/plugins.yml (see plugins/README.md#plugin-languages).
+#
+# Go: each plugin is its own module (a go.mod of its own), using this
+# one's pkg/ through a replace directive, so its dependencies (the Helm
+# SDK, syft, sigstore-go, ...) stay out of bomify's go.mod and every
+# other plugin's.
+GO_PLUGINS := $(patsubst %/,%,$(dir $(wildcard plugins/bomify-plugin-*/go.mod)))
 
-plugins:
-	go build -o bin/ ./plugins/...
-	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go build -o ../../bin/ .) || exit 1; done
+# This machine's platform, and where plugins builds its plugins for it.
+HOST_PLATFORM := $(shell go env GOOS)/$(shell go env GOARCH)
+PLUGIN_BUILD_DIR := $(DIST_DIR)/plugins
+
+# plugins builds every plugin for this machine into bin/, one target per
+# plugin (plugin-<kind>), so `make -j plugins` builds them in parallel.
+GO_PLUGIN_TARGETS := $(patsubst plugins/bomify-plugin-%,plugin-%,$(GO_PLUGINS))
+.PHONY: $(GO_PLUGIN_TARGETS)
+
+plugins: go-plugins
+go-plugins: $(GO_PLUGIN_TARGETS)
+
+$(GO_PLUGIN_TARGETS): plugin-%:
+	OUT_DIR=$(PLUGIN_BUILD_DIR) PLUGINS=plugins/bomify-plugin-$* hack/build-go-plugins.sh
+	mkdir -p bin && cp $(PLUGIN_BUILD_DIR)/$*/$(subst /,-,$(HOST_PLATFORM))/* bin/
 
 # dist cross-compiles bomify (not its plugins — see plugin-packages) for
 # each of RELEASE_PLATFORMS, as a bare binary per platform,
@@ -97,12 +148,24 @@ dist: clean
 PLUGIN_REGISTRY ?= ghcr.io/alejandro-velasco/bomify/plugins
 PLUGIN_PACKAGES_DIR := $(DIST_DIR)/plugin-packages
 
-# plugin-packages cross-compiles every first-party plugin for each of
-# RELEASE_PLATFORMS and writes, per plugin, the binaries plus an SBOM
-# describing them as pkg:bomify-plugin components under
-# $(PLUGIN_PACKAGES_DIR)/<kind>/. See hack/pluginpackages.
+# PREBUILT_PLUGINS_DIR holds every first-party plugin's release binaries
+# (static) for each of RELEASE_PLATFORMS, as
+# <kind>/<os>-<arch>/bomify-plugin-<kind>[.exe], for plugin-packages.
+PREBUILT_PLUGINS_DIR ?= $(DIST_DIR)/prebuilt-plugins
+
+# prebuilt-plugins builds every plugin's release binaries into
+# PREBUILT_PLUGINS_DIR: each Go plugin for each of RELEASE_PLATFORMS.
+# GO_PLUGINS set on the command line builds only those; set empty, none.
+prebuilt-plugins: prebuilt-go-plugins
+
+prebuilt-go-plugins:
+	$(if $(GO_PLUGINS),OUT_DIR=$(PREBUILT_PLUGINS_DIR) PLATFORMS="$(RELEASE_PLATFORMS)" PLUGINS="$(GO_PLUGINS)" hack/build-go-plugins.sh)
+
+# plugin-packages writes, per plugin, its binaries from PREBUILT_PLUGINS_DIR
+# plus an SBOM describing them as pkg:bomify-plugin components under
+# $(PLUGIN_PACKAGES_DIR)/<kind>/, compiling nothing. See hack/pluginpackages.
 plugin-packages:
-	go run ./hack/pluginpackages -version $(VERSION) -platforms "$(RELEASE_PLATFORMS)" -out $(PLUGIN_PACKAGES_DIR)
+	go run ./hack/pluginpackages -version $(VERSION) -platforms "$(RELEASE_PLATFORMS)" -prebuilt $(PREBUILT_PLUGINS_DIR) -out $(PLUGIN_PACKAGES_DIR)
 
 # push-plugin-packages builds each SBOM plugin-packages wrote into a bomify
 # package and pushes it as $(PLUGIN_REGISTRY)/<kind>:$(VERSION) (and
@@ -165,16 +228,15 @@ install-bin: build
 install-plugins: plugins
 	BOMIFY_DATA_DIR="$(BOMIFY_DATA_DIR)" bash hack/install-plugins.sh
 
-test:
-	go test ./...
-	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go test ./...) || exit 1; done
+test: test-go
 
-run: build
-	./$(BINARY)
+test-go:
+	go test ./...
+	for dir in $(GO_PLUGINS); do (cd $$dir && go test ./...) || exit 1; done
 
 tidy:
 	go mod tidy
-	for dir in $(SEPARATE_MODULE_PLUGINS); do (cd $$dir && go mod tidy) || exit 1; done
+	for dir in $(GO_PLUGINS); do (cd $$dir && go mod tidy) || exit 1; done
 
 clean:
 	rm -rf bin dist

@@ -1,0 +1,92 @@
+name: Plugins
+
+# Builds every first-party plugin for every platform bomify releases (the
+# Makefile's RELEASE_PLATFORMS), each plugin in a job of its own, uploading
+# the binaries laid out as hack/pluginpackages' -prebuilt reads them,
+# whatever the plugin's language:
+#
+#   <kind>/<os>-<arch>/bomify-plugin-<kind>[.exe]
+#
+#   list   finds the plugins by the manifest naming their language (see
+#          plugins/README.md#plugin-languages), so a new one is built
+#          without changing this file.
+#   go     one job per Go plugin, cross-compiling it for every platform
+#          (make prebuilt-go-plugins), into a plugins-go-<kind> artifact.
+#
+# A language's jobs name their artifacts plugins-<lang>-..., so callers
+# take every plugin by the pattern plugins-*.
+#
+# Binaries are static, as the container image needs (see
+# hack/build-<lang>-plugins.sh).
+#
+# Build calls it to check every plugin still builds everywhere; Release,
+# to package exactly what it builds, so the job that signs compiles none
+# of the plugins.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to build; the calling run's own if empty.
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      go: ${{ steps.list.outputs.go }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Each a JSON array of plugin kinds, e.g. ["generic","helm"].
+      - name: List plugins by language
+        id: list
+        run: |
+          kinds() {
+            for manifest in plugins/bomify-plugin-*/"$1"; do
+              if [ -e "$manifest" ]; then
+                dir=$(dirname "$manifest")
+                basename "$dir" | sed 's/^bomify-plugin-//'
+              fi
+            done | jq -R . | jq -cs .
+          }
+          echo "go=$(kinds go.mod)" >> "$GITHUB_OUTPUT"
+
+  go:
+    needs: list
+    if: needs.list.outputs.go != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: ${{ fromJSON(needs.list.outputs.go) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make prebuilt-go-plugins GO_PLUGINS=plugins/bomify-plugin-${{ matrix.kind }} PREBUILT_PLUGINS_DIR=prebuilt
+
+      - name: Upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugins-go-${{ matrix.kind }}
+          path: prebuilt/
+          if-no-files-found: error
+

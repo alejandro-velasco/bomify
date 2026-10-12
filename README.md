@@ -101,10 +101,12 @@ Every command and flag is in [`docs/reference`](docs/reference).
 [`Containerfile`](Containerfile) builds an image with `bomify` as the
 entrypoint and the first-party plugins preinstalled in
 `/tmp/.bomify/plugins`, built from your checkout (a release image
-installs its release's signed plugin packages instead):
+installs its release's signed plugin packages instead). It compiles
+nothing: `make container-prebuilt` builds bomify and the plugins for it
+first, statically:
 
 ```sh
-make build-container
+make container-prebuilt build-container
 docker run --rm -v "$PWD/testdata/helm.cdx.json:/tmp/helm.cdx.json" \
   ghcr.io/alejandro-velasco/bomify:latest build -t registry.example.com/test:1.0.0 /tmp/helm.cdx.json
 ```

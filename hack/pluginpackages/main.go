@@ -1,7 +1,6 @@
 // Command pluginpackages builds the inputs for one bomify plugin package
-// per first-party plugin (see plugins/README.md#publishing-a-plugin): it
-// cross-compiles each plugin under plugins/ for every platform given and
-// writes, per plugin,
+// per first-party plugin (see plugins/README.md#publishing-a-plugin) from
+// its prebuilt binaries, writing, per plugin under plugins/,
 //
 //	<out>/<kind>/<os>-<arch>/bomify-plugin-<kind>[.exe]
 //	<out>/<kind>/sbom.cdx.json
@@ -9,10 +8,15 @@
 // where the SBOM describes each binary as a plugin.PurlType component —
 // with its SHA-256, the contract versions the plugin reports
 // (plugin.PropertyContracts), and a distribution reference relative to
-// the SBOM — ready for `bomify build`. Run it from the repository root; `make
-// plugin-packages` does:
+// the SBOM — ready for `bomify build`.
 //
-//	go run ./hack/pluginpackages -version 1.12.0 -platforms "linux/amd64 windows/amd64" -out dist/plugin-packages
+// It compiles nothing: every plugin's binaries, whatever its language,
+// come from -prebuilt, laid out the same way as <prebuilt>/<kind>/... —
+// from `make prebuilt-plugins`, or, for a release, built on each
+// platform's own runner (see .github/workflows/plugins.yml). Run it
+// from the repository root; `make plugin-packages` does:
+//
+//	go run ./hack/pluginpackages -version 1.12.0 -platforms "linux/amd64 windows/amd64" -prebuilt dist/prebuilt-plugins -out dist/plugin-packages
 //
 // See hack/push-plugin-packages.sh for building and pushing the packages
 // themselves.
@@ -30,6 +34,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -46,7 +51,7 @@ var aliases = map[string][]string{
 	"oci": {"docker"},
 }
 
-// platform is one GOOS/GOARCH pair to build for.
+// platform is one GOOS/GOARCH pair to package for.
 type platform struct {
 	os, arch string
 }
@@ -62,23 +67,26 @@ type binary struct {
 }
 
 func main() {
-	version := flag.String("version", "", "version to build and stamp every plugin package with (required)")
-	platforms := flag.String("platforms", "", "space-separated GOOS/GOARCH pairs to build for (required)")
+	version := flag.String("version", "", "version to stamp every plugin package with (required)")
+	platforms := flag.String("platforms", "", "space-separated GOOS/GOARCH pairs to package (required)")
+	prebuilt := flag.String("prebuilt", "", "directory holding every plugin's binaries, as <kind>/<os>-<arch>/bomify-plugin-<kind>[.exe] (required)")
 	out := flag.String("out", "", "directory to write one <kind>/ package directory per plugin into (required)")
 	flag.Parse()
 
-	if *version == "" || *platforms == "" || *out == "" {
+	if *version == "" || *platforms == "" || *prebuilt == "" || *out == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
 
-	if err := run(*version, *platforms, *out); err != nil {
+	if err := run(*version, *platforms, *prebuilt, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "pluginpackages:", err)
 		os.Exit(1)
 	}
 }
 
-func run(version, platformList, out string) error {
+// run packages every plugin under plugins/, so one without binaries in
+// prebuilt fails rather than going unpublished.
+func run(version, platformList, prebuilt, out string) error {
 	targets, err := parsePlatforms(platformList)
 	if err != nil {
 		return err
@@ -94,7 +102,7 @@ func run(version, platformList, out string) error {
 			continue
 		}
 		kind := strings.TrimPrefix(filepath.Base(dir), plugin.BinaryName(""))
-		if err := buildPackage(dir, kind, version, targets, filepath.Join(out, kind)); err != nil {
+		if err := buildPackage(kind, version, targets, filepath.Join(prebuilt, kind), filepath.Join(out, kind)); err != nil {
 			return fmt.Errorf("%s: %w", filepath.Base(dir), err)
 		}
 	}
@@ -117,17 +125,13 @@ func parsePlatforms(list string) ([]platform, error) {
 	return targets, nil
 }
 
-// buildPackage cross-compiles the plugin in dir for every target into
-// pkgDir, replacing whatever was there, and writes its SBOM alongside.
-func buildPackage(dir, kind, version string, targets []platform, pkgDir string) error {
+// buildPackage copies kind's binary for every target from prebuiltDir
+// into pkgDir, replacing whatever was there, and writes its SBOM
+// alongside.
+func buildPackage(kind, version string, targets []platform, prebuiltDir, pkgDir string) error {
 	fmt.Println("==>", plugin.BinaryName(kind))
 
 	if err := os.RemoveAll(pkgDir); err != nil {
-		return err
-	}
-
-	contracts, err := contractsOf(dir)
-	if err != nil {
 		return err
 	}
 
@@ -135,9 +139,9 @@ func buildPackage(dir, kind, version string, targets []platform, pkgDir string) 
 	for _, target := range targets {
 		fmt.Printf("    %s/%s\n", target.os, target.arch)
 
-		rel := path.Join(target.os+"-"+target.arch, plugin.ExecutableName(kind, target.os))
+		rel := binaryPath(kind, target)
 		dst := filepath.Join(pkgDir, filepath.FromSlash(rel))
-		if err := goBuild(dir, target, dst); err != nil {
+		if err := copyFile(filepath.Join(prebuiltDir, filepath.FromSlash(rel)), dst); err != nil {
 			return err
 		}
 
@@ -148,21 +152,33 @@ func buildPackage(dir, kind, version string, targets []platform, pkgDir string) 
 		binaries = append(binaries, binary{platform: target, path: rel, sha256: sum})
 	}
 
+	// Asked of this machine's binary, since the others may not run here;
+	// every platform's build of the same source speaks the same versions.
+	// Its packaged copy, which copyFile makes executable, since a binary
+	// downloaded from a CI artifact may not be.
+	host := platform{os: runtime.GOOS, arch: runtime.GOARCH}
+	contracts, err := contractsOf(filepath.Join(pkgDir, filepath.FromSlash(binaryPath(kind, host))))
+	if err != nil {
+		return err
+	}
+
 	return writeSBOM(filepath.Join(pkgDir, "sbom.cdx.json"), kind, version, contracts, binaries)
 }
 
-// contractsOf asks the plugin in dir which contract versions it speaks,
-// returning its answer as plugin.PropertyContracts records it. The
-// plugin is run for this machine, since the binaries buildPackage
-// cross-compiles may not run here; every platform's build of the same
-// source speaks the same versions.
-func contractsOf(dir string) (string, error) {
-	cmd := exec.Command("go", "run", "./"+filepath.ToSlash(dir), pluginlib.ContractSubcommand)
-	// As in goBuild.
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-		cmd = exec.Command("go", "run", ".", pluginlib.ContractSubcommand)
-		cmd.Dir = dir
+// binaryPath is where a package holds kind's binary for target, relative
+// to its directory, in forward-slash form. -prebuilt holds them the same
+// way, under <kind>/.
+func binaryPath(kind string, target platform) string {
+	return path.Join(target.os+"-"+target.arch, plugin.ExecutableName(kind, target.os))
+}
+
+// contractsOf asks the plugin binary at path which contract versions it
+// speaks, returning its answer as plugin.PropertyContracts records it.
+func contractsOf(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("no binary for this machine to ask for contract versions: %w", err)
 	}
+	cmd := exec.Command(path, pluginlib.ContractSubcommand)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
@@ -181,29 +197,16 @@ func contractsOf(dir string) (string, error) {
 	return string(data), err
 }
 
-// goBuild cross-compiles the plugin in dir for target into dst.
-func goBuild(dir string, target platform, dst string) error {
-	abs, err := filepath.Abs(dst)
+// copyFile copies the prebuilt binary src to dst, executable.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
 	if err != nil {
+		return fmt.Errorf("no prebuilt binary: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-
-	cmd := exec.Command("go", "build", "-o", abs, "./"+filepath.ToSlash(dir))
-	// bomify-plugin-grype and bomify-plugin-sigstore are each their own Go
-	// module (see the Makefile's "plugins" target for why), so they build
-	// from inside their own directory.
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-		cmd = exec.Command("go", "build", "-o", abs, ".")
-		cmd.Dir = dir
-	}
-	cmd.Env = append(os.Environ(), "GOOS="+target.os, "GOARCH="+target.arch, "CGO_ENABLED=0")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build for %s/%s: %w", target.os, target.arch, err)
-	}
-	return nil
+	return os.WriteFile(dst, data, 0o755)
 }
 
 // sha256File returns path's SHA-256, hex-encoded.
