@@ -361,3 +361,65 @@ func TestStorePrefersAuthConfigAndFallsBackToDocker(t *testing.T) {
 		t.Errorf("Lookup() after Logout = %+v, want docker's credential, left in place", cred)
 	}
 }
+
+// TestSaveStoresWithoutVerifying covers a host that isn't a registry,
+// which Login can't check: Save stores its credential as given, where
+// Lookup finds it and Logout removes it.
+func TestSaveStoresWithoutVerifying(t *testing.T) {
+	useMemoryStore(t)
+	ctx := context.Background()
+
+	result, err := Save(ctx, "huggingface.co", "alice", "hf_token")
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if result.PlaintextPath != "" {
+		t.Errorf("PlaintextPath = %q, want none with a working store", result.PlaintextPath)
+	}
+
+	got, err := Lookup(ctx, "huggingface.co")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if got.Username != "alice" || got.Password != "hf_token" {
+		t.Errorf("Lookup = %+v, want alice/hf_token", got)
+	}
+
+	if err := Logout(ctx, "huggingface.co"); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	if got, err := Lookup(ctx, "huggingface.co"); err != nil || got != orasauth.EmptyCredential {
+		t.Errorf("Lookup after Logout = %+v, %v; want nothing", got, err)
+	}
+}
+
+func TestSaveFallsBackToPlaintextWhenNoNativeHelperAvailable(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	blockingStore, err := credentials.NewStore(configPath, credentials.StoreOptions{})
+	if err != nil {
+		t.Fatalf("NewStore (blocking): %v", err)
+	}
+	plaintextStore, err := credentials.NewStore(configPath, credentials.StoreOptions{AllowPlaintextPut: true})
+	if err != nil {
+		t.Fatalf("NewStore (plaintext): %v", err)
+	}
+	originalStore, originalPlaintext := newStore, newPlaintextStore
+	newStore = func() (credentials.Store, error) { return blockingStore, nil }
+	newPlaintextStore = func() (*credentials.DynamicStore, error) { return plaintextStore, nil }
+	t.Cleanup(func() {
+		newStore = originalStore
+		newPlaintextStore = originalPlaintext
+	})
+
+	result, err := Save(context.Background(), "huggingface.co", "alice", "hf_token")
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if result.PlaintextPath != configPath {
+		t.Errorf("PlaintextPath = %q, want %q", result.PlaintextPath, configPath)
+	}
+	got, err := plaintextStore.Get(context.Background(), "huggingface.co")
+	if err != nil || got.Password != "hf_token" {
+		t.Errorf("stored credential = %+v, %v; want hf_token", got, err)
+	}
+}

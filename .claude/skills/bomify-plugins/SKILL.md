@@ -25,7 +25,9 @@ Also relevant:
   `SignatureCommand`, `SBOMCommand`, plus `NewRootCommand`/`Run`) that implement the
   flags, validation, logging, and output. Contract changes to flags or
   output belong in these builders, not in each plugin. Check the package
-  for its current API.
+  for its current API. The Rust plugins (each `plugins/*/` with a
+  `Cargo.toml`) implement the contracts themselves, so a contract change
+  must be made in them too.
 - `plugins/contracts/<contract>/v<N>/*.schema.json`: one JSON Schema per
   result shape bomify parses, next to that version's spec. Glob for the
   current set.
@@ -39,6 +41,21 @@ Also relevant:
   plugins.
 - [`docs/architecture/plugins.md`](../../../docs/architecture/plugins.md):
   how the contracts fit into bomify.
+
+## Third-party APIs
+
+A first-party plugin that calls an external service directly must match
+that service's own spec. Check every request and response against it,
+not memory, when writing or changing the plugin:
+
+| Plugin | Spec | Covers |
+| --- | --- | --- |
+| `bomify-plugin-huggingface` | Hugging Face Hub [OpenAPI spec](https://huggingface.co/.well-known/openapi.md), through [hf-hub](https://github.com/huggingface/hf-hub) | hf-hub, Hugging Face's own Rust client, makes its Hub and [Xet](https://huggingface.co/docs/xet) calls: check hf-hub's behavior against the spec and [`huggingface_hub`](https://github.com/huggingface/huggingface_hub), the reference client, as for its 1.0.0 bugs (see the plugin's README). The plugin's own request, a HEAD of `/{namespace}/{repo}/resolve/{rev}/{path}` not following its redirect, reads `X-Linked-ETag` as `huggingface_hub`'s `get_hf_file_metadata` does. |
+
+Where a spec leaves behavior out (the Hub's spec doesn't document its
+`Link` paging header, its `X-Error-*` headers, or some response fields,
+for example), confirm it against the live service or the reference
+client, and test it with a fake server in the plugin's tests.
 
 ## Workflow
 

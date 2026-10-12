@@ -16,3 +16,15 @@ updates:
     labels:
       - "dependencies"
 
+  # The plugins written in Rust, each its own Cargo crate.
+  - package-ecosystem: "cargo"
+    directories:
+      - "/plugins/*"
+    schedule:
+      interval: "weekly"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"

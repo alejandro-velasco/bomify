@@ -4,3 +4,5 @@ dist/
 *.exe
 *.test
 deploy/registry/
+# The Rust plugins' build output (see the Makefile's rust-plugins target).
+plugins/*/target/

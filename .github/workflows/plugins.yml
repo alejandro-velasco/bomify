@@ -12,9 +12,13 @@ name: Plugins
 #          without changing this file.
 #   go     one job per Go plugin, cross-compiling it for every platform
 #          (make prebuilt-go-plugins), into a plugins-go-<kind> artifact.
-#
-# A language's jobs name their artifacts plugins-<lang>-..., so callers
-# take every plugin by the pattern plugins-*.
+#   rust   one job per Rust plugin and platform, on that platform's own
+#          runner, since Rust's TLS stack compiles C, which wants the
+#          platform's own toolchain (make prebuilt-rust-plugins), into a
+#          plugins-rust-<kind>-<os>-<arch> artifact. Every platform only
+#          when all-platforms is set, or anything Rust-related changed
+#          (see list); otherwise only linux/amd64, which the container
+#          image takes, since nothing else could have broken the others.
 #
 # Binaries are static, as the container image needs (see
 # hack/build-<lang>-plugins.sh).
@@ -29,6 +33,10 @@ on:
         description: The commit to build; the calling run's own if empty.
         type: string
         default: ""
+      all-platforms:
+        description: Build the Rust plugins for every platform, whatever changed.
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -39,6 +47,8 @@ jobs:
       contents: read
     outputs:
       go: ${{ steps.list.outputs.go }}
+      rust: ${{ steps.list.outputs.rust }}
+      rust-platforms: ${{ steps.platforms.outputs.rust }}
     steps:
       - name: Check out code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -58,6 +68,64 @@ jobs:
             done | jq -R . | jq -cs .
           }
           echo "go=$(kinds go.mod)" >> "$GITHUB_OUTPUT"
+          echo "rust=$(kinds Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      # A JSON array of the platforms to build the Rust plugins for: every
+      # one if all-platforms is set, or anything that could break one
+      # changed since the base (a pull request's base, or the commit a
+      # push came after) — a Rust plugin's files, its build script, or
+      # this workflow — or the base can't be found (a branch's first
+      # push); otherwise only linux/amd64, which the container image takes.
+      - name: Choose the Rust platforms
+        id: platforms
+        env:
+          ALL_PLATFORMS: ${{ inputs.all-platforms }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          every='[
+            {"os": "linux", "arch": "amd64", "runner": "ubuntu-latest"},
+            {"os": "linux", "arch": "arm64", "runner": "ubuntu-24.04-arm"},
+            {"os": "darwin", "arch": "amd64", "runner": "macos-latest"},
+            {"os": "darwin", "arch": "arm64", "runner": "macos-latest"},
+            {"os": "windows", "arch": "amd64", "runner": "windows-latest"}
+          ]'
+          base=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            push) base="$PUSH_BEFORE" ;;
+          esac
+
+          all=false
+          if [ "$ALL_PLATFORMS" = true ]; then
+            all=true
+            echo "every platform: asked for"
+          elif [ -z "$base" ] || [ -z "${base//0/}" ] || ! git fetch -q --no-tags --depth=1 origin "$base"; then
+            all=true
+            echo "every platform: no base to compare with"
+          else
+            watched="hack/build-rust-plugins.sh .github/workflows/plugins.yml"
+            for manifest in plugins/bomify-plugin-*/Cargo.toml; do
+              if [ -e "$manifest" ]; then
+                watched="$watched $(dirname "$manifest")"
+              fi
+            done
+            changed=$(git diff --name-only "$base" HEAD -- $watched)
+            if [ -n "$changed" ]; then
+              all=true
+              echo "every platform: changed since $base:"
+              echo "$changed"
+            else
+              echo "linux/amd64 only: nothing Rust-related changed since $base"
+            fi
+          fi
+
+          if [ "$all" = true ]; then
+            echo "rust=$(echo "$every" | jq -c .)" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=$(echo "$every" | jq -c '[.[] | select(.os == "linux" and .arch == "amd64")]')" >> "$GITHUB_OUTPUT"
+          fi
 
   go:
     needs: list
@@ -90,3 +158,47 @@ jobs:
           path: prebuilt/
           if-no-files-found: error
 
+  rust:
+    needs: list
+    if: needs.list.outputs.rust != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: ${{ fromJSON(needs.list.outputs.rust) }}
+        platform: ${{ fromJSON(needs.list.outputs.rust-platforms) }}
+    runs-on: ${{ matrix.platform.runner }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install musl
+        if: matrix.platform.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+
+      # The script rather than make, which the Windows runner may lack.
+      - name: Build
+        env:
+          OUT_DIR: prebuilt
+          PLATFORMS: ${{ matrix.platform.os }}/${{ matrix.platform.arch }}
+          PLUGINS: plugins/bomify-plugin-${{ matrix.kind }}
+        run: hack/build-rust-plugins.sh
+
+      # Every build answers "contract", where it can run: hack/pluginpackages
+      # asks the linux/amd64 one for the package's contract versions.
+      - name: Check it runs
+        if: matrix.platform.os != 'darwin' || matrix.platform.arch == 'arm64'
+        run: prebuilt/*/${{ matrix.platform.os }}-${{ matrix.platform.arch }}/* contract
+
+      - name: Upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugins-rust-${{ matrix.kind }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: prebuilt/
+          if-no-files-found: error

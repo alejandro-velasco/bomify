@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # The image compiles nothing: bomify and its plugins come prebuilt, static
-# (CGO_ENABLED=0 for Go), since the final stage is
+# (CGO_ENABLED=0 for Go, musl for Rust), since the final stage is
 # distroless/static, which has no libc. bomify comes from the "bomify"
 # build context, a directory holding a bomify binary for this image's
 # platform: CI's build job builds it, `make container-bomify` builds one

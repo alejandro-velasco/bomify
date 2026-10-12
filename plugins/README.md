@@ -21,6 +21,7 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
+| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | [hf-hub](https://github.com/huggingface/hf-hub), Hugging Face's Rust client for the Hub and [Xet](https://huggingface.co/docs/xet) | Component, SBOM generation |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
@@ -200,6 +201,68 @@ Handles `pkg:generic/<name>@<version>?download_url=<url>`: `pull` GETs
 `push --check` only tries a HEAD, since a presigned URL can't be checked
 without writing to it.
 
+## bomify-plugin-huggingface
+
+Handles `pkg:huggingface/<namespace>/<name>@<commit>`, the package-url
+type for [Hugging Face Hub](https://huggingface.co) models. A
+`repository_url` qualifier names another hub, as `$HF_ENDPOINT` does
+otherwise. It's written in Rust, on Hugging Face's own
+[hf-hub](https://github.com/huggingface/hf-hub) client (see
+[Plugin languages](#plugin-languages)).
+
+- **Pull** downloads the whole repository at the commit, large files
+  from Xet storage, checking each file against the hash the Hub lists
+  for it.
+  The commit must be the full 40-character hash: a branch would make
+  pulls differ over time. Datasets, Spaces, and subpaths aren't
+  supported. `pull --check` lists the files and asks for one without
+  downloading it, since a gated model lists its files to anyone.
+- **Hash**: SHA-256 of the sorted `sha256sum` listing of every file, so
+  an SBOM author can compute it from a download:
+
+  ```sh
+  cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
+  ```
+
+  (After `hf download --local-dir model`, remove `model/.cache` first:
+  it's `hf`'s download metadata.)
+- **Push** uploads the files to `--remote`, `<hub URL>/<namespace>`
+  (e.g. `https://huggingface.co/my-org`), to the main branch of a repository of
+  the same name, created private if it doesn't exist. Only files main
+  doesn't already hold go up, so pushing again after a failure resumes
+  it, and an unchanged model commits nothing. They go up in commits of
+  at most 256 files and about 100 MB of inline content, as the Hub's own
+  client does. Large files go through
+  [Xet storage](https://huggingface.co/docs/xet), as `hf` uploads them:
+  chunks the Hub already holds, from this model or any other, are
+  mostly not sent again, and the rest are compressed. A hub without Xet
+  storage isn't supported, and files the repository's `.gitignore`
+  excludes are committed anyway.
+  `push` refuses a repository holding files the model doesn't, other
+  than the `.gitattributes` the Hub creates, and reports the last
+  commit's hash: the commits are new. `push --check` only confirms the
+  token, since write access can't be checked without writing.
+- **Retries**: pull and push retry a dropped connection or a `408`,
+  `429`, or `5xx`, backing off exponentially. A commit carries its
+  parent commit, so it's refused if the branch has moved; if a commit's
+  answer is lost, its retry is refused that way, and pushing again
+  resumes from what it committed.
+- **Remote** is `https://huggingface.co/<namespace>`, or the
+  `repository_url` hub's URL and the namespace.
+- **SBOM generation** describes a model (`model: <namespace>/<name>`, an
+  optional `revision`, `main` by default, and `repository-url`) as one
+  `machine-learning-model` component, pinned to the commit the revision
+  resolves to, with the hash above, computed from the Hub's listing
+  without downloading the weights. Its `modelCard` records the Hub's
+  task, architecture, and training datasets, as data rather than
+  components, since datasets aren't packaged. `sbom generate --help`
+  lists the options.
+
+Both authenticate with `$HF_TOKEN`, else a token stored for the hub's
+host with `bomify login <host> --verify=false` (e.g. `echo "$TOKEN" |
+bomify login huggingface.co -u <user> --password-stdin --verify=false`),
+else `hf auth login`'s.
+
 ## bomify-plugin-grype
 
 Scans with [grype](https://github.com/anchore/grype) as a library. Most
@@ -257,7 +320,7 @@ rejected.
 
 A first-party plugin's language is named by the manifest in its
 directory, and everything that builds plugins goes by it: the
-`Makefile` (`GO_PLUGINS`),
+`Makefile` (`GO_PLUGINS`, `RUST_PLUGINS`),
 [`plugins.yml`](https://github.com/alejandro-velasco/bomify/blob/main/.github/workflows/plugins.yml),
 CodeQL, and Dependabot. Each language has a build
 script, `hack/build-<lang>-plugins.sh`, writing binaries laid out as
@@ -268,20 +331,29 @@ by default or, given `PLATFORMS`, statically for a release; CI and the
 - **Go** (a `go.mod`): every Go plugin is its own module, using this
   repo's `pkg/` through a `replace` directive, so its dependencies stay
   out of bomify's `go.mod` and every other plugin's.
+- **Rust** (a `Cargo.toml`): `bomify-plugin-huggingface` is a Rust
+  crate, since Hugging Face's own client for the Hub and Xet storage,
+  [hf-hub](https://github.com/huggingface/hf-hub), is Rust. Without
+  `pkg/plugin`, it implements its contracts' flags, results, and logging
+  itself, and reads `bomify login`'s credentials from bomify's
+  `auth.json` (and Docker's credential helpers) directly; a contract
+  change must be made there too. Its `rust-toolchain.toml` pins the
+  toolchain. A static Linux build needs `musl-tools`.
 
 | Target | Does |
 | --- | --- |
 | `make plugins` (or `make plugin-<kind>`) | Builds every plugin (or one) for this machine into `bin/`; `-j` builds them in parallel. |
-| `make test` | `test-go` runs each Go module's tests. |
-| `make prebuilt-plugins` | Builds release binaries for every platform into `PREBUILT_PLUGINS_DIR`. |
+| `make test` | `test-go` runs each Go module's tests; `test-rust` checks each crate's formatting and lints, and runs its tests. |
+| `make prebuilt-plugins` | Builds release binaries into `PREBUILT_PLUGINS_DIR`: each Go plugin for every platform, each Rust one for `RUST_PLATFORMS` (this machine's, since Rust can't cross-compile to every platform from one). |
 | `make plugin-packages` | Packages them all from `PREBUILT_PLUGINS_DIR`, compiling nothing. |
 
 Every plugin is built before it's packaged: `plugins.yml` builds each in
-a job of its own, and release packages what it built, so the job that
-signs compiles none of them. The container image takes them prebuilt
-too, compiling none: CI gives it the `linux/amd64` binaries
-`build-plugins` built, and locally `make container-prebuilt` builds them
-(see the
+a job of its own, the Rust ones on each platform's own runner (outside
+a release, only `linux/amd64` unless something Rust-related changed),
+and release packages what it built, so the job that signs compiles none of
+them. The container image takes them prebuilt too, compiling none: CI
+gives it the `linux/amd64` binaries `build-plugins` built, and locally
+`make container-prebuilt` builds them (see the
 [README](https://github.com/alejandro-velasco/bomify/blob/main/README.md#container)).
 
 A plugin in another language needs a `hack/build-<lang>-plugins.sh`

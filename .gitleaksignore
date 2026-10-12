@@ -14,3 +14,10 @@ aeabf9536edc31e8a86c875cf262feea862816be:plugins/SIGNING-CONTRACT.md:generic-api
 # It has since been replaced with a placeholder; this ignores the commit
 # that still contains it.
 a2b675f60d084acd83ef0875e80bfab071002232:internal/logging/logging_test.go:generic-api-key:146
+
+# plugins/bomify-plugin-huggingface-rs/src/token.rs: test fixtures, the
+# base64 of a made-up "user:hf_secret" credential, not a secret. The test
+# has since built them at runtime instead; these ignore the commit that
+# still contains them.
+d149c5ce9e4a75b5ab68b1571993789ac49aeb72:plugins/bomify-plugin-huggingface-rs/src/token.rs:generic-api-key:225
+d149c5ce9e4a75b5ab68b1571993789ac49aeb72:plugins/bomify-plugin-huggingface-rs/src/token.rs:generic-api-key:233
