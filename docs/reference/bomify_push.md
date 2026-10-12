@@ -7,14 +7,21 @@ Publish a bomify package to an OCI registry
 Push publishes the local package <tag> as an OCI artifact under <tag>,
 which must be a full registry reference.
 
+Each component is also published at its own repository beside the
+package's, <repository>/<purl type>/<namespace>/<name>:<version>, for
+tools that pull it directly (oras pull, for a model's files), unless
+--skip-component-repositories is given. A model is published as a
+ModelPack artifact. Images and charts aren't published this way yet.
+The naming rules are in the registry format documentation.
+
 Local vulnerability reports are attached as a separate OCI referrer, so
 re-scanning and pushing again refreshes them without changing the
 package's digest. Afterwards, all but the newest --keep-reports report
 referrers are deleted (best-effort: "bomify security prune" retries if
 the registry refuses).
 
---sign signs the package, and its reports separately, before the tag
-moves, so the tag never points at an unsigned package. --signer
+--sign signs the package, its reports, and each component repository's
+artifact separately, before the tag moves, so the tag never points at an unsigned package. --signer
 (repeatable) also signs as a signer from "bomify signer create", so one
 push can carry every signature a trust rule requiring several needs.
 
@@ -43,6 +50,9 @@ bomify push <tag> [flags]
   # Push using a fully qualified registry reference as the tag
   bomify push registry.example.com/myapp:latest
 
+  # Publish only the package, on a registry without nested repositories
+  bomify push registry.example.com/myapp:latest --skip-component-repositories
+
   # Upload up to 6 layers concurrently
   bomify push myapp:latest --concurrency 6
 
@@ -59,14 +69,15 @@ bomify push <tag> [flags]
 ### Options
 
 ```
-  -c, --concurrency int           number of layers to upload concurrently (default 3)
-  -h, --help                      help for push
-      --keep-reports int          number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all) (default 1)
-  -q, --quiet                     print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
-      --sign string               sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
-      --sign-option stringArray   a key=value option passed through to the --sign plugin (repeatable; e.g. key=cosign.key)
-      --signer stringArray        also sign the package as this signer from "bomify signer create" (repeatable)
-      --vex stringArray           attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
+  -c, --concurrency int               number of layers to upload concurrently (default 3)
+  -h, --help                          help for push
+      --keep-reports int              number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all) (default 1)
+  -q, --quiet                         print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging
+      --sign string                   sign the package with this signing plugin (bomify-plugin-<kind>, e.g. sigstore), attaching the signature as an OCI referrer
+      --sign-option stringArray       a key=value option passed through to the --sign plugin (repeatable; e.g. key=cosign.key)
+      --signer stringArray            also sign the package as this signer from "bomify signer create" (repeatable)
+      --skip-component-repositories   publish only the package, not each component at its own repository
+      --vex stringArray               attach this VEX document to the package: a name from "bomify security vex add", or a file (repeatable)
 ```
 
 ### Options inherited from parent commands

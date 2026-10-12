@@ -48,6 +48,15 @@ downloading anything, then unpacks the tars and writes the large files,
 refusing any that names a file another layer wrote, each through an
 `os.Root`, so no symlink a tar made can lead a write outside.
 
+`push` then publishes each component at its own repository beside the
+package's (see `push.componentPublisher`, and
+[Registry format](registry-format.md#component-repositories) for what's
+published), unless `--skip-component-repositories`. A large file's layer
+there is the package's own blob, re-uploaded, since registries don't
+share blobs across repositories without a mount. Each artifact is signed
+and tagged before the package's tag moves, so a failure leaves the
+package's tag where it was.
+
 ## Save and load
 
 `bomify save`/`load` ([`internal/oci/save`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/save)) run

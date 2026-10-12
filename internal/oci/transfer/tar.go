@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -108,6 +109,42 @@ func WriteTarFiles(dir string, files []TarFile, w io.Writer) error {
 		}
 	}
 	return tw.Close()
+}
+
+// WriteTarTree is WriteTarFiles, but with an entry for each directory
+// ahead of the first file in it, for tools that don't create a file's
+// parent directories themselves, such as `oras pull`.
+func WriteTarTree(dir string, files []TarFile, w io.Writer) error {
+	tw := tar.NewWriter(w)
+	written := map[string]bool{}
+	for _, file := range files {
+		if err := writeTarDirs(tw, path.Dir(file.Path), written); err != nil {
+			return err
+		}
+		if err := writeTarEntry(tw, dir, file.Path); err != nil {
+			return err
+		}
+	}
+	return tw.Close()
+}
+
+// writeTarDirs writes an entry for dir, a "/"-separated path, and each
+// of its parents, that written doesn't hold yet, outermost first.
+func writeTarDirs(tw *tar.Writer, dir string, written map[string]bool) error {
+	if dir == "." || written[dir] {
+		return nil
+	}
+	if err := writeTarDirs(tw, path.Dir(dir), written); err != nil {
+		return err
+	}
+	written[dir] = true
+	hdr := &tar.Header{
+		Typeflag: tar.TypeDir,
+		Name:     dir + "/",
+		Mode:     int64(DirPerm),
+	}
+	normalizeHeader(hdr)
+	return tw.WriteHeader(hdr)
 }
 
 func writeTarEntry(tw *tar.Writer, dir, path string) error {
