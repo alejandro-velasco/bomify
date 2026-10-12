@@ -141,13 +141,37 @@ enum SbomCommand {
     },
 }
 
-/// The "contract" command's answer: the contracts this plugin speaks.
-const CONTRACTS: &str = r#"{"contracts":{"component":1,"sbom":1}}"#;
+/// The major version of each plugin contract this plugin implements, which
+/// the "contract" command reports (see plugins/README.md#contract-versions).
+const COMPONENT_CONTRACT_VERSION: u32 = 1;
+const SBOM_CONTRACT_VERSION: u32 = 1;
+
+/// The "contract" command's answer (see
+/// plugins/contracts/contract-result.schema.json).
+#[derive(Serialize)]
+struct ContractResult {
+    contracts: Contracts,
+}
+
+/// The contracts this plugin implements, each with the version it speaks.
+#[derive(Serialize)]
+struct Contracts {
+    component: u32,
+    sbom: u32,
+}
+
+fn contract_result() -> ContractResult {
+    let contracts = Contracts {
+        component: COMPONENT_CONTRACT_VERSION,
+        sbom: SBOM_CONTRACT_VERSION,
+    };
+    ContractResult { contracts }
+}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let outcome = match cli.command {
-        Command::Contract => print_line(CONTRACTS),
+        Command::Contract => print_json(&contract_result()),
         Command::Component { command } => run_component(command),
         Command::Sbom {
             command: SbomCommand::Generate { config, output },
@@ -255,4 +279,15 @@ fn print_line(text: &str) -> Result<()> {
     writeln!(stdout, "{text}")?;
     stdout.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_contracts() {
+        let json = serde_json::to_string(&contract_result()).unwrap();
+        assert_eq!(json, r#"{"contracts":{"component":1,"sbom":1}}"#);
+    }
 }
