@@ -33,18 +33,12 @@ func (s componentSite) hasPlatform() bool {
 	return s.os != "" || s.arch != ""
 }
 
-// componentSiteOf returns where the component purlString names is
-// published beside a package in packageRepository: one repository
+// componentSiteOf returns where the component purl names is published beside a package in packageRepository: one repository
 // segment for each of its type, namespace segments, and name, each
 // lowercased and made valid (see repositorySegment), tagged with its
 // version (see versionTag). Qualifiers other than "os" and "arch" are
 // left out, as is a subpath.
-func componentSiteOf(packageRepository, purlString string) (componentSite, error) {
-	purl, err := packageurl.FromString(purlString)
-	if err != nil {
-		return componentSite{}, fmt.Errorf("parse purl %q: %w", purlString, err)
-	}
-
+func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (componentSite, error) {
 	segments := []string{purl.Type}
 	if purl.Namespace != "" {
 		segments = append(segments, strings.Split(purl.Namespace, "/")...)
@@ -54,14 +48,14 @@ func componentSiteOf(packageRepository, purlString string) (componentSite, error
 	for _, segment := range segments {
 		valid := repositorySegment(segment)
 		if valid == "" {
-			return componentSite{}, fmt.Errorf("%s: %q can't be a repository name", purlString, segment)
+			return componentSite{}, fmt.Errorf("%s: %q can't be a repository name", purl.ToString(), segment)
 		}
 		repository += "/" + valid
 	}
 
 	tag, err := versionTag(purl.Version)
 	if err != nil {
-		return componentSite{}, fmt.Errorf("%s: %w", purlString, err)
+		return componentSite{}, fmt.Errorf("%s: %w", purl.ToString(), err)
 	}
 
 	qualifiers := purl.Qualifiers.Map()

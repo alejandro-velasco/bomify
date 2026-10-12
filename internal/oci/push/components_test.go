@@ -16,6 +16,7 @@ import (
 	modelspec "github.com/modelpack/model-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/package-url/packageurl-go"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/file"
@@ -39,7 +40,7 @@ func TestComponentSiteOf(t *testing.T) {
 		{"pkg:generic/My__Odd..Name-@1", "registry.example.com/packages/app/generic/my__odd-name:1"},
 	}
 	for _, test := range tests {
-		site, err := componentSiteOf("registry.example.com/packages/app", test.purl)
+		site, err := componentSiteOf("registry.example.com/packages/app", parsePurl(t, test.purl))
 		if err != nil {
 			t.Errorf("componentSiteOf(%s): %v", test.purl, err)
 			continue
@@ -51,7 +52,7 @@ func TestComponentSiteOf(t *testing.T) {
 }
 
 func TestComponentSiteOfPlatform(t *testing.T) {
-	site, err := componentSiteOf("r.example.com/app", "pkg:bomify-plugin/oci@1.0?os=linux&arch=arm64&download_url=x")
+	site, err := componentSiteOf("r.example.com/app", parsePurl(t, "pkg:bomify-plugin/oci@1.0?os=linux&arch=arm64&download_url=x"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +66,19 @@ func TestComponentSiteOfPlatform(t *testing.T) {
 
 func TestComponentSiteOfRefusesWhatCantBeNamed(t *testing.T) {
 	for _, purl := range []string{"pkg:generic/%40%40@1", "pkg:generic/tool@1:2", "pkg:generic/tool@" + strings.Repeat("1", 129)} {
-		if _, err := componentSiteOf("r.example.com/app", purl); err == nil {
+		if _, err := componentSiteOf("r.example.com/app", parsePurl(t, purl)); err == nil {
 			t.Errorf("componentSiteOf(%s) succeeded, want an error", purl)
 		}
 	}
+}
+
+func parsePurl(t *testing.T, purl string) packageurl.PackageURL {
+	t.Helper()
+	parsed, err := packageurl.FromString(purl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
 
 // registry is a set of OCI stores, one per repository, as a registry
@@ -229,7 +239,7 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 func TestPushPublishesFilesAsAnArtifact(t *testing.T) {
 	files := map[string]string{"bin/tool": "#!/bin/sh", "README": "hi"}
 	component := cdx.Component{Type: cdx.ComponentTypeApplication, Name: "tool", Version: "1.0", PackageURL: "pkg:generic/tool@1.0?download_url=https://example.com/tool"}
-	image := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+	image := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:OCI/nginx@1.27"}
 	reg := newRegistry(t)
 
 	result, err := pushWithComponents(t, reg, transfer.Options{}, []cdx.Component{component, image}, []map[string]string{files, {"oci-layout": "{}"}})

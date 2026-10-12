@@ -11,13 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	modelspec "github.com/modelpack/model-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/package-url/packageurl-go"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
@@ -50,7 +50,7 @@ const componentRepositoryLabel = " (component repository)"
 // skippedKinds are the purl types Push doesn't publish at a repository of
 // their own yet: images and charts, which need their own artifact
 // formats.
-var skippedKinds = []string{"oci", "docker", "helm"}
+var skippedKinds = []string{packageurl.TypeOCI, packageurl.TypeDocker, "helm"}
 
 // PublishedComponent is a component, or the platforms of one, that Push
 // published at its own repository.
@@ -128,8 +128,14 @@ func planSites(packageRepository string, components []componentLayers) ([]*siteG
 	var groups []*siteGroup
 	byReference := map[string]*siteGroup{}
 	for _, component := range components {
-		purl := component.component.PackageURL
-		if purl == "" || isSkippedKind(purl) {
+		if component.component.PackageURL == "" {
+			continue
+		}
+		purl, err := packageurl.FromString(component.component.PackageURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse purl %q: %w", component.component.PackageURL, err)
+		}
+		if slices.Contains(skippedKinds, purl.Type) {
 			continue
 		}
 		site, err := componentSiteOf(packageRepository, purl)
@@ -165,16 +171,6 @@ func (g *siteGroup) add(component componentLayers, site componentSite) error {
 	g.members = append(g.members, component)
 	g.sites = append(g.sites, site)
 	return nil
-}
-
-// isSkippedKind reports whether purl's type is one of skippedKinds.
-func isSkippedKind(purl string) bool {
-	for _, kind := range skippedKinds {
-		if strings.HasPrefix(purl, "pkg:"+kind+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 // componentPublisher publishes the components of pkg, a package pushed
