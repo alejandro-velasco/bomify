@@ -1,8 +1,82 @@
 # bomify-plugin-huggingface
 
-What it does is in [plugins/README.md](../README.md#bomify-plugin-huggingface);
-how plugins are built and released, in
-[Plugin languages](../README.md#plugin-languages). This covers the code.
+bomify's plugin for [Hugging Face Hub](https://huggingface.co) models. It
+implements two contracts:
+
+- **Component** (`component pull|push|remote`,
+  [contract](../contracts/component/v1/CONTRACT.md)): fetches and
+  publishes `pkg:huggingface/...` models. `bomify build` and `bomify
+  distribute` call these; you normally don't.
+- **SBOM generation** (`sbom generate`,
+  [contract](../contracts/sbom/v1/CONTRACT.md)): describes a model from
+  the Hub's metadata. List it as a `huggingface` source in a `bomify sbom
+  compose` file, or run it yourself.
+
+## Component
+
+`pkg:huggingface/<namespace>/<name>@<commit>` names a model repository at
+a commit; a `repository_url` qualifier (or `$HF_ENDPOINT`) names another
+hub. The version must be the full 40-character commit hash, so every pull
+gets the same files. Datasets, Spaces, and subpaths aren't supported.
+
+- **pull** downloads every file and checks it against the hash the Hub
+  lists. `--check` lists the files and resolves one, without downloading.
+- **push** uploads to `--remote`, `<hub URL>/<namespace>` (e.g.
+  `https://huggingface.co/my-org`), on the main branch of a repository of
+  the same name, created private if it doesn't exist. Only files the
+  repository doesn't already hold go up, large ones through
+  [Xet storage](https://huggingface.co/docs/xet), so pushing again
+  resumes a failed push and an unchanged model commits nothing. It
+  reports the commit the repository ends at, and refuses a repository
+  holding files the model doesn't (other than the `.gitattributes` the
+  Hub creates). A hub without Xet storage isn't supported, and files
+  `.gitignore` excludes are still committed. `--check` only confirms the
+  token.
+- **remote** is `https://huggingface.co/<namespace>`, or the
+  `repository_url` hub's.
+
+The hash is the SHA-256 of the sorted `sha256sum` listing of every file,
+so an SBOM author can compute it from a download (after `hf download
+--local-dir model`, remove `model/.cache` first):
+
+```sh
+cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
+```
+
+## SBOM generation
+
+List the model as a `medium: huggingface` source in a
+[`bomify sbom compose`](../../docs/reference/bomify_sbom_compose.md) file:
+
+```yaml
+sources:
+  - name: model
+    medium: huggingface
+    options:
+      model: microsoft/phi-4   # <namespace>/<name>, required
+      revision: main           # branch, tag, or commit; main by default
+      # repository-url: https://hub.example.com   # another hub
+```
+
+The component is pinned to the commit the revision resolves to, with the
+hash above, computed from the Hub's listing without downloading the
+weights. Its `modelCard` records the task, architecture, and training
+datasets, as data, since datasets aren't packaged. `sbom generate --help`
+lists the options.
+
+## Authentication
+
+`$HF_TOKEN`, else the token `bomify login <host> --verify=false` stored,
+else `hf auth login`'s:
+
+```sh
+echo "$TOKEN" | bomify login huggingface.co -u <user> --password-stdin --verify=false
+```
+
+## Developing
+
+How plugins are built and released is in
+[Plugin languages](../README.md#plugin-languages).
 
 ```sh
 make plugin-huggingface   # into bin/; or: cargo build --release
