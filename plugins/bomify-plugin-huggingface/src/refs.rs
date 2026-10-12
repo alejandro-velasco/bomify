@@ -215,12 +215,12 @@ mod tests {
     fn refuses_bad_purls() {
         for (purl, want) in [
             (
-                format!("pkg:oci/org/model@{COMMIT}"),
+                format!("pkg:generic/model@{COMMIT}"),
                 "isn't a huggingface purl",
             ),
             (
                 format!("pkg:huggingface/model@{COMMIT}"),
-                "<namespace>/<name>",
+                "namespace required",
             ),
             (
                 "pkg:huggingface/org/model@main".to_string(),

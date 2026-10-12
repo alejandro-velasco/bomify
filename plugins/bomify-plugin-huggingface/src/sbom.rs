@@ -260,7 +260,9 @@ fn model_component(
 ) -> Result<Component> {
     let mut purl = PackageUrl::new(PURL_TYPE, reference.name.clone()).context("build the purl")?;
     purl.with_namespace(reference.namespace.clone())
-        .with_version(reference.revision.clone());
+        .context("build the purl")?
+        .with_version(reference.revision.clone())
+        .context("build the purl")?;
     if let Some(repository_url) = &reference.endpoint {
         purl.add_qualifier("repository_url", repository_url.clone())
             .context("build the purl")?;
