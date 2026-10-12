@@ -1,6 +1,6 @@
 //! The access token for a hub: $HF_TOKEN, else the one "bomify login <hub
-//! host> --verify=false" stored, else the one "hf auth login" stored, as
-//! the Go plugin finds it. It's resolved here, rather than left to
+//! host> --verify=false" stored, else the one "hf auth login" stored.
+//! It's resolved here, rather than left to
 //! hf-hub, because the plugin also makes requests of its own (see
 //! Hub::list_repository), and hf-hub doesn't say which token it found.
 
@@ -28,7 +28,7 @@ pub fn token(host: &str, logger: &Logger) -> Result<Option<String>> {
     }
     let stored = lookup(host).with_context(|| format!("look up credentials for {host}"))?;
     if stored.is_some() {
-        logger.info("using the token bomify login stored", &[("host", host)]);
+        logger.info("using the token bomify login stored", &[("host", &host)]);
         return Ok(stored);
     }
     let Some(path) = hf_login_token_path() else {
@@ -38,7 +38,7 @@ pub fn token(host: &str, logger: &Logger) -> Result<Option<String>> {
         Ok(token) if !token.trim().is_empty() => {
             logger.info(
                 "using the token hf auth login stored",
-                &[("path", &path.display().to_string())],
+                &[("path", &path.display())],
             );
             Ok(Some(token.trim().to_string()))
         }

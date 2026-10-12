@@ -114,9 +114,24 @@ fn endpoint_of(repository_url: &str) -> Result<String> {
     Ok(repository_url.trim_end_matches('/').to_string())
 }
 
-/// Splits push's --remote, "https://<host>[/<path>]/<namespace>", into the
-/// hub's base URL and the namespace to upload into.
-pub fn parse_remote(remote: &str) -> Result<(String, String)> {
+/// Where push uploads to: a namespace on a hub, as its --remote names it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Remote {
+    /// The hub's base URL, e.g. "https://huggingface.co".
+    pub endpoint: String,
+    /// The user or organization to upload into.
+    pub namespace: String,
+}
+
+impl Remote {
+    /// The "<namespace>/<name>" of the repository name in the namespace.
+    pub fn repo_id(&self, name: &str) -> String {
+        format!("{}/{name}", self.namespace)
+    }
+}
+
+/// Parses push's --remote, "https://<host>[/<path>]/<namespace>".
+pub fn parse_remote(remote: &str) -> Result<Remote> {
     let trimmed = remote.trim_end_matches('/');
     let Some((endpoint, namespace)) = trimmed.rsplit_once('/') else {
         bail!("--remote {remote:?} isn't <hub URL>/<namespace>, e.g. {DEFAULT_ENDPOINT}/my-org");
@@ -124,7 +139,11 @@ pub fn parse_remote(remote: &str) -> Result<(String, String)> {
     if endpoint.is_empty() || namespace.is_empty() || endpoint_of(endpoint).is_err() {
         bail!("--remote {remote:?} isn't <hub URL>/<namespace>, e.g. {DEFAULT_ENDPOINT}/my-org");
     }
-    Ok((endpoint.to_string(), namespace.to_string()))
+    let parsed = Remote {
+        endpoint: endpoint.to_string(),
+        namespace: namespace.to_string(),
+    };
+    Ok(parsed)
 }
 
 /// The hub to use: endpoint, else $HF_ENDPOINT, else huggingface.co. It
@@ -224,20 +243,24 @@ mod tests {
         }
     }
 
+    fn remote(endpoint: &str, namespace: &str) -> Remote {
+        Remote {
+            endpoint: endpoint.to_string(),
+            namespace: namespace.to_string(),
+        }
+    }
+
     #[test]
     fn parses_remotes() {
         assert_eq!(
             parse_remote("https://huggingface.co/my-org").unwrap(),
-            ("https://huggingface.co".to_string(), "my-org".to_string())
+            remote("https://huggingface.co", "my-org")
         );
         assert_eq!(
             parse_remote("https://hub.example.com/mirror/my-org/").unwrap(),
-            (
-                "https://hub.example.com/mirror".to_string(),
-                "my-org".to_string()
-            )
+            remote("https://hub.example.com/mirror", "my-org")
         );
-        for remote in [
+        for text in [
             "my-org",
             "huggingface.co/my-org",
             "https://huggingface.co/",
@@ -245,8 +268,8 @@ mod tests {
             "http://huggingface.co/my-org",
         ] {
             assert!(
-                parse_remote(remote).is_err(),
-                "parse_remote({remote}) succeeded"
+                parse_remote(text).is_err(),
+                "parse_remote({text}) succeeded"
             );
         }
         // What remote reports, push takes back.
@@ -256,7 +279,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             parse_remote(&reference.remote()).unwrap(),
-            ("https://hub.example.com".to_string(), "org".to_string())
+            remote("https://hub.example.com", "org")
         );
     }
 

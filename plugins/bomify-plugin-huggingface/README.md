@@ -22,7 +22,8 @@ crate has:
 - `refs.rs`: purls, hub addresses, and `--remote`;
 - `token.rs`: the token, `$HF_TOKEN`, else `bomify login`'s, else
   `hf auth login`'s;
-- `hub.rs`: checking each file against the hash the Hub lists, and the
+- `hub.rs`: the Hub, with the requests hf-hub can't make (see below);
+- `hash.rs`: checking each file against the hash the Hub lists, and the
   tree hash;
 - `transfer.rs`: pull, and push's rules (refusing a repository holding
   other files, skipping files already there, committing on top of a

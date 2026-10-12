@@ -1,6 +1,7 @@
 //! Logging to the file a component command's --log names, in bomify's own
 //! log format: "15:04:05 INF message key=value ...".
 
+use std::fmt::Display;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Mutex;
@@ -52,19 +53,21 @@ impl Logger {
         }
     }
 
-    pub fn info(&self, message: &str, attrs: &[(&str, &str)]) {
+    /// Logs message with attrs, key=value pairs whose values can be
+    /// anything printable: `&[("files", &files.len())]`.
+    pub fn info(&self, message: &str, attrs: &[(&str, &dyn Display)]) {
         self.write(Level::Info, message, attrs);
     }
 
-    pub fn warn(&self, message: &str, attrs: &[(&str, &str)]) {
+    pub fn warn(&self, message: &str, attrs: &[(&str, &dyn Display)]) {
         self.write(Level::Warn, message, attrs);
     }
 
-    pub fn error(&self, message: &str, attrs: &[(&str, &str)]) {
+    pub fn error(&self, message: &str, attrs: &[(&str, &dyn Display)]) {
         self.write(Level::Error, message, attrs);
     }
 
-    fn write(&self, level: Level, message: &str, attrs: &[(&str, &str)]) {
+    fn write(&self, level: Level, message: &str, attrs: &[(&str, &dyn Display)]) {
         let Some(output) = &self.output else {
             return;
         };
@@ -75,7 +78,7 @@ impl Logger {
         }
     }
 
-    fn format(&self, level: Level, message: &str, attrs: &[(&str, &str)]) -> String {
+    fn format(&self, level: Level, message: &str, attrs: &[(&str, &dyn Display)]) -> String {
         let time = chrono::Local::now().format("%H:%M:%S").to_string();
         let (name, color) = match level {
             Level::Info => ("INF", "92"),
@@ -88,7 +91,7 @@ impl Logger {
             format!("{time} {name} {message}")
         };
         for (key, value) in attrs {
-            let value = quote(value);
+            let value = quote(&value.to_string());
             if self.color {
                 line.push_str(&format!(" \x1b[2m{key}=\x1b[0m{value}"));
             } else {
@@ -119,7 +122,7 @@ mod tests {
         let line = logger.format(
             Level::Info,
             "pulled",
-            &[("files", "21"), ("message", "a b")],
+            &[("files", &21), ("message", &"a b")],
         );
         let (time, rest) = line.split_once(' ').unwrap();
         assert_eq!(time.len(), 8);

@@ -6,10 +6,12 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use hf_hub::repository::ModelInfo;
 use packageurl::PackageUrl;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::hub::{File, Hub, hash_content, hash_listing, verify};
+use crate::hash::{hash_content, hash_listing, verify};
+use crate::hub::{Hub, RepoFile};
+use crate::log::Logger;
 use crate::refs::{DEFAULT_BRANCH, PURL_TYPE, Ref, is_commit_hash, repository_page, resolve};
 
 /// The options file sbom generate reads when given no --config.
@@ -42,12 +44,128 @@ pub fn read_options(path: &Path) -> Result<Options> {
     Ok(options)
 }
 
-/// An SBOM of the model options names: one machine-learning-model
-/// component, both the SBOM's subject and its one component to package,
-/// pinned to the commit the revision resolves to, with its tree hash
-/// (computed from the Hub's listing, downloading only files stored in
-/// Git) and a model card from the Hub's metadata.
-pub fn generate(hub: &Hub, options: &Options, logger: &crate::log::Logger) -> Result<Value> {
+/// A CycloneDX SBOM, as sbom generate prints it: one component, both the
+/// SBOM's subject and its one component to package.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bom {
+    #[serde(rename = "$schema")]
+    schema: String,
+    bom_format: String,
+    spec_version: String,
+    version: u32,
+    metadata: Metadata,
+    components: Vec<Component>,
+}
+
+#[derive(Serialize)]
+struct Metadata {
+    component: Component,
+}
+
+/// A CycloneDX machine-learning-model component.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Component {
+    #[serde(rename = "bom-ref")]
+    bom_ref: String,
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supplier: Option<Supplier>,
+    name: String,
+    version: String,
+    hashes: Vec<Hash>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    licenses: Vec<License>,
+    purl: String,
+    external_references: Vec<ExternalReference>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    properties: Vec<Property>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_card: Option<ModelCard>,
+}
+
+#[derive(Serialize, Clone)]
+struct Supplier {
+    name: String,
+}
+
+#[derive(Serialize, Clone)]
+struct Hash {
+    alg: String,
+    content: String,
+}
+
+#[derive(Serialize, Clone)]
+struct License {
+    license: LicenseName,
+}
+
+#[derive(Serialize, Clone)]
+struct LicenseName {
+    name: String,
+}
+
+#[derive(Serialize, Clone)]
+struct ExternalReference {
+    url: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+impl ExternalReference {
+    fn new(url: String, kind: &str) -> ExternalReference {
+        ExternalReference {
+            url,
+            kind: kind.to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+struct Property {
+    name: String,
+    value: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ModelCard {
+    model_parameters: ModelParameters,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ModelParameters {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    architecture_family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_architecture: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    datasets: Vec<Dataset>,
+}
+
+#[derive(Serialize, Clone)]
+struct Dataset {
+    #[serde(rename = "type")]
+    kind: String,
+    name: String,
+    contents: DatasetContents,
+}
+
+#[derive(Serialize, Clone)]
+struct DatasetContents {
+    url: String,
+}
+
+/// An SBOM of the model options names, pinned to the commit the revision
+/// resolves to, with its tree hash (computed from the Hub's listing,
+/// downloading only files stored in Git) and a model card from the Hub's
+/// metadata.
+pub fn generate(hub: &Hub, options: &Options, logger: &Logger) -> Result<Bom> {
     let (namespace, name) = match options.model.split_once('/') {
         Some((namespace, name))
             if !namespace.is_empty() && !name.is_empty() && !name.contains('/') =>
@@ -79,7 +197,7 @@ pub fn generate(hub: &Hub, options: &Options, logger: &crate::log::Logger) -> Re
         "resolved revision",
         &[
             ("model", &options.model),
-            ("revision", revision),
+            ("revision", &revision),
             ("commit", &commit),
         ],
     );
@@ -91,7 +209,7 @@ pub fn generate(hub: &Hub, options: &Options, logger: &crate::log::Logger) -> Re
         endpoint: Some(options.repository_url.clone()).filter(|url| !url.is_empty()),
     };
     let files = hub.list_files(&reference)?;
-    let by_path: HashMap<&str, &File> = files
+    let by_path: HashMap<&str, &RepoFile> = files
         .iter()
         .map(|file| (file.path.as_str(), file))
         .collect();
@@ -99,25 +217,27 @@ pub fn generate(hub: &Hub, options: &Options, logger: &crate::log::Logger) -> Re
     let hash = hash_listing(&paths, |path| file_sha256(hub, &reference, by_path[path]))?;
 
     let component = model_component(&reference, &hub.endpoint, &info, &hash, &by_path)?;
-    let bom = json!({
-        "$schema": "http://cyclonedx.org/schema/bom-1.7.schema.json",
-        "bomFormat": "CycloneDX",
-        "specVersion": "1.7",
-        "version": 1,
-        "metadata": { "component": component.clone() },
-        "components": [component],
-    });
+    let bom = Bom {
+        schema: "http://cyclonedx.org/schema/bom-1.7.schema.json".to_string(),
+        bom_format: "CycloneDX".to_string(),
+        spec_version: "1.7".to_string(),
+        version: 1,
+        metadata: Metadata {
+            component: component.clone(),
+        },
+        components: vec![component],
+    };
     Ok(bom)
 }
 
 /// A file's SHA-256: an LFS file's from the listing, any other's by
 /// downloading it (such files are small), checked against its blob ID.
-fn file_sha256(hub: &Hub, reference: &Ref, file: &File) -> Result<String> {
+fn file_sha256(hub: &Hub, reference: &Ref, file: &RepoFile) -> Result<String> {
     if let Some(sha256) = &file.sha256 {
         return Ok(sha256.clone());
     }
     let content = hub
-        .model(&reference.namespace, &reference.name)
+        .repository(reference)
         .download_file_to_bytes()
         .filename(file.path.clone())
         .revision(reference.revision.clone())
@@ -129,15 +249,15 @@ fn file_sha256(hub: &Hub, reference: &Ref, file: &File) -> Result<String> {
     Ok(hashes.sha256)
 }
 
-/// The model as a CycloneDX machine-learning-model component whose purl
-/// and bom-ref is reference's, as pull takes it.
+/// The model as a component whose purl and bom-ref is reference's, as
+/// pull takes it.
 fn model_component(
     reference: &Ref,
     endpoint: &str,
     info: &ModelInfo,
     tree_hash: &str,
-    files: &HashMap<&str, &File>,
-) -> Result<Value> {
+    files: &HashMap<&str, &RepoFile>,
+) -> Result<Component> {
     let mut purl = PackageUrl::new(PURL_TYPE, reference.name.clone()).context("build the purl")?;
     purl.with_namespace(reference.namespace.clone())
         .with_version(reference.revision.clone());
@@ -149,54 +269,61 @@ fn model_component(
     resolve(&purl)?;
 
     let page = repository_page(endpoint, &reference.repo_id());
+    let revision = &reference.revision;
     let mut references = vec![
-        json!({ "url": page, "type": "website" }),
-        json!({ "url": format!("{page}/tree/{}", reference.revision), "type": "distribution" }),
+        ExternalReference::new(page.clone(), "website"),
+        ExternalReference::new(format!("{page}/tree/{revision}"), "distribution"),
     ];
     if files.contains_key("README.md") {
-        references.push(json!({ "url": format!("{page}/blob/{}/README.md", reference.revision), "type": "model-card" }));
+        let card = format!("{page}/blob/{revision}/README.md");
+        references.push(ExternalReference::new(card, "model-card"));
     }
 
     let card = info.card_data.as_ref();
-    let mut component = serde_json::Map::new();
-    component.insert("bom-ref".into(), json!(purl));
-    component.insert("type".into(), json!("machine-learning-model"));
-    if let Some(author) = info.author.as_ref().filter(|author| !author.is_empty()) {
-        component.insert("supplier".into(), json!({ "name": author }));
-    }
-    component.insert("name".into(), json!(reference.name));
-    component.insert("version".into(), json!(reference.revision));
-    component.insert(
-        "hashes".into(),
-        json!([{ "alg": "SHA-256", "content": tree_hash }]),
-    );
-    let licenses = string_list(card, "license");
-    if !licenses.is_empty() {
-        let licenses: Vec<Value> = licenses
-            .iter()
-            .map(|license| json!({ "license": { "name": license } }))
-            .collect();
-        component.insert("licenses".into(), json!(licenses));
-    }
-    component.insert("purl".into(), json!(purl));
-    component.insert("externalReferences".into(), json!(references));
+    let supplier = info
+        .author
+        .clone()
+        .filter(|author| !author.is_empty())
+        .map(|name| Supplier { name });
+    let licenses = string_list(card, "license")
+        .into_iter()
+        .map(|name| License {
+            license: LicenseName { name },
+        })
+        .collect();
     let base_models = string_list(card, "base_model");
+    let mut properties = Vec::new();
     if !base_models.is_empty() {
-        component.insert(
-            "properties".into(),
-            json!([{ "name": "huggingface:base_model", "value": base_models.join(",") }]),
-        );
+        properties.push(Property {
+            name: "huggingface:base_model".to_string(),
+            value: base_models.join(","),
+        });
     }
-    if let Some(model_card) = model_card(endpoint, info) {
-        component.insert("modelCard".into(), model_card);
-    }
-    Ok(Value::Object(component))
+    let hash = Hash {
+        alg: "SHA-256".to_string(),
+        content: tree_hash.to_string(),
+    };
+
+    let component = Component {
+        bom_ref: purl.clone(),
+        kind: "machine-learning-model".to_string(),
+        supplier,
+        name: reference.name.clone(),
+        version: reference.revision.clone(),
+        hashes: vec![hash],
+        licenses,
+        purl,
+        external_references: references,
+        properties,
+        model_card: model_card(endpoint, info),
+    };
+    Ok(component)
 }
 
 /// What the Hub says about the model: its task, architecture, and
 /// training datasets, as data rather than components, since datasets
 /// aren't packaged. None if the Hub says none of it.
-fn model_card(endpoint: &str, info: &ModelInfo) -> Option<Value> {
+fn model_card(endpoint: &str, info: &ModelInfo) -> Option<ModelCard> {
     let config = info.config.as_ref();
     let text = |value: Option<&Value>| {
         value
@@ -204,36 +331,37 @@ fn model_card(endpoint: &str, info: &ModelInfo) -> Option<Value> {
             .filter(|text| !text.is_empty())
             .map(str::to_string)
     };
-    let task = info.pipeline_tag.clone().filter(|task| !task.is_empty());
-    let family = text(config.and_then(|config| config.get("model_type")));
-    let architecture = text(
-        config
-            .and_then(|config| config.get("architectures"))
-            .and_then(|list| list.get(0)),
-    );
-    let datasets = string_list(info.card_data.as_ref(), "datasets");
-
-    let mut parameters = serde_json::Map::new();
-    if let Some(task) = task {
-        parameters.insert("task".into(), json!(task));
-    }
-    if let Some(family) = family {
-        parameters.insert("architectureFamily".into(), json!(family));
-    }
-    if let Some(architecture) = architecture {
-        parameters.insert("modelArchitecture".into(), json!(architecture));
-    }
-    if !datasets.is_empty() {
-        let datasets: Vec<Value> = datasets
-            .iter()
-            .map(|dataset| json!({ "type": "dataset", "name": dataset, "contents": { "url": format!("{endpoint}/datasets/{dataset}") } }))
-            .collect();
-        parameters.insert("datasets".into(), json!(datasets));
-    }
-    if parameters.is_empty() {
+    let datasets: Vec<Dataset> = string_list(info.card_data.as_ref(), "datasets")
+        .into_iter()
+        .map(|name| Dataset {
+            kind: "dataset".to_string(),
+            contents: DatasetContents {
+                url: format!("{endpoint}/datasets/{name}"),
+            },
+            name,
+        })
+        .collect();
+    let parameters = ModelParameters {
+        task: info.pipeline_tag.clone().filter(|task| !task.is_empty()),
+        architecture_family: text(config.and_then(|config| config.get("model_type"))),
+        model_architecture: text(
+            config
+                .and_then(|config| config.get("architectures"))
+                .and_then(|list| list.get(0)),
+        ),
+        datasets,
+    };
+    let empty = parameters.task.is_none()
+        && parameters.architecture_family.is_none()
+        && parameters.model_architecture.is_none()
+        && parameters.datasets.is_empty();
+    if empty {
         return None;
     }
-    Some(json!({ "modelParameters": parameters }))
+    let card = ModelCard {
+        model_parameters: parameters,
+    };
+    Some(card)
 }
 
 /// A model card field the Hub gives as one string or a list, as a list.
@@ -251,6 +379,8 @@ fn string_list(card: Option<&Value>, key: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]

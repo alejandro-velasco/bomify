@@ -3,6 +3,7 @@
 //! generation plugin contracts (plugins/contracts/component/v1 and
 //! plugins/contracts/sbom/v1).
 
+mod hash;
 mod hub;
 mod log;
 mod refs;
@@ -46,6 +47,12 @@ enum Command {
     /// Print the plugin contracts this plugin implements and their versions
     Contract,
 }
+
+// The contracts' boolean flags take "--check", "--check=true", or
+// "--check=false" (never "--check false", which would read "false" as an
+// argument), so each says: an optional value (num_args), only after "="
+// (require_equals), "false" when the flag is missing (default_value), and
+// "true" when it's given bare (default_missing_value).
 
 #[derive(Subcommand)]
 enum ComponentCommand {
@@ -171,14 +178,14 @@ fn run_component(command: ComponentCommand) -> Result<()> {
 }
 
 fn component(command: &ComponentCommand, purl: &str, logger: &Logger) -> Result<()> {
-    logger.info("resolving purl", &[("purl", purl)]);
+    logger.info("resolving purl", &[("purl", &purl)]);
     let reference = refs::resolve(purl)?;
     logger.info(
         "resolved repository",
         &[
             ("repository", &reference.repo_id()),
             ("revision", &reference.revision),
-            ("endpoint", reference.endpoint.as_deref().unwrap_or("")),
+            ("endpoint", &reference.endpoint.as_deref().unwrap_or("")),
         ],
     );
 
@@ -210,15 +217,15 @@ fn component(command: &ComponentCommand, purl: &str, logger: &Logger) -> Result<
             check,
             ..
         } => {
-            let (endpoint, _) = refs::parse_remote(remote)?;
-            let hub = Hub::connect(Some(&endpoint), logger)?;
+            let remote = refs::parse_remote(remote)?;
+            let hub = Hub::connect(Some(&remote.endpoint), logger)?;
             let result = if *check {
-                transfer::check_push(&hub, &reference, remote)?
+                transfer::check_push(&hub, &reference, &remote)?
             } else {
                 let Some(input) = input else {
                     bail!("--input is required unless --check");
                 };
-                transfer::push(&hub, &reference, input, remote, logger)?
+                transfer::push(&hub, &reference, input, &remote, logger)?
             };
             print_json(&result)
         }
