@@ -24,10 +24,11 @@ which must be a full registry reference.
 
 Each component is also published at its own repository beside the
 package's, <repository>/<purl type>/<namespace>/<name>:<version>, for
-tools that pull it directly (oras pull, for a model's files), unless
---skip-component-repositories is given. A model is published as a
-ModelPack artifact. Images and charts aren't published this way yet.
-The naming rules are in the registry format documentation.
+the tools that run it to pull directly, unless
+--skip-component-repositories is given: an image for docker pull, a
+chart for helm pull, a model as a ModelPack artifact, and other files
+for oras pull. The naming rules are in the registry format
+documentation.
 
 Local vulnerability reports are attached as a separate OCI referrer, so
 re-scanning and pushing again refreshes them without changing the

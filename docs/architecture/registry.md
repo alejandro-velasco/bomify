@@ -51,9 +51,13 @@ refusing any that names a file another layer wrote, each through an
 `push` then publishes each component at its own repository beside the
 package's (see `push.componentPublisher`, and
 [Registry format](registry-format.md#component-repositories) for what's
-published), unless `--skip-component-repositories`. A large file's layer
-there is the package's own blob, re-uploaded, since registries don't
-share blobs across repositories without a mount. Each artifact is signed
+published), unless `--skip-component-repositories`. An image is copied
+from the OCI image layout `build` stored, blob by blob, so it keeps its
+digest, and a chart is packed from its stored archive (see
+`push.componentPublisher.publishMember`), neither through its plugin: a
+plugin's push picks its own tag and reports no digest to sign. A large
+file's layer there is the package's own blob, re-uploaded, since
+registries don't share blobs across repositories without a mount. Each artifact is signed
 and tagged before the package's tag moves, so a failure leaves the
 package's tag where it was.
 

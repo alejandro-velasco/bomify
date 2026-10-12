@@ -69,6 +69,12 @@ package's, so tools that don't know bomify can pull it:
 <package repository>/<purl type>/<namespace>/<name>:<version>
 ```
 
+```sh
+docker pull registry.example.com/packages/llm-serving/oci/nginx:1.27
+helm pull   oci://registry.example.com/packages/llm-serving/helm/vllm --version 0.7.0
+oras pull   registry.example.com/packages/llm-serving/huggingface/microsoft/phi-4:<commit>
+```
+
 - Each of the purl's type, namespace segments, and name is one
   repository segment, lowercased, with any other character than a
   letter or digit as a separator: a run of them that a repository name
@@ -77,18 +83,33 @@ package's, so tools that don't know bomify can pull it:
   shorter.
 - The version is the tag, with `+` as `_` (as Helm does), or `latest`
   without one. A version that still isn't a valid tag fails the push.
+- An image (`oci` or `docker` purl) is tagged with its `tag` qualifier,
+  if it has one, else its version. One whose version is a digest and
+  has no `tag` qualifier is published by digest, untagged.
 - Qualifiers and subpath are left out, except `os` and `arch`:
   components that differ only in those are published as one index of
   them, each entry's platform set from them.
 - Two components with different content at one repository and tag fail
   the push; with the same content, it's published once.
-- Images and charts (`oci`, `docker`, and `helm` purls) aren't published
-  this way yet.
+Each is signed like the package, and published in its kind's own
+format:
 
-Each artifact is signed like the package, and annotated
-`land.bomify.purl`, `land.bomify.package.digest` (the package it was
-published with), and `org.opencontainers.image.created` (the package's).
-Its layers are what `oras pull` writes out as the component's files:
+- **Images** (`oci` and `docker`): the image `build` stored, copied as
+  it is, so it keeps its digest and isn't annotated.
+- **Charts** (`helm`): Helm's own format, which `helm pull` reads: the
+  chart's `Chart.yaml` as JSON as the config
+  (`application/vnd.cncf.helm.config.v1+json`), and its archive as it is
+  as the one layer (`application/vnd.cncf.helm.chart.content.v1.tar+gzip`).
+  Annotated as `helm push` annotates one (`org.opencontainers.image.title`,
+  `.version`, `.description`), and as below.
+- **Anything else**: an artifact of the component's files, as below.
+
+bomify's own artifacts, a chart's, and an index of platforms are
+annotated `land.bomify.purl` (but an index), `land.bomify.package.digest`
+(the package it was published with), and
+`org.opencontainers.image.created` (the package's, so an unchanged
+package publishes the same digests). An artifact of files is laid out so
+`oras pull` writes the component's files out:
 
 | Part | Type | Holds |
 | --- | --- | --- |

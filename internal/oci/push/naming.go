@@ -12,8 +12,16 @@ import (
 // <package repository>/<type>/<namespace>/<name>:<tag> (see
 // componentSiteOf), and the platform it's for, if its purl names one.
 type componentSite struct {
+	// kind is the purl's type, which decides what's published (see
+	// componentPublisher.publishMember).
+	kind       string
 	repository string
-	tag        string
+	// tag is what the published artifact is tagged, or "" for an image
+	// pinned by digest, which is published by digest, untagged.
+	tag string
+	// pinned is the digest the purl pins an image to, which tells sites
+	// of untagged images apart.
+	pinned string
 	// os and arch are the purl's "os" and "arch" qualifiers: components
 	// that differ only in them share a site, as one index.
 	os, arch string
@@ -22,8 +30,12 @@ type componentSite struct {
 	unqualified string
 }
 
-// reference returns s as "<repository>:<tag>".
+// reference returns s as "<repository>:<tag>", or for an image pinned by
+// digest, "<repository>@<digest>".
 func (s componentSite) reference() string {
+	if s.tag == "" {
+		return s.repository + "@" + s.pinned
+	}
 	return s.repository + ":" + s.tag
 }
 
@@ -33,11 +45,13 @@ func (s componentSite) hasPlatform() bool {
 	return s.os != "" || s.arch != ""
 }
 
-// componentSiteOf returns where the component purl names is published beside a package in packageRepository: one repository
-// segment for each of its type, namespace segments, and name, each
-// lowercased and made valid (see repositorySegment), tagged with its
-// version (see versionTag). Qualifiers other than "os" and "arch" are
-// left out, as is a subpath.
+// componentSiteOf returns where the component purl names is published
+// beside a package in packageRepository: one repository segment for each
+// of its type, namespace segments, and name, each lowercased and made
+// valid (see repositorySegment), tagged with its version (see versionTag),
+// or an image with its "tag" qualifier, if it has one. An image pinned to
+// a digest without one is published by digest. Other qualifiers than
+// "os" and "arch" are left out, as is a subpath.
 func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (componentSite, error) {
 	segments := []string{purl.Type}
 	if purl.Namespace != "" {
@@ -53,12 +67,27 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 		repository += "/" + valid
 	}
 
-	tag, err := versionTag(purl.Version)
-	if err != nil {
-		return componentSite{}, fmt.Errorf("%s: %w", purl.ToString(), err)
+	qualifiers := purl.Qualifiers.Map()
+	// An image's tag is its "tag" qualifier, else its version, unless
+	// that's the digest it's pinned to.
+	tagged := purl.Version
+	var pinned string
+	if isImage(purl) {
+		if strings.HasPrefix(purl.Version, "sha256:") {
+			pinned, tagged = purl.Version, ""
+		}
+		if qualifiers["tag"] != "" {
+			tagged = qualifiers["tag"]
+		}
+	}
+	var tag string
+	if tagged != "" || pinned == "" {
+		var err error
+		if tag, err = versionTag(tagged); err != nil {
+			return componentSite{}, fmt.Errorf("%s: %w", purl.ToString(), err)
+		}
 	}
 
-	qualifiers := purl.Qualifiers.Map()
 	unqualified := purl
 	unqualified.Qualifiers = nil
 	for _, qualifier := range purl.Qualifiers {
@@ -68,8 +97,10 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 	}
 
 	site := componentSite{
+		kind:        purl.Type,
 		repository:  repository,
 		tag:         tag,
+		pinned:      pinned,
 		os:          qualifiers["os"],
 		arch:        qualifiers["arch"],
 		unqualified: unqualified.ToString(),
@@ -106,6 +137,11 @@ func validSeparator(run string) string {
 		return run
 	}
 	return "-"
+}
+
+// isImage reports whether purl names a container image.
+func isImage(purl packageurl.PackageURL) bool {
+	return purl.Type == packageurl.TypeOCI || purl.Type == packageurl.TypeDocker
 }
 
 // tagPattern is what an OCI tag may be.
