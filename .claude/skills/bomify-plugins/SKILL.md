@@ -25,7 +25,9 @@ Also relevant:
   `SignatureCommand`, `SBOMCommand`, plus `NewRootCommand`/`Run`) that implement the
   flags, validation, logging, and output. Contract changes to flags or
   output belong in these builders, not in each plugin. Check the package
-  for its current API.
+  for its current API. The Rust plugins (each `plugins/*/` with a
+  `Cargo.toml`) implement the contracts themselves, so a contract change
+  must be made in them too.
 - `plugins/contracts/<contract>/v<N>/*.schema.json`: one JSON Schema per
   result shape bomify parses, next to that version's spec. Glob for the
   current set.
@@ -48,9 +50,7 @@ not memory, when writing or changing the plugin:
 
 | Plugin | Spec | Covers |
 | --- | --- | --- |
-| `bomify-plugin-huggingface` | Hugging Face Hub [OpenAPI spec](https://huggingface.co/.well-known/openapi.md) | Bearer auth; pull: the tree listing (`/api/models/{namespace}/{repo}/tree/{rev}`, `recursive`, `limit`/`cursor` paging) and file downloads (`/{namespace}/{repo}/resolve/{rev}/{path}`, its redirects); push: `preupload`, the NDJSON `commit`, and `whoami-v2`; `sbom generate`: model info (`/api/models/{namespace}/{repo}/revision/{rev}`). |
-| `bomify-plugin-huggingface` | [Git LFS batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Push's LFS uploads (`{repo}.git/info/lfs/objects/batch`, `basic` and `multipart` transfers), which the Hub's spec leaves out, as it does repo creation (`/api/repos/create`). For those, and the Hub's multipart variant, [`huggingface_hub`](https://github.com/huggingface/huggingface_hub)'s `lfs.py`, `_commit_api.py`, and `HfApi.create_repo` are the reference. |
-| `bomify-plugin-huggingface` | [Xet protocol spec](https://huggingface.co/docs/xet) | Push's uploads of large files: chunking, hashing, xorbs, shards, the write token (`/api/models/{repo}/xet-write-token/{rev}`), and the CAS API (xorb and shard uploads, global deduplication). Where the spec leaves something out (its hash tree's shape, the shard tag), [`xet-core`](https://github.com/huggingface/xet-core) is the reference; `internal/xet` checks against the spec's [reference files](https://huggingface.co/datasets/xet-team/xet-spec-reference-files). |
+| `bomify-plugin-huggingface` | Hugging Face Hub [OpenAPI spec](https://huggingface.co/.well-known/openapi.md), through [hf-hub](https://github.com/huggingface/hf-hub) | hf-hub, Hugging Face's own Rust client, makes its Hub and [Xet](https://huggingface.co/docs/xet) calls: check hf-hub's behavior against the spec and [`huggingface_hub`](https://github.com/huggingface/huggingface_hub), the reference client, as for its 1.0.0 bugs (see the plugin's README). The plugin's own request, a HEAD of `/{namespace}/{repo}/resolve/{rev}/{path}` not following its redirect, reads `X-Linked-ETag` as `huggingface_hub`'s `get_hf_file_metadata` does. |
 
 Where a spec leaves behavior out (the Hub's spec doesn't document its
 `Link` paging header, its `X-Error-*` headers, or some response fields,

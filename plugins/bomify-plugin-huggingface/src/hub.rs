@@ -4,6 +4,7 @@
 use std::fs::File as FsFile;
 use std::io::Read;
 use std::path::{Component, Path};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use hf_hub::repository::{RepoTreeEntry, RepoTypeModel};
@@ -15,6 +16,18 @@ use url::Url;
 use crate::log::Logger;
 use crate::refs::{Ref, host_of, resolve_endpoint};
 use crate::token::token;
+
+/// The answers worth retrying a request for: a timeout, rate limiting,
+/// and server errors.
+const RETRY_STATUSES: [u16; 6] = [408, 429, 500, 502, 503, 504];
+
+/// How long to wait before each retry.
+const RETRY_WAITS: [Duration; 4] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
 
 /// A hub, with the token for it.
 pub struct Hub {
@@ -106,14 +119,7 @@ impl Hub {
             .push("resolve")
             .push(revision)
             .extend(path.split('/'));
-        let mut request = self.http.head(url.clone());
-        if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
-        }
-        let response = request.send().with_context(|| format!("HEAD {url}"))?;
-        if !response.status().is_success() && !response.status().is_redirection() {
-            bail!("HEAD {url}: {}", response.status());
-        }
+        let response = self.head(&url)?;
         let etag = response
             .headers()
             .get("x-linked-etag")
@@ -127,6 +133,33 @@ impl Hub {
             bail!("HEAD {url}: X-Linked-ETag {etag:?} isn't a SHA-256");
         }
         Ok(sha256)
+    }
+
+    /// HEADs url with the token, retrying a dropped connection or a 408,
+    /// 429, or 5xx, as hf-hub retries its own requests, and accepting a
+    /// redirect as an answer.
+    fn head(&self, url: &Url) -> Result<reqwest::blocking::Response> {
+        let mut attempt = 0;
+        loop {
+            let mut request = self.http.head(url.clone());
+            if let Some(token) = &self.token {
+                request = request.bearer_auth(token);
+            }
+            let outcome = request.send();
+            let retryable = match &outcome {
+                Ok(response) => RETRY_STATUSES.contains(&response.status().as_u16()),
+                Err(error) => error.is_connect() || error.is_timeout() || error.is_request(),
+            };
+            if !retryable || attempt >= RETRY_WAITS.len() {
+                let response = outcome.with_context(|| format!("HEAD {url}"))?;
+                if !response.status().is_success() && !response.status().is_redirection() {
+                    bail!("HEAD {url}: {}", response.status());
+                }
+                return Ok(response);
+            }
+            std::thread::sleep(RETRY_WAITS[attempt]);
+            attempt += 1;
+        }
     }
 }
 

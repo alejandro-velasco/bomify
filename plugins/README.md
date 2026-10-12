@@ -21,7 +21,7 @@ The first-party plugins. Each directory is a standalone
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | `pkg:oci`, `pkg:docker` | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
 | [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | `pkg:helm`; Helm charts | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | `pkg:generic` | `net/http` | Component |
-| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | the [Hub API](https://huggingface.co/.well-known/openapi.md), [Xet](https://huggingface.co/docs/xet), and [Git LFS](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) | Component, SBOM generation |
+| [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | `pkg:huggingface` models; Hub models | [hf-hub](https://github.com/huggingface/hf-hub), Hugging Face's Rust client for the Hub and [Xet](https://huggingface.co/docs/xet) | Component, SBOM generation |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
 | [`bomify-plugin-sigstore`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-sigstore) | Sigstore bundles | [sigstore-go](https://github.com/sigstore/sigstore-go) | Signing |
 
@@ -206,10 +206,13 @@ without writing to it.
 Handles `pkg:huggingface/<namespace>/<name>@<commit>`, the package-url
 type for [Hugging Face Hub](https://huggingface.co) models. A
 `repository_url` qualifier names another hub, as `$HF_ENDPOINT` does
-otherwise.
+otherwise. It's written in Rust, on Hugging Face's own
+[hf-hub](https://github.com/huggingface/hf-hub) client (see
+[Plugin languages](#plugin-languages)).
 
-- **Pull** downloads the whole repository at the commit over the Hub's
-  HTTP API, checking each file against the hash the Hub lists for it.
+- **Pull** downloads the whole repository at the commit, large files
+  from Xet storage, checking each file against the hash the Hub lists
+  for it.
   The commit must be the full 40-character hash: a branch would make
   pulls differ over time. Datasets, Spaces, and subpaths aren't
   supported. `pull --check` lists the files and asks for one without
@@ -228,21 +231,22 @@ otherwise.
   the same name, created private if it doesn't exist. Only files main
   doesn't already hold go up, so pushing again after a failure resumes
   it, and an unchanged model commits nothing. They go up in commits of
-  at most 256 files and 100 MB of inline content, as the Hub's own
+  at most 256 files and about 100 MB of inline content, as the Hub's own
   client does. Large files go through
   [Xet storage](https://huggingface.co/docs/xet), as `hf` uploads them:
   chunks the Hub already holds, from this model or any other, are
-  mostly not sent again, and the rest are compressed with LZ4.
-  On a hub without Xet, they go through Git LFS, in parts when the hub
-  asks.
+  mostly not sent again, and the rest are compressed. A hub without Xet
+  storage isn't supported, and files the repository's `.gitignore`
+  excludes are committed anyway.
   `push` refuses a repository holding files the model doesn't, other
   than the `.gitattributes` the Hub creates, and reports the last
   commit's hash: the commits are new. `push --check` only confirms the
   token, since write access can't be checked without writing.
 - **Retries**: pull and push retry a dropped connection or a `408`,
-  `429`, or `5xx` up to five times, backing off from 1 to 8 seconds, or
-  as long as `Retry-After` asks. A commit carries its parent commit, so a
-  retried one that already went through is noticed, not repeated.
+  `429`, or `5xx`, backing off exponentially. A commit carries its
+  parent commit, so it's refused if the branch has moved; if a commit's
+  answer is lost, its retry is refused that way, and pushing again
+  resumes from what it committed.
 - **Remote** is `https://huggingface.co/<namespace>`, or the
   `repository_url` hub's URL and the namespace.
 - **SBOM generation** describes a model (`model: <namespace>/<name>`, an
@@ -327,6 +331,14 @@ by default or, given `PLATFORMS`, statically for a release; CI and the
 - **Go** (a `go.mod`): every Go plugin is its own module, using this
   repo's `pkg/` through a `replace` directive, so its dependencies stay
   out of bomify's `go.mod` and every other plugin's.
+- **Rust** (a `Cargo.toml`): `bomify-plugin-huggingface` is a Rust
+  crate, since Hugging Face's own client for the Hub and Xet storage,
+  [hf-hub](https://github.com/huggingface/hf-hub), is Rust. Without
+  `pkg/plugin`, it implements its contracts' flags, results, and logging
+  itself, and reads `bomify login`'s credentials from bomify's
+  `auth.json` (and Docker's credential helpers) directly; a contract
+  change must be made there too. Its `rust-toolchain.toml` pins the
+  toolchain.
 
 | Target | Does |
 | --- | --- |
