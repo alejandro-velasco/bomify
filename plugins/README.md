@@ -203,66 +203,52 @@ without writing to it.
 
 ## bomify-plugin-huggingface
 
-Handles `pkg:huggingface/<namespace>/<name>@<commit>`, the package-url
-type for [Hugging Face Hub](https://huggingface.co) models. A
-`repository_url` qualifier names another hub, as `$HF_ENDPOINT` does
-otherwise. It's written in Rust, on Hugging Face's own
-[hf-hub](https://github.com/huggingface/hf-hub) client (see
+Handles `pkg:huggingface/<namespace>/<name>@<commit>`, a model on the
+[Hugging Face Hub](https://huggingface.co); a `repository_url` qualifier
+(or `$HF_ENDPOINT`) names another hub. It's written in Rust, on Hugging
+Face's [hf-hub](https://github.com/huggingface/hf-hub) client (see
 [Plugin languages](#plugin-languages)).
 
-- **Pull** downloads the whole repository at the commit, large files
-  from Xet storage, checking each file against the hash the Hub lists
-  for it.
-  The commit must be the full 40-character hash: a branch would make
-  pulls differ over time. Datasets, Spaces, and subpaths aren't
-  supported. `pull --check` lists the files and asks for one without
-  downloading it, since a gated model lists its files to anyone.
-- **Hash**: SHA-256 of the sorted `sha256sum` listing of every file, so
-  an SBOM author can compute it from a download:
+- **Pull** downloads the whole repository at the commit and checks each
+  file against the hash the Hub lists. The version must be the full
+  40-character commit hash, so every pull gets the same files. Datasets,
+  Spaces, and subpaths aren't supported. `pull --check` lists the files
+  and resolves one, without downloading it.
+- **Hash**: SHA-256 of the sorted `sha256sum` listing of every file,
+  which an SBOM author can compute from a download:
 
     ```sh
     cd model && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum --text | sha256sum
     ```
 
     (After `hf download --local-dir model`, remove `model/.cache` first:
-    it's `hf`'s download metadata.)
+    it's `hf`'s metadata.)
 
-- **Push** uploads the files to `--remote`, `<hub URL>/<namespace>`
-  (e.g. `https://huggingface.co/my-org`), to the main branch of a repository of
-  the same name, created private if it doesn't exist. Only files main
-  doesn't already hold go up, so pushing again after a failure resumes
-  it, and an unchanged model commits nothing. They go up in commits of
-  at most 256 files and about 100 MB of inline content, as the Hub's own
-  client does. Large files go through
-  [Xet storage](https://huggingface.co/docs/xet), as `hf` uploads them:
-  chunks the Hub already holds, from this model or any other, are
-  mostly not sent again, and the rest are compressed. A hub without Xet
-  storage isn't supported, and files the repository's `.gitignore`
-  excludes are committed anyway.
-  `push` refuses a repository holding files the model doesn't, other
-  than the `.gitattributes` the Hub creates, and reports the last
-  commit's hash: the commits are new. `push --check` only confirms the
-  token, since write access can't be checked without writing.
-- **Retries**: pull and push retry a dropped connection or a `408`,
-  `429`, or `5xx`, backing off exponentially. A commit carries its
-  parent commit, so it's refused if the branch has moved; if a commit's
-  answer is lost, its retry is refused that way, and pushing again
-  resumes from what it committed.
+- **Push** uploads to `--remote`, `<hub URL>/<namespace>` (e.g.
+  `https://huggingface.co/my-org`), on the main branch of a repository
+  of the same name, created private if it doesn't exist. Only files the
+  repository doesn't already hold go up, large ones through
+  [Xet storage](https://huggingface.co/docs/xet), so pushing again
+  resumes a failed push, and an unchanged model commits nothing. It
+  reports the commit the repository ends at, not the pulled one, and
+  refuses a repository holding files the model doesn't, other than the
+  `.gitattributes` the Hub creates. A hub without Xet storage isn't
+  supported, and files `.gitignore` excludes are still committed.
+  `push --check` only confirms the token.
 - **Remote** is `https://huggingface.co/<namespace>`, or the
-  `repository_url` hub's URL and the namespace.
+  `repository_url` hub's.
 - **SBOM generation** describes a model (`model: <namespace>/<name>`, an
   optional `revision`, `main` by default, and `repository-url`) as one
-  `machine-learning-model` component, pinned to the commit the revision
+  `machine-learning-model` component pinned to the commit its revision
   resolves to, with the hash above, computed from the Hub's listing
-  without downloading the weights. Its `modelCard` records the Hub's
-  task, architecture, and training datasets, as data rather than
-  components, since datasets aren't packaged. `sbom generate --help`
-  lists the options.
+  without downloading the weights. Its `modelCard` records the task,
+  architecture, and training datasets, as data, since datasets aren't
+  packaged. `sbom generate --help` lists the options.
 
-Both authenticate with `$HF_TOKEN`, else a token stored for the hub's
-host with `bomify login <host> --verify=false` (e.g. `echo "$TOKEN" |
-bomify login huggingface.co -u <user> --password-stdin --verify=false`),
-else `hf auth login`'s.
+It authenticates with `$HF_TOKEN`, else the token `bomify login <host>
+--verify=false` stored (e.g. `echo "$TOKEN" | bomify login
+huggingface.co -u <user> --password-stdin --verify=false`), else `hf auth
+login`'s.
 
 ## bomify-plugin-grype
 
