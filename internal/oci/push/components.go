@@ -50,7 +50,7 @@ const componentRepositoryLabel = " (component repository)"
 // skippedKinds are the purl types Push doesn't publish at a repository of
 // their own yet: images and charts, which need their own artifact
 // formats.
-var skippedKinds = []string{packageurl.TypeOCI, packageurl.TypeDocker, "helm"}
+var skippedKinds = []string{packageurl.TypeOCI, packageurl.TypeDocker, packageurl.TypeHelm}
 
 // PublishedComponent is a component, or the platforms of one, that Push
 // published at its own repository.
