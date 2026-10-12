@@ -266,22 +266,30 @@ func indexComponentsByPurl(bom *cdx.BOM) map[string]cdx.Component {
 // it's for inspecting a remote package's manifest, not restoring it
 // locally.
 func Manifest(ctx context.Context, target oras.ReadOnlyTarget, ref string) ([]byte, error) {
+	_, data, err := fetchManifestAndSBOM(ctx, target, ref)
+	return data, err
+}
+
+// fetchManifestAndSBOM resolves ref against target and returns its manifest
+// and the raw bytes of its config blob, the SBOM, each checked against its
+// digest, without verifying anything else or writing anything.
+func fetchManifestAndSBOM(ctx context.Context, target oras.ReadOnlyTarget, ref string) (ocispec.Manifest, []byte, error) {
 	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", ref, err)
+		return ocispec.Manifest{}, nil, fmt.Errorf("resolve %s: %w", ref, err)
 	}
 
 	manifest, err := fetchManifest(ctx, target, desc)
 	if err != nil {
-		return nil, fmt.Errorf("fetch manifest %s: %w", ref, err)
+		return ocispec.Manifest{}, nil, fmt.Errorf("fetch manifest %s: %w", ref, err)
 	}
 
 	data, err := content.FetchAll(ctx, target, manifest.Config)
 	if err != nil {
-		return nil, fmt.Errorf("fetch config: %w", err)
+		return ocispec.Manifest{}, nil, fmt.Errorf("fetch config: %w", err)
 	}
 
-	return data, nil
+	return manifest, data, nil
 }
 
 func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, desc ocispec.Descriptor) (ocispec.Manifest, error) {
