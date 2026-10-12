@@ -19,8 +19,8 @@ a referrer of it, so none changes its digest.
 | --- | --- | --- |
 | Manifest | artifact type `application/vnd.bomify.package.v1+json` | Annotated `org.opencontainers.image.created` with the SBOM's `metadata.timestamp` in UTC (RFC 3339), or the Unix epoch without one, so pushing an unchanged package gives the same digest. |
 | Config | `application/vnd.cyclonedx+json` or `application/vnd.cyclonedx+xml` | The package's CycloneDX SBOM, as `bomify build` assembled it. |
-| Tar layers | `application/vnd.bomify.component.layer.v1.tar` | Each component's files under 64 MiB, and its symlinks: a tar of them, with paths relative to what `build` pulled for it. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Split into several tars past 4 GiB; a component with no files has one empty tar. Annotated `land.bomify.purl` and `org.opencontainers.image.title` (`<digest>.tar`). |
-| File part layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as raw bytes, in parts of at most 4 GiB (safely under the 10 GB per layer GHCR and Docker Hub allow), so no layer outgrows a registry, and an unchanged file is the same blob in every package. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
+| Tar layers | `application/vnd.bomify.component.layer.v1.tar` | Each component's files under 64 MiB, and its symlinks: a tar of them, with paths relative to what `build` pulled for it. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Split into several tars past 8 GiB; a component with no files has one empty tar. Annotated `land.bomify.purl` and `org.opencontainers.image.title` (`<digest>.tar`). |
+| File part layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as raw bytes: one layer, the file itself, unless it's past 8 GiB, which no layer outgrows (GHCR and Docker Hub allow 10 GB); then parts of at most 8 GiB. So an unchanged file is the same blob in every package. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
 
 A component's layers come in SBOM order: its tars, then its large
 files' parts, by path and offset.

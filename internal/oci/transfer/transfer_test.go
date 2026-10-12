@@ -217,7 +217,7 @@ func TestTarSize(t *testing.T) {
 // TestPartCount checks a file takes one part per MaxLayerSize, the last
 // holding the rest.
 func TestPartCount(t *testing.T) {
-	for size, want := range map[int64]int{1: 1, 4 << 30: 1, 4<<30 + 1: 2, 10 << 30: 3} {
+	for size, want := range map[int64]int{1: 1, 8 << 30: 1, 8<<30 + 1: 2, 20 << 30: 3} {
 		if got := PartCount(size); got != want {
 			t.Errorf("PartCount(%d) = %d, want %d", size, got, want)
 		}

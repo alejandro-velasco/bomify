@@ -10,10 +10,10 @@ flowchart TB
         direction LR
         File[("file")]
         Large{"regular file of<br/>64 MiB or more?"}
-        Fits{"4 GiB or less?"}
-        Grouped("grouped into the current tar layer;<br/>the next tar starts when a file<br/>would take this one past 4 GiB")
+        Fits{"8 GiB or less?"}
+        Grouped("grouped into the current tar layer;<br/>the next tar starts when a file<br/>would take this one past 8 GiB")
         Whole("one file part layer:<br/>the whole file")
-        Parts("file part layers of 4 GiB each,<br/>the last holding the rest")
+        Parts("file part layers of 8 GiB each,<br/>the last holding the rest")
 
         File --> Large
         Large -- "no: smaller, or a symlink" --> Grouped
@@ -34,7 +34,7 @@ flowchart TB
         end
         subgraph Row3[" "]
             direction LR
-            R3File[("weights.bin · 10 GiB")] --> R3Layer("layers 3–5 · file parts<br/>weights.bin 1/3: 0 – 4 GiB<br/>weights.bin 2/3: 4 – 8 GiB<br/>weights.bin 3/3: 8 – 10 GiB")
+            R3File[("weights.bin · 20 GiB")] --> R3Layer("layers 3–5 · file parts<br/>weights.bin 1/3: 0 – 8 GiB<br/>weights.bin 2/3: 8 – 16 GiB<br/>weights.bin 3/3: 16 – 20 GiB")
         end
         Row1 ~~~ Row2 ~~~ Row3
     end

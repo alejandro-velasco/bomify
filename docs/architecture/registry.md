@@ -13,12 +13,12 @@ every type and annotation is listed in [Registry format](registry-format.md)):
   `+xml`, sniffed).
 - A component's **layers**, annotated `land.bomify.purl`, are tars of
   its files under `transfer.LargeFileSize` (64 MiB), and each larger
-  file as raw parts of at most `transfer.MaxLayerSize` (4 GiB), so no
-  layer outgrows a registry's limit. `transfer.WriteTar` zeroes mtimes
-  and uid/gid, so a tar's digest depends only on names, modes, and
-  content; otherwise re-pushing a component bomify had pulled would
-  re-upload it. A part is the file's own bytes, so an unchanged large
-  file is the same blob in every package, and uploads once.
+  file as one raw layer, its own bytes, so an unchanged large file is
+  the same blob in every package, and uploads once. Only a file past
+  `transfer.MaxLayerSize` (8 GiB) is split, into parts, so no layer
+  outgrows a registry's limit. `transfer.WriteTar` zeroes mtimes and
+  uid/gid, so a tar's digest depends only on names, modes, and content;
+  otherwise re-pushing a component bomify had pulled would re-upload it.
 - **Signatures**, the **report referrer**, **VEX referrers**, and the
   **provenance attestation** (see [Build provenance](provenance.md)) are
   OCI referrers, so none changes the package digest.

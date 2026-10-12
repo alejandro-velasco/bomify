@@ -15,10 +15,10 @@ import (
 
 // FilePartMediaType identifies one part of a large file of a component:
 // the file's raw bytes from its AnnotationFileOffset, of the layer's own
-// size. A file at least LargeFileSize long is pushed this way, in parts of
-// at most MaxLayerSize, rather than in its component's tar layers, so no
-// layer outgrows a registry's limit, and an unchanged file is the same
-// blob in every package. Pull writes each part into the file
+// size. A file at least LargeFileSize long is pushed this way, rather than
+// in its component's tar layers: as one part, the whole file, unless it's
+// past MaxLayerSize, which no layer outgrows. So an unchanged file is the
+// same blob in every package. Pull writes each part into the file
 // AnnotationFilePath names, inside its component's directory.
 const FilePartMediaType = "application/vnd.bomify.component.file.v1"
 
@@ -39,12 +39,12 @@ const (
 
 // LargeFileSize and MaxLayerSize shape a component's layers (see
 // FilePartMediaType): a file at least LargeFileSize long gets its own
-// layers, and no layer is larger than MaxLayerSize, safely under the
-// 10 GB per layer GHCR and Docker Hub allow. Variables so tests can make
-// them small.
+// layers, and no layer is larger than MaxLayerSize: under the 10 GB per
+// layer GHCR and Docker Hub allow, but larger than most single files, such
+// as a model's weight shards. Variables so tests can make them small.
 var (
 	LargeFileSize int64 = 64 << 20
-	MaxLayerSize  int64 = 4 << 30
+	MaxLayerSize  int64 = 8 << 30
 )
 
 // PartCount returns how many file part layers a file of size takes: one
