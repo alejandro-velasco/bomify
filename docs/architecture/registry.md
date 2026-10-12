@@ -46,6 +46,16 @@ downloading anything, creates each large file at full size, then
 unpacks the tars, refusing any entry naming a file that exists, and
 writes each part at its offset.
 
+`component pull` is `pull` keeping only the layers naming one
+component's purl, into a scratch data directory inside a directory of
+the user's choosing; that component's files then move up into it (see
+`pull.PullComponent`). The directory may be a mount point, such as a
+volume in a container, which can't be swapped for a staged copy, so
+staging inside it keeps the moves on one file system. With `--replace`,
+what it held is removed only once the download has verified, so a failed
+update keeps the old files. `component list` reads only the manifest and
+the SBOM.
+
 ## Save and load
 
 `bomify save`/`load` ([`internal/oci/save`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/save)) run
