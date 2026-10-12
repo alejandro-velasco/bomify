@@ -12,7 +12,7 @@ flowchart LR
         subgraph Descriptors["manifest descriptors, in this order"]
             Config["config<br/>mediaType: application/vnd.cyclonedx+json (or +xml)"]
             L1["layers[0]: component A's small files<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
-            L2["layers[1..]: component A's large file, in parts<br/>mediaType: application/vnd.bomify.component.file.v1<br/>land.bomify.purl · land.bomify.file.path, .mode, .size, .offset"]
+            L2["layers[1..]: component A's large files, one each<br/>mediaType: application/vnd.bomify.component.file.v1<br/>land.bomify.purl · land.bomify.file.path, .mode"]
         end
 
         ReportRef{{"report referrer (untagged)<br/>artifactType: application/vnd.bomify.vulnerabilities.v1+json<br/>created: newest report's scan time"}}

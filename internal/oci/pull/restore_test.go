@@ -26,10 +26,10 @@ func TestGroupLayers(t *testing.T) {
 	descs := []ocispec.Descriptor{
 		0: layerOf(transfer.LayerMediaType, "model"),
 		1: layerOf(transfer.LayerMediaType, "app"),
-		2: layerOf(transfer.FilePartMediaType, "model"),
-		3: layerOf(transfer.FilePartMediaType, "model"),
+		2: layerOf(transfer.FileMediaType, "model"),
+		3: layerOf(transfer.FileMediaType, "model"),
 		4: layerOf("application/x-foo", ""),
-		5: layerOf(transfer.FilePartMediaType, "model"),
+		5: layerOf(transfer.FileMediaType, "model"),
 		// A purl alone doesn't make a layer a component's.
 		6: layerOf("application/x-foo", "app"),
 		// Nor does a component media type without a purl.

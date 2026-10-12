@@ -19,20 +19,19 @@ a referrer of it, so none changes its digest.
 | --- | --- | --- |
 | Manifest | artifact type `application/vnd.bomify.package.v1+json` | Annotated `org.opencontainers.image.created` with the SBOM's `metadata.timestamp` in UTC (RFC 3339), or the Unix epoch without one, so pushing an unchanged package gives the same digest. |
 | Config | `application/vnd.cyclonedx+json` or `application/vnd.cyclonedx+xml` | The package's CycloneDX SBOM, as `bomify build` assembled it. |
-| Tar layers | `application/vnd.bomify.component.layer.v1.tar` | Each component's files under 64 MiB, and its symlinks: a tar of them, with paths relative to what `build` pulled for it. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Split into several tars past 8 GiB; a component with no files has one empty tar. Annotated `land.bomify.purl` and `org.opencontainers.image.title` (`<digest>.tar`). |
-| File part layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as raw bytes: one layer, the file itself, unless it's past 8 GiB, which no layer outgrows (GHCR and Docker Hub allow 10 GB); then parts of at most 8 GiB. So an unchanged file is the same blob in every package. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
+| Tar layers | `application/vnd.bomify.component.layer.v1.tar` | Each component's files under 64 MiB, and its symlinks: a tar of them, with paths relative to what `build` pulled for it. mtimes, uid, and gid are zeroed, so the digest depends only on names, modes, and content. Split into several tars past 4 GiB; a component with no files has one empty tar. Annotated `land.bomify.purl` and `org.opencontainers.image.title` (`<digest>.tar`). |
+| File layers | `application/vnd.bomify.component.file.v1` | Each file of 64 MiB or more, as one layer of its own bytes, so an unchanged file is the same blob in every package. It's never split, so a file past a registry's layer limit (10 GB on GHCR and Docker Hub) can't be pushed there. Annotated `land.bomify.purl` and `land.bomify.file.*`. |
 
 A component's layers come in SBOM order: its tars, then its large
-files' parts, by path and offset.
+files, by path.
 
-![Which of a component's files are grouped into tars, and which become file parts](../diagrams/component-layers.svg)
+![Which of a component's files are grouped into tars, and which become file layers](../diagrams/component-layers.svg)
 
 *Source: [`docs/diagrams/component-layers.mmd`](https://github.com/alejandro-velasco/bomify/blob/main/docs/diagrams/component-layers.mmd)*
 
 Pull restores a component only once
-every one of its layers verifies, and refuses parts that name a path
-outside the component, don't cover their file exactly, or a file a tar
-also holds. A symlink must be relative and resolve, through any other
+every one of its layers verifies, and refuses file layers that name a
+path outside the component, or a file another layer also holds. A symlink must be relative and resolve, through any other
 links, to a file or directory inside its component; push and pull both
 refuse one that doesn't.
 
@@ -96,7 +95,7 @@ Its layers are what `oras pull` writes out as the component's files:
 | Manifest | artifact type `application/vnd.bomify.component.v1+json`, or ModelPack's `application/vnd.cncf.model.manifest.v1+json` for a `machine-learning-model` component | |
 | Config | empty, or for a model, ModelPack's `application/vnd.cncf.model.config.v1+json`: the component's name and version, and `modelfs.diffIds`, each layer's uncompressed digest | |
 | Small files | `application/vnd.bomify.component.layer.v1.tar+gzip`, or for a model ModelPack's `application/vnd.cncf.model.weight.config.v1.tar+gzip` | One gzipped tar of every file the package's tar layers hold, with an entry for each directory. Titled `.` and annotated `io.deis.oras.content.unpack` and `io.deis.oras.content.digest`, so `oras pull` unpacks it where it pulls to. |
-| Large files | the package's `application/vnd.bomify.component.file.v1`, or for a model ModelPack's `application/vnd.cncf.model.weight.v1.raw` | The package's file part layers, the same blobs and `land.bomify.file.*` annotations. A file that's one part is also titled with its path, so `oras pull` writes it out; one past 8 GiB can't be pulled with plain tools. A model's is also annotated `org.cncf.model.filepath`. |
+| Large files | the package's `application/vnd.bomify.component.file.v1`, or for a model ModelPack's `application/vnd.cncf.model.weight.v1.raw` | The package's file layers, the same blobs and `land.bomify.file.*` annotations, also titled with their path, so `oras pull` writes them out. A model's is also annotated `org.cncf.model.filepath`. |
 
 A model's layer types are chosen by size rather than content, so
 they're annotated `org.cncf.model.file.mediatype.untested`.
@@ -107,10 +106,8 @@ they're annotated `org.cncf.model.file.mediatype.untested`.
 | --- | --- | --- |
 | `land.bomify.purl` | package layers, report layers, component repository artifacts and their layers | The component's purl. |
 | `land.bomify.package.digest` | component repository artifacts | The digest of the package the component was published with. |
-| `land.bomify.file.path` | file part layers | The file's `/`-separated path within the component. |
-| `land.bomify.file.mode` | file part layers | The file's permission bits, in octal, e.g. `0755`. |
-| `land.bomify.file.size` | file part layers | The whole file's size in bytes. |
-| `land.bomify.file.offset` | file part layers | Where in the file the part's bytes start. |
+| `land.bomify.file.path` | file layers | The file's `/`-separated path within the component. |
+| `land.bomify.file.mode` | file layers | The file's permission bits, in octal, e.g. `0755`. |
 | `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
 | `land.bomify.signature.plugin` | signature and signed attestation referrers | The kind of signing plugin that made it. Informational. |
 | `land.bomify.attestation.predicateType` | provenance referrers | The in-toto predicate type, `https://slsa.dev/provenance/v1`. Marks the referrer as an attestation, which signature verification skips. |

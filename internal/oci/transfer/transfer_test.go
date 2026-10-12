@@ -191,19 +191,6 @@ func TestWriteTarIsStableAcrossExtractRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseSize(t *testing.T) {
-	for value, want := range map[string]int64{"0": 0, "4294967296": 4 << 30, "10737418240": 10 << 30} {
-		if got, err := parseSize(value); err != nil || got != want {
-			t.Errorf("parseSize(%q) = %d, %v; want %d", value, got, err, want)
-		}
-	}
-	for _, value := range []string{"", "-1", "1.5", "0x10", "ten"} {
-		if _, err := parseSize(value); err == nil {
-			t.Errorf("parseSize(%q) succeeded", value)
-		}
-	}
-}
-
 // TestTarSize checks a file's content is padded to whole blocks, after
 // a header block of its own.
 func TestTarSize(t *testing.T) {
@@ -214,52 +201,36 @@ func TestTarSize(t *testing.T) {
 	}
 }
 
-// TestPartCount checks a file takes one part per MaxLayerSize, the last
-// holding the rest.
-func TestPartCount(t *testing.T) {
-	for size, want := range map[int64]int{1: 1, 8 << 30: 1, 8<<30 + 1: 2, 20 << 30: 3} {
-		if got := PartCount(size); got != want {
-			t.Errorf("PartCount(%d) = %d, want %d", size, got, want)
-		}
-	}
-}
-
-func TestPartLabel(t *testing.T) {
+func TestFileLabel(t *testing.T) {
 	purl := "pkg:huggingface/org/model@abc"
-	if got, want := PartLabel(purl, "model.gguf", 2, 3), "model.gguf 2/3 "+purl; got != want {
-		t.Errorf("PartLabel = %q, want %q", got, want)
-	}
-	// A file in one part isn't numbered.
-	if got, want := PartLabel(purl, "weights.bin", 1, 1), "weights.bin "+purl; got != want {
-		t.Errorf("PartLabel = %q, want %q", got, want)
+	if got, want := FileLabel(purl, "model.gguf"), "model.gguf "+purl; got != want {
+		t.Errorf("FileLabel = %q, want %q", got, want)
 	}
 }
 
-// TestFilePartRoundTrip pins the file part format: ParseFilePart reads
-// back exactly what Annotations writes.
-func TestFilePartRoundTrip(t *testing.T) {
-	part := FilePart{
-		Path:     "dir/model.gguf",
-		Mode:     0o755,
-		FileSize: 10 << 30,
-		Offset:   4 << 30,
+// TestFileRoundTrip pins the file layer format: ParseFile reads back
+// exactly what Annotations writes.
+func TestFileRoundTrip(t *testing.T) {
+	file := File{
+		Path: "dir/model.gguf",
+		Mode: 0o755,
 	}
-	annotations := part.Annotations("pkg:huggingface/org/model@abc")
+	annotations := file.Annotations("pkg:huggingface/org/model@abc")
 	if got := annotations[AnnotationPurl]; got != "pkg:huggingface/org/model@abc" {
 		t.Errorf("purl annotation = %q", got)
 	}
 
-	parsed, err := ParseFilePart(annotations)
+	parsed, err := ParseFile(annotations)
 	if err != nil {
-		t.Fatalf("ParseFilePart: %v", err)
+		t.Fatalf("ParseFile: %v", err)
 	}
-	if parsed != part {
-		t.Errorf("ParseFilePart = %+v, want %+v", parsed, part)
+	if parsed != file {
+		t.Errorf("ParseFile = %+v, want %+v", parsed, file)
 	}
 }
 
-func TestParseFilePartRejects(t *testing.T) {
-	valid := FilePart{Path: "f", Mode: 0o644, FileSize: 3}.Annotations("p")
+func TestParseFileRejects(t *testing.T) {
+	valid := File{Path: "f", Mode: 0o644}.Annotations("p")
 	for name, tc := range map[string]struct {
 		key, value, want string
 	}{
@@ -268,13 +239,11 @@ func TestParseFilePartRejects(t *testing.T) {
 		"NUL byte":      {AnnotationFilePath, "f\x00", "outside its component"},
 		"bad mode":      {AnnotationFileMode, "rwx", "invalid file mode"},
 		"mode too wide": {AnnotationFileMode, "4755", "invalid file mode"},
-		"bad size":      {AnnotationFileSize, "-1", "file size"},
-		"bad offset":    {AnnotationFileOffset, "x", "offset"},
 	} {
 		annotations := maps.Clone(valid)
 		annotations[tc.key] = tc.value
-		if _, err := ParseFilePart(annotations); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: ParseFilePart = %v, want an error containing %q", name, err, tc.want)
+		if _, err := ParseFile(annotations); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ParseFile = %v, want an error containing %q", name, err, tc.want)
 		}
 	}
 }

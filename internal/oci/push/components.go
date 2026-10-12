@@ -321,18 +321,17 @@ func (p componentPublisher) publishArtifact(ctx context.Context, target oras.Tar
 // pushArtifactLayers pushes component's layers as an artifact's (see
 // publishArtifact), up to opts.Concurrency at once: its small files as
 // one gzipped tar, titled "." and annotated for `oras pull` to unpack
-// where it's pulled to, then each large file's layers, the package's own
-// blobs, titled with their path when the file is one layer, as all but
-// those past transfer.MaxLayerSize are. It returns them with their
-// uncompressed digests, in order.
+// where it's pulled to, then each large file's layer, the package's own
+// blob, titled with its path. It returns them with their uncompressed
+// digests, in order.
 func (p componentPublisher) pushArtifactLayers(ctx context.Context, target oras.Target, component componentLayers, isModel bool) ([]ocispec.Descriptor, []digest.Digest, error) {
 	var smallFiles []transfer.TarFile
 	var dir string
-	var parts []int
+	var largeFiles []int
 	for index, plan := range component.plans {
 		dir = plan.dir
-		if plan.part != nil {
-			parts = append(parts, index)
+		if plan.file != nil {
+			largeFiles = append(largeFiles, index)
 			continue
 		}
 		smallFiles = append(smallFiles, plan.tarFiles...)
@@ -349,49 +348,46 @@ func (p componentPublisher) pushArtifactLayers(ctx context.Context, target oras.
 		diffIDs = append(diffIDs, tarDigest)
 	}
 
-	pushPart := func(ctx context.Context, _ int, index int) (ocispec.Descriptor, error) {
+	pushFile := func(ctx context.Context, _ int, index int) (ocispec.Descriptor, error) {
 		plan := component.plans[index]
-		desc := artifactPart(component.descs[index], plan, isModel)
-		file, err := os.Open(filepath.Join(plan.dir, filepath.FromSlash(plan.part.Path)))
+		desc := artifactFile(component.descs[index], plan, isModel)
+		file, err := os.Open(filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path)))
 		if err != nil {
 			return ocispec.Descriptor{}, err
 		}
 		defer file.Close()
-		section := io.NewSectionReader(file, plan.part.Offset, plan.part.length)
-		label := transfer.PartLabel(plan.component.PackageURL, plan.part.Path, plan.part.number, plan.part.count) + componentRepositoryLabel
-		if err := transfer.PushBlob(ctx, target, desc, section, label, p.opts.Progress); err != nil {
-			return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.part.Path, err)
+		label := transfer.FileLabel(plan.component.PackageURL, plan.file.Path) + componentRepositoryLabel
+		if err := transfer.PushBlob(ctx, target, desc, io.LimitReader(file, desc.Size), label, p.opts.Progress); err != nil {
+			return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.file.Path, err)
 		}
 		return desc, nil
 	}
-	partLayers, err := parallel.Map(ctx, p.opts.Concurrency, parts, pushPart)
+	fileLayers, err := parallel.Map(ctx, p.opts.Concurrency, largeFiles, pushFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, layer := range partLayers {
+	for _, layer := range fileLayers {
 		layers = append(layers, layer)
 		diffIDs = append(diffIDs, layer.Digest)
 	}
 	return layers, diffIDs, nil
 }
 
-// artifactPart returns the descriptor of a large file's layer in a
+// artifactFile returns the descriptor of a large file's layer in a
 // component's artifact: packaged, its descriptor in the package, titled
-// with the file's path when it's the file's only layer, so `oras pull`
-// writes it out. A model's is a ModelPack weight.
-func artifactPart(packaged ocispec.Descriptor, plan layerPlan, isModel bool) ocispec.Descriptor {
+// with the file's path, so `oras pull` writes it out. A model's is a
+// ModelPack weight.
+func artifactFile(packaged ocispec.Descriptor, plan layerPlan, isModel bool) ocispec.Descriptor {
 	desc := ocispec.Descriptor{
 		MediaType:   packaged.MediaType,
 		Digest:      packaged.Digest,
 		Size:        packaged.Size,
-		Annotations: plan.part.Annotations(plan.component.PackageURL),
+		Annotations: plan.file.Annotations(plan.component.PackageURL),
 	}
-	if plan.part.count == 1 {
-		desc.Annotations[ocispec.AnnotationTitle] = plan.part.Path
-	}
+	desc.Annotations[ocispec.AnnotationTitle] = plan.file.Path
 	if isModel {
 		desc.MediaType = modelspec.MediaTypeModelWeightRaw
-		desc.Annotations[modelspec.AnnotationFilepath] = plan.part.Path
+		desc.Annotations[modelspec.AnnotationFilepath] = plan.file.Path
 		// Large isn't proof of a weight.
 		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
 	}

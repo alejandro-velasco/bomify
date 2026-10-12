@@ -12,13 +12,15 @@ every type and annotation is listed in [Registry format](registry-format.md)):
 - The **config** is the SBOM (`application/vnd.cyclonedx+json` or
   `+xml`, sniffed).
 - A component's **layers**, annotated `land.bomify.purl`, are tars of
-  its files under `transfer.LargeFileSize` (64 MiB), and each larger
-  file as one raw layer, its own bytes, so an unchanged large file is
-  the same blob in every package, and uploads once. Only a file past
-  `transfer.MaxLayerSize` (8 GiB) is split, into parts, so no layer
-  outgrows a registry's limit. `transfer.WriteTar` zeroes mtimes and
-  uid/gid, so a tar's digest depends only on names, modes, and content;
-  otherwise re-pushing a component bomify had pulled would re-upload it.
+  its files under `transfer.LargeFileSize` (64 MiB), of at most
+  `transfer.MaxTarSize` (4 GiB) each, and each larger file as one layer
+  of its own bytes, so an unchanged large file is the same blob in every
+  package, and uploads once. A large file is never split, as ModelPack's
+  and KitOps' aren't, so tools that don't know bomify can write it out;
+  one past a registry's layer limit can't be pushed there.
+  `transfer.WriteTar` zeroes mtimes and uid/gid, so a tar's digest
+  depends only on names, modes, and content; otherwise re-pushing a
+  component bomify had pulled would re-upload it.
 - **Signatures**, the **report referrer**, **VEX referrers**, and the
   **provenance attestation** (see [Build provenance](provenance.md)) are
   OCI referrers, so none changes the package digest.
@@ -35,16 +37,16 @@ Layers transfer concurrently (`--concurrency`), each verified against
 its digest and size as it streams, with a progress bar per blob. `push`
 skips blobs the target already has. That's required, not an
 optimization: a local `content/oci.Store` rejects re-pushing a digest,
-which `save` hits when tags share a component. A part streams straight
-from its file, read once to hash and once to upload, so a large file is
-never copied; tars go through a temporary file.
+which `save` hits when tags share a component. A large file streams
+straight from disk, read once to hash and once to upload, so it's never
+copied; tars go through a temporary file.
 
 `pull` restores a component from all its layers into a temporary
 directory and swaps it into place only once every layer verifies (see
-`pull.restoreComponent`). It checks the parts' annotations before
-downloading anything, creates each large file at full size, then
-unpacks the tars, refusing any entry naming a file that exists, and
-writes each part at its offset.
+`pull.restoreComponent`). It checks the file layers' annotations before
+downloading anything, then unpacks the tars and writes the large files,
+refusing any that names a file another layer wrote, each through an
+`os.Root`, so no symlink a tar made can lead a write outside.
 
 `push` then publishes each component at its own repository beside the
 package's (see `push.componentPublisher`, and
