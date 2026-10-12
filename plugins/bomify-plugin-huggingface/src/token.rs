@@ -18,6 +18,22 @@ use crate::log::Logger;
 /// The environment variable hf reads an access token from.
 const TOKEN_ENV: &str = "HF_TOKEN";
 
+/// The ones hf finds the token "hf auth login" stored through: the file
+/// itself, else the directory it's under (or the cache directory that is
+/// under).
+const TOKEN_PATH_ENV: &str = "HF_TOKEN_PATH";
+const HF_HOME_ENV: &str = "HF_HOME";
+const XDG_CACHE_HOME_ENV: &str = "XDG_CACHE_HOME";
+
+/// The ones bomify finds its credential store through, as Docker does its
+/// own.
+const BOMIFY_DATA_DIR_ENV: &str = "BOMIFY_DATA_DIR";
+const DOCKER_CONFIG_ENV: &str = "DOCKER_CONFIG";
+
+/// The ones the home directory is found through, on Unix and on Windows.
+const HOME_ENV: &str = "HOME";
+const USERPROFILE_ENV: &str = "USERPROFILE";
+
 /// The token for the hub at host, or None for none.
 pub fn token(host: &str, logger: &Logger) -> Result<Option<String>> {
     if let Some(token) = std::env::var(TOKEN_ENV)
@@ -52,21 +68,24 @@ pub fn token(host: &str, logger: &Logger) -> Result<Option<String>> {
 /// $HF_TOKEN_PATH, else "token" under $HF_HOME, else under
 /// $XDG_CACHE_HOME/huggingface or ~/.cache/huggingface.
 fn hf_login_token_path() -> Option<PathBuf> {
-    let set = |name: &str| {
-        std::env::var_os(name)
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-    };
-    if let Some(path) = set("HF_TOKEN_PATH") {
+    if let Some(path) = env_path(TOKEN_PATH_ENV) {
         return Some(path);
     }
-    let home = match set("HF_HOME") {
+    let home = match env_path(HF_HOME_ENV) {
         Some(home) => home,
-        None => set("XDG_CACHE_HOME")
+        None => env_path(XDG_CACHE_HOME_ENV)
             .or_else(|| Some(home_dir()?.join(".cache")))?
             .join("huggingface"),
     };
     Some(home.join("token"))
+}
+
+/// The path the environment variable name holds, or None if it's unset or
+/// empty.
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 /// A Docker-format credential config, as bomify's conf/auth.json and
@@ -112,8 +131,8 @@ fn lookup(host: &str) -> Result<Option<String>> {
 
 /// bomify's conf/auth.json: under $BOMIFY_DATA_DIR, else ~/.bomify.
 fn bomify_auth_config() -> Option<PathBuf> {
-    let data_dir = match std::env::var_os("BOMIFY_DATA_DIR").filter(|dir| !dir.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
+    let data_dir = match env_path(BOMIFY_DATA_DIR_ENV) {
+        Some(dir) => dir,
         None => home_dir()?.join(".bomify"),
     };
     Some(data_dir.join("conf").join("auth.json"))
@@ -121,16 +140,16 @@ fn bomify_auth_config() -> Option<PathBuf> {
 
 /// Docker's config.json: under $DOCKER_CONFIG, else ~/.docker.
 fn docker_config() -> Option<PathBuf> {
-    let dir = match std::env::var_os("DOCKER_CONFIG").filter(|dir| !dir.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
+    let dir = match env_path(DOCKER_CONFIG_ENV) {
+        Some(dir) => dir,
         None => home_dir()?.join(".docker"),
     };
     Some(dir.join("config.json"))
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    std::env::var_os(HOME_ENV)
+        .or_else(|| std::env::var_os(USERPROFILE_ENV))
         .map(PathBuf::from)
 }
 
