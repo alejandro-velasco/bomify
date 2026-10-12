@@ -7,22 +7,21 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 )
 
-// FilePartMediaType identifies one part of a large file of a component:
-// the file's raw bytes from its AnnotationFileOffset, of the layer's own
-// size. A file at least LargeFileSize long is pushed this way, rather than
-// in its component's tar layers: as one part, the whole file, unless it's
-// past MaxLayerSize, which no layer outgrows. So an unchanged file is the
-// same blob in every package. Pull writes each part into the file
-// AnnotationFilePath names, inside its component's directory.
-const FilePartMediaType = "application/vnd.bomify.component.file.v1"
+// FileMediaType identifies a large file of a component: a layer that is
+// the file's own bytes. A file at least LargeFileSize long is pushed this
+// way, rather than in its component's tar layers, so an unchanged file is
+// the same blob in every package, and tools that don't know bomify can
+// write it out. It's never split, so a file past a registry's layer limit
+// (10 GB on GHCR and Docker Hub) can't be pushed there. Pull writes it to
+// the path AnnotationFilePath names, inside its component's directory.
+const FileMediaType = "application/vnd.bomify.component.file.v1"
 
-// Annotations of a FilePartMediaType layer, besides AnnotationPurl.
+// Annotations of a FileMediaType layer, besides AnnotationPurl.
 const (
 	// AnnotationFilePath is the file's "/"-separated path inside its
 	// component's directory.
@@ -30,28 +29,16 @@ const (
 	// AnnotationFileMode is the file's permission bits, in octal, e.g.
 	// "0755".
 	AnnotationFileMode = "land.bomify.file.mode"
-	// AnnotationFileSize is the whole file's size in bytes, so pull can
-	// tell its parts cover it exactly.
-	AnnotationFileSize = "land.bomify.file.size"
-	// AnnotationFileOffset is where in the file the part starts.
-	AnnotationFileOffset = "land.bomify.file.offset"
 )
 
-// LargeFileSize and MaxLayerSize shape a component's layers (see
-// FilePartMediaType): a file at least LargeFileSize long gets its own
-// layers, and no layer is larger than MaxLayerSize: under the 10 GB per
-// layer GHCR and Docker Hub allow, but larger than most single files, such
-// as a model's weight shards. Variables so tests can make them small.
+// LargeFileSize and MaxTarSize shape a component's layers: a file at
+// least LargeFileSize long is a layer of its own (see FileMediaType), and
+// the rest go in tars of at most MaxTarSize. Variables so tests can make
+// them small.
 var (
 	LargeFileSize int64 = 64 << 20
-	MaxLayerSize  int64 = 8 << 30
+	MaxTarSize    int64 = 4 << 30
 )
-
-// PartCount returns how many file part layers a file of size takes: one
-// per MaxLayerSize, the last holding the rest.
-func PartCount(size int64) int {
-	return int(ceilDiv(size, MaxLayerSize))
-}
 
 // ceilDiv divides dividend by divisor, rounding up where integer division
 // rounds down: adding divisor-1 first carries any remainder of 1 to
@@ -196,69 +183,44 @@ func ExtractTarExclusive(tr *tar.Reader, destDir string) error {
 	return extractTar(tr, destDir, os.O_EXCL)
 }
 
-// FilePart is what a file part layer's annotations say (see
-// FilePartMediaType): which file the part is of, its mode and size, and
-// where in it the part starts. Annotations writes them, and
-// ParseFilePart reads them back.
-type FilePart struct {
+// File is what a file layer's annotations say (see FileMediaType): the
+// file's path and mode. Annotations writes them, and ParseFile reads them
+// back.
+type File struct {
 	// Path is the file's "/"-separated path in its component's directory.
-	Path     string
-	Mode     fs.FileMode
-	FileSize int64
-	Offset   int64
+	Path string
+	Mode fs.FileMode
 }
 
-// Annotations returns p as a file part layer's annotations, with its
+// Annotations returns f as a file layer's annotations, with its
 // component's purl.
-func (p FilePart) Annotations(purl string) map[string]string {
+func (f File) Annotations(purl string) map[string]string {
 	annotations := map[string]string{
-		AnnotationPurl:       purl,
-		AnnotationFilePath:   p.Path,
-		AnnotationFileMode:   fmt.Sprintf("%04o", p.Mode.Perm()),
-		AnnotationFileSize:   strconv.FormatInt(p.FileSize, 10),
-		AnnotationFileOffset: strconv.FormatInt(p.Offset, 10),
+		AnnotationPurl:     purl,
+		AnnotationFilePath: f.Path,
+		AnnotationFileMode: fmt.Sprintf("%04o", f.Mode.Perm()),
 	}
 	return annotations
 }
 
-// ParseFilePart reads a file part layer's annotations, which come from
-// the network: the path must stay inside its component (see IsSafePath),
-// the mode be permission bits, and the size and offset non-negative.
-func ParseFilePart(annotations map[string]string) (FilePart, error) {
+// ParseFile reads a file layer's annotations, which come from the network:
+// the path must stay inside its component (see IsSafePath), and the mode
+// be permission bits.
+func ParseFile(annotations map[string]string) (File, error) {
 	path := annotations[AnnotationFilePath]
 	if !IsSafePath(path) {
-		return FilePart{}, fmt.Errorf("file %q is outside its component", path)
+		return File{}, fmt.Errorf("file %q is outside its component", path)
 	}
 	mode, err := parseFileMode(annotations[AnnotationFileMode])
 	if err != nil {
-		return FilePart{}, err
-	}
-	fileSize, err := parseSize(annotations[AnnotationFileSize])
-	if err != nil {
-		return FilePart{}, fmt.Errorf("file size: %w", err)
-	}
-	offset, err := parseSize(annotations[AnnotationFileOffset])
-	if err != nil {
-		return FilePart{}, fmt.Errorf("offset: %w", err)
+		return File{}, err
 	}
 
-	part := FilePart{
-		Path:     path,
-		Mode:     mode,
-		FileSize: fileSize,
-		Offset:   offset,
+	file := File{
+		Path: path,
+		Mode: mode,
 	}
-	return part, nil
-}
-
-// parseSize parses an AnnotationFileSize or AnnotationFileOffset value, as
-// a non-negative int64: a file's sizes and offsets outgrow a 32-bit int.
-func parseSize(value string) (int64, error) {
-	size, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || size < 0 {
-		return 0, fmt.Errorf("%q isn't a size", value)
-	}
-	return size, nil
+	return file, nil
 }
 
 // parseFileMode parses an AnnotationFileMode value.

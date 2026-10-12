@@ -24,14 +24,14 @@ type layerGroup struct {
 }
 
 // isComponentLayer reports whether desc is one of a component's own
-// layers, a tar or a file part (see transfer.FilePartMediaType), naming
+// layers, a tar or a large file (see transfer.FileMediaType), naming
 // its component's purl, which componentRestore restores together. Any
 // other layer is foreign, written as-is by fetchLayer.
 func isComponentLayer(desc ocispec.Descriptor) bool {
 	if desc.Annotations[transfer.AnnotationPurl] == "" {
 		return false
 	}
-	return desc.MediaType == transfer.LayerMediaType || desc.MediaType == transfer.FilePartMediaType
+	return desc.MediaType == transfer.LayerMediaType || desc.MediaType == transfer.FileMediaType
 }
 
 // groupLayers sorts descs into one group per component, in the order
@@ -208,11 +208,11 @@ func (r componentRestore) run(ctx context.Context, descs []ocispec.Descriptor) (
 		return layers, r.recordManifest()
 	}
 
-	plan, err := planComponent(descs)
+	transfers, err := planComponent(descs)
 	if err != nil {
 		return nil, err
 	}
-	write := func(dir string) error { return r.apply(ctx, dir, plan) }
+	write := func(dir string) error { return r.apply(ctx, dir, transfers) }
 	if err := writeStaged(r.dir(), write); err != nil {
 		return nil, err
 	}
@@ -253,18 +253,14 @@ func (r componentRestore) recordManifest() error {
 	return recordComponentManifest(r.dataDir, r.componentsByPurl, r.purl)
 }
 
-// apply carries out plan in dir: creates its large files, restores its
-// layers, up to r.concurrency at once, then checks its symlinks, which may
-// point across layers (see fsutil.CheckSymlinks).
-func (r componentRestore) apply(ctx context.Context, dir string, plan componentPlan) error {
-	if err := plan.createFiles(dir); err != nil {
-		return err
-	}
-
+// apply restores transfers, a component's layers, into dir, up to
+// r.concurrency at once, then checks its symlinks, which may point across
+// layers (see fsutil.CheckSymlinks).
+func (r componentRestore) apply(ctx context.Context, dir string, transfers []layerTransfer) error {
 	restoreLayer := func(ctx context.Context, _ int, layerTransfer layerTransfer) error {
 		return layerTransfer.restore(ctx, r.target, dir, layerTransfer.label(r.purl), r.progress)
 	}
-	if err := parallel.ForEach(ctx, r.concurrency, plan.transfers, restoreLayer); err != nil {
+	if err := parallel.ForEach(ctx, r.concurrency, transfers, restoreLayer); err != nil {
 		return err
 	}
 	return fsutil.CheckSymlinks(dir)

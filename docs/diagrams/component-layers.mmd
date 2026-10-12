@@ -4,22 +4,17 @@ flowchart TB
     classDef decision fill:#F8FAFC,stroke:#64748B,stroke-width:1.5px,color:#0f172a
     classDef tar fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
     classDef whole fill:#EFF6FF,stroke:#3B82F6,stroke-width:1.5px,color:#1e3a8a
-    classDef part fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#78350f
 
     subgraph Rule["Each file of a component, in path order"]
         direction LR
         File[("file")]
         Large{"regular file of<br/>64 MiB or more?"}
-        Fits{"8 GiB or less?"}
-        Grouped("grouped into the current tar layer;<br/>the next tar starts when a file<br/>would take this one past 8 GiB")
-        Whole("one file part layer:<br/>the whole file")
-        Parts("file part layers of 8 GiB each,<br/>the last holding the rest")
+        Grouped("grouped into the current tar layer;<br/>the next tar starts when a file<br/>would take this one past 4 GiB")
+        Whole("one file layer:<br/>the whole file")
 
         File --> Large
         Large -- "no: smaller, or a symlink" --> Grouped
-        Large -- yes --> Fits
-        Fits -- yes --> Whole
-        Fits -- no --> Parts
+        Large -- yes --> Whole
     end
 
     subgraph Example["Example: a component's files, and its layers in manifest order (tars first, then large files by path)"]
@@ -30,11 +25,11 @@ flowchart TB
         end
         subgraph Row2[" "]
             direction LR
-            R2File[("adapter.bin · 500 MB")] --> R2Layer("layer 2 · file part<br/>adapter.bin, the whole file")
+            R2File[("adapter.bin · 500 MB")] --> R2Layer("layer 2 · file<br/>adapter.bin")
         end
         subgraph Row3[" "]
             direction LR
-            R3File[("weights.bin · 20 GiB")] --> R3Layer("layers 3–5 · file parts<br/>weights.bin 1/3: 0 – 8 GiB<br/>weights.bin 2/3: 8 – 16 GiB<br/>weights.bin 3/3: 16 – 20 GiB")
+            R3File[("weights.bin · 5 GiB")] --> R3Layer("layer 3 · file<br/>weights.bin")
         end
         Row1 ~~~ Row2 ~~~ Row3
     end
@@ -43,10 +38,9 @@ flowchart TB
     Rule ~~~ Example
 
     class File,R1File,R2File,R3File local
-    class Large,Fits decision
+    class Large decision
     class Grouped,R1Layer tar
-    class Whole,R2Layer whole
-    class Parts,R3Layer part
+    class Whole,R2Layer,R3Layer whole
     style Rule fill:#FAFAFA,stroke:#CBD5E1,stroke-width:1px,color:#334155
     style Example fill:#FAFAFA,stroke:#CBD5E1,stroke-width:1px,color:#334155
     style Row1 fill:none,stroke:none

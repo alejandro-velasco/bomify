@@ -2,9 +2,9 @@
 // counterpart to internal/oci/pull. Push packages the SBOM manifest a prior
 // `bomify build` recorded (see internal/build) as the artifact's config,
 // and each component that SBOM describes as layers annotated with its
-// purl — tars of whatever build pulled for it, and each large file in
-// parts (see transfer.FilePartMediaType) — then pushes the whole thing to
-// a registry under a tag.
+// purl — tars of whatever build pulled for it, and each large file as a
+// layer of its own (see transfer.FileMediaType) — then pushes the whole
+// thing to a registry under a tag.
 package push
 
 import (
