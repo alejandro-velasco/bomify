@@ -9,9 +9,9 @@ the way Docker builds images from Dockerfiles.
   plugin for its type (OCI images, Helm charts, plain files, ...).
 - `bomify push`/`pull` and `save`/`load` move packages through an OCI
   registry or a tarball. `push` also publishes each component at its own
-  repository beside the package, which `oras pull` reads (a model as a
-  ModelPack artifact); `bomify distribute` republishes each component to
-  its own registry.
+  repository beside the package, for `docker pull`, `helm pull`, or
+  `oras pull` (a model as a ModelPack artifact); `bomify distribute`
+  republishes each component to its own registry.
 - `bomify sbom compose` builds one SBOM from the deployment mediums a
   package spans, such as Helm charts, through each medium's plugin.
 - `bomify security scan` scans a package's components for

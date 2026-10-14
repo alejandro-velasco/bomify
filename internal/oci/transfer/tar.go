@@ -102,24 +102,26 @@ func TarSize(size int64) int64 {
 // WriteTarFiles archives files, some of TarFiles(dir), into w, as
 // WriteTar does all of dir's.
 func WriteTarFiles(dir string, files []TarFile, w io.Writer) error {
-	tw := tar.NewWriter(w)
-	for _, file := range files {
-		if err := writeTarEntry(tw, dir, file.Path); err != nil {
-			return err
-		}
-	}
-	return tw.Close()
+	return writeTar(dir, files, w, false)
 }
 
 // WriteTarTree is WriteTarFiles, but with an entry for each directory
 // ahead of the first file in it, for tools that don't create a file's
 // parent directories themselves, such as `oras pull`.
 func WriteTarTree(dir string, files []TarFile, w io.Writer) error {
+	return writeTar(dir, files, w, true)
+}
+
+// writeTar archives files, of dir, into w, each after an entry for its
+// directories if dirEntries is set.
+func writeTar(dir string, files []TarFile, w io.Writer, dirEntries bool) error {
 	tw := tar.NewWriter(w)
 	written := map[string]bool{}
 	for _, file := range files {
-		if err := writeTarDirs(tw, path.Dir(file.Path), written); err != nil {
-			return err
+		if dirEntries {
+			if err := writeTarDirs(tw, path.Dir(file.Path), written); err != nil {
+				return err
+			}
 		}
 		if err := writeTarEntry(tw, dir, file.Path); err != nil {
 			return err

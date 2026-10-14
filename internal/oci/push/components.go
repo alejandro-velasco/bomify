@@ -48,11 +48,6 @@ const (
 // it's pushed to a component's repository.
 const componentRepositoryLabel = " (component repository)"
 
-// skippedKinds are the purl types Push doesn't publish at a repository of
-// their own yet: images and charts, which need their own artifact
-// formats.
-var skippedKinds = []string{packageurl.TypeOCI, packageurl.TypeDocker, packageurl.TypeHelm}
-
 // PublishedComponent is a component, or the platforms of one, that Push
 // published at its own repository.
 type PublishedComponent struct {
@@ -84,6 +79,11 @@ type componentLayers struct {
 	component cdx.Component
 	plans     []layerPlan
 	descs     []ocispec.Descriptor
+}
+
+// dir is the directory c's files are in.
+func (c componentLayers) dir() string {
+	return c.plans[0].directory()
 }
 
 // sameContent reports whether c and other were pushed as the same
@@ -121,10 +121,10 @@ type siteGroup struct {
 }
 
 // planSites groups components by the site each is published at (see
-// componentSiteOf), in order, leaving out skippedKinds and components
-// without a purl. Components sharing a site must be the same content,
-// published once, or platforms of one component: the same purl but for
-// distinct "os" and "arch" qualifiers.
+// componentSiteOf), in order, leaving out components without a purl.
+// Components sharing a site must be the same content, published once, or
+// platforms of one component: the same purl but for distinct "os" and
+// "arch" qualifiers.
 func planSites(packageRepository string, components []componentLayers) ([]*siteGroup, error) {
 	var groups []*siteGroup
 	byReference := map[string]*siteGroup{}
@@ -135,9 +135,6 @@ func planSites(packageRepository string, components []componentLayers) ([]*siteG
 		purl, err := packageurl.FromString(component.component.PackageURL)
 		if err != nil {
 			return nil, fmt.Errorf("parse purl %q: %w", component.component.PackageURL, err)
-		}
-		if slices.Contains(skippedKinds, purl.Type) {
-			continue
 		}
 		site, err := componentSiteOf(packageRepository, purl)
 		if err != nil {
@@ -207,7 +204,7 @@ func (p componentPublisher) publish(ctx context.Context) ([]PublishedComponent, 
 }
 
 // publishGroup publishes group at its site, signs what its tag will
-// name, and tags it.
+// name, and tags it, unless it's an image pinned by digest.
 func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) (PublishedComponent, error) {
 	target, err := p.targets(group.site.repository)
 	if err != nil {
@@ -217,7 +214,7 @@ func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) 
 	var descs []ocispec.Descriptor
 	var purls []string
 	for index, member := range group.members {
-		desc, err := p.publishArtifact(ctx, target, member)
+		desc, err := p.publishMember(ctx, target, member, group.sites[index])
 		if err != nil {
 			return PublishedComponent{}, err
 		}
@@ -236,13 +233,18 @@ func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) 
 	}
 
 	reference := group.site.reference()
+	if group.site.tag == "" {
+		reference = group.site.repository + "@" + tagged.Digest.String()
+	}
 	if p.opts.Sign != nil {
 		if err := p.opts.Sign(ctx, target, reference, tagged); err != nil {
 			return PublishedComponent{}, fmt.Errorf("sign: %w", err)
 		}
 	}
-	if err := target.Tag(ctx, tagged, group.site.tag); err != nil {
-		return PublishedComponent{}, fmt.Errorf("tag: %w", err)
+	if group.site.tag != "" {
+		if err := target.Tag(ctx, tagged, group.site.tag); err != nil {
+			return PublishedComponent{}, fmt.Errorf("tag: %w", err)
+		}
 	}
 
 	result := PublishedComponent{
@@ -251,6 +253,21 @@ func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) 
 		Digest:    tagged.Digest.String(),
 	}
 	return result, nil
+}
+
+// publishMember publishes component, at site, in its kind's own format:
+// an image as it is (see publishImage), a chart as Helm stores one (see
+// publishChart), and anything else as an artifact of its files (see
+// publishArtifact).
+func (p componentPublisher) publishMember(ctx context.Context, target oras.Target, component componentLayers, site componentSite) (ocispec.Descriptor, error) {
+	switch site.kind {
+	case packageurl.TypeOCI, packageurl.TypeDocker:
+		return p.publishImage(ctx, target, component)
+	case packageurl.TypeHelm:
+		return p.publishChart(ctx, target, component)
+	default:
+		return p.publishArtifact(ctx, target, component)
+	}
 }
 
 // annotations returns the annotations of what's published for

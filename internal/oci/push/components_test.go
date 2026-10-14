@@ -185,10 +185,21 @@ func (r *registry) store(repository string) *oci.Store {
 // publishing each at its own repository of reg.
 func pushWithComponents(t *testing.T, reg *registry, opts transfer.Options, components []cdx.Component, files []map[string]string) (Result, error) {
 	t.Helper()
-	baseDir := t.TempDir()
-	for index, component := range components {
-		writeLayer(t, baseDir, component, files[index])
+	write := func(baseDir string) {
+		for index, component := range components {
+			writeLayer(t, baseDir, component, files[index])
+		}
 	}
+	return pushBuilt(t, reg, opts, components, write)
+}
+
+// pushBuilt pushes components as packageRef, publishing each at its own
+// repository of reg, once write has written their files into the data
+// directory it's given.
+func pushBuilt(t *testing.T, reg *registry, opts transfer.Options, components []cdx.Component, write func(baseDir string)) (Result, error) {
+	t.Helper()
+	baseDir := t.TempDir()
+	write(baseDir)
 	sbomHash := recordSBOM(t, baseDir, components)
 	opts.ComponentTarget = reg.target
 	return Push(context.Background(), reg.store("registry.example.com/packages/app"), packageRef, baseDir, sbomHash, opts)
@@ -395,15 +406,14 @@ func TestPushPushesToATargetThatCantMount(t *testing.T) {
 func TestPushPublishesFilesAsAnArtifact(t *testing.T) {
 	files := map[string]string{"bin/tool": "#!/bin/sh", "README": "hi"}
 	component := cdx.Component{Type: cdx.ComponentTypeApplication, Name: "tool", Version: "1.0", PackageURL: "pkg:generic/tool@1.0?download_url=https://example.com/tool"}
-	image := cdx.Component{Type: cdx.ComponentTypeContainer, Name: "nginx", Version: "1.27", PackageURL: "pkg:OCI/nginx@1.27"}
 	reg := newRegistry(t)
 
-	result, err := pushWithComponents(t, reg, transfer.Options{}, []cdx.Component{component, image}, []map[string]string{files, {"oci-layout": "{}"}})
+	result, err := pushWithComponents(t, reg, transfer.Options{}, []cdx.Component{component}, []map[string]string{files})
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if len(result.Components) != 1 {
-		t.Fatalf("Components = %+v, want only the tool's: images aren't published yet", result.Components)
+		t.Fatalf("Components = %+v, want the tool's", result.Components)
 	}
 	store := reg.store("registry.example.com/packages/app/generic/tool")
 	if got := orasPull(t, store, "1.0"); !maps.Equal(got, files) {
