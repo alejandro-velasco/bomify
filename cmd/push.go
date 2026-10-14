@@ -158,8 +158,20 @@ func pruneReports(ctx context.Context, logger *slog.Logger, repo security.PruneT
 
 func logPushedLayers(logger *slog.Logger, result push.Result) {
 	logger.Info("manifest pushed", "digest", result.ManifestDigest)
+	// Where each layer's component was published at its own repository,
+	// if it was.
+	publishedAt := map[string]string{}
+	for _, component := range result.Components {
+		for _, purl := range component.Purls {
+			publishedAt[purl] = component.Reference
+		}
+	}
 	for _, layer := range result.Layers {
-		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
+		attrs := []any{"purl", layer.Purl, "hash", layer.Hash}
+		if reference, published := publishedAt[layer.Purl]; published {
+			attrs = append(attrs, "published", reference)
+		}
+		logger.Info("layer pushed", attrs...)
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report attached", "purl", report.Purl, "hash", report.Hash)
