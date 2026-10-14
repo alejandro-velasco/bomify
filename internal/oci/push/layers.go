@@ -19,16 +19,22 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/parallel"
 )
 
-// layerPlan is one layer Push pushes for a component: a tar of some of
-// its files, or one of its large files (see transfer.FileMediaType).
-type layerPlan struct {
+// layerPlan is one layer Push pushes for a component, its owner: a tarPlan
+// or a filePlan. push pushes it, returning its descriptor.
+type layerPlan interface {
+	owner() cdx.Component
+	push(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error)
+}
+
+// componentDir is the component a layerPlan is of, and its directory.
+type componentDir struct {
 	component cdx.Component
 	// dir is the component's directory, "<baseDir>/layers/<purl-hash>/".
 	dir string
-	// tarFiles are the files a tar layer holds; unused for a file layer.
-	tarFiles []transfer.TarFile
-	// file, if set, makes this a file layer.
-	file *transfer.File
+}
+
+func (c componentDir) owner() cdx.Component {
+	return c.component
 }
 
 // planLayers plans each of components' layers, in the order they go in
@@ -52,7 +58,8 @@ func pushLayers(ctx context.Context, target oras.Target, plans []layerPlan, conc
 	pushLayer := func(ctx context.Context, _ int, plan layerPlan) (ocispec.Descriptor, error) {
 		desc, err := plan.push(ctx, target, progress)
 		if err != nil {
-			return ocispec.Descriptor{}, fmt.Errorf("%s@%s: %w", plan.component.Name, plan.component.Version, err)
+			owner := plan.owner()
+			return ocispec.Descriptor{}, fmt.Errorf("%s@%s: %w", owner.Name, owner.Version, err)
 		}
 		return desc, nil
 	}
@@ -65,7 +72,7 @@ func pushedLayers(plans []layerPlan, descs []ocispec.Descriptor) []PushedLayer {
 	layers := make([]PushedLayer, 0, len(plans))
 	for index, plan := range plans {
 		layer := PushedLayer{
-			Purl: plan.component.PackageURL,
+			Purl: plan.owner().PackageURL,
 			Hash: descs[index].Digest.Encoded(),
 		}
 		layers = append(layers, layer)
@@ -94,7 +101,7 @@ func planComponentLayers(baseDir string, component cdx.Component) ([]layerPlan, 
 		// Only a regular file's content can be a layer of its own; anything
 		// else, such as a symlink, goes in a tar whatever its size.
 		if file.Size >= transfer.LargeFileSize && file.Mode.IsRegular() {
-			largeFiles = append(largeFiles, filePlan(component, dir, file))
+			largeFiles = append(largeFiles, newFilePlan(component, dir, file))
 		} else {
 			smallFiles = append(smallFiles, file)
 		}
@@ -103,7 +110,7 @@ func planComponentLayers(baseDir string, component cdx.Component) ([]layerPlan, 
 	// A component with no files at all still needs a layer, or pull would
 	// never create its directory.
 	if len(tars) == 0 && len(largeFiles) == 0 {
-		tars = append(tars, tarPlan(component, dir, nil))
+		tars = append(tars, newTarPlan(component, dir, nil))
 	}
 	return append(tars, largeFiles...), nil
 }
@@ -121,7 +128,7 @@ func planTars(component cdx.Component, dir string, files []transfer.TarFile) []l
 		// and start the next with the file. A tar's first file always goes
 		// in, so a tar is never empty.
 		if len(tarFiles) > 0 && tarSize+entrySize > transfer.MaxTarSize {
-			plans = append(plans, tarPlan(component, dir, tarFiles))
+			plans = append(plans, newTarPlan(component, dir, tarFiles))
 			tarFiles, tarSize = nil, 0
 		}
 		tarFiles = append(tarFiles, file)
@@ -130,46 +137,33 @@ func planTars(component cdx.Component, dir string, files []transfer.TarFile) []l
 	// Close the last tar, holding whatever files are left over: none only
 	// if there were no files at all.
 	if len(tarFiles) > 0 {
-		plans = append(plans, tarPlan(component, dir, tarFiles))
+		plans = append(plans, newTarPlan(component, dir, tarFiles))
 	}
 	return plans
 }
 
-// tarPlan plans one tar layer of files, in component's directory dir.
-func tarPlan(component cdx.Component, dir string, files []transfer.TarFile) layerPlan {
-	plan := layerPlan{
-		component: component,
-		dir:       dir,
-		tarFiles:  files,
-	}
-	return plan
+// tarPlan is a tar layer of some of a component's files (see
+// transfer.LayerMediaType).
+type tarPlan struct {
+	componentDir
+	files []transfer.TarFile
 }
 
-// filePlan plans file, a large file in component's directory dir, as a
-// layer of its own.
-func filePlan(component cdx.Component, dir string, file transfer.TarFile) layerPlan {
-	plan := layerPlan{
-		component: component,
-		dir:       dir,
-		file: &transfer.File{
-			Path: file.Path,
-			Mode: file.Mode.Perm(),
+// newTarPlan plans one tar layer of files, in component's directory dir.
+func newTarPlan(component cdx.Component, dir string, files []transfer.TarFile) tarPlan {
+	plan := tarPlan{
+		componentDir: componentDir{
+			component: component,
+			dir:       dir,
 		},
+		files: files,
 	}
 	return plan
 }
 
-// push pushes the layer p plans, returning its descriptor.
-func (p layerPlan) push(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
-	if p.file != nil {
-		return p.pushFile(ctx, target, progress)
-	}
-	return p.pushTar(ctx, target, progress)
-}
-
-// pushTar archives p's files (see transfer.WriteTarFiles) into a temp
-// file, to learn its digest, and pushes it.
-func (p layerPlan) pushTar(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
+// push archives p's files (see transfer.WriteTarFiles) into a temp file,
+// to learn its digest, and pushes it.
+func (p tarPlan) push(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
 	tmp, err := os.CreateTemp("", "bomify-push-layer-*.tar")
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("create temp file: %w", err)
@@ -178,7 +172,7 @@ func (p layerPlan) pushTar(ctx context.Context, target oras.Target, progress tra
 	defer tmp.Close()
 
 	hasher := sha256.New()
-	if err := transfer.WriteTarFiles(p.dir, p.tarFiles, io.MultiWriter(tmp, hasher)); err != nil {
+	if err := transfer.WriteTarFiles(p.dir, p.files, io.MultiWriter(tmp, hasher)); err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("archive %s: %w", p.dir, err)
 	}
 	size, err := tmp.Seek(0, io.SeekCurrent)
@@ -205,9 +199,32 @@ func (p layerPlan) pushTar(ctx context.Context, target oras.Target, progress tra
 	return desc, nil
 }
 
-// pushFile pushes p's file straight from the file: once to learn its
-// digest, then again to upload it, so a large file is never copied.
-func (p layerPlan) pushFile(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
+// filePlan is one of a component's large files, as a layer of its own (see
+// transfer.FileMediaType).
+type filePlan struct {
+	componentDir
+	file transfer.File
+}
+
+// newFilePlan plans file, a large file in component's directory dir, as a
+// layer of its own.
+func newFilePlan(component cdx.Component, dir string, file transfer.TarFile) filePlan {
+	plan := filePlan{
+		componentDir: componentDir{
+			component: component,
+			dir:       dir,
+		},
+		file: transfer.File{
+			Path: file.Path,
+			Mode: file.Mode.Perm(),
+		},
+	}
+	return plan
+}
+
+// push pushes p's file straight from the file: once to learn its digest,
+// then again to upload it, so a large file is never copied.
+func (p filePlan) push(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
 	file, err := os.Open(filepath.Join(p.dir, filepath.FromSlash(p.file.Path)))
 	if err != nil {
 		return ocispec.Descriptor{}, err
