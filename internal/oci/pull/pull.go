@@ -27,11 +27,9 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/parallel"
-	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
-	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // RestoredLayer describes one component layer, or one component's
@@ -244,17 +242,18 @@ func restoreReports(ctx context.Context, target oras.ReadOnlyTarget, ref string,
 	})
 }
 
-// indexComponentsByPurl indexes bom's components by purl, so fetchLayer
-// can look one up by its layer's purl annotation. A nil bom or one with
-// no components indexes nothing.
-func indexComponentsByPurl(bom *cdx.BOM) map[string]cdx.Component {
-	index := map[string]cdx.Component{}
+// indexComponentsByPurl indexes bom's components by purl, so each
+// componentRestore can be given its own by its layers' purl annotation. A
+// nil bom or one with no components indexes nothing.
+func indexComponentsByPurl(bom *cdx.BOM) map[string]*cdx.Component {
+	index := map[string]*cdx.Component{}
 	if bom == nil {
 		return index
 	}
-	for _, c := range sliceutil.Deref(bom.Components) {
-		if c.PackageURL != "" {
-			index[c.PackageURL] = c
+	components := sliceutil.Deref(bom.Components)
+	for i := range components {
+		if purl := components[i].PackageURL; purl != "" {
+			index[purl] = &components[i]
 		}
 	}
 	return index
@@ -389,18 +388,6 @@ func fetchVulnerabilityReport(ctx context.Context, target oras.ReadOnlyTarget, d
 	}
 
 	return RestoredLayer{Purl: purl, Hash: hash, Path: destPath}, nil
-}
-
-// recordComponentManifest writes component's own manifest (matched by
-// purl) so a later `bomify build` can reuse it instead of re-invoking a
-// plugin. No hash is computed — the SBOM already declares one — and
-// nothing is written if purl matches no component in it.
-func recordComponentManifest(dataDir string, componentsByPurl map[string]cdx.Component, purl string) error {
-	component, ok := componentsByPurl[purl]
-	if !ok {
-		return nil
-	}
-	return plugin.WriteManifest(dataDir, component, pluginlib.Hash{})
 }
 
 // blobHash returns desc's digest as the hex hash bomify's on-disk layout
