@@ -151,21 +151,19 @@ type componentRestore struct {
 	component *cdx.Component
 }
 
-func (r componentRestore) run(ctx context.Context) ([]RestoredLayer, error) {
-	layers, err := r.restore(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("restore %s: %w", r.purl, err)
-	}
-	return layers, nil
-}
-
-// restore restores the component, returning one RestoredLayer per layer.
+// run restores the component, returning one RestoredLayer per layer.
 // Every layer goes into a staging directory, each verified against its
 // digest, and the component's directory appears only once all are: a
 // failed pull leaves nothing behind. No layer may write a file another
 // already did, or outside the directory.
-func (r componentRestore) restore(ctx context.Context) ([]RestoredLayer, error) {
-	layers, err := r.layers()
+func (r componentRestore) run(ctx context.Context) (layers []RestoredLayer, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("restore %s: %w", r.purl, err)
+		}
+	}()
+
+	layers, err = r.layers()
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +190,7 @@ func (r componentRestore) dir() string {
 	return layout.ComponentLayer(r.dataDir, r.purl)
 }
 
-// layers returns the RestoredLayer restore reports for each of r's layers.
+// layers returns the RestoredLayer run reports for each of r's layers.
 func (r componentRestore) layers() ([]RestoredLayer, error) {
 	layers := make([]RestoredLayer, 0, len(r.descs))
 	for _, desc := range r.descs {
