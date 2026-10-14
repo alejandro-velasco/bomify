@@ -52,9 +52,10 @@ refusing any that names a file another layer wrote, each through an
 package's (see `push.componentPublisher`, and
 [Registry format](registry-format.md#component-repositories) for what's
 published), unless `--skip-component-repositories`. A large file's layer
-there is the package's own blob, re-uploaded, since registries don't
-share blobs across repositories without a mount. Each artifact is signed
-and tagged before the package's tag moves, so a failure leaves the
+there is the package's own blob, mounted from the package's repository
+rather than uploaded again (see `push.componentPublisher.pushBlob`); a
+registry that won't mount it takes the upload instead. Each artifact is
+signed and tagged before the package's tag moves, so a failure leaves the
 package's tag where it was.
 
 ## Save and load

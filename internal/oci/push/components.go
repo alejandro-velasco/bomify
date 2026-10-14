@@ -19,6 +19,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/package-url/packageurl-go"
 	"oras.land/oras-go/v2"
+	orasregistry "oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/parallel"
@@ -287,6 +288,40 @@ func (p componentPublisher) pushIndex(ctx context.Context, target oras.Target, d
 	return desc, nil
 }
 
+// mountSource returns the repository of the registry the package was
+// pushed to that already holds the blob desc names, for a component's
+// repository to mount it from rather than upload it again, or "" if the
+// package pushed no such blob. A large file is one of the package's
+// layers, with the same digest.
+func (p componentPublisher) mountSource(desc ocispec.Descriptor) string {
+	pushed := slices.ContainsFunc(p.pkg.layerDescs, func(layer ocispec.Descriptor) bool {
+		return layer.Digest == desc.Digest
+	})
+	if !pushed {
+		return ""
+	}
+	reference, err := orasregistry.ParseReference(prefix.Repository(p.ref))
+	if err != nil {
+		return ""
+	}
+	return reference.Repository
+}
+
+// pushBlob makes desc available in target: mounted from from, a repository
+// of the registry that holds it (see mountSource), if target can mount,
+// and otherwise pushed from the content open returns.
+func (p componentPublisher) pushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string) error {
+	if mountTarget, canMount := target.(transfer.MountTarget); canMount && from != "" {
+		return transfer.MountBlob(ctx, mountTarget, desc, from, open, label, p.opts.Progress)
+	}
+	content, err := open()
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+	return transfer.PushBlob(ctx, target, desc, content, label, p.opts.Progress)
+}
+
 // publishArtifact pushes component's files to target as an artifact
 // `oras pull` writes out as they are (see artifactLayers), returning its
 // manifest's descriptor. A model is a ModelPack artifact.
@@ -352,13 +387,20 @@ func (p componentPublisher) pushArtifactLayers(ctx context.Context, target oras.
 	pushFile := func(ctx context.Context, _ int, index int) (ocispec.Descriptor, error) {
 		plan := component.plans[index].(filePlan)
 		desc := artifactFile(component.descs[index], plan, isModel)
-		file, err := os.Open(filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path)))
-		if err != nil {
-			return ocispec.Descriptor{}, err
+		path := filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path))
+		open := func() (io.ReadCloser, error) {
+			file, err := os.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			limited := limitedFile{
+				Reader: io.LimitReader(file, desc.Size),
+				Closer: file,
+			}
+			return limited, nil
 		}
-		defer file.Close()
 		label := transfer.LayerLabel(plan.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
-		if err := transfer.PushBlob(ctx, target, desc, io.LimitReader(file, desc.Size), label, p.opts.Progress); err != nil {
+		if err := p.pushBlob(ctx, target, desc, p.mountSource(desc), open, label); err != nil {
 			return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.file.Path, err)
 		}
 		return desc, nil
@@ -372,6 +414,13 @@ func (p componentPublisher) pushArtifactLayers(ctx context.Context, target oras.
 		diffIDs = append(diffIDs, layer.Digest)
 	}
 	return layers, diffIDs, nil
+}
+
+// limitedFile is a file read for no more than the size it was hashed at,
+// in case it has grown since.
+type limitedFile struct {
+	io.Reader
+	io.Closer
 }
 
 // artifactFile returns the descriptor of a large file's layer in a

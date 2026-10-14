@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -89,6 +90,15 @@ type registry struct {
 	stores map[string]*oci.Store
 	// refuse, if set, fails every repository but the package's.
 	refuse error
+	// refuseMounts makes a component's repository answer a mount by
+	// starting an upload, as a registry that can't mount does.
+	refuseMounts bool
+	// cannotMount makes the component repositories plain stores, which
+	// have no mount at all.
+	cannotMount bool
+	// mounted and uploaded are the blobs each component repository was
+	// given by mount and by upload, as "<repository> <digest>".
+	mounted, uploaded []string
 }
 
 func newRegistry(t *testing.T) *registry {
@@ -99,7 +109,62 @@ func (r *registry) target(repository string) (oras.Target, error) {
 	if r.refuse != nil {
 		return nil, r.refuse
 	}
-	return r.store(repository), nil
+	if r.cannotMount {
+		return r.store(repository), nil
+	}
+	target := mountingStore{
+		Store:      r.store(repository),
+		reg:        r,
+		repository: repository,
+	}
+	return target, nil
+}
+
+// record adds entry to list, which is one of r's.
+func (r *registry) record(list *[]string, entry string) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	*list = append(*list, entry)
+}
+
+// mountingStore is a component's repository in a registry that can mount a
+// blob from another of its repositories.
+type mountingStore struct {
+	*oci.Store
+	reg        *registry
+	repository string
+}
+
+// Push records an upload of expected.
+func (s mountingStore) Push(ctx context.Context, expected ocispec.Descriptor, content io.Reader) error {
+	s.reg.record(&s.reg.uploaded, s.repository+" "+expected.Digest.String())
+	return s.Store.Push(ctx, expected, content)
+}
+
+// Mount links desc from fromRepo, a repository of the registry named by
+// path, if it holds it; otherwise, like a registry that won't mount, it
+// takes the upload getContent starts.
+func (s mountingStore) Mount(ctx context.Context, desc ocispec.Descriptor, fromRepo string, getContent func() (io.ReadCloser, error)) error {
+	source := s.reg.store("registry.example.com/" + fromRepo)
+	held, err := source.Exists(ctx, desc)
+	if err != nil {
+		return err
+	}
+	if held && !s.reg.refuseMounts {
+		blob, err := source.Fetch(ctx, desc)
+		if err != nil {
+			return err
+		}
+		defer blob.Close()
+		s.reg.record(&s.reg.mounted, s.repository+" "+desc.Digest.String())
+		return s.Store.Push(ctx, desc, blob)
+	}
+	content, err := getContent()
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+	return s.Push(ctx, desc, content)
 }
 
 func (r *registry) store(repository string) *oci.Store {
@@ -159,18 +224,8 @@ func fetchJSON(t *testing.T, store *oci.Store, ref string, v any) ocispec.Descri
 
 func TestPushPublishesAModelAsModelPack(t *testing.T) {
 	layerLimits(t, 16, 1024)
-	model := cdx.Component{
-		Type:       cdx.ComponentTypeMachineLearningModel,
-		Name:       "Phi-4",
-		Version:    "187ef0342fff0eb3333be9f00389385e95ef0b61",
-		PackageURL: "pkg:huggingface/microsoft/Phi-4@187ef0342fff0eb3333be9f00389385e95ef0b61",
-	}
-	files := map[string]string{
-		"config.json":                    `{"a": 1}`,
-		"tokenizer/vocab.txt":            "a b c",
-		"model-00001.safetensors":        strings.Repeat("0123456789", 10),
-		"nested/model-00002.safetensors": strings.Repeat("abcde", 10),
-	}
+	model, files := modelWeights()
+	files["tokenizer/vocab.txt"] = "a b c"
 	reg := newRegistry(t)
 
 	result, err := pushWithComponents(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{model}, []map[string]string{files})
@@ -233,6 +288,107 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 		if !slices.ContainsFunc(pkg.Layers, func(packaged ocispec.Descriptor) bool { return packaged.Digest == layer.Digest }) {
 			t.Errorf("weight %s isn't one of the package's blobs", layer.Annotations[ocispec.AnnotationTitle])
 		}
+	}
+}
+
+// modelWeights returns the model component with two weights and a small
+// file, and its files, for the tests of how the weights reach a registry.
+func modelWeights() (cdx.Component, map[string]string) {
+	model := cdx.Component{
+		Type:       cdx.ComponentTypeMachineLearningModel,
+		Name:       "Phi-4",
+		Version:    "187ef0342fff0eb3333be9f00389385e95ef0b61",
+		PackageURL: "pkg:huggingface/microsoft/Phi-4@187ef0342fff0eb3333be9f00389385e95ef0b61",
+	}
+	files := map[string]string{
+		"config.json":                    `{"a": 1}`,
+		"model-00001.safetensors":        strings.Repeat("0123456789", 10),
+		"nested/model-00002.safetensors": strings.Repeat("abcde", 10),
+	}
+	return model, files
+}
+
+// weightEntries returns the weights of the model published at repository
+// in reg, as the entries reg records blobs by, sorted.
+func weightEntries(t *testing.T, reg *registry, repository, tag string) []string {
+	t.Helper()
+	var manifest ocispec.Manifest
+	fetchJSON(t, reg.store(repository), tag, &manifest)
+	var weights []string
+	for _, layer := range manifest.Layers {
+		if layer.MediaType == modelspec.MediaTypeModelWeightRaw {
+			weights = append(weights, repository+" "+layer.Digest.String())
+		}
+	}
+	slices.Sort(weights)
+	return weights
+}
+
+func TestPushMountsAModelsWeightsFromThePackage(t *testing.T) {
+	layerLimits(t, 16, 1024)
+	model, files := modelWeights()
+	reg := newRegistry(t)
+
+	if _, err := pushWithComponents(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{model}, []map[string]string{files}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	repository := "registry.example.com/packages/app/huggingface/microsoft/phi-4"
+	weights := weightEntries(t, reg, repository, model.Version)
+	if len(weights) != 2 {
+		t.Fatalf("weights = %v, want two", weights)
+	}
+	mounted := slices.Sorted(slices.Values(reg.mounted))
+	if !slices.Equal(mounted, weights) {
+		t.Errorf("mounted = %v, want the weights %v", mounted, weights)
+	}
+	for _, weight := range weights {
+		if slices.Contains(reg.uploaded, weight) {
+			t.Errorf("%s was uploaded as well as mounted", weight)
+		}
+	}
+	if got := orasPull(t, reg.store(repository), model.Version); !maps.Equal(got, files) {
+		t.Errorf("oras pull wrote %v, want %v", got, files)
+	}
+}
+
+func TestPushUploadsWhatARegistryWontMount(t *testing.T) {
+	layerLimits(t, 16, 1024)
+	model, files := modelWeights()
+	reg := newRegistry(t)
+	reg.refuseMounts = true
+
+	if _, err := pushWithComponents(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{model}, []map[string]string{files}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	repository := "registry.example.com/packages/app/huggingface/microsoft/phi-4"
+	if len(reg.mounted) != 0 {
+		t.Errorf("mounted = %v, want none", reg.mounted)
+	}
+	for _, weight := range weightEntries(t, reg, repository, model.Version) {
+		if !slices.Contains(reg.uploaded, weight) {
+			t.Errorf("%s wasn't uploaded", weight)
+		}
+	}
+	if got := orasPull(t, reg.store(repository), model.Version); !maps.Equal(got, files) {
+		t.Errorf("oras pull wrote %v, want %v", got, files)
+	}
+}
+
+func TestPushPushesToATargetThatCantMount(t *testing.T) {
+	layerLimits(t, 16, 1024)
+	model, files := modelWeights()
+	reg := newRegistry(t)
+	reg.cannotMount = true
+
+	if _, err := pushWithComponents(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{model}, []map[string]string{files}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	repository := "registry.example.com/packages/app/huggingface/microsoft/phi-4"
+	if got := orasPull(t, reg.store(repository), model.Version); !maps.Equal(got, files) {
+		t.Errorf("oras pull wrote %v, want %v", got, files)
 	}
 }
 
