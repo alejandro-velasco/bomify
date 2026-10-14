@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -22,37 +23,47 @@ func layerOf(mediaType, purl string) ocispec.Descriptor {
 	return desc
 }
 
-func TestGroupLayers(t *testing.T) {
+func TestPackageRestores(t *testing.T) {
 	descs := []ocispec.Descriptor{
 		0: layerOf(transfer.LayerMediaType, "model"),
 		1: layerOf(transfer.LayerMediaType, "app"),
-		2: layerOf(transfer.FilePartMediaType, "model"),
-		3: layerOf(transfer.FilePartMediaType, "model"),
+		2: layerOf(transfer.FileMediaType, "model"),
+		3: layerOf(transfer.FileMediaType, "model"),
 		4: layerOf("application/x-foo", ""),
-		5: layerOf(transfer.FilePartMediaType, "model"),
+		5: layerOf(transfer.FileMediaType, "model"),
 		// A purl alone doesn't make a layer a component's.
 		6: layerOf("application/x-foo", "app"),
 		// Nor does a component media type without a purl.
 		7: layerOf(transfer.LayerMediaType, ""),
 	}
 
-	groups, foreign := groupLayers(descs)
+	// Only model is in the SBOM.
+	model := cdx.Component{
+		Name:       "model",
+		PackageURL: "model",
+	}
+	restore := packageRestore{
+		descs:            descs,
+		componentsByPurl: map[string]*cdx.Component{"model": &model},
+	}
+	restores := restore.restores()
 
-	wantGroups := []layerGroup{
-		{purl: "model", manifestIndexes: []int{0, 2, 3, 5}},
-		{purl: "app", manifestIndexes: []int{1}},
+	// In the order each first appears.
+	want := []layerRestore{
+		&componentRestore{purl: "model", descs: []ocispec.Descriptor{descs[0], descs[2], descs[3], descs[5]}, component: &model},
+		&componentRestore{purl: "app", descs: []ocispec.Descriptor{descs[1]}},
+		foreignRestore{desc: descs[4]},
+		foreignRestore{desc: descs[6]},
+		foreignRestore{desc: descs[7]},
 	}
-	if !reflect.DeepEqual(groups, wantGroups) {
-		t.Errorf("groups = %+v, want %+v", groups, wantGroups)
-	}
-	if want := []int{4, 6, 7}; !reflect.DeepEqual(foreign, want) {
-		t.Errorf("foreign = %v, want %v", foreign, want)
+	if !reflect.DeepEqual(restores, want) {
+		t.Errorf("restores = %+v, want %+v", restores, want)
 	}
 }
 
-func TestGroupLayersEmpty(t *testing.T) {
-	groups, foreign := groupLayers(nil)
-	if groups != nil || foreign != nil {
-		t.Errorf("groupLayers(nil) = %v, %v; want nothing", groups, foreign)
+func TestPackageRestoresEmpty(t *testing.T) {
+	var restore packageRestore
+	if restores := restore.restores(); restores != nil {
+		t.Errorf("restores() = %v, want nothing", restores)
 	}
 }

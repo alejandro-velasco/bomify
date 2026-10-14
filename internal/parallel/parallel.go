@@ -1,6 +1,6 @@
 // Package parallel runs the same work over a slice of items concurrently,
 // with a limit, stopping at the first error, as bomify's transfers do:
-// layers, file parts, and reports.
+// layers and reports.
 package parallel
 
 import (

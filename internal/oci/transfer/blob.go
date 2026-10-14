@@ -57,8 +57,8 @@ func PushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, 
 	defer pw.Close()
 
 	if err := target.Push(ctx, desc, io.TeeReader(r, pw)); err != nil {
-		// Two layers can share a blob (identical parts of a large file,
-		// say) and be pushed at once: whichever finishes second finds the
+		// Two layers can share a blob (two identical large files, say) and
+		// be pushed at once: whichever finishes second finds the
 		// other's copy, which is just as good.
 		if errors.Is(err, errdef.ErrAlreadyExists) {
 			return nil
@@ -68,17 +68,21 @@ func PushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, 
 	return nil
 }
 
-// PartLabel names one of a large file's part layers (see
-// FilePartMediaType) in progress output: the file's path, which of its
-// count parts it is, from 1, when there's more than one, and then its
-// component's purl. The path comes first so it survives a long label
-// being cut short, and tells the bars of one component's files apart.
-func PartLabel(purl, path string, number, count int) string {
-	if count > 1 {
-		path = fmt.Sprintf("%s %d/%d", path, number, count)
+// LayerLabel names one of a component's layers, a tar or a large file, in
+// progress output: its short digest, which tells the component's layers
+// apart, then the component's purl, or just hash when it has none. The
+// digest comes first, at a fixed width, so it survives a long purl being
+// cut short.
+func LayerLabel(purl, hash string) string {
+	if purl == "" {
+		return hash
 	}
-	return path + " " + purl
+	return hash[:shortHashLen] + " " + purl
 }
+
+// shortHashLen is how many hex characters of a hash LayerLabel shows, as
+// many as a short image ID.
+const shortHashLen = 12
 
 // Label names a component's blob in progress output and errors: its purl,
 // or hash when it has none.

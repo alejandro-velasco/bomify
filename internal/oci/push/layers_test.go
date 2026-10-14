@@ -1,17 +1,22 @@
 package push
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -30,13 +35,13 @@ var modelComponent = cdx.Component{
 	PackageURL: "pkg:generic/model@1.0?download_url=https://example.com/model",
 }
 
-// layerLimits makes transfer.LargeFileSize and transfer.MaxLayerSize
+// layerLimits makes transfer.LargeFileSize and transfer.MaxTarSize
 // small for a test.
-func layerLimits(t *testing.T, largeFile, maxLayer int64) {
+func layerLimits(t *testing.T, largeFile, maxTar int64) {
 	t.Helper()
-	originalLarge, originalMax := transfer.LargeFileSize, transfer.MaxLayerSize
-	transfer.LargeFileSize, transfer.MaxLayerSize = largeFile, maxLayer
-	t.Cleanup(func() { transfer.LargeFileSize, transfer.MaxLayerSize = originalLarge, originalMax })
+	originalLarge, originalMax := transfer.LargeFileSize, transfer.MaxTarSize
+	transfer.LargeFileSize, transfer.MaxTarSize = largeFile, maxTar
+	t.Cleanup(func() { transfer.LargeFileSize, transfer.MaxTarSize = originalLarge, originalMax })
 }
 
 func newStore(t *testing.T) *oci.Store {
@@ -61,11 +66,14 @@ func manifestOf(t *testing.T, store *oci.Store, tag string) ocispec.Manifest {
 	return manifest
 }
 
-func TestPushSplitsLargeFiles(t *testing.T) {
-	layerLimits(t, 16, 40)
+func TestPushGivesLargeFilesALayerEach(t *testing.T) {
+	// Each small file takes 1024 bytes of a tar, so two fit in one.
+	layerLimits(t, 16, 2100)
 	baseDir := t.TempDir()
 	files := map[string]string{
-		"config.json":     `{"a": 1}`,
+		"a.json":          "small file one.",
+		"b.json":          "small file two.",
+		"c.json":          "small file 3...",
 		"big.bin":         strings.Repeat("0123456789", 10),
 		"nested/huge.bin": strings.Repeat("abcde", 10),
 	}
@@ -82,27 +90,35 @@ func TestPushSplitsLargeFiles(t *testing.T) {
 	}
 
 	manifest := manifestOf(t, store, "model")
-	var tars, parts []ocispec.Descriptor
+	var tars, fileLayers []ocispec.Descriptor
 	for _, layer := range manifest.Layers {
 		switch layer.MediaType {
 		case transfer.LayerMediaType:
 			tars = append(tars, layer)
-		case transfer.FilePartMediaType:
-			parts = append(parts, layer)
-			if layer.Size > transfer.MaxLayerSize {
-				t.Errorf("part of %s is %d bytes, over the %d cap", layer.Annotations[transfer.AnnotationFilePath], layer.Size, transfer.MaxLayerSize)
-			}
+		case transfer.FileMediaType:
+			fileLayers = append(fileLayers, layer)
 		}
 	}
-	// config.json in one tar; big.bin in 40+40+20; nested/huge.bin in 40+10.
-	if len(tars) != 1 || len(parts) != 5 {
-		t.Fatalf("got %d tar and %d part layers, want 1 and 5", len(tars), len(parts))
+	// The small files in two tars, then each large file whole, by path.
+	if len(tars) != 2 || len(fileLayers) != 2 {
+		t.Fatalf("got %d tar and %d file layers, want 2 and 2", len(tars), len(fileLayers))
 	}
 	if first := manifest.Layers[0]; first.MediaType != transfer.LayerMediaType {
-		t.Errorf("first layer is a %s, want the tar", first.MediaType)
+		t.Errorf("first layer is a %s, want a tar", first.MediaType)
 	}
-	if got := parts[2].Annotations; got[transfer.AnnotationFilePath] != "big.bin" || got[transfer.AnnotationFileOffset] != "80" || got[transfer.AnnotationFileSize] != "100" {
-		t.Errorf("third part's annotations = %v, want big.bin from 80 of 100", got)
+	big := fileLayers[0]
+	// 0755, but where the file system keeps no such bits, what it has.
+	info, err := os.Stat(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAnnotations := map[string]string{
+		transfer.AnnotationPurl:     modelComponent.PackageURL,
+		transfer.AnnotationFilePath: "big.bin",
+		transfer.AnnotationFileMode: fmt.Sprintf("%04o", info.Mode().Perm()),
+	}
+	if !maps.Equal(big.Annotations, wantAnnotations) || big.Size != 100 {
+		t.Errorf("big.bin's layer = %d bytes, %v; want 100 bytes, %v", big.Size, big.Annotations, wantAnnotations)
 	}
 
 	pulledDir := t.TempDir()
@@ -127,8 +143,8 @@ func TestPushSplitsLargeFiles(t *testing.T) {
 	}
 }
 
-// TestPushSharesLargeFiles covers what file parts are for: another
-// package holding the same large file reuses its blobs.
+// TestPushSharesLargeFiles covers what file layers are for: another
+// package holding the same large file reuses its blob.
 func TestPushSharesLargeFiles(t *testing.T) {
 	layerLimits(t, 16, 40)
 	weights := strings.Repeat("shared weights ", 10)
@@ -140,7 +156,7 @@ func TestPushSharesLargeFiles(t *testing.T) {
 	}
 	store := newStore(t)
 
-	partDigests := map[string][]string{}
+	fileDigests := map[string][]string{}
 	for _, component := range []cdx.Component{modelComponent, other} {
 		baseDir := t.TempDir()
 		writeLayer(t, baseDir, component, map[string]string{
@@ -152,13 +168,13 @@ func TestPushSharesLargeFiles(t *testing.T) {
 			t.Fatalf("Push %s: %v", component.Name, err)
 		}
 		for _, layer := range manifestOf(t, store, component.Name).Layers {
-			if layer.MediaType == transfer.FilePartMediaType {
-				partDigests[component.Name] = append(partDigests[component.Name], layer.Digest.String())
+			if layer.MediaType == transfer.FileMediaType {
+				fileDigests[component.Name] = append(fileDigests[component.Name], layer.Digest.String())
 			}
 		}
 	}
-	if strings.Join(partDigests["model"], ",") != strings.Join(partDigests["other"], ",") || len(partDigests["model"]) == 0 {
-		t.Errorf("part digests = %v, want the same blobs in both packages", partDigests)
+	if strings.Join(fileDigests["model"], ",") != strings.Join(fileDigests["other"], ",") || len(fileDigests["model"]) == 0 {
+		t.Errorf("file digests = %v, want the same blob in both packages", fileDigests)
 	}
 }
 
@@ -185,17 +201,19 @@ func TestPushEmptyComponent(t *testing.T) {
 	}
 }
 
-// part describes a file part layer for craftPackage.
-type part struct {
+// craftedLayer describes a layer for craftPackage: a file layer, or with
+// tarOfFileNamed, a tar of one file of that name, or with symlinkTo, a
+// tar of a symlink at path to it.
+type craftedLayer struct {
 	path, mode     string
-	size, offset   int64
 	content        string
 	tarOfFileNamed string
+	symlinkTo      string
 }
 
-// craftPackage pushes a package of modelComponent whose layers are parts,
-// annotated as given, as a hostile registry might serve.
-func craftPackage(t *testing.T, store *oci.Store, parts []part) {
+// craftPackage pushes a package of modelComponent of layers, annotated as
+// given, as a hostile registry might serve.
+func craftPackage(t *testing.T, store *oci.Store, crafted []craftedLayer) {
 	t.Helper()
 	ctx := context.Background()
 	sbom := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[{"type":"machine-learning-model","name":"model","version":"1.0","purl":"` + modelComponent.PackageURL + `"}]}`)
@@ -205,7 +223,30 @@ func craftPackage(t *testing.T, store *oci.Store, parts []part) {
 	}
 
 	var layers []ocispec.Descriptor
-	for _, p := range parts {
+	for _, p := range crafted {
+		if p.symlinkTo != "" {
+			var buffer bytes.Buffer
+			tw := tar.NewWriter(&buffer)
+			header := &tar.Header{
+				Typeflag: tar.TypeSymlink,
+				Name:     p.path,
+				Linkname: p.symlinkTo,
+				Mode:     0o777,
+			}
+			if err := tw.WriteHeader(header); err != nil {
+				t.Fatal(err)
+			}
+			if err := tw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			desc, err := oras.PushBytes(ctx, store, transfer.LayerMediaType, buffer.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			desc.Annotations = map[string]string{transfer.AnnotationPurl: modelComponent.PackageURL}
+			layers = append(layers, desc)
+			continue
+		}
 		if p.tarOfFileNamed != "" {
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, p.tarOfFileNamed), []byte(p.content), 0o644); err != nil {
@@ -223,16 +264,14 @@ func craftPackage(t *testing.T, store *oci.Store, parts []part) {
 			layers = append(layers, desc)
 			continue
 		}
-		desc, err := oras.PushBytes(ctx, store, transfer.FilePartMediaType, []byte(p.content))
+		desc, err := oras.PushBytes(ctx, store, transfer.FileMediaType, []byte(p.content))
 		if err != nil {
 			t.Fatal(err)
 		}
 		desc.Annotations = map[string]string{
-			transfer.AnnotationPurl:       modelComponent.PackageURL,
-			transfer.AnnotationFilePath:   p.path,
-			transfer.AnnotationFileMode:   p.mode,
-			transfer.AnnotationFileSize:   strconv.FormatInt(p.size, 10),
-			transfer.AnnotationFileOffset: strconv.FormatInt(p.offset, 10),
+			transfer.AnnotationPurl:     modelComponent.PackageURL,
+			transfer.AnnotationFilePath: p.path,
+			transfer.AnnotationFileMode: p.mode,
 		}
 		layers = append(layers, desc)
 	}
@@ -249,70 +288,90 @@ func craftPackage(t *testing.T, store *oci.Store, parts []part) {
 	}
 }
 
-func TestPullRejectsMalformedParts(t *testing.T) {
+func TestPullRejectsMalformedFiles(t *testing.T) {
 	for name, tc := range map[string]struct {
-		parts []part
-		want  string
+		layers []craftedLayer
+		// want is what the error contains: any of its "|"-separated
+		// alternatives, for layers whose order of restore decides.
+		want string
 	}{
 		"escaping path": {
-			parts: []part{{path: "../escape", mode: "0644", size: 3, content: "abc"}},
-			want:  "outside its component",
+			layers: []craftedLayer{{path: "../escape", mode: "0644", content: "abc"}},
+			want:   "outside its component",
 		},
 		"absolute path": {
-			parts: []part{{path: "/etc/passwd", mode: "0644", size: 3, content: "abc"}},
-			want:  "outside its component",
+			layers: []craftedLayer{{path: "/etc/passwd", mode: "0644", content: "abc"}},
+			want:   "outside its component",
 		},
-		"gap": {
-			parts: []part{
-				{path: "f", mode: "0644", size: 6, offset: 0, content: "ab"},
-				{path: "f", mode: "0644", size: 6, offset: 4, content: "ef"},
+		"one path twice": {
+			layers: []craftedLayer{
+				{path: "f", mode: "0644", content: "abc"},
+				{path: "f", mode: "0644", content: "def"},
 			},
-			want: "don't cover it",
-		},
-		"short": {
-			parts: []part{{path: "f", mode: "0644", size: 6, content: "abc"}},
-			want:  "cover 3 of its 6 bytes",
-		},
-		"overlap": {
-			parts: []part{
-				{path: "f", mode: "0644", size: 4, offset: 0, content: "abc"},
-				{path: "f", mode: "0644", size: 4, offset: 2, content: "cd"},
-			},
-			want: "don't cover it",
-		},
-		"conflicting modes": {
-			parts: []part{
-				{path: "f", mode: "0644", size: 4, offset: 0, content: "ab"},
-				{path: "f", mode: "0755", size: 4, offset: 2, content: "cd"},
-			},
-			want: "disagree",
+			want: "two layers hold f",
 		},
 		"bad mode": {
-			parts: []part{{path: "f", mode: "rwx", size: 3, content: "abc"}},
-			want:  "invalid file mode",
+			layers: []craftedLayer{{path: "f", mode: "rwx", content: "abc"}},
+			want:   "invalid file mode",
 		},
-		"tar overwrites a part": {
-			parts: []part{
-				{path: "f", mode: "0644", size: 3, content: "abc"},
+		"a tar and a file layer hold one file": {
+			layers: []craftedLayer{
+				{path: "f", mode: "0644", content: "abc"},
 				{tarOfFileNamed: "f", content: "evil"},
 			},
-			want: "unpack",
+			want: "unpack|create f",
+		},
+		// The tar restores first, at a concurrency of 1: a file layer
+		// mustn't follow its link out of the component.
+		"a file layer through a symlink out": {
+			layers: []craftedLayer{
+				{path: "out", symlinkTo: ".."},
+				{path: "out/evil", mode: "0644", content: "evil"},
+			},
+			want: "create out/evil|unpack",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := newStore(t)
-			craftPackage(t, store, tc.parts)
+			craftPackage(t, store, tc.layers)
 			pulledDir := t.TempDir()
 
-			_, err := pull.Pull(context.Background(), store, "crafted", pulledDir, transfer.Options{Concurrency: 2})
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
+			_, err := pull.Pull(context.Background(), store, "crafted", pulledDir, transfer.Options{Concurrency: 1})
+			if err == nil || !containsAny(err.Error(), strings.Split(tc.want, "|")) {
 				t.Fatalf("Pull = %v, want an error containing %q", err, tc.want)
+			}
+			if escaped := findFile(t, pulledDir, "evil"); escaped != "" {
+				t.Errorf("a layer wrote %s", escaped)
 			}
 			if _, statErr := os.Stat(layout.ComponentLayer(pulledDir, modelComponent.PackageURL)); !os.IsNotExist(statErr) {
 				t.Errorf("component directory restored despite the error: %v", statErr)
 			}
 		})
 	}
+}
+
+// findFile returns the path of a file named name under dir, or "".
+func findFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	var found string
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == name && !entry.IsDir() {
+			found = path
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return found
+}
+
+// containsAny reports whether s contains any of substrings.
+func containsAny(s string, substrings []string) bool {
+	return slices.ContainsFunc(substrings, func(substring string) bool { return strings.Contains(s, substring) })
 }
 
 func jsonUnmarshal(data []byte, v any) error {
@@ -335,19 +394,14 @@ type nopWriteCloser struct{}
 func (nopWriteCloser) Write(data []byte) (int, error) { return len(data), nil }
 func (nopWriteCloser) Close() error                   { return nil }
 
-// TestPushAndPullLabelPartsAlike covers each part's progress bar: named
-// by its file and which part it is, the same way on push and pull.
-func TestPushAndPullLabelPartsAlike(t *testing.T) {
+// TestPushAndPullLabelLayersAlike covers a component's progress bars: one
+// per layer, a tar's or a large file's, each naming the component but
+// telling its layers apart, the same way on push and pull.
+func TestPushAndPullLabelLayersAlike(t *testing.T) {
 	layerLimits(t, 16, 40)
 	baseDir := t.TempDir()
-	// No two parts alike: a part the store already has isn't pushed, so
-	// gets no bar.
-	var big strings.Builder
-	for index := range 100 {
-		big.WriteByte(byte('a' + index%26))
-	}
 	writeLayer(t, baseDir, modelComponent, map[string]string{
-		"big.bin":   big.String(),
+		"big.bin":   strings.Repeat("0123456789", 10),
 		"small.txt": "small",
 	})
 	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
@@ -361,32 +415,107 @@ func TestPushAndPullLabelPartsAlike(t *testing.T) {
 		t.Fatalf("Pull: %v", err)
 	}
 
-	partLabels := func(labels []string) []string {
-		var parts []string
-		for _, label := range labels {
-			if strings.HasPrefix(label, "big.bin") {
-				parts = append(parts, label)
-			}
+	// Two layers, small.txt's tar and big.bin's file.
+	componentLabels := func(labels []string) []string {
+		kept := slices.DeleteFunc(slices.Clone(labels), func(label string) bool {
+			return !strings.HasSuffix(label, " "+modelComponent.PackageURL)
+		})
+		slices.Sort(kept)
+		return slices.Compact(kept)
+	}
+	pushedLabels := componentLabels(pushed)
+	if len(pushedLabels) != 2 {
+		t.Errorf("push labelled the component's layers %q, want 2 distinct labels", pushedLabels)
+	}
+	if pulledLabels := componentLabels(pulled); !slices.Equal(pulledLabels, pushedLabels) {
+		t.Errorf("pull labelled the component's layers %q, want push's %q", pulledLabels, pushedLabels)
+	}
+}
+
+// countingStore is a store that records the most blobs it's had open for
+// fetching at once, holding each one open a moment so fetches overlap.
+type countingStore struct {
+	*oci.Store
+	mutex  sync.Mutex
+	active int
+	most   int
+}
+
+func (s *countingStore) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
+	rc, err := s.Store.Fetch(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	s.mutex.Lock()
+	s.active++
+	s.most = max(s.most, s.active)
+	s.mutex.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	fetch := countedFetch{
+		ReadCloser: rc,
+		store:      s,
+	}
+	return &fetch, nil
+}
+
+// countedFetch is one of countingStore's open fetches.
+type countedFetch struct {
+	io.ReadCloser
+	store *countingStore
+}
+
+func (f *countedFetch) Close() error {
+	f.store.mutex.Lock()
+	f.store.active--
+	f.store.mutex.Unlock()
+	return f.ReadCloser.Close()
+}
+
+// TestPullBoundsDownloads covers pull's concurrency: components restore at
+// once, each downloading its layers at once, but no more than Concurrency
+// layers download at a time in all.
+func TestPullBoundsDownloads(t *testing.T) {
+	layerLimits(t, 16, 40)
+	baseDir := t.TempDir()
+	var components []cdx.Component
+	for _, name := range []string{"one", "two", "three"} {
+		component := cdx.Component{
+			Type:       cdx.ComponentTypeMachineLearningModel,
+			Name:       name,
+			Version:    "1.0",
+			PackageURL: "pkg:generic/" + name + "@1.0",
 		}
-		slices.Sort(parts)
-		return parts
+		// A file layer each.
+		writeLayer(t, baseDir, component, map[string]string{
+			"a.bin": strings.Repeat("a", 100) + name,
+			"b.bin": strings.Repeat("b", 100) + name,
+			"c.bin": strings.Repeat("c", 100) + name,
+		})
+		components = append(components, component)
 	}
-	want := []string{
-		"big.bin 1/3 " + modelComponent.PackageURL,
-		"big.bin 2/3 " + modelComponent.PackageURL,
-		"big.bin 3/3 " + modelComponent.PackageURL,
+	sbomHash := recordSBOM(t, baseDir, components)
+	store := countingStore{
+		Store: newStore(t),
 	}
-	if got := partLabels(pushed); !slices.Equal(got, want) {
-		t.Errorf("push labelled the parts %q, want %q", got, want)
+	if _, err := Push(context.Background(), store.Store, "models", baseDir, sbomHash, transfer.Options{Concurrency: 4}); err != nil {
+		t.Fatalf("Push: %v", err)
 	}
-	if got := partLabels(pulled); !slices.Equal(got, want) {
-		t.Errorf("pull labelled the parts %q, want %q", got, want)
+
+	const concurrency = 2
+	if _, err := pull.Pull(context.Background(), &store, "models", t.TempDir(), transfer.Options{Concurrency: concurrency}); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if store.most > concurrency {
+		t.Errorf("pull downloaded %d blobs at once, want at most %d", store.most, concurrency)
+	}
+	if store.most < concurrency {
+		t.Errorf("pull downloaded at most %d blobs at once, want %d: the test isn't overlapping downloads", store.most, concurrency)
 	}
 }
 
 // TestPushAndPullSymlinks covers a symlink to a large file: the link
-// travels in a tar and the file in parts, so pull may only check the link
-// once every layer is in.
+// travels in a tar and the file as a layer of its own, so pull may only
+// check the link once every layer is in.
 func TestPushAndPullSymlinks(t *testing.T) {
 	layerLimits(t, 16, 40)
 	baseDir := t.TempDir()
