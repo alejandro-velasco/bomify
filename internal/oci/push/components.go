@@ -89,185 +89,146 @@ func splitByComponent(components []cdx.Component, plans []layerPlan, descs []oci
 	return grouped
 }
 
-// siteGroup is the components published at one site: one, or each
-// platform of an index.
-type siteGroup struct {
-	site    componentSite
-	members []componentLayers
-	sites   []componentSite
+// publishOptions are what every publisher of a push shares: the package
+// its components are published from, pushed as ref but not yet tagged,
+// and how.
+type publishOptions struct {
+	pkg  *pushedPackage
+	ref  string
+	opts transfer.Options
 }
 
-// planSites groups components by the site each is published at (see
-// componentSiteOf), in order, leaving out components without a purl.
-// Components sharing a site must be the same content, published once, or
-// platforms of one component: the same purl but for distinct "os" and
-// "arch" qualifiers.
-func planSites(packageRepository string, components []componentLayers) ([]*siteGroup, error) {
-	var groups []*siteGroup
-	byReference := map[string]*siteGroup{}
-	for _, component := range components {
-		if component.component.PackageURL == "" {
-			continue
-		}
-		purl, err := packageurl.FromString(component.component.PackageURL)
-		if err != nil {
-			return nil, fmt.Errorf("parse purl %q: %w", component.component.PackageURL, err)
-		}
-		site, err := componentSiteOf(packageRepository, purl)
-		if err != nil {
-			return nil, err
-		}
-		group, ok := byReference[site.reference()]
-		if !ok {
-			group = &siteGroup{site: site}
-			byReference[site.reference()] = group
-			groups = append(groups, group)
-		}
-		if err := group.add(component, site); err != nil {
-			return nil, err
-		}
+// mountSource returns the repository of the registry the package was
+// pushed to that already holds the blob desc names, for a component's
+// repository to mount it from rather than upload it again, or "" if the
+// package pushed no such blob. A large file is one of the package's
+// layers, with the same digest.
+func (o publishOptions) mountSource(desc ocispec.Descriptor) string {
+	pushed := slices.ContainsFunc(o.pkg.layerDescs, func(layer ocispec.Descriptor) bool {
+		return layer.Digest == desc.Digest
+	})
+	if !pushed {
+		return ""
 	}
-	return groups, nil
-}
-
-// add adds component, published at site, to g, unless it's the same
-// content as a member already there.
-func (g *siteGroup) add(component componentLayers, site componentSite) error {
-	for index, member := range g.members {
-		if member.sameContent(component) {
-			return nil
-		}
-		other := g.sites[index]
-		platforms := other.hasPlatform() && site.hasPlatform() && (other.os != site.os || other.arch != site.arch)
-		if other.unqualified != site.unqualified || !platforms {
-			return fmt.Errorf("%s and %s would both be published at %s, with different content", member.component.PackageURL, component.component.PackageURL, site.reference())
-		}
-	}
-	g.members = append(g.members, component)
-	g.sites = append(g.sites, site)
-	return nil
-}
-
-// componentPublisher publishes the components of pkg, a package pushed
-// as ref but not yet tagged, each at its own repository.
-type componentPublisher struct {
-	pkg     *pushedPackage
-	ref     string
-	targets func(repository string) (oras.Target, error)
-	opts    transfer.Options
-}
-
-// publish publishes every component of p's package at its site (see
-// planSites): each in its kind's format (see publisherFor), and
-// platforms sharing a site as an index of theirs, signed with opts.Sign,
-// and then tagged.
-func (p componentPublisher) publish(ctx context.Context) ([]PublishedComponent, error) {
-	components := splitByComponent(p.pkg.components, p.pkg.plans, p.pkg.layerDescs)
-	groups, err := planSites(prefix.Repository(p.ref), components)
+	reference, err := orasregistry.ParseReference(prefix.Repository(o.ref))
 	if err != nil {
-		return nil, err
+		return ""
 	}
-
-	var published []PublishedComponent
-	for _, group := range groups {
-		result, err := p.publishGroup(ctx, group)
-		if err != nil {
-			return nil, fmt.Errorf("publish at %w %s: %w", ErrComponentRepository, group.site.reference(), err)
-		}
-		published = append(published, result)
-	}
-	return published, nil
+	return reference.Repository
 }
 
-// publishGroup publishes group at its site, signs what its tag will
-// name, and tags it, unless it's an image pinned by digest.
-func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) (PublishedComponent, error) {
-	target, err := p.targets(group.site.repository)
+// pushBlob makes desc available in target: mounted from from, a repository
+// of the registry that holds it (see mountSource), if target can mount,
+// and otherwise pushed from the content open returns.
+func (o publishOptions) pushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string) error {
+	if mountTarget, canMount := target.(transfer.MountTarget); canMount && from != "" {
+		return transfer.MountBlob(ctx, mountTarget, desc, from, open, label, o.opts.Progress)
+	}
+	content, err := open()
 	if err != nil {
-		return PublishedComponent{}, err
+		return err
 	}
-
-	var descs []ocispec.Descriptor
-	var purls []string
-	for index, member := range group.members {
-		site := group.sites[index]
-		publisher := p.publisherFor(site.kind)
-		desc, err := publisher.publish(ctx, target, member)
-		if err != nil {
-			return PublishedComponent{}, err
-		}
-		if len(group.members) > 1 {
-			desc.Platform = &ocispec.Platform{OS: site.os, Architecture: site.arch}
-		}
-		descs = append(descs, desc)
-		purls = append(purls, member.component.PackageURL)
-	}
-	tagged := descs[0]
-	if len(descs) > 1 {
-		if tagged, err = p.pushIndex(ctx, target, descs, group.members[0].component); err != nil {
-			return PublishedComponent{}, err
-		}
-	}
-
-	reference := group.site.reference()
-	if group.site.tag == "" {
-		reference = group.site.repository + "@" + tagged.Digest.String()
-	}
-	if p.opts.Sign != nil {
-		if err := p.opts.Sign(ctx, target, reference, tagged); err != nil {
-			return PublishedComponent{}, fmt.Errorf("sign: %w", err)
-		}
-	}
-	if group.site.tag != "" {
-		if err := target.Tag(ctx, tagged, group.site.tag); err != nil {
-			return PublishedComponent{}, fmt.Errorf("tag: %w", err)
-		}
-	}
-
-	result := PublishedComponent{
-		Purls:     purls,
-		Reference: reference,
-		Digest:    tagged.Digest.String(),
-	}
-	return result, nil
+	defer content.Close()
+	return transfer.PushBlob(ctx, target, desc, content, label, o.opts.Progress)
 }
 
 // publisher publishes a component at its own repository, target, in one
-// format, returning the descriptor of what it pushed.
+// format (see newPublisher), returning the descriptor of what it pushed.
+// publication is what it publishes.
 type publisher interface {
-	publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error)
+	publication() componentPublication
+	publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error)
 }
 
-// publisherFor returns the publisher of a component whose purl's type is
-// kind: an image as it is (see imagePublisher), a chart as Helm stores
-// one (see chartPublisher), and anything else as an artifact of its files
-// (see artifactPublisher).
-func (p componentPublisher) publisherFor(kind string) publisher {
-	switch kind {
-	case packageurl.TypeOCI, packageurl.TypeDocker:
-		return imagePublisher{p}
-	case packageurl.TypeHelm:
-		return chartPublisher{p}
-	default:
-		return artifactPublisher{p}
-	}
+// componentPublication is what a publisher publishes: a component of the
+// package, as Push pushed its layers, at its site.
+type componentPublication struct {
+	publishOptions
+	componentLayers
+	site componentSite
 }
 
-// annotations returns the annotations of what's published for
+func (c componentPublication) publication() componentPublication {
+	return c
+}
+
+// annotations returns the annotations of what's published for c's
 // component: its purl, the package's digest, and the package's created
 // time, so publishing an unchanged package gives the same digests.
-func (p componentPublisher) annotations(component cdx.Component) map[string]string {
+func (c componentPublication) annotations() map[string]string {
 	annotations := map[string]string{
-		ocispec.AnnotationCreated: p.pkg.created,
-		transfer.AnnotationPurl:   component.PackageURL,
-		AnnotationPackageDigest:   p.pkg.desc.Digest.String(),
+		ocispec.AnnotationCreated: c.pkg.created,
+		transfer.AnnotationPurl:   c.component.PackageURL,
+		AnnotationPackageDigest:   c.pkg.desc.Digest.String(),
 	}
 	return annotations
 }
 
-// pushIndex pushes an index of descs, the platforms of component.
-func (p componentPublisher) pushIndex(ctx context.Context, target oras.Target, descs []ocispec.Descriptor, component cdx.Component) (ocispec.Descriptor, error) {
-	annotations := p.annotations(component)
+// newPublisher returns the publisher of publication, by its component's
+// purl type: an image as it is (see imagePublisher), a chart as Helm
+// stores one (see chartPublisher), and anything else as an artifact of
+// its files (see artifactPublisher).
+func newPublisher(publication componentPublication) publisher {
+	switch publication.site.kind {
+	case packageurl.TypeOCI, packageurl.TypeDocker:
+		return imagePublisher{publication}
+	case packageurl.TypeHelm:
+		return chartPublisher{publication}
+	default:
+		return artifactPublisher{publication}
+	}
+}
+
+// siteGroup is the publishers of the components published at one site:
+// one, or each platform of an index.
+type siteGroup struct {
+	site    componentSite
+	members []publisher
+}
+
+// add adds member to g, unless it publishes the same content as a member
+// already there.
+func (g *siteGroup) add(member publisher) error {
+	added := member.publication()
+	for _, existing := range g.members {
+		other := existing.publication()
+		if other.sameContent(added.componentLayers) {
+			return nil
+		}
+		platforms := other.site.hasPlatform() && added.site.hasPlatform() && (other.site.os != added.site.os || other.site.arch != added.site.arch)
+		if other.site.unqualified != added.site.unqualified || !platforms {
+			return fmt.Errorf("%s and %s would both be published at %s, with different content", other.component.PackageURL, added.component.PackageURL, added.site.reference())
+		}
+	}
+	g.members = append(g.members, member)
+	return nil
+}
+
+// publish runs g's publishers against target, returning the descriptor
+// of what g's site names: its one member's, or an index of every
+// member's, each for its platform.
+func (g *siteGroup) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
+	descs := make([]ocispec.Descriptor, 0, len(g.members))
+	for _, member := range g.members {
+		desc, err := member.publish(ctx, target)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		if len(g.members) > 1 {
+			site := member.publication().site
+			desc.Platform = &ocispec.Platform{OS: site.os, Architecture: site.arch}
+		}
+		descs = append(descs, desc)
+	}
+	if len(descs) == 1 {
+		return descs[0], nil
+	}
+	return g.pushIndex(ctx, target, descs)
+}
+
+// pushIndex pushes an index of descs, the platforms g's members published.
+func (g *siteGroup) pushIndex(ctx context.Context, target oras.Target, descs []ocispec.Descriptor) (ocispec.Descriptor, error) {
+	annotations := g.members[0].publication().annotations()
 	delete(annotations, transfer.AnnotationPurl)
 	index := ocispec.Index{
 		Versioned:    specs.Versioned{SchemaVersion: 2},
@@ -288,36 +249,113 @@ func (p componentPublisher) pushIndex(ctx context.Context, target oras.Target, d
 	return desc, nil
 }
 
-// mountSource returns the repository of the registry the package was
-// pushed to that already holds the blob desc names, for a component's
-// repository to mount it from rather than upload it again, or "" if the
-// package pushed no such blob. A large file is one of the package's
-// layers, with the same digest.
-func (p componentPublisher) mountSource(desc ocispec.Descriptor) string {
-	pushed := slices.ContainsFunc(p.pkg.layerDescs, func(layer ocispec.Descriptor) bool {
-		return layer.Digest == desc.Digest
-	})
-	if !pushed {
-		return ""
+// purls returns the purls of the components g's members publish.
+func (g *siteGroup) purls() []string {
+	purls := make([]string, 0, len(g.members))
+	for _, member := range g.members {
+		purls = append(purls, member.publication().component.PackageURL)
 	}
-	reference, err := orasregistry.ParseReference(prefix.Repository(p.ref))
-	if err != nil {
-		return ""
-	}
-	return reference.Repository
+	return purls
 }
 
-// pushBlob makes desc available in target: mounted from from, a repository
-// of the registry that holds it (see mountSource), if target can mount,
-// and otherwise pushed from the content open returns.
-func (p componentPublisher) pushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string) error {
-	if mountTarget, canMount := target.(transfer.MountTarget); canMount && from != "" {
-		return transfer.MountBlob(ctx, mountTarget, desc, from, open, label, p.opts.Progress)
-	}
-	content, err := open()
+// componentPublisher publishes the components of its package, each at its
+// own repository, which targets returns a target for.
+type componentPublisher struct {
+	publishOptions
+	targets func(repository string) (oras.Target, error)
+}
+
+// publish publishes every component of p's package: it plans a publisher
+// for each, grouped by site (see planGroups), and then runs each group
+// (see publishGroup).
+func (p componentPublisher) publish(ctx context.Context) ([]PublishedComponent, error) {
+	groups, err := p.planGroups()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer content.Close()
-	return transfer.PushBlob(ctx, target, desc, content, label, p.opts.Progress)
+
+	var published []PublishedComponent
+	for _, group := range groups {
+		result, err := p.publishGroup(ctx, group)
+		if err != nil {
+			return nil, fmt.Errorf("publish at %w %s: %w", ErrComponentRepository, group.site.reference(), err)
+		}
+		published = append(published, result)
+	}
+	return published, nil
+}
+
+// planGroups returns the publisher of each of p's package's components
+// (see newPublisher), grouped by the site each is published at (see
+// componentSiteOf), in order, leaving out components without a purl.
+// Components sharing a site must be the same content, published once, or
+// platforms of one component: the same purl but for distinct "os" and
+// "arch" qualifiers.
+func (p componentPublisher) planGroups() ([]*siteGroup, error) {
+	packageRepository := prefix.Repository(p.ref)
+	var groups []*siteGroup
+	byReference := map[string]*siteGroup{}
+	for _, component := range splitByComponent(p.pkg.components, p.pkg.plans, p.pkg.layerDescs) {
+		if component.component.PackageURL == "" {
+			continue
+		}
+		purl, err := packageurl.FromString(component.component.PackageURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse purl %q: %w", component.component.PackageURL, err)
+		}
+		site, err := componentSiteOf(packageRepository, purl)
+		if err != nil {
+			return nil, err
+		}
+		group, ok := byReference[site.reference()]
+		if !ok {
+			group = &siteGroup{site: site}
+			byReference[site.reference()] = group
+			groups = append(groups, group)
+		}
+		publication := componentPublication{
+			publishOptions:  p.publishOptions,
+			componentLayers: component,
+			site:            site,
+		}
+		if err := group.add(newPublisher(publication)); err != nil {
+			return nil, err
+		}
+	}
+	return groups, nil
+}
+
+// publishGroup publishes group at its site, signs what its tag will
+// name, and tags it, unless it's an image pinned by digest.
+func (p componentPublisher) publishGroup(ctx context.Context, group *siteGroup) (PublishedComponent, error) {
+	target, err := p.targets(group.site.repository)
+	if err != nil {
+		return PublishedComponent{}, err
+	}
+	tagged, err := group.publish(ctx, target)
+	if err != nil {
+		return PublishedComponent{}, err
+	}
+
+	reference := group.site.reference()
+	if group.site.tag == "" {
+		reference = group.site.repository + "@" + tagged.Digest.String()
+	}
+	if p.opts.Sign != nil {
+		if err := p.opts.Sign(ctx, target, reference, tagged); err != nil {
+			return PublishedComponent{}, fmt.Errorf("sign: %w", err)
+		}
+	}
+	if group.site.tag != "" {
+		if err := target.Tag(ctx, tagged, group.site.tag); err != nil {
+			return PublishedComponent{}, fmt.Errorf("tag: %w", err)
+		}
+	}
+
+	result := PublishedComponent{
+		Purls:     group.purls(),
+		Reference: reference,
+		Digest:    tagged.Digest.String(),
+	}
+	return result, nil
 }

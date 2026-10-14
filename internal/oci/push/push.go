@@ -107,10 +107,12 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 	var components []PublishedComponent
 	if opts.ComponentTarget != nil {
 		publisher := componentPublisher{
-			pkg:     pkg,
-			ref:     ref,
+			publishOptions: publishOptions{
+				pkg:  pkg,
+				ref:  ref,
+				opts: opts,
+			},
 			targets: opts.ComponentTarget,
-			opts:    opts,
 		}
 		if components, err = publisher.publish(ctx); err != nil {
 			return Result{}, err

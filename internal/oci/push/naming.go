@@ -13,7 +13,7 @@ import (
 // componentSiteOf), and the platform it's for, if its purl names one.
 type componentSite struct {
 	// kind is the purl's type, which decides what's published (see
-	// componentPublisher.publisherFor).
+	// newPublisher).
 	kind       string
 	repository string
 	// tag is what the published artifact is tagged, or "" for an image

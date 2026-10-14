@@ -29,26 +29,26 @@ const (
 )
 
 // artifactPublisher publishes a component as an artifact of its files.
-type artifactPublisher struct{ componentPublisher }
+type artifactPublisher struct{ componentPublication }
 
-// publish pushes component's files to target as an artifact `oras pull`
-// writes out as they are (see pushArtifactLayers), returning its
+// publish pushes p's component's files to target as an artifact `oras
+// pull` writes out as they are (see pushArtifactLayers), returning its
 // manifest's descriptor. A model is a ModelPack artifact.
-func (p artifactPublisher) publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
-	isModel := component.component.Type == cdx.ComponentTypeMachineLearningModel
-	layers, diffIDs, err := p.pushArtifactLayers(ctx, target, component, isModel)
+func (p artifactPublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
+	isModel := p.component.Type == cdx.ComponentTypeMachineLearningModel
+	layers, diffIDs, err := p.pushArtifactLayers(ctx, target, isModel)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
 
 	packOpts := oras.PackManifestOptions{
 		Layers:              layers,
-		ManifestAnnotations: p.annotations(component.component),
+		ManifestAnnotations: p.annotations(),
 	}
 	artifactType := ComponentArtifactType
 	if isModel {
 		artifactType = modelspec.ArtifactTypeModelManifest
-		config, err := p.pushModelConfig(ctx, target, component.component, diffIDs)
+		config, err := p.pushModelConfig(ctx, target, diffIDs)
 		if err != nil {
 			return ocispec.Descriptor{}, err
 		}
@@ -62,17 +62,17 @@ func (p artifactPublisher) publish(ctx context.Context, target oras.Target, comp
 	return desc, nil
 }
 
-// pushArtifactLayers pushes component's layers as an artifact's (see
-// artifactPublisher.publish), up to opts.Concurrency at once: its small files as
-// one gzipped tar, titled "." and annotated for `oras pull` to unpack
+// pushArtifactLayers pushes p's component's layers as an artifact's (see
+// publish), up to opts.Concurrency at once: its small files as one
+// gzipped tar, titled "." and annotated for `oras pull` to unpack
 // where it's pulled to, then each large file's layer, the package's own
 // blob, titled with its path. It returns them with their uncompressed
 // digests, in order.
-func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.Target, component componentLayers, isModel bool) ([]ocispec.Descriptor, []digest.Digest, error) {
+func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.Target, isModel bool) ([]ocispec.Descriptor, []digest.Digest, error) {
 	var smallFiles []transfer.TarFile
 	var dir string
 	var largeFiles []int
-	for index, plan := range component.plans {
+	for index, plan := range p.plans {
 		switch plan := plan.(type) {
 		case tarPlan:
 			dir = plan.dir
@@ -85,7 +85,7 @@ func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.T
 	var layers []ocispec.Descriptor
 	var diffIDs []digest.Digest
 	if len(smallFiles) > 0 {
-		layer, tarDigest, err := p.pushTarGz(ctx, target, component.component, dir, smallFiles, isModel)
+		layer, tarDigest, err := p.pushTarGz(ctx, target, dir, smallFiles, isModel)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -94,8 +94,8 @@ func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.T
 	}
 
 	pushFile := func(ctx context.Context, _ int, index int) (ocispec.Descriptor, error) {
-		plan := component.plans[index].(filePlan)
-		desc := artifactFile(component.descs[index], plan, isModel)
+		plan := p.plans[index].(filePlan)
+		desc := artifactFile(p.descs[index], plan, isModel)
 		path := filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path))
 		open := func() (io.ReadCloser, error) {
 			file, err := os.Open(path)
@@ -153,10 +153,10 @@ func artifactFile(packaged ocispec.Descriptor, plan filePlan, isModel bool) ocis
 	return desc
 }
 
-// pushTarGz pushes files, of component's directory dir, as one gzipped
-// tar `oras pull` unpacks into the directory it pulls to, returning its
+// pushTarGz pushes files, of p's component's directory dir, as one
+// gzipped tar `oras pull` unpacks into the directory it pulls to, returning its
 // descriptor and the uncompressed tar's digest.
-func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, component cdx.Component, dir string, files []transfer.TarFile, isModel bool) (ocispec.Descriptor, digest.Digest, error) {
+func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, dir string, files []transfer.TarFile, isModel bool) (ocispec.Descriptor, digest.Digest, error) {
 	tmp, err := os.CreateTemp("", "bomify-push-component-*.tar.gz")
 	if err != nil {
 		return ocispec.Descriptor{}, "", fmt.Errorf("create temp file: %w", err)
@@ -187,7 +187,7 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, co
 			ocispec.AnnotationTitle: ".",
 			annotationOrasUnpack:    "true",
 			annotationOrasTarDigest: tarDigest.String(),
-			transfer.AnnotationPurl: component.PackageURL,
+			transfer.AnnotationPurl: p.component.PackageURL,
 		},
 	}
 	if isModel {
@@ -199,20 +199,20 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, co
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return ocispec.Descriptor{}, "", err
 	}
-	label := transfer.Label(component.PackageURL, hash) + componentRepositoryLabel
+	label := transfer.Label(p.component.PackageURL, hash) + componentRepositoryLabel
 	if err := transfer.PushBlob(ctx, target, desc, tmp, label, p.opts.Progress); err != nil {
 		return ocispec.Descriptor{}, "", fmt.Errorf("push layer: %w", err)
 	}
 	return desc, tarDigest, nil
 }
 
-// pushModelConfig pushes component's ModelPack config, for layers whose
-// uncompressed digests are diffIDs.
-func (p artifactPublisher) pushModelConfig(ctx context.Context, target oras.Target, component cdx.Component, diffIDs []digest.Digest) (ocispec.Descriptor, error) {
+// pushModelConfig pushes p's component's ModelPack config, for layers
+// whose uncompressed digests are diffIDs.
+func (p artifactPublisher) pushModelConfig(ctx context.Context, target oras.Target, diffIDs []digest.Digest) (ocispec.Descriptor, error) {
 	config := modelspec.Model{
 		Descriptor: modelspec.ModelDescriptor{
-			Name:    component.Name,
-			Version: component.Version,
+			Name:    p.component.Name,
+			Version: p.component.Version,
 		},
 		ModelFS: modelspec.ModelFS{
 			Type:    "layers",

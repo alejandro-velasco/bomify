@@ -32,15 +32,15 @@ const (
 const maxChartYAML = 1 << 20
 
 // chartPublisher publishes a chart component as Helm stores one.
-type chartPublisher struct{ componentPublisher }
+type chartPublisher struct{ componentPublication }
 
-// publish publishes the chart archive component's plugin stored as Helm
-// stores a chart in a registry: its Chart.yaml, as JSON, as the
+// publish publishes the chart archive p's component's plugin stored as
+// Helm stores a chart in a registry: its Chart.yaml, as JSON, as the
 // config, and the archive as it is as the layer. It's annotated as `helm
 // push` annotates one, but created when the package was, so publishing
 // an unchanged package gives the same digest.
-func (p chartPublisher) publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
-	archivePath, err := chartArchive(component.dir())
+func (p chartPublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
+	archivePath, err := chartArchive(p.dir())
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
@@ -57,13 +57,13 @@ func (p chartPublisher) publish(ctx context.Context, target oras.Target, compone
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push config: %w", err)
 	}
-	label := component.component.PackageURL + componentRepositoryLabel
+	label := p.component.PackageURL + componentRepositoryLabel
 	layer, err := transfer.PushBytes(ctx, target, archive, helmChartMediaType, label, p.opts.Progress)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push chart: %w", err)
 	}
 
-	annotations := p.annotations(component.component)
+	annotations := p.annotations()
 	annotations[ocispec.AnnotationTitle] = metadata.Name
 	annotations[ocispec.AnnotationVersion] = metadata.Version
 	if metadata.Description != "" {

@@ -18,12 +18,12 @@ import (
 )
 
 // imagePublisher publishes an image component as it is.
-type imagePublisher struct{ componentPublisher }
+type imagePublisher struct{ componentPublication }
 
-// publish copies the image component's plugin stored, the one image of an
-// OCI image layout, to target as it is, so it keeps its digest.
-func (p imagePublisher) publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
-	dir := component.dir()
+// publish copies the image p's component's plugin stored, the one image
+// of an OCI image layout, to target as it is, so it keeps its digest.
+func (p imagePublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
+	dir := p.dir()
 	desc, err := layoutImage(dir)
 	if err != nil {
 		return ocispec.Descriptor{}, err
@@ -32,7 +32,7 @@ func (p imagePublisher) publish(ctx context.Context, target oras.Target, compone
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("read the image's OCI layout: %w", err)
 	}
-	if err := p.copyImage(ctx, store, target, desc, component.component.PackageURL); err != nil {
+	if err := p.copyImage(ctx, store, target, desc); err != nil {
 		return ocispec.Descriptor{}, err
 	}
 	return desc, nil
@@ -68,7 +68,7 @@ func layoutImage(dir string) (ocispec.Descriptor, error) {
 // nothing under one target already has. A layer the package already
 // pushed is mounted from the package's repository instead of uploaded
 // again (see mountSource).
-func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStorage, target oras.Target, desc ocispec.Descriptor, purl string) error {
+func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStorage, target oras.Target, desc ocispec.Descriptor) error {
 	if exists, err := target.Exists(ctx, desc); err != nil {
 		return fmt.Errorf("check %s: %w", desc.Digest, err)
 	} else if exists {
@@ -80,7 +80,7 @@ func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStora
 		return fmt.Errorf("read %s: %w", desc.Digest, err)
 	}
 	copySuccessor := func(ctx context.Context, _ int, successor ocispec.Descriptor) error {
-		return p.copyImage(ctx, src, target, successor, purl)
+		return p.copyImage(ctx, src, target, successor)
 	}
 	if err := parallel.ForEach(ctx, p.opts.Concurrency, successors, copySuccessor); err != nil {
 		return err
@@ -99,6 +99,6 @@ func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStora
 		}
 		return blob, nil
 	}
-	label := transfer.LayerLabel(purl, desc.Digest.Encoded()) + componentRepositoryLabel
+	label := transfer.LayerLabel(p.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
 	return p.pushBlob(ctx, target, desc, from, open, label)
 }
