@@ -1,15 +1,10 @@
 package transfer
 
 import (
-	"archive/tar"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/alejandro-velasco/bomify/internal/fsutil"
 )
 
 // FileMediaType identifies a large file of a component: a layer that is
@@ -48,129 +43,6 @@ func IsSafePath(path string) bool {
 		return false
 	}
 	return filepath.IsLocal(filepath.FromSlash(path))
-}
-
-// TarFile is one file WriteTar archives from a directory.
-type TarFile struct {
-	// Path is its "/"-separated path, relative to the directory.
-	Path string
-	Size int64
-	// Mode is its mode, not following a symlink.
-	Mode fs.FileMode
-}
-
-// TarFiles returns every file WriteTar archives from dir, in its order:
-// its regular files and symlinks. It fails on anything else, or on a
-// symlink that doesn't resolve inside dir (see fsutil.CheckSymlinks),
-// which pull would refuse.
-func TarFiles(dir string) ([]TarFile, error) {
-	var files []TarFile
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		relative, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() && info.Mode().Type() != fs.ModeSymlink {
-			return fmt.Errorf("%s is neither a regular file nor a symlink", filepath.ToSlash(relative))
-		}
-		file := TarFile{
-			Path: filepath.ToSlash(relative),
-			Size: info.Size(),
-			Mode: info.Mode(),
-		}
-		files = append(files, file)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := fsutil.CheckSymlinks(dir); err != nil {
-		return nil, err
-	}
-	return files, nil
-}
-
-// tarBlockSize is the tar format's block size: an entry's header takes
-// one block, and its content is padded to a whole number of blocks.
-const tarBlockSize = 512
-
-// TarSize returns how much a file of size adds to a tar stream: its
-// header block and its content padded to whole blocks, not counting the
-// longer headers a long name needs.
-func TarSize(size int64) int64 {
-	blocks := (size + tarBlockSize - 1) / tarBlockSize
-	return tarBlockSize + blocks*tarBlockSize
-}
-
-// WriteTarFiles archives files, some of TarFiles(dir), into w, as
-// WriteTar does all of dir's.
-func WriteTarFiles(dir string, files []TarFile, w io.Writer) error {
-	tw := tar.NewWriter(w)
-	for _, file := range files {
-		if err := writeTarEntry(tw, dir, file.Path); err != nil {
-			return err
-		}
-	}
-	return tw.Close()
-}
-
-func writeTarEntry(tw *tar.Writer, dir, path string) error {
-	full := filepath.Join(dir, filepath.FromSlash(path))
-	info, err := os.Lstat(full)
-	if err != nil {
-		return err
-	}
-	var link string
-	if info.Mode().Type() == fs.ModeSymlink {
-		target, err := os.Readlink(full)
-		if err != nil {
-			return err
-		}
-		link = filepath.ToSlash(target)
-	} else if !info.Mode().IsRegular() {
-		return fmt.Errorf("%s is neither a regular file nor a symlink", path)
-	}
-	hdr, err := tar.FileInfoHeader(info, link)
-	if err != nil {
-		return err
-	}
-	hdr.Name = path
-	normalizeHeader(hdr)
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	// A symlink is its header alone.
-	if link != "" {
-		return nil
-	}
-
-	f, err := os.Open(full)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(tw, f)
-	return err
-}
-
-// ExtractTarExclusive is ExtractTar, but fails on an entry naming a file
-// that already exists, rather than replacing it: a component's layers
-// each hold different files, so no layer may overwrite another's. It
-// leaves its symlinks unchecked, since one may point to a file another
-// layer holds: check them with fsutil.CheckSymlinks once every layer
-// is in.
-func ExtractTarExclusive(tr *tar.Reader, destDir string) error {
-	return extractTar(tr, destDir, os.O_EXCL)
 }
 
 // File is what a file layer's annotations say (see FileMediaType): the
