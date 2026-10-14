@@ -207,11 +207,11 @@ func (r componentRestore) run(ctx context.Context, descs []ocispec.Descriptor) (
 		return layers, r.recordManifest()
 	}
 
-	planned, err := planComponent(descs)
+	componentLayers, err := newComponentLayers(descs)
 	if err != nil {
 		return nil, err
 	}
-	write := func(dir string) error { return r.apply(ctx, dir, planned) }
+	write := func(dir string) error { return r.apply(ctx, dir, componentLayers) }
 	if err := writeStaged(r.dir(), write); err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (r componentRestore) recordManifest() error {
 // fsutil.CheckSymlinks).
 func (r componentRestore) apply(ctx context.Context, dir string, layers []componentLayer) error {
 	restoreLayer := func(ctx context.Context, _ int, layer componentLayer) error {
-		label := transfer.LayerLabel(r.purl, layer.desc.Digest.Encoded())
+		label := transfer.LayerLabel(r.purl, layer.descriptor().Digest.Encoded())
 		return layer.restore(ctx, r.target, dir, label, r.progress)
 	}
 	if err := parallel.ForEach(ctx, r.concurrency, layers, restoreLayer); err != nil {
