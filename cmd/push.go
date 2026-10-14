@@ -129,8 +129,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	}
 	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, transferOpts)
 	done()
-	var repositoryErr *push.ComponentRepositoryError
-	if errors.As(err, &repositoryErr) {
+	if errors.Is(err, push.ErrComponentRepository) {
 		return fmt.Errorf("%w (on a registry that can't host nested repositories, or doesn't create them on push, publish only the package with --skip-component-repositories)", err)
 	}
 	if err != nil {

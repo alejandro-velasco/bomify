@@ -28,15 +28,18 @@ const (
 	helmChartMediaType  = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 )
 
-// maxChartYAML bounds how much of a Chart.yaml publishChart reads.
+// maxChartYAML bounds how much of a Chart.yaml chartPublisher reads.
 const maxChartYAML = 1 << 20
 
-// publishChart publishes the chart archive component's plugin stored as
-// Helm stores a chart in a registry: its Chart.yaml, as JSON, as the
+// chartPublisher publishes a chart component as Helm stores one.
+type chartPublisher struct{ componentPublisher }
+
+// publish publishes the chart archive component's plugin stored as Helm
+// stores a chart in a registry: its Chart.yaml, as JSON, as the
 // config, and the archive as it is as the layer. It's annotated as `helm
 // push` annotates one, but created when the package was, so publishing
 // an unchanged package gives the same digest.
-func (p componentPublisher) publishChart(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
+func (p chartPublisher) publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
 	archivePath, err := chartArchive(component.dir())
 	if err != nil {
 		return ocispec.Descriptor{}, err

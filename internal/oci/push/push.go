@@ -124,7 +124,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 	result := Result{
 		Manifest:             pkg.desc,
 		ManifestDigest:       pkg.desc.Digest.String(),
-		Layers:               pkg.layers,
+		Layers:               pushedLayers(pkg.plans, pkg.layerDescs),
 		VulnerabilityReports: reports,
 		ReportsReferrer:      reportsReferrer,
 		Attached:             attached,
@@ -135,13 +135,13 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 }
 
 // pushedPackage is the package Push has pushed, but not yet tagged: its
-// manifest's descriptor, its SBOM and the components it describes, and
-// their layers, as planned and as pushed.
+// manifest's descriptor and created annotation (see createdAnnotation),
+// the components its SBOM describes, and their layers, as planned and as
+// pushed.
 type pushedPackage struct {
 	desc       ocispec.Descriptor
-	bom        *cdx.BOM
+	created    string
 	components []cdx.Component
-	layers     []PushedLayer
 	plans      []layerPlan
 	layerDescs []ocispec.Descriptor
 }
@@ -164,16 +164,16 @@ func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash stri
 	if err != nil {
 		return nil, err
 	}
-	desc, err := packManifest(ctx, target, configDesc, layerDescs, bom)
+	created := createdAnnotation(bom)
+	desc, err := packManifest(ctx, target, configDesc, layerDescs, created)
 	if err != nil {
 		return nil, err
 	}
 
 	pkg := pushedPackage{
 		desc:       desc,
-		bom:        bom,
+		created:    created,
 		components: components,
-		layers:     pushedLayers(plans, layerDescs),
 		plans:      plans,
 		layerDescs: layerDescs,
 	}
@@ -202,13 +202,13 @@ func pushConfig(ctx context.Context, target oras.Target, baseDir, sbomHash strin
 }
 
 // packManifest pushes the package manifest of config and layers, in
-// order, created when bom says (see createdAnnotation).
-func packManifest(ctx context.Context, target oras.Target, config ocispec.Descriptor, layers []ocispec.Descriptor, bom *cdx.BOM) (ocispec.Descriptor, error) {
+// order, annotated as created at created (see createdAnnotation).
+func packManifest(ctx context.Context, target oras.Target, config ocispec.Descriptor, layers []ocispec.Descriptor, created string) (ocispec.Descriptor, error) {
 	packOpts := oras.PackManifestOptions{
 		ConfigDescriptor: &config,
 		Layers:           layers,
 		ManifestAnnotations: map[string]string{
-			ocispec.AnnotationCreated: createdAnnotation(bom),
+			ocispec.AnnotationCreated: created,
 		},
 	}
 	desc, err := oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, transfer.ArtifactType, packOpts)

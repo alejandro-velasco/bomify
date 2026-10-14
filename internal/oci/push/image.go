@@ -17,9 +17,12 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/parallel"
 )
 
-// publishImage copies the image component's plugin stored, the one image
-// of an OCI image layout, to target as it is, so it keeps its digest.
-func (p componentPublisher) publishImage(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
+// imagePublisher publishes an image component as it is.
+type imagePublisher struct{ componentPublisher }
+
+// publish copies the image component's plugin stored, the one image of an
+// OCI image layout, to target as it is, so it keeps its digest.
+func (p imagePublisher) publish(ctx context.Context, target oras.Target, component componentLayers) (ocispec.Descriptor, error) {
 	dir := component.dir()
 	desc, err := layoutImage(dir)
 	if err != nil {
@@ -65,7 +68,7 @@ func layoutImage(dir string) (ocispec.Descriptor, error) {
 // nothing under one target already has. A layer the package already
 // pushed is mounted from the package's repository instead of uploaded
 // again (see mountSource).
-func (p componentPublisher) copyImage(ctx context.Context, src content.ReadOnlyStorage, target oras.Target, desc ocispec.Descriptor, purl string) error {
+func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStorage, target oras.Target, desc ocispec.Descriptor, purl string) error {
 	if exists, err := target.Exists(ctx, desc); err != nil {
 		return fmt.Errorf("check %s: %w", desc.Digest, err)
 	} else if exists {

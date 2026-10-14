@@ -54,7 +54,7 @@ package's (see `push.componentPublisher`, and
 published), unless `--skip-component-repositories`. An image is copied
 from the OCI image layout `build` stored, blob by blob, so it keeps its
 digest, and a chart is packed from its stored archive (see
-`push.componentPublisher.publishMember`), neither through its plugin: a
+`push.componentPublisher.publisherFor`), neither through its plugin: a
 plugin's push picks its own tag and reports no digest to sign. A blob
 the package already pushed, a large file or an image layer of 64 MiB or
 more, is mounted from the package's repository rather than uploaded

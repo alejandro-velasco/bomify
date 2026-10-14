@@ -505,9 +505,8 @@ func TestPushLeavesThePackageUntaggedWhenARepositoryFails(t *testing.T) {
 	reg.refuse = errors.New("name unknown")
 
 	_, err := pushWithComponents(t, reg, transfer.Options{}, []cdx.Component{component}, []map[string]string{{"tool": "a"}})
-	var repositoryErr *ComponentRepositoryError
-	if !errors.As(err, &repositoryErr) {
-		t.Fatalf("Push error = %v, want a ComponentRepositoryError", err)
+	if !errors.Is(err, ErrComponentRepository) {
+		t.Fatalf("Push error = %v, want one wrapping ErrComponentRepository", err)
 	}
 	if _, err := pkgStore.Resolve(context.Background(), packageRef); err == nil {
 		t.Error("the package was tagged though a component repository failed")
