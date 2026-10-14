@@ -8,6 +8,7 @@ import (
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
@@ -34,10 +35,25 @@ func isComponentLayer(desc ocispec.Descriptor) bool {
 type restoreOptions struct {
 	target  oras.ReadOnlyTarget
 	dataDir string
-	// concurrency is how many layerRestores, or layers of one component,
-	// run at once.
+	// concurrency is how many layerRestores run at once, and how many
+	// layers download at once across all of them (see download).
 	concurrency int
-	progress    transfer.ProgressFunc
+	// downloadSlots holds concurrency slots, one taken by each layer
+	// downloading, shared by every restore of the pull.
+	downloadSlots *semaphore.Weighted
+	progress      transfer.ProgressFunc
+}
+
+// download runs fetch, one layer's download, once one of the pull's
+// download slots is free. Every layer takes a slot, whichever restore it's
+// part of, so components restoring at once, each downloading its layers
+// at once, still download no more than concurrency layers in all.
+func (o restoreOptions) download(ctx context.Context, fetch func() error) error {
+	if err := o.downloadSlots.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer o.downloadSlots.Release(1)
+	return fetch()
 }
 
 // layerRestore restores some of a package's layers: one component's,
@@ -61,10 +77,11 @@ type packageRestore struct {
 func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, dataDir string, bom *cdx.BOM, concurrency int, progress transfer.ProgressFunc) *packageRestore {
 	restore := packageRestore{
 		restoreOptions: restoreOptions{
-			target:      target,
-			dataDir:     dataDir,
-			concurrency: concurrency,
-			progress:    progress,
+			target:        target,
+			dataDir:       dataDir,
+			concurrency:   concurrency,
+			downloadSlots: semaphore.NewWeighted(int64(concurrency)),
+			progress:      progress,
 		},
 		descs:            descs,
 		componentsByPurl: indexComponentsByPurl(bom),
@@ -132,8 +149,13 @@ type foreignRestore struct {
 }
 
 func (r foreignRestore) run(ctx context.Context) ([]RestoredLayer, error) {
-	layer, err := fetchLayer(ctx, r.target, r.desc, r.dataDir, r.progress)
-	if err != nil {
+	var layer RestoredLayer
+	fetch := func() error {
+		var err error
+		layer, err = fetchLayer(ctx, r.target, r.desc, r.dataDir, r.progress)
+		return err
+	}
+	if err := r.download(ctx, fetch); err != nil {
 		return nil, fmt.Errorf("fetch layer %s: %w", r.desc.Digest, err)
 	}
 	return []RestoredLayer{layer}, nil
@@ -225,15 +247,17 @@ func (r componentRestore) recordManifest() error {
 	return plugin.WriteManifest(r.dataDir, *r.component, pluginlib.Hash{})
 }
 
-// apply restores layers, a component's, into dir, up to r.concurrency at
-// once, then checks its symlinks, which may point across layers (see
-// fsutil.CheckSymlinks).
+// apply restores layers, a component's, into dir, each as soon as a
+// download slot is free (see download), then checks its symlinks, which
+// may point across layers (see fsutil.CheckSymlinks).
 func (r componentRestore) apply(ctx context.Context, dir string, layers []componentLayer) error {
 	restoreLayer := func(ctx context.Context, _ int, layer componentLayer) error {
 		label := transfer.LayerLabel(r.purl, layer.descriptor().Digest.Encoded())
-		return layer.restore(ctx, r.target, dir, label, r.progress)
+		fetch := func() error { return layer.restore(ctx, r.target, dir, label, r.progress) }
+		return r.download(ctx, fetch)
 	}
-	if err := parallel.ForEach(ctx, r.concurrency, layers, restoreLayer); err != nil {
+	// No limit of its own: download is what bounds the layers.
+	if err := parallel.ForEach(ctx, 0, layers, restoreLayer); err != nil {
 		return err
 	}
 	return fsutil.CheckSymlinks(dir)

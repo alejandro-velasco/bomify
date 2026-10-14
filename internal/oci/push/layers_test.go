@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -428,6 +429,87 @@ func TestPushAndPullLabelLayersAlike(t *testing.T) {
 	}
 	if pulledLabels := componentLabels(pulled); !slices.Equal(pulledLabels, pushedLabels) {
 		t.Errorf("pull labelled the component's layers %q, want push's %q", pulledLabels, pushedLabels)
+	}
+}
+
+// countingStore is a store that records the most blobs it's had open for
+// fetching at once, holding each one open a moment so fetches overlap.
+type countingStore struct {
+	*oci.Store
+	mutex  sync.Mutex
+	active int
+	most   int
+}
+
+func (s *countingStore) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
+	rc, err := s.Store.Fetch(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	s.mutex.Lock()
+	s.active++
+	s.most = max(s.most, s.active)
+	s.mutex.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	fetch := countedFetch{
+		ReadCloser: rc,
+		store:      s,
+	}
+	return &fetch, nil
+}
+
+// countedFetch is one of countingStore's open fetches.
+type countedFetch struct {
+	io.ReadCloser
+	store *countingStore
+}
+
+func (f *countedFetch) Close() error {
+	f.store.mutex.Lock()
+	f.store.active--
+	f.store.mutex.Unlock()
+	return f.ReadCloser.Close()
+}
+
+// TestPullBoundsDownloads covers pull's concurrency: components restore at
+// once, each downloading its layers at once, but no more than Concurrency
+// layers download at a time in all.
+func TestPullBoundsDownloads(t *testing.T) {
+	layerLimits(t, 16, 40)
+	baseDir := t.TempDir()
+	var components []cdx.Component
+	for _, name := range []string{"one", "two", "three"} {
+		component := cdx.Component{
+			Type:       cdx.ComponentTypeMachineLearningModel,
+			Name:       name,
+			Version:    "1.0",
+			PackageURL: "pkg:generic/" + name + "@1.0",
+		}
+		// A file layer each.
+		writeLayer(t, baseDir, component, map[string]string{
+			"a.bin": strings.Repeat("a", 100) + name,
+			"b.bin": strings.Repeat("b", 100) + name,
+			"c.bin": strings.Repeat("c", 100) + name,
+		})
+		components = append(components, component)
+	}
+	sbomHash := recordSBOM(t, baseDir, components)
+	store := countingStore{
+		Store: newStore(t),
+	}
+	if _, err := Push(context.Background(), store.Store, "models", baseDir, sbomHash, transfer.Options{Concurrency: 4}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	const concurrency = 2
+	if _, err := pull.Pull(context.Background(), &store, "models", t.TempDir(), transfer.Options{Concurrency: concurrency}); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if store.most > concurrency {
+		t.Errorf("pull downloaded %d blobs at once, want at most %d", store.most, concurrency)
+	}
+	if store.most < concurrency {
+		t.Errorf("pull downloaded at most %d blobs at once, want %d: the test isn't overlapping downloads", store.most, concurrency)
 	}
 }
 
