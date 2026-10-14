@@ -47,14 +47,6 @@ func planComponent(descs []ocispec.Descriptor) ([]componentLayer, error) {
 	return layers, nil
 }
 
-// label names the layer, of purl's component, in progress output.
-func (l componentLayer) label(purl string) string {
-	if l.file != nil {
-		return transfer.FileLabel(purl, l.file.Path)
-	}
-	return transfer.Label(purl, l.desc.Digest.Encoded())
-}
-
 // restore writes the layer into dir, verifying it against its digest as it
 // streams. No layer may write a file another did: a tar fails on an entry
 // naming one that exists (see transfer.ExtractTarExclusive), as does a

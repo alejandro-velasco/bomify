@@ -199,7 +199,7 @@ func (p layerPlan) pushTar(ctx context.Context, target oras.Target, progress tra
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return ocispec.Descriptor{}, err
 	}
-	if err := transfer.PushBlob(ctx, target, desc, tmp, transfer.Label(p.component.PackageURL, hash), progress); err != nil {
+	if err := transfer.PushBlob(ctx, target, desc, tmp, transfer.LayerLabel(p.component.PackageURL, hash), progress); err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push layer: %w", err)
 	}
 	return desc, nil
@@ -230,7 +230,7 @@ func (p layerPlan) pushFile(ctx context.Context, target oras.Target, progress tr
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return ocispec.Descriptor{}, err
 	}
-	label := transfer.FileLabel(p.component.PackageURL, p.file.Path)
+	label := transfer.LayerLabel(p.component.PackageURL, hash)
 	if err := transfer.PushBlob(ctx, target, desc, io.LimitReader(file, size), label, progress); err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", p.file.Path, err)
 	}

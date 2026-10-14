@@ -393,9 +393,10 @@ type nopWriteCloser struct{}
 func (nopWriteCloser) Write(data []byte) (int, error) { return len(data), nil }
 func (nopWriteCloser) Close() error                   { return nil }
 
-// TestPushAndPullLabelFilesAlike covers a large file's progress bar:
-// named by its path, the same way on push and pull.
-func TestPushAndPullLabelFilesAlike(t *testing.T) {
+// TestPushAndPullLabelLayersAlike covers a component's progress bars: one
+// per layer, a tar's or a large file's, each naming the component but
+// telling its layers apart, the same way on push and pull.
+func TestPushAndPullLabelLayersAlike(t *testing.T) {
 	layerLimits(t, 16, 40)
 	baseDir := t.TempDir()
 	writeLayer(t, baseDir, modelComponent, map[string]string{
@@ -413,21 +414,20 @@ func TestPushAndPullLabelFilesAlike(t *testing.T) {
 		t.Fatalf("Pull: %v", err)
 	}
 
-	fileLabels := func(labels []string) []string {
-		var files []string
-		for _, label := range labels {
-			if strings.HasPrefix(label, "big.bin") {
-				files = append(files, label)
-			}
-		}
-		return files
+	// Two layers, small.txt's tar and big.bin's file.
+	componentLabels := func(labels []string) []string {
+		kept := slices.DeleteFunc(slices.Clone(labels), func(label string) bool {
+			return !strings.HasSuffix(label, " "+modelComponent.PackageURL)
+		})
+		slices.Sort(kept)
+		return slices.Compact(kept)
 	}
-	want := []string{"big.bin " + modelComponent.PackageURL}
-	if got := fileLabels(pushed); !slices.Equal(got, want) {
-		t.Errorf("push labelled the file %q, want %q", got, want)
+	pushedLabels := componentLabels(pushed)
+	if len(pushedLabels) != 2 {
+		t.Errorf("push labelled the component's layers %q, want 2 distinct labels", pushedLabels)
 	}
-	if got := fileLabels(pulled); !slices.Equal(got, want) {
-		t.Errorf("pull labelled the file %q, want %q", got, want)
+	if pulledLabels := componentLabels(pulled); !slices.Equal(pulledLabels, pushedLabels) {
+		t.Errorf("pull labelled the component's layers %q, want push's %q", pulledLabels, pushedLabels)
 	}
 }
 

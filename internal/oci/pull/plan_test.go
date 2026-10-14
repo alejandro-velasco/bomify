@@ -30,17 +30,21 @@ func TestPlanComponent(t *testing.T) {
 	}
 
 	// One per layer, in order.
-	var labels []string
+	var paths []string
 	for _, layer := range layers {
-		labels = append(labels, layer.label("p"))
+		path := ""
+		if layer.file != nil {
+			path = layer.file.Path
+		}
+		paths = append(paths, path)
 	}
 	want := []string{
-		"p",
-		"weights.bin p",
-		"dir/other.bin p",
+		"",
+		"weights.bin",
+		"dir/other.bin",
 	}
-	if !slices.Equal(labels, want) {
-		t.Errorf("layers' labels = %q, want %q", labels, want)
+	if !slices.Equal(paths, want) {
+		t.Errorf("layers' file paths = %q, want %q", paths, want)
 	}
 }
 

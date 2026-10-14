@@ -68,13 +68,21 @@ func PushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, 
 	return nil
 }
 
-// FileLabel names a large file's layer (see FileMediaType) in progress
-// output: the file's path, then its component's purl. The path comes
-// first so it survives a long label being cut short, and tells the bars
-// of one component's files apart.
-func FileLabel(purl, path string) string {
-	return path + " " + purl
+// LayerLabel names one of a component's layers, a tar or a large file, in
+// progress output: its short digest, which tells the component's layers
+// apart, then the component's purl, or just hash when it has none. The
+// digest comes first, at a fixed width, so it survives a long purl being
+// cut short.
+func LayerLabel(purl, hash string) string {
+	if purl == "" {
+		return hash
+	}
+	return hash[:shortHashLen] + " " + purl
 }
+
+// shortHashLen is how many hex characters of a hash LayerLabel shows, as
+// many as a short image ID.
+const shortHashLen = 12
 
 // Label names a component's blob in progress output and errors: its purl,
 // or hash when it has none.

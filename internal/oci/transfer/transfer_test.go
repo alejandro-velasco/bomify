@@ -201,10 +201,19 @@ func TestTarSize(t *testing.T) {
 	}
 }
 
-func TestFileLabel(t *testing.T) {
+func TestLayerLabel(t *testing.T) {
+	hash := strings.Repeat("0123456789abcdef", 4)
 	purl := "pkg:huggingface/org/model@abc"
-	if got, want := FileLabel(purl, "model.gguf"), "model.gguf "+purl; got != want {
-		t.Errorf("FileLabel = %q, want %q", got, want)
+	for name, tc := range map[string]struct {
+		purl string
+		want string
+	}{
+		"with a purl": {purl, "0123456789ab " + purl},
+		"without one": {"", hash},
+	} {
+		if got := LayerLabel(tc.purl, hash); got != tc.want {
+			t.Errorf("%s: LayerLabel = %q, want %q", name, got, tc.want)
+		}
 	}
 }
 

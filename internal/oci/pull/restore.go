@@ -257,7 +257,8 @@ func (r componentRestore) recordManifest() error {
 // fsutil.CheckSymlinks).
 func (r componentRestore) apply(ctx context.Context, dir string, layers []componentLayer) error {
 	restoreLayer := func(ctx context.Context, _ int, layer componentLayer) error {
-		return layer.restore(ctx, r.target, dir, layer.label(r.purl), r.progress)
+		label := transfer.LayerLabel(r.purl, layer.desc.Digest.Encoded())
+		return layer.restore(ctx, r.target, dir, label, r.progress)
 	}
 	if err := parallel.ForEach(ctx, r.concurrency, layers, restoreLayer); err != nil {
 		return err
