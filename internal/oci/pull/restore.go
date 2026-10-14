@@ -36,6 +36,15 @@ func isComponentLayer(desc ocispec.Descriptor) bool {
 
 // groupLayers sorts descs into one group per component, in the order
 // each first appears, and the indexes of the foreign layers left over.
+// For example, these layers:
+//
+//	0: tar         pkg:oci/nginx@1.27
+//	1: tar         pkg:huggingface/org/model@abc
+//	2: foreign     (no purl, or another media type)
+//	3: large file  pkg:huggingface/org/model@abc
+//	4: tar         pkg:oci/nginx@1.27
+//
+// give the groups nginx [0 4] and model [1 3], and foreign [2].
 func groupLayers(descs []ocispec.Descriptor) (groups []layerGroup, foreign []int) {
 	groupIndex := map[string]int{}
 	for index, desc := range descs {
@@ -78,26 +87,16 @@ type restoreOptions struct {
 	progress    transfer.ProgressFunc
 }
 
-// packageRestore restores a package's layers, descs, collecting one
-// RestoredLayer per desc in layers, in descs' order.
+// packageRestore restores a package's layers, descs.
 type packageRestore struct {
 	restoreOptions
 	descs []ocispec.Descriptor
-	// groups are descs' components' layers, and foreign the indexes of the
-	// rest (see groupLayers).
-	groups  []layerGroup
-	foreign []int
-	layers  []RestoredLayer
 }
 
 // newPackageRestore prepares the restore of descs, the layers of the
-// package bom describes, into dataDir, grouping them by component. Its
-// layers has one empty RestoredLayer per desc, until restoreLayers fills
-// them in.
+// package bom describes, into dataDir.
 func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, dataDir string, bom *cdx.BOM, concurrency int, progress transfer.ProgressFunc) *packageRestore {
-	groups, foreign := groupLayers(descs)
 	componentsByPurl := indexComponentsByPurl(bom)
-	layers := make([]RestoredLayer, len(descs))
 
 	restore := packageRestore{
 		restoreOptions: restoreOptions{
@@ -107,41 +106,40 @@ func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, d
 			concurrency:      concurrency,
 			progress:         progress,
 		},
-		descs:   descs,
-		groups:  groups,
-		foreign: foreign,
-		layers:  layers,
+		descs: descs,
 	}
 	return &restore
 }
 
 // restoreLayers restores r's layers into its data directory, up to its
-// concurrency at once: each component's together, then each foreign
-// layer on its own, which packages bomify pushes don't have. It returns
-// one RestoredLayer per layer, in the manifest's order.
+// concurrency at once: each component's together (see groupLayers), then
+// each foreign layer on its own, which packages bomify pushes don't have.
+// It returns one RestoredLayer per layer, in the manifest's order.
 func (r *packageRestore) restoreLayers(ctx context.Context) ([]RestoredLayer, error) {
-	if err := r.restoreComponents(ctx); err != nil {
+	groups, foreign := groupLayers(r.descs)
+	layers := make([]RestoredLayer, len(r.descs))
+	if err := r.restoreComponents(ctx, groups, layers); err != nil {
 		return nil, err
 	}
-	if err := r.fetchForeign(ctx); err != nil {
+	if err := r.fetchForeign(ctx, foreign, layers); err != nil {
 		return nil, err
 	}
-	return r.layers, nil
+	return layers, nil
 }
 
-// restoreComponents restores each component's layers into its directory
-// (see componentRestore).
-func (r *packageRestore) restoreComponents(ctx context.Context) error {
-	restored, err := parallel.Map(ctx, r.concurrency, r.groups, r.restoreGroup)
+// restoreComponents restores each of groups, a component's layers, into
+// its directory (see componentRestore), filling in their places in layers.
+func (r *packageRestore) restoreComponents(ctx context.Context, groups []layerGroup, layers []RestoredLayer) error {
+	restored, err := parallel.Map(ctx, r.concurrency, groups, r.restoreGroup)
 	if err != nil {
 		return err
 	}
 	// Put each result back at its layer's place in the manifest, leaving
 	// the foreign layers' places for fetchForeign.
 	for groupIndex, componentLayers := range restored {
-		group := r.groups[groupIndex]
+		group := groups[groupIndex]
 		for position, layer := range componentLayers {
-			r.layers[group.manifestIndexes[position]] = layer
+			layers[group.manifestIndexes[position]] = layer
 		}
 	}
 	return nil
@@ -161,15 +159,16 @@ func (r *packageRestore) restoreGroup(ctx context.Context, _ int, layerGroup lay
 	return componentLayers, nil
 }
 
-// fetchForeign writes each foreign layer as-is (see fetchLayer).
-func (r *packageRestore) fetchForeign(ctx context.Context) error {
-	fetched, err := parallel.Map(ctx, r.concurrency, r.foreign, r.fetchForeignLayer)
+// fetchForeign writes the layers at foreign, their indexes, as-is (see
+// fetchLayer), filling in their places in layers.
+func (r *packageRestore) fetchForeign(ctx context.Context, foreign []int, layers []RestoredLayer) error {
+	fetched, err := parallel.Map(ctx, r.concurrency, foreign, r.fetchForeignLayer)
 	if err != nil {
 		return err
 	}
 	// Fill in the places restoreComponents left.
 	for position, layer := range fetched {
-		r.layers[r.foreign[position]] = layer
+		layers[foreign[position]] = layer
 	}
 	return nil
 }
@@ -208,11 +207,11 @@ func (r componentRestore) run(ctx context.Context, descs []ocispec.Descriptor) (
 		return layers, r.recordManifest()
 	}
 
-	transfers, err := planComponent(descs)
+	planned, err := planComponent(descs)
 	if err != nil {
 		return nil, err
 	}
-	write := func(dir string) error { return r.apply(ctx, dir, transfers) }
+	write := func(dir string) error { return r.apply(ctx, dir, planned) }
 	if err := writeStaged(r.dir(), write); err != nil {
 		return nil, err
 	}
@@ -253,14 +252,14 @@ func (r componentRestore) recordManifest() error {
 	return recordComponentManifest(r.dataDir, r.componentsByPurl, r.purl)
 }
 
-// apply restores transfers, a component's layers, into dir, up to
-// r.concurrency at once, then checks its symlinks, which may point across
-// layers (see fsutil.CheckSymlinks).
-func (r componentRestore) apply(ctx context.Context, dir string, transfers []layerTransfer) error {
-	restoreLayer := func(ctx context.Context, _ int, layerTransfer layerTransfer) error {
-		return layerTransfer.restore(ctx, r.target, dir, layerTransfer.label(r.purl), r.progress)
+// apply restores layers, a component's, into dir, up to r.concurrency at
+// once, then checks its symlinks, which may point across layers (see
+// fsutil.CheckSymlinks).
+func (r componentRestore) apply(ctx context.Context, dir string, layers []componentLayer) error {
+	restoreLayer := func(ctx context.Context, _ int, layer componentLayer) error {
+		return layer.restore(ctx, r.target, dir, layer.label(r.purl), r.progress)
 	}
-	if err := parallel.ForEach(ctx, r.concurrency, transfers, restoreLayer); err != nil {
+	if err := parallel.ForEach(ctx, r.concurrency, layers, restoreLayer); err != nil {
 		return err
 	}
 	return fsutil.CheckSymlinks(dir)

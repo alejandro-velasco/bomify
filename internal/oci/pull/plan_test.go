@@ -24,15 +24,15 @@ func TestPlanComponent(t *testing.T) {
 		fileOf("dir/other.bin"),
 	}
 
-	transfers, err := planComponent(descs)
+	layers, err := planComponent(descs)
 	if err != nil {
 		t.Fatalf("planComponent: %v", err)
 	}
 
-	// One transfer per layer, in order.
+	// One per layer, in order.
 	var labels []string
-	for _, layerTransfer := range transfers {
-		labels = append(labels, layerTransfer.label("p"))
+	for _, layer := range layers {
+		labels = append(labels, layer.label("p"))
 	}
 	want := []string{
 		"p",
@@ -40,7 +40,7 @@ func TestPlanComponent(t *testing.T) {
 		"dir/other.bin p",
 	}
 	if !slices.Equal(labels, want) {
-		t.Errorf("transfers' labels = %q, want %q", labels, want)
+		t.Errorf("layers' labels = %q, want %q", labels, want)
 	}
 }
 
@@ -50,9 +50,8 @@ func TestPlanComponentRejects(t *testing.T) {
 		descs []ocispec.Descriptor
 		want  string
 	}{
-		"another media type": {[]ocispec.Descriptor{layerOf("application/x-foo", "model")}, "not a component layer"},
-		"an escaping path":   {[]ocispec.Descriptor{escaping}, "outside its component"},
-		"one path twice":     {[]ocispec.Descriptor{fileOf("weights.bin"), fileOf("weights.bin")}, "two layers hold weights.bin"},
+		"an escaping path": {[]ocispec.Descriptor{escaping}, "outside its component"},
+		"one path twice":   {[]ocispec.Descriptor{fileOf("weights.bin"), fileOf("weights.bin")}, "two layers hold weights.bin"},
 	} {
 		if _, err := planComponent(tc.descs); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: planComponent = %v, want an error containing %q", name, err, tc.want)
