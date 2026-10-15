@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -138,27 +137,15 @@ func (o publishOptions) annotations() map[string]string {
 	return annotations
 }
 
-// pushBlob makes desc available in target, from the content open returns:
-// mounted from the package's repository if the package pushed it as one
-// of its layers, as it does a large file, and target can mount, and
-// otherwise pushed.
-func (o publishOptions) pushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, open func() (io.ReadCloser, error), label string) error {
-	mountTarget, canMount := target.(transfer.MountTarget)
-	pushed := slices.ContainsFunc(o.pkg.layerDescs, func(layer ocispec.Descriptor) bool {
-		return layer.Digest == desc.Digest
-	})
-	if canMount && pushed {
-		reference, err := orasregistry.ParseReference(prefix.Repository(o.ref))
-		if err == nil {
-			return transfer.MountBlob(ctx, mountTarget, desc, reference.Repository, open, label, o.opts.Progress)
-		}
-	}
-	content, err := open()
+// mountFrom returns the repository the package was pushed to, without its
+// registry, which a component's repository mounts the package's blobs
+// from (see transfer.MountBlob), or "" if ref doesn't parse.
+func (o publishOptions) mountFrom() string {
+	reference, err := orasregistry.ParseReference(prefix.Repository(o.ref))
 	if err != nil {
-		return err
+		return ""
 	}
-	defer content.Close()
-	return transfer.PushBlob(ctx, target, desc, content, label, o.opts.Progress)
+	return reference.Repository
 }
 
 // planSites plans the publish of each of the package's components with a
@@ -221,8 +208,7 @@ func (s *sitePublish) add(member componentPublisher) error {
 		if other.sameContent(added.componentLayers) {
 			return nil
 		}
-		platforms := other.site.hasPlatform() && added.site.hasPlatform() && (other.site.os != added.site.os || other.site.arch != added.site.arch)
-		if other.site.unqualified != added.site.unqualified || !platforms {
+		if !added.site.isOtherPlatformOf(other.site) {
 			return fmt.Errorf("%s and %s would both be published at %s, with different content", other.component.PackageURL, added.component.PackageURL, s.site.reference())
 		}
 	}

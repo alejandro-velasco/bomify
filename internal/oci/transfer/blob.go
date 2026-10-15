@@ -69,24 +69,23 @@ func PushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, 
 	return nil
 }
 
-// MountTarget is a target that can mount a blob from another repository
-// of its registry: a remote repository, not a local store.
-type MountTarget interface {
-	oras.Target
-	registry.Mounter
-}
-
 // MountBlob makes desc available in target by asking the registry to mount
-// it from the repository from, another of the registry's that already
-// holds it, instead of uploading it, so a blob a registry stores once is
+// it from the repository from, another of the registry's that may already
+// hold it, instead of uploading it, so a blob a registry stores once is
 // sent once. A registry that can't or won't mount should answer by starting
 // an upload, and one that refuses the request outright gets the blob pushed
-// as PushBlob pushes it, so the blob ends up in target either way. open
-// returns the blob's content, and is only called to upload it, which alone
-// shows progress under label.
-func MountBlob(ctx context.Context, target MountTarget, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string, progress ProgressFunc) error {
+// as PushBlob pushes it, so the blob ends up in target either way, as it
+// does when target can't mount at all (a local store, say) or from is "".
+// open returns the blob's content, and is only called to upload it, which
+// alone shows progress under label. Never mount a manifest: a registry
+// mounts only blobs.
+func MountBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string, progress ProgressFunc) error {
 	if progress == nil {
 		progress = Discard
+	}
+	mounter, canMount := target.(registry.Mounter)
+	if !canMount || from == "" {
+		return pushOpened(ctx, target, desc, open, label, progress)
 	}
 
 	// Mounting a blob the target already has is wasted, and a local store
@@ -114,7 +113,7 @@ func MountBlob(ctx context.Context, target MountTarget, desc ocispec.Descriptor,
 		}
 		return reported, nil
 	}
-	err := target.Mount(ctx, desc, from, getContent)
+	err := mounter.Mount(ctx, desc, from, getContent)
 	if err == nil || errors.Is(err, errdef.ErrAlreadyExists) {
 		return nil
 	}
@@ -124,6 +123,12 @@ func MountBlob(ctx context.Context, target MountTarget, desc ocispec.Descriptor,
 
 	// The spec asks a registry that won't mount to start an upload, but
 	// some refuse the request instead (an unsupported method, say).
+	return pushOpened(ctx, target, desc, open, label, progress)
+}
+
+// pushOpened pushes desc to target, as PushBlob does, from the content open
+// returns.
+func pushOpened(ctx context.Context, target oras.Target, desc ocispec.Descriptor, open func() (io.ReadCloser, error), label string, progress ProgressFunc) error {
 	content, err := open()
 	if err != nil {
 		return err

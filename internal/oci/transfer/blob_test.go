@@ -9,13 +9,15 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
+	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
 )
 
 // The component repositories push publishes to are remote repositories,
-// which must stay MountTargets, or push would quietly stop mounting.
-var _ MountTarget = (*remote.Repository)(nil)
+// which must stay Mounters, or MountBlob would quietly stop mounting.
+var _ registry.Mounter = (*remote.Repository)(nil)
 
 // mountingTarget is a repository that can mount a blob: it records the
 // repository it was asked to mount from, and either links the blob or, like
@@ -183,6 +185,51 @@ func TestMountBlobFailsWhenTheRegistrysUploadDoes(t *testing.T) {
 	}
 	if *opened != 1 {
 		t.Errorf("opened = %d, want one upload, not a second", *opened)
+	}
+}
+
+func TestMountBlobPushesToATargetThatCantMount(t *testing.T) {
+	desc, open, opened := blobOf([]byte("a large file"))
+	store, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var progress progressRecord
+
+	if err := MountBlob(context.Background(), store, desc, "packages/app", open, "blob", progress.report); err != nil {
+		t.Fatal(err)
+	}
+
+	checkPushed(t, store, desc, *opened, progress)
+}
+
+func TestMountBlobPushesWithNothingToMountFrom(t *testing.T) {
+	desc, open, opened := blobOf([]byte("a large file"))
+	target := newMountingTarget(t)
+	var progress progressRecord
+
+	if err := MountBlob(context.Background(), target, desc, "", open, "blob", progress.report); err != nil {
+		t.Fatal(err)
+	}
+
+	if target.mounts != 0 {
+		t.Errorf("mounts = %d, want none without a repository to mount from", target.mounts)
+	}
+	checkPushed(t, target, desc, *opened, progress)
+}
+
+// checkPushed checks that desc was pushed to target from the content,
+// opened once, showing its progress.
+func checkPushed(t *testing.T, target content.ReadOnlyStorage, desc ocispec.Descriptor, opened int, progress progressRecord) {
+	t.Helper()
+	if opened != 1 {
+		t.Errorf("opened = %d, want one push", opened)
+	}
+	if progress.opened != 1 || progress.written != desc.Size || progress.closed != 1 {
+		t.Errorf("progress = %+v, want one bar of %d bytes, closed", progress, desc.Size)
+	}
+	if exists, err := target.Exists(context.Background(), desc); err != nil || !exists {
+		t.Errorf("Exists = %v, %v, want the blob there", exists, err)
 	}
 }
 

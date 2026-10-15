@@ -110,9 +110,10 @@ func (p artifactPublisher) pushLayers(ctx context.Context, target oras.Target) (
 }
 
 // pushFile pushes plan's large file, which the package pushed as packaged,
-// as the artifact's layer of it: the same blob, so it's mounted rather
-// than uploaded where it can be (see pushBlob), titled with the file's
-// path, so `oras pull` writes it out. A model's is a ModelPack weight.
+// as the artifact's layer of it: the same blob, so it's mounted from the
+// package's repository rather than uploaded where it can be (see
+// transfer.MountBlob), titled with the file's path, so `oras pull` writes
+// it out. A model's is a ModelPack weight.
 func (p artifactPublisher) pushFile(ctx context.Context, target oras.Target, plan filePlan, packaged ocispec.Descriptor) (ocispec.Descriptor, error) {
 	desc := ocispec.Descriptor{
 		MediaType:   packaged.MediaType,
@@ -141,7 +142,7 @@ func (p artifactPublisher) pushFile(ctx context.Context, target oras.Target, pla
 		return limited, nil
 	}
 	label := transfer.LayerLabel(p.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
-	if err := p.pushBlob(ctx, target, desc, open, label); err != nil {
+	if err := transfer.MountBlob(ctx, target, desc, p.mountFrom(), open, label, p.opts.Progress); err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.file.Path, err)
 	}
 	return desc, nil

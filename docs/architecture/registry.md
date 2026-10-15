@@ -58,7 +58,7 @@ digest, and a chart is packed from its stored archive (see
 plugin's push picks its own tag and reports no digest to sign. A blob
 the package already pushed, a large file or an image layer of 64 MiB or
 more, is mounted from the package's repository rather than uploaded
-again (see `push.publishOptions.pushBlob`); a registry that won't
+again (see `transfer.MountBlob`); a registry that won't
 mount it takes the upload instead. Each artifact is signed and tagged
 before the package's tag moves, so a failure leaves the package's tag
 where it was.

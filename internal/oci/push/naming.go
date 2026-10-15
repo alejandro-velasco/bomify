@@ -45,6 +45,19 @@ func (s componentSite) hasPlatform() bool {
 	return s.os != "" || s.arch != ""
 }
 
+// isOtherPlatformOf reports whether s and other are distinct platforms of
+// one component: the same purl but for its "os" and "arch" qualifiers,
+// which both have and which differ.
+func (s componentSite) isOtherPlatformOf(other componentSite) bool {
+	if !s.hasPlatform() || !other.hasPlatform() {
+		return false
+	}
+	if s.unqualified != other.unqualified {
+		return false
+	}
+	return s.os != other.os || s.arch != other.arch
+}
+
 // componentSiteOf returns where the component purl names is published
 // beside a package in packageRepository: one repository segment for each
 // of its type, namespace segments, and name, each lowercased and made
