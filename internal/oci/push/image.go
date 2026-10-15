@@ -17,11 +17,11 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/parallel"
 )
 
-// imagePublisher publishes an image component as it is.
+// imagePublisher publishes an image component as it is: the one image of
+// the OCI image layout its plugin stored, copied blob by blob, so it keeps
+// its digest.
 type imagePublisher struct{ componentPublication }
 
-// publish copies the image p's component's plugin stored, the one image
-// of an OCI image layout, to target as it is, so it keeps its digest.
 func (p imagePublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
 	dir := p.dir()
 	desc, err := layoutImage(dir)
@@ -66,8 +66,8 @@ func layoutImage(dir string) (ocispec.Descriptor, error) {
 // up to opts.Concurrency blobs at once: what a manifest names before the
 // manifest, so target never holds a manifest it lacks the content of, and
 // nothing under one target already has. A layer the package already
-// pushed is mounted from the package's repository instead of uploaded
-// again (see mountSource).
+// pushed is mounted from the package's repository rather than uploaded
+// again (see pushBlob).
 func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStorage, target oras.Target, desc ocispec.Descriptor) error {
 	if exists, err := target.Exists(ctx, desc); err != nil {
 		return fmt.Errorf("check %s: %w", desc.Digest, err)
@@ -86,12 +86,6 @@ func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStora
 		return err
 	}
 
-	// Only a blob can be mounted, not a manifest, which refers to its
-	// config and layers.
-	var from string
-	if len(successors) == 0 {
-		from = p.mountSource(desc)
-	}
 	open := func() (io.ReadCloser, error) {
 		blob, err := src.Fetch(ctx, desc)
 		if err != nil {
@@ -100,5 +94,15 @@ func (p imagePublisher) copyImage(ctx context.Context, src content.ReadOnlyStora
 		return blob, nil
 	}
 	label := transfer.LayerLabel(p.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
-	return p.pushBlob(ctx, target, desc, from, open, label)
+	if len(successors) == 0 {
+		return p.pushBlob(ctx, target, desc, open, label)
+	}
+	// A manifest is pushed, never mounted: a registry mounts only blobs,
+	// though a manifest may match a large file the package pushed.
+	manifest, err := open()
+	if err != nil {
+		return err
+	}
+	defer manifest.Close()
+	return transfer.PushBlob(ctx, target, desc, manifest, label, p.opts.Progress)
 }

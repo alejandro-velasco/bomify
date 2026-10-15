@@ -31,14 +31,13 @@ const (
 // maxChartYAML bounds how much of a Chart.yaml chartPublisher reads.
 const maxChartYAML = 1 << 20
 
-// chartPublisher publishes a chart component as Helm stores one.
+// chartPublisher publishes a chart component as Helm stores a chart in a
+// registry, from the archive its plugin stored: its Chart.yaml, as JSON,
+// as the config, and the archive as it is as the layer. It's annotated as
+// `helm push` annotates one, but created when the package was, so
+// publishing an unchanged package gives the same digest.
 type chartPublisher struct{ componentPublication }
 
-// publish publishes the chart archive p's component's plugin stored as
-// Helm stores a chart in a registry: its Chart.yaml, as JSON, as the
-// config, and the archive as it is as the layer. It's annotated as `helm
-// push` annotates one, but created when the package was, so publishing
-// an unchanged package gives the same digest.
 func (p chartPublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
 	archivePath, err := chartArchive(p.dir())
 	if err != nil {

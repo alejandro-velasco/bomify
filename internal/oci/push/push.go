@@ -72,7 +72,7 @@ type Result struct {
 // ref is tagged (see transfer.Signer), so a signing failure never leaves
 // ref pointing at an unsigned package. With opts.ComponentTarget, each
 // component is then published at its own repository beside the package's
-// (see componentPublisher), signed too, also before ref is tagged.
+// (see publishComponents), signed too, also before ref is tagged.
 func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
 	opts = opts.WithDefaults()
 
@@ -106,15 +106,7 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 
 	var components []PublishedComponent
 	if opts.ComponentTarget != nil {
-		publisher := componentPublisher{
-			publishOptions: publishOptions{
-				pkg:  pkg,
-				ref:  ref,
-				opts: opts,
-			},
-			targets: opts.ComponentTarget,
-		}
-		if components, err = publisher.publish(ctx); err != nil {
+		if components, err = publishComponents(ctx, pkg, ref, opts); err != nil {
 			return Result{}, err
 		}
 	}
@@ -144,8 +136,11 @@ type pushedPackage struct {
 	desc       ocispec.Descriptor
 	created    string
 	components []cdx.Component
-	plans      []layerPlan
-	layerDescs []ocispec.Descriptor
+	// byComponent is plans, pushed as layerDescs, grouped by component
+	// (see splitByComponent).
+	byComponent []*componentLayers
+	plans       []layerPlan
+	layerDescs  []ocispec.Descriptor
 }
 
 // pushPackage pushes the build recorded under baseDir for sbomHash: its
@@ -173,11 +168,12 @@ func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash stri
 	}
 
 	pkg := pushedPackage{
-		desc:       desc,
-		created:    created,
-		components: components,
-		plans:      plans,
-		layerDescs: layerDescs,
+		desc:        desc,
+		created:     created,
+		components:  components,
+		byComponent: splitByComponent(components, plans, layerDescs),
+		plans:       plans,
+		layerDescs:  layerDescs,
 	}
 	return &pkg, nil
 }

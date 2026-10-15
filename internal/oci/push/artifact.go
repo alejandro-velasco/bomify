@@ -28,15 +28,15 @@ const (
 	annotationOrasTarDigest = "io.deis.oras.content.digest"
 )
 
-// artifactPublisher publishes a component as an artifact of its files.
+// artifactPublisher publishes a component as an artifact of its files,
+// which `oras pull` writes out as they are: its small files as one
+// gzipped tar, titled "." and annotated for `oras pull` to unpack where
+// it pulls to, then each large file as the package's own blob, titled
+// with its path. A model is a ModelPack artifact.
 type artifactPublisher struct{ componentPublication }
 
-// publish pushes p's component's files to target as an artifact `oras
-// pull` writes out as they are (see pushArtifactLayers), returning its
-// manifest's descriptor. A model is a ModelPack artifact.
 func (p artifactPublisher) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
-	isModel := p.component.Type == cdx.ComponentTypeMachineLearningModel
-	layers, diffIDs, err := p.pushArtifactLayers(ctx, target, isModel)
+	layers, diffIDs, err := p.pushLayers(ctx, target)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
@@ -46,7 +46,7 @@ func (p artifactPublisher) publish(ctx context.Context, target oras.Target) (oci
 		ManifestAnnotations: p.annotations(),
 	}
 	artifactType := ComponentArtifactType
-	if isModel {
+	if p.isModel() {
 		artifactType = modelspec.ArtifactTypeModelManifest
 		config, err := p.pushModelConfig(ctx, target, diffIDs)
 		if err != nil {
@@ -62,20 +62,22 @@ func (p artifactPublisher) publish(ctx context.Context, target oras.Target) (oci
 	return desc, nil
 }
 
-// pushArtifactLayers pushes p's component's layers as an artifact's (see
-// publish), up to opts.Concurrency at once: its small files as one
-// gzipped tar, titled "." and annotated for `oras pull` to unpack
-// where it's pulled to, then each large file's layer, the package's own
-// blob, titled with its path. It returns them with their uncompressed
+// isModel reports whether p's component is a model, published as a
+// ModelPack artifact.
+func (p artifactPublisher) isModel() bool {
+	return p.component.Type == cdx.ComponentTypeMachineLearningModel
+}
+
+// pushLayers pushes the artifact's layers, its small files' tar (see
+// pushTarGz) and then its large files (see pushFile), up to
+// opts.Concurrency at once, returning them with their uncompressed
 // digests, in order.
-func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.Target, isModel bool) ([]ocispec.Descriptor, []digest.Digest, error) {
+func (p artifactPublisher) pushLayers(ctx context.Context, target oras.Target) ([]ocispec.Descriptor, []digest.Digest, error) {
 	var smallFiles []transfer.TarFile
-	var dir string
 	var largeFiles []int
 	for index, plan := range p.plans {
 		switch plan := plan.(type) {
 		case tarPlan:
-			dir = plan.dir
 			smallFiles = append(smallFiles, plan.files...)
 		case filePlan:
 			largeFiles = append(largeFiles, index)
@@ -85,7 +87,7 @@ func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.T
 	var layers []ocispec.Descriptor
 	var diffIDs []digest.Digest
 	if len(smallFiles) > 0 {
-		layer, tarDigest, err := p.pushTarGz(ctx, target, dir, smallFiles, isModel)
+		layer, tarDigest, err := p.pushTarGz(ctx, target, smallFiles)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -94,25 +96,7 @@ func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.T
 	}
 
 	pushFile := func(ctx context.Context, _ int, index int) (ocispec.Descriptor, error) {
-		plan := p.plans[index].(filePlan)
-		desc := artifactFile(p.descs[index], plan, isModel)
-		path := filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path))
-		open := func() (io.ReadCloser, error) {
-			file, err := os.Open(path)
-			if err != nil {
-				return nil, err
-			}
-			limited := limitedFile{
-				Reader: io.LimitReader(file, desc.Size),
-				Closer: file,
-			}
-			return limited, nil
-		}
-		label := transfer.LayerLabel(plan.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
-		if err := p.pushBlob(ctx, target, desc, p.mountSource(desc), open, label); err != nil {
-			return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.file.Path, err)
-		}
-		return desc, nil
+		return p.pushFile(ctx, target, p.plans[index].(filePlan), p.descs[index])
 	}
 	fileLayers, err := parallel.Map(ctx, p.opts.Concurrency, largeFiles, pushFile)
 	if err != nil {
@@ -125,6 +109,44 @@ func (p artifactPublisher) pushArtifactLayers(ctx context.Context, target oras.T
 	return layers, diffIDs, nil
 }
 
+// pushFile pushes plan's large file, which the package pushed as packaged,
+// as the artifact's layer of it: the same blob, so it's mounted rather
+// than uploaded where it can be (see pushBlob), titled with the file's
+// path, so `oras pull` writes it out. A model's is a ModelPack weight.
+func (p artifactPublisher) pushFile(ctx context.Context, target oras.Target, plan filePlan, packaged ocispec.Descriptor) (ocispec.Descriptor, error) {
+	desc := ocispec.Descriptor{
+		MediaType:   packaged.MediaType,
+		Digest:      packaged.Digest,
+		Size:        packaged.Size,
+		Annotations: plan.file.Annotations(p.component.PackageURL),
+	}
+	desc.Annotations[ocispec.AnnotationTitle] = plan.file.Path
+	if p.isModel() {
+		desc.MediaType = modelspec.MediaTypeModelWeightRaw
+		desc.Annotations[modelspec.AnnotationFilepath] = plan.file.Path
+		// Large isn't proof of a weight.
+		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
+	}
+
+	path := filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path))
+	open := func() (io.ReadCloser, error) {
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		limited := limitedFile{
+			Reader: io.LimitReader(file, desc.Size),
+			Closer: file,
+		}
+		return limited, nil
+	}
+	label := transfer.LayerLabel(p.component.PackageURL, desc.Digest.Encoded()) + componentRepositoryLabel
+	if err := p.pushBlob(ctx, target, desc, open, label); err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("push %s: %w", plan.file.Path, err)
+	}
+	return desc, nil
+}
+
 // limitedFile is a file read for no more than the size it was hashed at,
 // in case it has grown since.
 type limitedFile struct {
@@ -132,31 +154,10 @@ type limitedFile struct {
 	io.Closer
 }
 
-// artifactFile returns the descriptor of a large file's layer in a
-// component's artifact: packaged, its descriptor in the package, titled
-// with the file's path, so `oras pull` writes it out. A model's is a
-// ModelPack weight.
-func artifactFile(packaged ocispec.Descriptor, plan filePlan, isModel bool) ocispec.Descriptor {
-	desc := ocispec.Descriptor{
-		MediaType:   packaged.MediaType,
-		Digest:      packaged.Digest,
-		Size:        packaged.Size,
-		Annotations: plan.file.Annotations(plan.component.PackageURL),
-	}
-	desc.Annotations[ocispec.AnnotationTitle] = plan.file.Path
-	if isModel {
-		desc.MediaType = modelspec.MediaTypeModelWeightRaw
-		desc.Annotations[modelspec.AnnotationFilepath] = plan.file.Path
-		// Large isn't proof of a weight.
-		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
-	}
-	return desc
-}
-
-// pushTarGz pushes files, of p's component's directory dir, as one
-// gzipped tar `oras pull` unpacks into the directory it pulls to, returning its
-// descriptor and the uncompressed tar's digest.
-func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, dir string, files []transfer.TarFile, isModel bool) (ocispec.Descriptor, digest.Digest, error) {
+// pushTarGz pushes files, small files of p's component's directory, as one
+// gzipped tar `oras pull` unpacks into the directory it pulls to,
+// returning its descriptor and the uncompressed tar's digest.
+func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, files []transfer.TarFile) (ocispec.Descriptor, digest.Digest, error) {
 	tmp, err := os.CreateTemp("", "bomify-push-component-*.tar.gz")
 	if err != nil {
 		return ocispec.Descriptor{}, "", fmt.Errorf("create temp file: %w", err)
@@ -166,8 +167,8 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, di
 
 	compressedHasher, tarHasher := sha256.New(), sha256.New()
 	gz := gzip.NewWriter(io.MultiWriter(tmp, compressedHasher))
-	if err := transfer.WriteTarTree(dir, files, io.MultiWriter(gz, tarHasher)); err != nil {
-		return ocispec.Descriptor{}, "", fmt.Errorf("archive %s: %w", dir, err)
+	if err := transfer.WriteTarTree(p.dir(), files, io.MultiWriter(gz, tarHasher)); err != nil {
+		return ocispec.Descriptor{}, "", fmt.Errorf("archive %s: %w", p.dir(), err)
 	}
 	if err := gz.Close(); err != nil {
 		return ocispec.Descriptor{}, "", err
@@ -190,7 +191,7 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, di
 			transfer.AnnotationPurl: p.component.PackageURL,
 		},
 	}
-	if isModel {
+	if p.isModel() {
 		desc.MediaType = modelspec.MediaTypeModelWeightConfigGzip
 		// Small files are a model's configuration, tokenizer, and docs,
 		// mixed.
