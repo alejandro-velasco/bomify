@@ -20,9 +20,6 @@ const (
 // <package repository>/<type>/<namespace>/<name>:<tag> (see
 // componentSiteOf), and the platform it's for, if its purl names one.
 type componentSite struct {
-	// kind is the purl's type, which decides what's published (see
-	// newComponentPublisher).
-	kind       string
 	repository string
 	// tag is what the published artifact is tagged, or "" for an image
 	// pinned by digest, which is published by digest, untagged.
@@ -120,7 +117,6 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 	}
 
 	site := componentSite{
-		kind:        purl.Type,
 		repository:  repository,
 		tag:         tag,
 		pinned:      pinned,

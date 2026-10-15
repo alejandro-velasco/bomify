@@ -288,7 +288,7 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 	if config.ModelFS.Type != "layers" || len(config.ModelFS.DiffIDs) != 3 || config.Descriptor.Name != "Phi-4" {
 		t.Errorf("config = %+v", config)
 	}
-	if config.ModelFS.DiffIDs[1] != manifest.Layers[1].Digest || config.ModelFS.DiffIDs[0] != digest.Digest(manifest.Layers[0].Annotations[annotationOrasTarDigest]) {
+	if config.ModelFS.DiffIDs[1] != manifest.Layers[1].Digest || config.ModelFS.DiffIDs[0] != digest.Digest(manifest.Layers[0].Annotations[file.AnnotationDigest]) {
 		t.Errorf("diffIds = %v, want the tar's uncompressed digest and the weights' own", config.ModelFS.DiffIDs)
 	}
 

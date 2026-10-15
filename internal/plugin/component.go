@@ -6,7 +6,9 @@ import (
 
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 )
@@ -99,4 +101,19 @@ func Remote(path string, component cdx.Component, baseDir string, logger *slog.L
 		return "", err
 	}
 	return result.Remote, nil
+}
+
+// Pack invokes the plugin binary's "pack" subcommand, which describes the
+// component a prior Pull wrote into input in its kind's own registry
+// format (see pluginlib.PackResult), writing any blob it builds into
+// output, an existing empty directory, and adding annotations to the
+// manifest it builds.
+//
+// logger controls log streaming exactly as it does for Pull/Push.
+func Pack(path string, component cdx.Component, baseDir, input, output string, annotations map[string]string, logger *slog.Logger) (*pluginlib.PackResult, error) {
+	args := []string{"--input", input, "--output", output}
+	for _, key := range slices.Sorted(maps.Keys(annotations)) {
+		args = append(args, "--annotation", key+"="+annotations[key])
+	}
+	return runComponent[pluginlib.PackResult](path, "pack", component, baseDir, logger, args...)
 }

@@ -3,9 +3,10 @@
 The first-party plugins. Each directory is a standalone
 `bomify-plugin-<kind>` binary implementing one or more contracts:
 
-- **Component** (`component pull|push|remote`,
+- **Component** (`component pull|push|remote|pack`,
   [`contracts/component/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
-  fetches and publishes the components an SBOM describes.
+  fetches and publishes the components an SBOM describes, and packs one
+  in its kind's own registry format for `bomify push`.
 - **SBOM generation** (`sbom generate`,
   [`contracts/sbom/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   builds an SBOM for a deployment medium.
@@ -43,7 +44,7 @@ of its results:
 ```
 plugins/contracts/
 ├── contract-result.schema.json    the "contract" command's result, below
-├── component/v1/                  CONTRACT.md, result, remote-result
+├── component/v1/                  CONTRACT.md, result, remote-result, pack-result
 ├── sbom/v1/                       CONTRACT.md, generate-output
 ├── security/v1/                   CONTRACT.md, security-result, supported-components-result
 └── signing/v1/                    CONTRACT.md, sign-result, verify-result,
@@ -177,14 +178,17 @@ way by `make plugin-packages` and `make push-plugin-packages` (see
 Pulls and pushes `pkg:oci/...` and `pkg:docker/...` images. The
 reference comes from the purl's `tag` qualifier, else a digest-shaped
 version, else a plain tag, else the bare repository; `repository_url`
-overrides the registry address.
+overrides the registry address. `pack` describes the image `pull` stored
+as it is, so `bomify push` publishes it keeping its digest.
 
 ## bomify-plugin-helm
 
 - **Component**: pulls from HTTP(S) chart repositories
   (`pkg:helm/<name>@<version>?repository_url=https://...`) and OCI
   registries (`repository_url=oci://...`). `push` and `push --check`
-  support OCI only, since classic repositories are read-only.
+  support OCI only, since classic repositories are read-only. `pack`
+  builds the chart in Helm's registry format, as `helm push` does, for
+  `bomify push` to publish.
 - **SBOM generation**: renders a chart locally, as `helm template` does,
   and reports every image it references plus the chart itself. See
   [its README](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md)

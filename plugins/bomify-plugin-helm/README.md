@@ -6,10 +6,12 @@ bomify's plugin for Helm charts. It implements two independent contracts:
   [contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   renders a chart and reports every image it references. List it as a
   `helm` source in a `bomify sbom compose` file, or run it yourself.
-- **Component** (`component pull|push|remote`,
+- **Component** (`component pull|push|remote|pack`,
   [contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
-  fetches and publishes `pkg:helm/...` charts. `bomify build` and `bomify
-  distribute` call these; you normally don't.
+  fetches and publishes `pkg:helm/...` charts, and packs one in Helm's
+  registry format, as `helm push` builds it, for `bomify push` to
+  publish at its own repository. `bomify build`, `bomify distribute`,
+  and `bomify push` call these; you normally don't.
 
 ## SBOM generation
 

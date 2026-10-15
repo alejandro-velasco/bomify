@@ -92,17 +92,21 @@ oras pull   registry.example.com/packages/llm-serving/huggingface/microsoft/phi-
 - Two components with different content at one repository and tag fail
   the push; with the same content, it's published once.
 Each is signed like the package, and published in its kind's own
-format:
+format, as its plugin's `component pack` describes it (see the
+[component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
 
 - **Images** (`oci` and `docker`): the image `build` stored, copied as
   it is, so it keeps its digest and isn't annotated.
-- **Charts** (`helm`): Helm's own format, which `helm pull` reads: the
-  chart's `Chart.yaml` as JSON as the config
+- **Charts** (`helm`): Helm's own format, as `helm push` builds it and
+  `helm pull` reads it: the chart's `Chart.yaml` as JSON as the config
   (`application/vnd.cncf.helm.config.v1+json`), and its archive as it is
   as the one layer (`application/vnd.cncf.helm.chart.content.v1.tar+gzip`).
   Annotated as `helm push` annotates one (`org.opencontainers.image.title`,
-  `.version`, `.description`), and as below.
-- **Anything else**: an artifact of the component's files, as below.
+  `.version`, `.description`, `.url`, `.source`, `.authors`, and the
+  chart's own annotations), and as below. A chart whose `Chart.yaml`
+  names another name or version than its purl fails the push.
+- **Anything else**, whose plugin packs nothing: bomify's own artifact
+  of the component's files, as below.
 
 bomify's own artifacts, a chart's, and an index of platforms are
 annotated `land.bomify.purl` (but an index), `land.bomify.package.digest`

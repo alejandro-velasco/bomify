@@ -19,12 +19,20 @@ func NewRootCmd() *cobra.Command {
 			Pull:       "Download the component's image and save it as an OCI Image Layout",
 			Push:       "Push the OCI Image Layout a prior pull wrote into --input to a remote endpoint",
 			Remote:     "Report the registry/namespace this component's purl names",
+			Pack:       "Describe the image a prior pull wrote into --input as it is, keeping its digest",
 			RemoteFlag: "remote registry/repository to push to",
 		}))
 }
 
-// component implements plugin.ComponentPlugin over internal/image.
+// component implements plugin.ComponentPlugin, and plugin.ComponentPacker,
+// over internal/image.
 type component struct{}
+
+func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {
+	// An image is published as it is, so it keeps its digest, without
+	// bomify's annotations.
+	return image.Pack(req.Input, req.Logger)
+}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
 	req.Logger.Info("resolving purl", "purl", req.Purl)

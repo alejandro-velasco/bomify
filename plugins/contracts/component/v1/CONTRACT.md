@@ -6,8 +6,8 @@ A plugin reports the contract versions it speaks with
 
 The authoritative spec for a `bomify-plugin-<kind>` binary's **component
 plugin** subcommands (`component pull`, `component push`, `component
-remote`), which `bomify build` and `bomify distribute` call. It's
-independent of the
+remote`, `component pack`), which `bomify build`, `bomify distribute`,
+and `bomify push` call. It's independent of the
 [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md),
 [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md),
 and [signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)
@@ -39,7 +39,7 @@ binary bomify handles itself (see
 
 ## Commands
 
-All three subcommands take `--purl`, `--log`, and `--log-color` (see
+All four subcommands take `--purl`, `--log`, and `--log-color` (see
 [Logging](#logging)).
 
 ### `component pull`
@@ -93,6 +93,34 @@ On success, print one [`RemoteResult`](#remoteresult) and exit `0`.
 `remote` must be a pure function of `--purl`: no network, registry, or
 files. bomify may call it any number of times and never caches it.
 
+### `component pack`
+
+```
+bomify-plugin-<kind> component pack --purl <purl> --input <dir> --output <dir> [--annotation <key>=<value>]... --log <path> --log-color <bool>
+```
+
+Describe what a prior `pull` wrote into `--input` as an OCI artifact in
+the kind's own registry format, the one its ecosystem's tools pull (an
+image `docker pull` runs, a chart `helm pull` reads). `bomify push`
+publishes it at the component's own repository, as it is.
+
+| Flag | Required | Meaning |
+| --- | --- | --- |
+| `--purl` | yes | Same purl as the `pull` that filled `--input`. |
+| `--input` | yes | Directory a successful `pull` for the same purl wrote into, exactly as it left it. Read it; don't change it. |
+| `--output` | yes | Directory for any blob that isn't already a file in `--input`, such as a config or manifest the plugin builds. bomify creates it, empty, beforehand. |
+| `--annotation` | no | `key=value`, repeatable: annotations bomify publishes every component with. Add them to a manifest the plugin builds; leave them out of one it publishes unchanged, as an image keeping its digest does. |
+
+On success, print one [`PackResult`](#packresult) and exit `0`. A kind
+with no format of its own prints `{}`, and bomify publishes its default:
+an artifact of the component's files. That's also what a plugin built
+with `pkg/plugin` prints unless it implements `ComponentPacker`.
+
+`pack` works only from `--input` and its flags: no network or registry.
+Given the same `--input` and flags, it must describe the same artifact,
+byte for byte, so publishing an unchanged component gives the same
+digest.
+
 ## Check mode
 
 `--check=true` on `pull`/`push` asks the plugin to confirm a real
@@ -115,7 +143,7 @@ registry HEAD returning a digest).
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one `Result` or `RemoteResult`, only on success. Nothing else, ever: bomify fails if stdout isn't that one JSON object. |
+| stdout | Exactly one `Result`, `RemoteResult`, or `PackResult`, only on success. Nothing else, ever: bomify fails if stdout isn't that one JSON object. |
 | stderr | One short fatal error message, only on failure. bomify appends it to its own error. |
 | exit code | `0` on success; non-zero on failure. |
 
@@ -178,6 +206,32 @@ Components with a common origin must report values sharing a common
 `/`-separated prefix; that's what rules match and substitute.
 
 Schema: [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/remote-result.schema.json).
+
+## PackResult
+
+Printed by `pack`: the artifact's manifest, and every blob it refers to,
+each with a file holding exactly its bytes.
+
+```json
+{
+  "manifest": { "mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:...", "size": 712, "path": "<output>/manifest.json" },
+  "blobs": [
+    { "mediaType": "application/vnd.cncf.helm.config.v1+json", "digest": "sha256:...", "size": 301, "path": "<output>/config.json" },
+    { "mediaType": "application/vnd.cncf.helm.chart.content.v1.tar+gzip", "digest": "sha256:...", "size": 4410, "path": "<input>/mychart-1.2.3.tgz" }
+  ]
+}
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `manifest` | blob | with `blobs` | The artifact's manifest, or an index of several. Absent, as is `blobs`, for a kind with no format of its own. |
+| `blobs` | array of blobs | no | Every other blob `manifest` refers to: its config and layers, and through an index, each manifest it names and theirs. Any order. |
+| `*.mediaType` | string | yes | The blob's OCI media type, as the descriptor that names it has it. |
+| `*.digest` | string | yes | The blob's OCI digest (`sha256:<hex>`). |
+| `*.size` | integer | yes | The blob's size in bytes. |
+| `*.path` | string | yes | A file holding exactly the blob's bytes, within `--input` or `--output`. Reuse `--input`'s files rather than copying them: bomify mounts a blob the package already holds, such as a large image layer, instead of uploading it again. |
+
+Schema: [`pack-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/pack-result.schema.json).
 
 ## Logging
 

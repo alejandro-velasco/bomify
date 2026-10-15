@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -68,6 +69,29 @@ func (c *componentLayers) isSameContentAs(other *componentLayers) bool {
 	return slices.EqualFunc(c.descs, other.descs, func(a, b ocispec.Descriptor) bool { return a.Digest == b.Digest })
 }
 
+// smallFiles returns the files c's tar layers hold, in order.
+func (c *componentLayers) smallFiles() []transfer.TarFile {
+	var files []transfer.TarFile
+	for _, plan := range c.plans {
+		if tar, isTar := plan.(tarPlan); isTar {
+			files = append(files, tar.files...)
+		}
+	}
+	return files
+}
+
+// largeFiles returns the positions, in plans and descs, of c's large
+// files' layers, in order.
+func (c *componentLayers) largeFiles() []int {
+	var positions []int
+	for index, plan := range c.plans {
+		if _, isFile := plan.(filePlan); isFile {
+			positions = append(positions, index)
+		}
+	}
+	return positions
+}
+
 // splitByComponent groups plans, pushed as descs, by component, in
 // components' order.
 func splitByComponent(components []cdx.Component, plans []layerPlan, descs []ocispec.Descriptor) []*componentLayers {
@@ -91,12 +115,37 @@ func splitByComponent(components []cdx.Component, plans []layerPlan, descs []oci
 	return grouped
 }
 
+// checkPackers fails if opts.ComponentPacker can't pack each of components
+// with a purl (see transfer.ComponentPacker.CanPack), as when its plugin
+// isn't installed, for Push to call before pushing anything.
+func checkPackers(opts transfer.Options, components []cdx.Component) error {
+	if opts.ComponentTarget == nil || opts.ComponentPacker == nil {
+		return nil
+	}
+	for _, component := range components {
+		if component.PackageURL == "" {
+			continue
+		}
+		if err := opts.ComponentPacker.CanPack(component); err != nil {
+			return fmt.Errorf("publish %s at its own repository: %w", component.PackageURL, err)
+		}
+	}
+	return nil
+}
+
 // publishComponents publishes each of components, the package's, at its own
 // repository beside the package's, which opts.ComponentTarget gives a
 // target for: it plans what's published at each site (see planSites), and
 // then publishes each (see sitePlan.run).
 func publishComponents(ctx context.Context, options publishOptions, components []*componentLayers) ([]PublishedComponent, error) {
-	sites, err := planSites(options, components)
+	packDir, err := os.MkdirTemp("", "bomify-push-pack-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(packDir)
+	options.packDir = packDir
+
+	sites, err := planSites(ctx, options, components)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +170,9 @@ type publishOptions struct {
 	packageDigest string
 	created       string
 	opts          transfer.Options
+	// packDir holds a directory for each component's pack to write the
+	// blobs it builds into (see transfer.ComponentPacker).
+	packDir string
 }
 
 // annotations returns the annotations everything published for the
@@ -146,8 +198,9 @@ func (o publishOptions) mountFrom() string {
 }
 
 // planSites plans the publish of each of components with a purl at its
-// site (see componentSiteOf), by a componentPublisher for its kind, those
-// sharing a site together, in order. Components sharing a site must be the
+// site (see componentSiteOf), by a componentPublisher for what its packer
+// makes of it (see newComponentPublisher), those sharing a site together,
+// in order. Components sharing a site must be the
 // same content, published once, or platforms of one component: the same
 // purl but for distinct "os" and "arch" qualifiers. For example, these
 // components of a package pushed to registry.example.com/packages/app:
@@ -164,7 +217,7 @@ func (o publishOptions) mountFrom() string {
 //	registry.example.com/packages/app/oci/app:1.0         app's amd64 and arm64 images, as an index
 //	registry.example.com/packages/app/generic/tool:1.0    the tool
 //	registry.example.com/packages/app/helm/podinfo:6.7.1  the chart
-func planSites(options publishOptions, components []*componentLayers) ([]*sitePlan, error) {
+func planSites(ctx context.Context, options publishOptions, components []*componentLayers) ([]*sitePlan, error) {
 	packageRepository := prefix.Repository(options.ref)
 	var sites []*sitePlan
 	sitesByReference := map[string]*sitePlan{}
@@ -192,7 +245,11 @@ func planSites(options publishOptions, components []*componentLayers) ([]*sitePl
 			sitesByReference[site.reference()] = plan
 			sites = append(sites, plan)
 		}
-		if err := plan.addMember(newComponentPublisher(options, component, site)); err != nil {
+		member, err := newComponentPublisher(ctx, options, component, site)
+		if err != nil {
+			return nil, err
+		}
+		if err := plan.addMember(member); err != nil {
 			return nil, err
 		}
 	}
@@ -307,8 +364,8 @@ func (s *sitePlan) publish(ctx context.Context, target oras.Target) (ocispec.Des
 	return desc, nil
 }
 
-// componentPublisher publishes one component at its site, in its kind's
-// format: an imagePublisher, chartPublisher, or artifactPublisher (see
+// componentPublisher publishes one component at its site: a
+// packedPublisher, in its kind's own format, or an artifactPublisher (see
 // newComponentPublisher). publish pushes it to target, returning its
 // manifest's descriptor; publication is what it publishes.
 type componentPublisher interface {
@@ -338,21 +395,34 @@ func (c componentPublication) annotations() map[string]string {
 }
 
 // newComponentPublisher returns the publisher of component, published at
-// site, by its purl type: an image as it is (see imagePublisher), a chart
-// as Helm stores one (see chartPublisher), and anything else as an
+// site: as its packer packs it, in its kind's own format (see
+// packedPublisher), or, for a kind with none, or without a packer, as an
 // artifact of its files (see artifactPublisher).
-func newComponentPublisher(options publishOptions, component *componentLayers, site componentSite) componentPublisher {
+func newComponentPublisher(ctx context.Context, options publishOptions, component *componentLayers, site componentSite) (componentPublisher, error) {
 	publication := componentPublication{
 		publishOptions:  options,
 		componentLayers: component,
 		site:            site,
 	}
-	switch site.kind {
-	case packageurl.TypeOCI, packageurl.TypeDocker:
-		return imagePublisher{publication}
-	case packageurl.TypeHelm:
-		return chartPublisher{publication}
-	default:
-		return artifactPublisher{publication}
+	packer := options.opts.ComponentPacker
+	if packer == nil {
+		return artifactPublisher{publication}, nil
 	}
+
+	output, err := os.MkdirTemp(options.packDir, "component-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	packed, err := packer.Pack(ctx, component.component, component.dir(), output, publication.annotations())
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: %w", component.component.PackageURL, err)
+	}
+	if packed.Manifest == nil {
+		return artifactPublisher{publication}, nil
+	}
+	publisher, err := newPackedPublisher(publication, packed, output)
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: %w", component.component.PackageURL, err)
+	}
+	return publisher, nil
 }

@@ -43,4 +43,10 @@ func TestCallsParseWithPkgPlugin(t *testing.T) {
 	} else if want := "remote-of-" + component.PackageURL; got != want {
 		t.Errorf("Remote = %q, want %q", got, want)
 	}
+	annotations := map[string]string{"org.opencontainers.image.created": "1970-01-01T00:00:00Z", "land.bomify.purl": component.PackageURL}
+	if result, err := Pack(bin, component, baseDir, t.TempDir(), t.TempDir(), annotations, testLogger()); err != nil {
+		t.Errorf("Pack: %v", err)
+	} else if result.Manifest != nil {
+		t.Errorf("Pack = %+v, want {} from a plugin without a format of its own", result)
+	}
 }

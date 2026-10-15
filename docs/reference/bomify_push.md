@@ -10,9 +10,11 @@ which must be a full registry reference.
 Each component is also published at its own repository beside the
 package's, <repository>/<purl type>/<namespace>/<name>:<version>, for
 the tools that run it to pull directly, unless
---skip-component-repositories is given: an image for docker pull, a
-chart for helm pull, a model as a ModelPack artifact, and other files
-for oras pull. The naming rules are in the registry format
+--skip-component-repositories is given. Its plugin packs it in its
+kind's own format, so each component's plugin must be installed: an
+image for docker pull, a chart for helm pull. A kind without one is
+published as bomify's own artifact: a model as a ModelPack artifact,
+other files for oras pull. The naming rules are in the registry format
 documentation.
 
 Local vulnerability reports are attached as a separate OCI referrer, so

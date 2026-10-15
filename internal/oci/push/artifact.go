@@ -16,16 +16,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	orasfile "oras.land/oras-go/v2/content/file"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/parallel"
-)
-
-// The annotations `oras pull` unpacks a gzipped tar by: into the
-// directory its title names, checking the uncompressed tar's digest.
-const (
-	annotationOrasUnpack    = "io.deis.oras.content.unpack"
-	annotationOrasTarDigest = "io.deis.oras.content.digest"
 )
 
 // artifactPublisher publishes a component as an artifact of its files,
@@ -73,16 +67,8 @@ func (p artifactPublisher) isModel() bool {
 // opts.Concurrency at once, returning them with their uncompressed
 // digests, in order.
 func (p artifactPublisher) pushLayers(ctx context.Context, target oras.Target) ([]ocispec.Descriptor, []digest.Digest, error) {
-	var smallFiles []transfer.TarFile
-	var largeFiles []int
-	for index, plan := range p.plans {
-		switch plan := plan.(type) {
-		case tarPlan:
-			smallFiles = append(smallFiles, plan.files...)
-		case filePlan:
-			largeFiles = append(largeFiles, index)
-		}
-	}
+	smallFiles := p.smallFiles()
+	largeFiles := p.largeFiles()
 
 	var layers []ocispec.Descriptor
 	var diffIDs []digest.Digest
@@ -110,25 +96,11 @@ func (p artifactPublisher) pushLayers(ctx context.Context, target oras.Target) (
 }
 
 // pushFile pushes plan's large file, which the package pushed as packaged,
-// as the artifact's layer of it: the same blob, so it's mounted from the
-// package's repository rather than uploaded where it can be (see
-// transfer.MountBlob), titled with the file's path, so `oras pull` writes
-// it out. A model's is a ModelPack weight.
+// as the artifact's layer of it (see fileLayer): the same blob, so it's
+// mounted from the package's repository rather than uploaded where it can
+// be (see transfer.MountBlob).
 func (p artifactPublisher) pushFile(ctx context.Context, target oras.Target, plan filePlan, packaged ocispec.Descriptor) (ocispec.Descriptor, error) {
-	desc := ocispec.Descriptor{
-		MediaType:   packaged.MediaType,
-		Digest:      packaged.Digest,
-		Size:        packaged.Size,
-		Annotations: plan.file.Annotations(p.component.PackageURL),
-	}
-	desc.Annotations[ocispec.AnnotationTitle] = plan.file.Path
-	if p.isModel() {
-		desc.MediaType = modelspec.MediaTypeModelWeightRaw
-		desc.Annotations[modelspec.AnnotationFilepath] = plan.file.Path
-		// Large isn't proof of a weight.
-		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
-	}
-
+	desc := p.fileLayer(plan, packaged)
 	path := filepath.Join(plan.dir, filepath.FromSlash(plan.file.Path))
 	open := func() (io.ReadCloser, error) {
 		file, err := os.Open(path)
@@ -148,6 +120,27 @@ func (p artifactPublisher) pushFile(ctx context.Context, target oras.Target, pla
 	return desc, nil
 }
 
+// fileLayer returns the descriptor of plan's large file, which the package
+// pushed as packaged, as the artifact's layer: the same blob, titled with
+// the file's path, so `oras pull` writes it out. A model's is a ModelPack
+// weight.
+func (p artifactPublisher) fileLayer(plan filePlan, packaged ocispec.Descriptor) ocispec.Descriptor {
+	desc := ocispec.Descriptor{
+		MediaType:   packaged.MediaType,
+		Digest:      packaged.Digest,
+		Size:        packaged.Size,
+		Annotations: plan.file.Annotations(p.component.PackageURL),
+	}
+	desc.Annotations[ocispec.AnnotationTitle] = plan.file.Path
+	if p.isModel() {
+		desc.MediaType = modelspec.MediaTypeModelWeightRaw
+		desc.Annotations[modelspec.AnnotationFilepath] = plan.file.Path
+		// Large isn't proof of a weight.
+		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
+	}
+	return desc
+}
+
 // limitedFile is a file read for no more than the size it was hashed at,
 // in case it has grown since.
 type limitedFile struct {
@@ -156,8 +149,8 @@ type limitedFile struct {
 }
 
 // pushTarGz pushes files, small files of p's component's directory, as one
-// gzipped tar `oras pull` unpacks into the directory it pulls to,
-// returning its descriptor and the uncompressed tar's digest.
+// gzipped tar (see tarLayer), returning its descriptor and the
+// uncompressed tar's digest.
 func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, files []transfer.TarFile) (ocispec.Descriptor, digest.Digest, error) {
 	tmp, err := os.CreateTemp("", "bomify-push-component-*.tar.gz")
 	if err != nil {
@@ -178,18 +171,34 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, fi
 	if err != nil {
 		return ocispec.Descriptor{}, "", err
 	}
-	hash := hex.EncodeToString(compressedHasher.Sum(nil))
+	compressed := digest.NewDigestFromEncoded(digest.SHA256, hex.EncodeToString(compressedHasher.Sum(nil)))
 	tarDigest := digest.NewDigestFromEncoded(digest.SHA256, hex.EncodeToString(tarHasher.Sum(nil)))
 
+	desc := p.tarLayer(compressed, size, tarDigest)
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return ocispec.Descriptor{}, "", err
+	}
+	label := transfer.Label(p.component.PackageURL, compressed.Encoded()) + componentRepositoryLabel
+	if err := transfer.PushBlob(ctx, target, desc, tmp, label, p.opts.Progress); err != nil {
+		return ocispec.Descriptor{}, "", fmt.Errorf("push layer: %w", err)
+	}
+	return desc, tarDigest, nil
+}
+
+// tarLayer returns the descriptor of the artifact's gzipped tar of small
+// files, compressed and size long, tarDigest uncompressed: titled "." and
+// annotated for `oras pull` to unpack where it pulls to, checking
+// tarDigest. A model's is a ModelPack weight config.
+func (p artifactPublisher) tarLayer(compressed digest.Digest, size int64, tarDigest digest.Digest) ocispec.Descriptor {
 	desc := ocispec.Descriptor{
 		MediaType: ComponentTarGzMediaType,
-		Digest:    digest.NewDigestFromEncoded(digest.SHA256, hash),
+		Digest:    compressed,
 		Size:      size,
 		Annotations: map[string]string{
-			ocispec.AnnotationTitle: ".",
-			annotationOrasUnpack:    "true",
-			annotationOrasTarDigest: tarDigest.String(),
-			transfer.AnnotationPurl: p.component.PackageURL,
+			ocispec.AnnotationTitle:   ".",
+			orasfile.AnnotationUnpack: "true",
+			orasfile.AnnotationDigest: tarDigest.String(),
+			transfer.AnnotationPurl:   p.component.PackageURL,
 		},
 	}
 	if p.isModel() {
@@ -198,14 +207,7 @@ func (p artifactPublisher) pushTarGz(ctx context.Context, target oras.Target, fi
 		// mixed.
 		desc.Annotations[modelspec.AnnotationMediaTypeUntested] = "true"
 	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		return ocispec.Descriptor{}, "", err
-	}
-	label := transfer.Label(p.component.PackageURL, hash) + componentRepositoryLabel
-	if err := transfer.PushBlob(ctx, target, desc, tmp, label, p.opts.Progress); err != nil {
-		return ocispec.Descriptor{}, "", fmt.Errorf("push layer: %w", err)
-	}
-	return desc, tarDigest, nil
+	return desc
 }
 
 // pushModelConfig pushes p's component's ModelPack config, for layers

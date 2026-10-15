@@ -51,14 +51,18 @@ refusing any that names a file another layer wrote, each through an
 `push` then publishes each component at its own repository beside the
 package's (see `push.publishComponents`, and
 [Registry format](registry-format.md#component-repositories) for what's
-published), unless `--skip-component-repositories`. An image is copied
-from the OCI image layout `build` stored, blob by blob, so it keeps its
-digest, and a chart is packed from its stored archive (see
-`push.newComponentPublisher`), neither through its plugin: a
-plugin's push picks its own tag and reports no digest to sign. A blob
-the package already pushed, a large file or an image layer of 64 MiB or
-more, is mounted from the package's repository rather than uploaded
-again (see `transfer.MountBlob`); a registry that won't
+published), unless `--skip-component-repositories`. Each component's
+plugin packs it in its kind's own format with `component pack`, which
+only describes the artifact; `push` uploads, signs, and tags it (see
+`push.newComponentPublisher`), since a plugin's own push picks its own
+tag and reports no digest to sign. bomify-plugin-oci describes the image
+`build` stored as it is, so it keeps its digest, and bomify-plugin-helm
+builds Helm's format from the stored archive. A kind whose plugin packs
+nothing (`{}`) is published as bomify's own artifact of its files.
+`push` checks every component's plugin is installed before uploading
+anything. A blob the package already pushed, a large file or an image
+layer of 64 MiB or more, is mounted from the package's repository rather
+than uploaded again (see `transfer.MountBlob`); a registry that won't
 mount it takes the upload instead. Each artifact is signed and tagged
 before the package's tag moves, so a failure leaves the package's tag
 where it was.

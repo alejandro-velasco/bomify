@@ -80,11 +80,18 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir string, opts tra
 	if err != nil {
 		return Result{}, err
 	}
-	bom, configDesc, err := pushSBOM(ctx, target, baseDir, sbomHash, opts.Progress)
+	sbomData, bom, err := readSBOM(baseDir, sbomHash)
 	if err != nil {
 		return Result{}, err
 	}
 	components := sliceutil.Deref(bom.Components)
+	if err := checkPackers(opts, components); err != nil {
+		return Result{}, err
+	}
+	configDesc, err := pushSBOM(ctx, target, sbomData, opts.Progress)
+	if err != nil {
+		return Result{}, err
+	}
 	plans, err := planLayers(baseDir, components)
 	if err != nil {
 		return Result{}, err
@@ -152,25 +159,29 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir string, opts tra
 	return result, nil
 }
 
-// pushSBOM pushes the SBOM the build recorded under baseDir for sbomHash
-// (see build.RecordManifest) byte for byte, as the package's config,
-// returning it parsed and its descriptor.
-func pushSBOM(ctx context.Context, target oras.Target, baseDir, sbomHash string, progress transfer.ProgressFunc) (*cdx.BOM, ocispec.Descriptor, error) {
+// readSBOM returns the SBOM the build recorded under baseDir for sbomHash
+// (see build.RecordManifest), as it is and parsed.
+func readSBOM(baseDir, sbomHash string) ([]byte, *cdx.BOM, error) {
 	manifestPath := layout.Manifest(baseDir, sbomHash)
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return nil, ocispec.Descriptor{}, fmt.Errorf("read manifest %s: %w", manifestPath, err)
+		return nil, nil, fmt.Errorf("read manifest %s: %w", manifestPath, err)
 	}
 	bom, err := sbom.LoadBytes(data)
 	if err != nil {
-		return nil, ocispec.Descriptor{}, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
+		return nil, nil, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
 	}
+	return data, bom, nil
+}
 
+// pushSBOM pushes data, the build's SBOM (see readSBOM), byte for byte, as
+// the package's config, returning its descriptor.
+func pushSBOM(ctx context.Context, target oras.Target, data []byte, progress transfer.ProgressFunc) (ocispec.Descriptor, error) {
 	desc, err := transfer.PushBytes(ctx, target, data, configMediaType(data), "sbom manifest", progress)
 	if err != nil {
-		return nil, ocispec.Descriptor{}, fmt.Errorf("push config: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("push config: %w", err)
 	}
-	return bom, desc, nil
+	return desc, nil
 }
 
 // packManifest pushes the package manifest of config and layers, in

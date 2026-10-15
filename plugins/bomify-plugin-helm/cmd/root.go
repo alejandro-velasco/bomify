@@ -21,13 +21,23 @@ func NewRootCmd() *cobra.Command {
 			Pull:       "Download the chart from its HTTP repository or OCI registry and save it as a .tgz",
 			Push:       "Push the chart a prior pull wrote into --input to an OCI registry",
 			Remote:     "Report the chart repository this component's purl names",
+			Pack:       "Describe the chart a prior pull wrote into --input as Helm stores one in a registry",
 			RemoteFlag: `OCI registry/repository to push to, e.g. "oci://registry.example.com/charts"`,
 		}),
 		sbomCmd())
 }
 
-// component implements plugin.ComponentPlugin over internal/chart.
+// component implements plugin.ComponentPlugin, and plugin.ComponentPacker,
+// over internal/chart.
 type component struct{}
+
+func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {
+	ref, err := resolve(req.Purl, req.Logger)
+	if err != nil {
+		return nil, err
+	}
+	return chart.Pack(req.Input, req.Output, ref, req.Annotations, req.Logger)
+}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
 	ref, err := resolve(req.Purl, req.Logger)

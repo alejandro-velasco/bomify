@@ -65,7 +65,7 @@ func TestPushPublishesAnImageAsItIs(t *testing.T) {
 	write := func(baseDir string) { stored, storedManifest = writeImage(t, baseDir, image, "layer") }
 	reg := newRegistry(t)
 
-	result, err := pushBuilt(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{image}, write)
+	result, err := pushBuilt(t, reg, transfer.Options{Concurrency: 2, ComponentPacker: layoutPacker{}}, []cdx.Component{image}, write)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestPushMountsAnImagesLargeLayersButNotItsManifest(t *testing.T) {
 	write := func(baseDir string) { stored, _ = writeImage(t, baseDir, image, layerContent) }
 	reg := newRegistry(t)
 
-	if _, err := pushBuilt(t, reg, transfer.Options{Concurrency: 2}, []cdx.Component{image}, write); err != nil {
+	if _, err := pushBuilt(t, reg, transfer.Options{Concurrency: 2, ComponentPacker: layoutPacker{}}, []cdx.Component{image}, write); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestPushPublishesAPinnedImageByDigest(t *testing.T) {
 	write := func(baseDir string) { writeImage(t, baseDir, image, "pinned") }
 	reg := newRegistry(t)
 
-	result, err := pushBuilt(t, reg, transfer.Options{}, []cdx.Component{image}, write)
+	result, err := pushBuilt(t, reg, transfer.Options{ComponentPacker: layoutPacker{}}, []cdx.Component{image}, write)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPushTagsAPinnedImageWithItsTagQualifier(t *testing.T) {
 	write := func(baseDir string) { writeImage(t, baseDir, image, "tagged") }
 	reg := newRegistry(t)
 
-	result, err := pushBuilt(t, reg, transfer.Options{}, []cdx.Component{image}, write)
+	result, err := pushBuilt(t, reg, transfer.Options{ComponentPacker: layoutPacker{}}, []cdx.Component{image}, write)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestPushPublishesImagePlatformsAsAnIndex(t *testing.T) {
 	}
 	reg := newRegistry(t)
 
-	if _, err := pushBuilt(t, reg, transfer.Options{}, []cdx.Component{amd64, arm64}, write); err != nil {
+	if _, err := pushBuilt(t, reg, transfer.Options{ComponentPacker: layoutPacker{}}, []cdx.Component{amd64, arm64}, write); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	var index ocispec.Index

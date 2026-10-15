@@ -1,6 +1,6 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
-// binary: the Result/Hash/RemoteResult types the component plugin contract's
-// JSON output mirrors, SecurityResult for the security scanning contract's,
+// binary: the Result/Hash/RemoteResult/PackResult types the component plugin
+// contract's JSON output mirrors, SecurityResult for the security scanning contract's,
 // SignResult/VerifyResult for the signing contract's, ContractResult for the
 // contract versions every plugin reports, and Print to emit any of them
 // correctly. On top of those, ComponentCommand, SecurityCommand, and
@@ -54,6 +54,30 @@ type RemoteResult struct {
 	// part of this value back into --remote for a later push, preserving
 	// whatever came after the matched prefix.
 	Remote string `json:"remote"`
+}
+
+// PackResult is what a plugin's "pack" subcommand prints: the component
+// as an OCI artifact in its kind's own registry format, a Manifest and
+// every Blob it refers to, for bomify to publish at the component's own
+// repository. The zero PackResult, printed as {}, means the kind has no
+// format of its own, and bomify publishes its default (see
+// plugins/contracts/component/v1/CONTRACT.md).
+type PackResult struct {
+	// Manifest is the artifact's manifest, or an index of several.
+	Manifest *PackedBlob `json:"manifest,omitempty"`
+	// Blobs is every other blob the Manifest refers to, directly or
+	// through the manifests an index names, in any order.
+	Blobs []PackedBlob `json:"blobs,omitempty"`
+}
+
+// PackedBlob is one blob of a PackResult: its OCI descriptor's media type,
+// digest, and size, and the path of a file holding exactly its bytes,
+// within pack's --input or --output.
+type PackedBlob struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+	Path      string `json:"path"`
 }
 
 // SecurityResult is the JSON object a plugin's "security scan"
