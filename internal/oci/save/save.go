@@ -42,11 +42,7 @@ func Save(ctx context.Context, baseDir string, tags []string, w io.Writer, opts 
 	defer archive.Close()
 
 	for _, tag := range tags {
-		sbomHash, err := build.ResolveTag(baseDir, tag)
-		if err != nil {
-			return err
-		}
-		if _, err := push.Push(ctx, archive.Store, tag, baseDir, sbomHash, opts); err != nil {
+		if _, err := push.Push(ctx, archive.Store, tag, baseDir, opts); err != nil {
 			return fmt.Errorf("package %s: %w", tag, err)
 		}
 	}

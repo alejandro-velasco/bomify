@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
@@ -108,11 +107,6 @@ func pushCmd() *cobra.Command {
 func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logger := opts.logger(cmd)
 
-	sbomHash, err := build.ResolveTag(dataDir, tag)
-	if err != nil {
-		return err
-	}
-
 	repo, err := newRepository(tag)
 	if err != nil {
 		return err
@@ -127,7 +121,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 			return newRepository(repository)
 		}
 	}
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, transferOpts)
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, transferOpts)
 	done()
 	if errors.Is(err, push.ErrComponentRepository) {
 		return fmt.Errorf("%w (on a registry that can't host nested repositories, or doesn't create them on push, publish only the package with --skip-component-repositories)", err)
@@ -139,7 +133,7 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logPushedLayers(logger, result)
 	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
-	opts.printPinned(cmd, tag, result.ManifestDigest)
+	opts.printPinned(cmd, tag, result.Manifest.Digest.String())
 	return nil
 }
 
@@ -157,7 +151,7 @@ func pruneReports(ctx context.Context, logger *slog.Logger, repo security.PruneT
 }
 
 func logPushedLayers(logger *slog.Logger, result push.Result) {
-	logger.Info("manifest pushed", "digest", result.ManifestDigest)
+	logger.Info("manifest pushed", "digest", result.Manifest.Digest.String())
 	// Where each layer's component was published at its own repository,
 	// if it was.
 	publishedAt := map[string]string{}

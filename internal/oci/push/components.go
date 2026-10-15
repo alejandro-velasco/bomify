@@ -62,9 +62,9 @@ func (c *componentLayers) dir() string {
 	return c.plans[0].directory()
 }
 
-// sameContent reports whether c and other were pushed as the same
+// isSameContentAs reports whether c and other were pushed as the same
 // layers.
-func (c *componentLayers) sameContent(other *componentLayers) bool {
+func (c *componentLayers) isSameContentAs(other *componentLayers) bool {
 	return slices.EqualFunc(c.descs, other.descs, func(a, b ocispec.Descriptor) bool { return a.Digest == b.Digest })
 }
 
@@ -91,26 +91,21 @@ func splitByComponent(components []cdx.Component, plans []layerPlan, descs []oci
 	return grouped
 }
 
-// publishComponents publishes each component of pkg, pushed as ref but not
-// yet tagged, at its own repository beside the package's, which
-// opts.ComponentTarget gives a target for: it plans what's published at
-// each site (see planSites), and then publishes each (see sitePublish.run).
-func publishComponents(ctx context.Context, pkg *pushedPackage, ref string, opts transfer.Options) ([]PublishedComponent, error) {
-	options := publishOptions{
-		pkg:  pkg,
-		ref:  ref,
-		opts: opts,
-	}
-	sites, err := planSites(options)
+// publishComponents publishes each of components, the package's, at its own
+// repository beside the package's, which opts.ComponentTarget gives a
+// target for: it plans what's published at each site (see planSites), and
+// then publishes each (see sitePlan.run).
+func publishComponents(ctx context.Context, options publishOptions, components []*componentLayers) ([]PublishedComponent, error) {
+	sites, err := planSites(options, components)
 	if err != nil {
 		return nil, err
 	}
 
 	published := make([]PublishedComponent, 0, len(sites))
-	for _, publish := range sites {
-		result, err := publish.run(ctx)
+	for _, plan := range sites {
+		result, err := plan.run(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("publish at %w %s: %w", ErrComponentRepository, publish.site.reference(), err)
+			return nil, fmt.Errorf("publish at %w %s: %w", ErrComponentRepository, plan.site.reference(), err)
 		}
 		published = append(published, result)
 	}
@@ -118,12 +113,14 @@ func publishComponents(ctx context.Context, pkg *pushedPackage, ref string, opts
 }
 
 // publishOptions are what every publish of a push's components shares: the
-// package they're published from, pushed as ref but not yet tagged, and
+// package they're published from, pushed as ref but not yet tagged, its
+// manifest's digest and created annotation (see createdAnnotation), and
 // how.
 type publishOptions struct {
-	pkg  *pushedPackage
-	ref  string
-	opts transfer.Options
+	ref           string
+	packageDigest string
+	created       string
+	opts          transfer.Options
 }
 
 // annotations returns the annotations everything published for the
@@ -131,8 +128,8 @@ type publishOptions struct {
 // time, so publishing an unchanged package gives the same digests.
 func (o publishOptions) annotations() map[string]string {
 	annotations := map[string]string{
-		ocispec.AnnotationCreated: o.pkg.created,
-		AnnotationPackageDigest:   o.pkg.desc.Digest.String(),
+		ocispec.AnnotationCreated: o.created,
+		AnnotationPackageDigest:   o.packageDigest,
 	}
 	return annotations
 }
@@ -148,16 +145,30 @@ func (o publishOptions) mountFrom() string {
 	return reference.Repository
 }
 
-// planSites plans the publish of each of the package's components with a
-// purl at its site (see componentSiteOf), by a componentPublisher for its
-// kind, those sharing a site together, in order. Components sharing a site
-// must be the same content, published once, or platforms of one
-// component: the same purl but for distinct "os" and "arch" qualifiers.
-func planSites(options publishOptions) ([]*sitePublish, error) {
+// planSites plans the publish of each of components with a purl at its
+// site (see componentSiteOf), by a componentPublisher for its kind, those
+// sharing a site together, in order. Components sharing a site must be the
+// same content, published once, or platforms of one component: the same
+// purl but for distinct "os" and "arch" qualifiers. For example, these
+// components of a package pushed to registry.example.com/packages/app:
+//
+//	pkg:oci/app@1.0?os=linux&arch=amd64
+//	pkg:generic/tool@1.0?download_url=https://a.example.com/tool
+//	pkg:oci/app@1.0?os=linux&arch=arm64
+//	pkg:generic/tool@1.0?download_url=https://b.example.com/tool
+//	pkg:helm/podinfo@6.7.1
+//
+// give these sites, the second tool published once if it's the first's
+// content, and refused as a collision if it isn't:
+//
+//	registry.example.com/packages/app/oci/app:1.0         app's amd64 and arm64 images, as an index
+//	registry.example.com/packages/app/generic/tool:1.0    the tool
+//	registry.example.com/packages/app/helm/podinfo:6.7.1  the chart
+func planSites(options publishOptions, components []*componentLayers) ([]*sitePlan, error) {
 	packageRepository := prefix.Repository(options.ref)
-	var sites []*sitePublish
-	byReference := map[string]*sitePublish{}
-	for _, component := range options.pkg.byComponent {
+	var sites []*sitePlan
+	sitesByReference := map[string]*sitePlan{}
+	for _, component := range components {
 		if component.component.PackageURL == "" {
 			continue
 		}
@@ -170,55 +181,61 @@ func planSites(options publishOptions) ([]*sitePublish, error) {
 			return nil, err
 		}
 
-		publish, planned := byReference[site.reference()]
+		// Sites are organized by reference: components at one share its
+		// plan, the first creating it, in the order sites first appear.
+		plan, planned := sitesByReference[site.reference()]
 		if !planned {
-			publish = &sitePublish{
+			plan = &sitePlan{
 				publishOptions: options,
 				site:           site,
 			}
-			byReference[site.reference()] = publish
-			sites = append(sites, publish)
+			sitesByReference[site.reference()] = plan
+			sites = append(sites, plan)
 		}
-		publication := componentPublication{
-			publishOptions:  options,
-			componentLayers: component,
-			site:            site,
-		}
-		if err := publish.add(newComponentPublisher(publication)); err != nil {
+		if err := plan.addMember(newComponentPublisher(options, component, site)); err != nil {
 			return nil, err
 		}
 	}
 	return sites, nil
 }
 
-// sitePublish publishes the components at one site: one, or each platform
-// of one, as an index.
-type sitePublish struct {
+// sitePlan is what's published at one site: one component, or each
+// platform of one, as an index, which run publishes.
+type sitePlan struct {
 	publishOptions
 	site    componentSite
 	members []componentPublisher
+	// purls are the components published at site: each member's, and each
+	// whose content a member already publishes.
+	purls []string
 }
 
-// add adds member to s, unless it publishes the same content as a member
-// already there.
-func (s *sitePublish) add(member componentPublisher) error {
-	added := member.publication()
+// addMember adds member to s, unless it publishes the same content as a
+// member already there, which publishes it once. Either way, its purl is
+// one of s's.
+func (s *sitePlan) addMember(member componentPublisher) error {
+	candidatePublication := member.publication()
+	candidatePurl := candidatePublication.component.PackageURL
 	for _, existing := range s.members {
-		other := existing.publication()
-		if other.sameContent(added.componentLayers) {
+		existingPublication := existing.publication()
+		if existingPublication.isSameContentAs(candidatePublication.componentLayers) {
+			// Published once, by the existing member, but published here.
+			s.purls = append(s.purls, candidatePurl)
 			return nil
 		}
-		if !added.site.isOtherPlatformOf(other.site) {
-			return fmt.Errorf("%s and %s would both be published at %s, with different content", other.component.PackageURL, added.component.PackageURL, s.site.reference())
+		if !candidatePublication.site.isOtherPlatformOf(existingPublication.site) {
+			existingPurl := existingPublication.component.PackageURL
+			return fmt.Errorf("%s and %s would both be published at %s, with different content", existingPurl, candidatePurl, s.site.reference())
 		}
 	}
 	s.members = append(s.members, member)
+	s.purls = append(s.purls, candidatePurl)
 	return nil
 }
 
 // run publishes s's members at its site (see publish), signs what the
 // site names, and tags it, unless it's an image pinned by digest.
-func (s *sitePublish) run(ctx context.Context) (PublishedComponent, error) {
+func (s *sitePlan) run(ctx context.Context) (PublishedComponent, error) {
 	target, err := s.opts.ComponentTarget(s.site.repository)
 	if err != nil {
 		return PublishedComponent{}, err
@@ -243,12 +260,8 @@ func (s *sitePublish) run(ctx context.Context) (PublishedComponent, error) {
 		}
 	}
 
-	purls := make([]string, 0, len(s.members))
-	for _, member := range s.members {
-		purls = append(purls, member.publication().component.PackageURL)
-	}
 	result := PublishedComponent{
-		Purls:     purls,
+		Purls:     s.purls,
 		Reference: reference,
 		Digest:    tagged.Digest.String(),
 	}
@@ -258,7 +271,7 @@ func (s *sitePublish) run(ctx context.Context) (PublishedComponent, error) {
 // publish pushes each of s's members to target, returning the descriptor
 // of what s's site names: its one member's manifest, or an index of every
 // member's, each for its platform.
-func (s *sitePublish) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
+func (s *sitePlan) publish(ctx context.Context, target oras.Target) (ocispec.Descriptor, error) {
 	manifests := make([]ocispec.Descriptor, 0, len(s.members))
 	for _, member := range s.members {
 		manifest, err := member.publish(ctx, target)
@@ -324,12 +337,17 @@ func (c componentPublication) annotations() map[string]string {
 	return annotations
 }
 
-// newComponentPublisher returns the publisher of publication, by its
-// component's purl type: an image as it is (see imagePublisher), a chart
+// newComponentPublisher returns the publisher of component, published at
+// site, by its purl type: an image as it is (see imagePublisher), a chart
 // as Helm stores one (see chartPublisher), and anything else as an
 // artifact of its files (see artifactPublisher).
-func newComponentPublisher(publication componentPublication) componentPublisher {
-	switch publication.site.kind {
+func newComponentPublisher(options publishOptions, component *componentLayers, site componentSite) componentPublisher {
+	publication := componentPublication{
+		publishOptions:  options,
+		componentLayers: component,
+		site:            site,
+	}
+	switch site.kind {
 	case packageurl.TypeOCI, packageurl.TypeDocker:
 		return imagePublisher{publication}
 	case packageurl.TypeHelm:

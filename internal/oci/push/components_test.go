@@ -202,7 +202,7 @@ func pushBuilt(t *testing.T, reg *registry, opts transfer.Options, components []
 	write(baseDir)
 	sbomHash := recordSBOM(t, baseDir, components)
 	opts.ComponentTarget = reg.target
-	return Push(context.Background(), reg.store("registry.example.com/packages/app"), packageRef, baseDir, sbomHash, opts)
+	return pushTagged(t, context.Background(), reg.store("registry.example.com/packages/app"), packageRef, baseDir, sbomHash, opts)
 }
 
 // orasPull pulls tag from store as `oras pull` does, into a new
@@ -262,8 +262,8 @@ func TestPushPublishesAModelAsModelPack(t *testing.T) {
 	if manifest.ArtifactType != modelspec.ArtifactTypeModelManifest || manifest.Config.MediaType != modelspec.MediaTypeModelConfig {
 		t.Errorf("artifact type %s, config %s, want ModelPack's", manifest.ArtifactType, manifest.Config.MediaType)
 	}
-	if manifest.Annotations[AnnotationPackageDigest] != result.ManifestDigest || manifest.Annotations[transfer.AnnotationPurl] != model.PackageURL {
-		t.Errorf("annotations = %v, want the purl and package digest %s", manifest.Annotations, result.ManifestDigest)
+	if manifest.Annotations[AnnotationPackageDigest] != result.Manifest.Digest.String() || manifest.Annotations[transfer.AnnotationPurl] != model.PackageURL {
+		t.Errorf("annotations = %v, want the purl and package digest %s", manifest.Annotations, result.Manifest.Digest.String())
 	}
 	var mediaTypes []string
 	for _, layer := range manifest.Layers {
@@ -472,6 +472,9 @@ func TestPushRefusesTwoComponentsAtOneRepository(t *testing.T) {
 	result, err := pushWithComponents(t, reg, transfer.Options{}, []cdx.Component{first, second}, []map[string]string{{"tool": "a"}, {"tool": "a"}})
 	if err != nil || len(result.Components) != 1 {
 		t.Fatalf("Push = %+v, %v; want one component published", result.Components, err)
+	}
+	if purls := result.Components[0].Purls; !slices.Equal(purls, []string{first.PackageURL, second.PackageURL}) {
+		t.Errorf("Purls = %v, want both components, the second published as the first", purls)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
+	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/sbom"
@@ -33,9 +34,8 @@ type PushedLayer struct {
 // Result is the outcome of a successful Push.
 type Result struct {
 	// Manifest is the pushed package manifest ref now points at.
-	Manifest       ocispec.Descriptor
-	ManifestDigest string
-	Layers         []PushedLayer
+	Manifest ocispec.Descriptor
+	Layers   []PushedLayer
 	// VulnerabilityReports lists the components whose local vulnerability
 	// report (see internal/security) was attached to the package, as
 	// layers of ReportsReferrer — only ever a subset of Layers, since
@@ -57,10 +57,10 @@ type Result struct {
 	Components []PublishedComponent
 }
 
-// Push packages the build recorded under baseDir for sbomHash (see
-// build.RecordManifest) as an OCI artifact — the manifest itself as the
-// config, and each component it describes as a layer — and pushes it to
-// target, tagging the result ref. Every component's local vulnerability
+// Push packages the build tagged ref under baseDir (see build.ResolveTag)
+// as an OCI artifact — its SBOM manifest as the config, and each
+// component it describes as a layer — and pushes it to target, tagging
+// the result ref. Every component's local vulnerability
 // report (see internal/security), if any, is attached as one OCI referrer
 // of that manifest rather than as part of it (see security.Attach), so
 // re-scanning never changes the package's digest. Layers upload
@@ -73,10 +73,28 @@ type Result struct {
 // ref pointing at an unsigned package. With opts.ComponentTarget, each
 // component is then published at its own repository beside the package's
 // (see publishComponents), signed too, also before ref is tagged.
-func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string, opts transfer.Options) (Result, error) {
+func Push(ctx context.Context, target oras.Target, ref, baseDir string, opts transfer.Options) (Result, error) {
 	opts = opts.WithDefaults()
 
-	pkg, err := pushPackage(ctx, target, baseDir, sbomHash, opts)
+	sbomHash, err := build.ResolveTag(baseDir, ref)
+	if err != nil {
+		return Result{}, err
+	}
+	bom, configDesc, err := pushSBOM(ctx, target, baseDir, sbomHash, opts.Progress)
+	if err != nil {
+		return Result{}, err
+	}
+	components := sliceutil.Deref(bom.Components)
+	plans, err := planLayers(baseDir, components)
+	if err != nil {
+		return Result{}, err
+	}
+	layerDescs, err := pushLayers(ctx, target, plans, opts.Concurrency, opts.Progress)
+	if err != nil {
+		return Result{}, err
+	}
+	created := createdAnnotation(bom)
+	manifest, err := packManifest(ctx, target, configDesc, layerDescs, created)
 	if err != nil {
 		return Result{}, err
 	}
@@ -84,14 +102,14 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 	attacher := referrerAttacher{
 		target:   target,
 		ref:      ref,
-		manifest: pkg.desc,
+		manifest: manifest,
 		signer:   opts.Sign,
 		progress: opts.Progress,
 	}
-	if err := attacher.sign(ctx, pkg.desc, ref); err != nil {
+	if err := attacher.sign(ctx, manifest, ref); err != nil {
 		return Result{}, err
 	}
-	reportsReferrer, reports, err := attacher.attachReports(ctx, baseDir, pkg.components)
+	reportsReferrer, reports, err := attacher.attachReports(ctx, baseDir, components)
 	if err != nil {
 		return Result{}, err
 	}
@@ -104,84 +122,40 @@ func Push(ctx context.Context, target oras.Target, ref, baseDir, sbomHash string
 		return Result{}, err
 	}
 
-	var components []PublishedComponent
+	var published []PublishedComponent
 	if opts.ComponentTarget != nil {
-		if components, err = publishComponents(ctx, pkg, ref, opts); err != nil {
+		options := publishOptions{
+			ref:           ref,
+			packageDigest: manifest.Digest.String(),
+			created:       created,
+			opts:          opts,
+		}
+		published, err = publishComponents(ctx, options, splitByComponent(components, plans, layerDescs))
+		if err != nil {
 			return Result{}, err
 		}
 	}
 
-	if err := target.Tag(ctx, pkg.desc, ref); err != nil {
+	if err := target.Tag(ctx, manifest, ref); err != nil {
 		return Result{}, fmt.Errorf("tag %s: %w", ref, err)
 	}
 
 	result := Result{
-		Manifest:             pkg.desc,
-		ManifestDigest:       pkg.desc.Digest.String(),
-		Layers:               pushedLayers(pkg.plans, pkg.layerDescs),
+		Manifest:             manifest,
+		Layers:               pushedLayers(plans, layerDescs),
 		VulnerabilityReports: reports,
 		ReportsReferrer:      reportsReferrer,
 		Attached:             attached,
 		Provenance:           provenanceReferrer,
-		Components:           components,
+		Components:           published,
 	}
 	return result, nil
 }
 
-// pushedPackage is the package Push has pushed, but not yet tagged: its
-// manifest's descriptor and created annotation (see createdAnnotation),
-// the components its SBOM describes, and their layers, as planned and as
-// pushed.
-type pushedPackage struct {
-	desc       ocispec.Descriptor
-	created    string
-	components []cdx.Component
-	// byComponent is plans, pushed as layerDescs, grouped by component
-	// (see splitByComponent).
-	byComponent []*componentLayers
-	plans       []layerPlan
-	layerDescs  []ocispec.Descriptor
-}
-
-// pushPackage pushes the build recorded under baseDir for sbomHash: its
-// SBOM as the config (see pushConfig), each component's layers, up to
-// opts.Concurrency at once, and then the manifest packing them.
-func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash string, opts transfer.Options) (*pushedPackage, error) {
-	bom, configDesc, err := pushConfig(ctx, target, baseDir, sbomHash, opts.Progress)
-	if err != nil {
-		return nil, err
-	}
-	components := sliceutil.Deref(bom.Components)
-
-	plans, err := planLayers(baseDir, components)
-	if err != nil {
-		return nil, err
-	}
-	layerDescs, err := pushLayers(ctx, target, plans, opts.Concurrency, opts.Progress)
-	if err != nil {
-		return nil, err
-	}
-	created := createdAnnotation(bom)
-	desc, err := packManifest(ctx, target, configDesc, layerDescs, created)
-	if err != nil {
-		return nil, err
-	}
-
-	pkg := pushedPackage{
-		desc:        desc,
-		created:     created,
-		components:  components,
-		byComponent: splitByComponent(components, plans, layerDescs),
-		plans:       plans,
-		layerDescs:  layerDescs,
-	}
-	return &pkg, nil
-}
-
-// pushConfig pushes the SBOM the build recorded under baseDir for
-// sbomHash (see build.RecordManifest) byte for byte, as the package's
-// config, returning it parsed and its descriptor.
-func pushConfig(ctx context.Context, target oras.Target, baseDir, sbomHash string, progress transfer.ProgressFunc) (*cdx.BOM, ocispec.Descriptor, error) {
+// pushSBOM pushes the SBOM the build recorded under baseDir for sbomHash
+// (see build.RecordManifest) byte for byte, as the package's config,
+// returning it parsed and its descriptor.
+func pushSBOM(ctx context.Context, target oras.Target, baseDir, sbomHash string, progress transfer.ProgressFunc) (*cdx.BOM, ocispec.Descriptor, error) {
 	manifestPath := layout.Manifest(baseDir, sbomHash)
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {

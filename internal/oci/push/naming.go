@@ -2,10 +2,18 @@ package push
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/package-url/packageurl-go"
+	orasregistry "oras.land/oras-go/v2/registry"
+)
+
+// The purl qualifiers naming uses: an image's tag, and the platform that
+// components sharing a site as one index differ in.
+const (
+	qualifierTag  = "tag"
+	qualifierOS   = "os"
+	qualifierArch = "arch"
 )
 
 // componentSite is where a component is published beside its package:
@@ -66,6 +74,8 @@ func (s componentSite) isOtherPlatformOf(other componentSite) bool {
 // a digest without one is published by digest. Other qualifiers than
 // "os" and "arch" are left out, as is a subpath.
 func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (componentSite, error) {
+	// The type, each of the namespace's segments (a namespace may hold
+	// several, as golang's do), and the name.
 	segments := []string{purl.Type}
 	if purl.Namespace != "" {
 		segments = append(segments, strings.Split(purl.Namespace, "/")...)
@@ -85,12 +95,12 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 	// that's the digest it's pinned to.
 	tagged := purl.Version
 	var pinned string
-	if isImage(purl) {
+	if purl.Type == packageurl.TypeOCI || purl.Type == packageurl.TypeDocker {
 		if strings.HasPrefix(purl.Version, "sha256:") {
 			pinned, tagged = purl.Version, ""
 		}
-		if qualifiers["tag"] != "" {
-			tagged = qualifiers["tag"]
+		if qualifiers[qualifierTag] != "" {
+			tagged = qualifiers[qualifierTag]
 		}
 	}
 	var tag string
@@ -104,7 +114,7 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 	unqualified := purl
 	unqualified.Qualifiers = nil
 	for _, qualifier := range purl.Qualifiers {
-		if qualifier.Key != "os" && qualifier.Key != "arch" {
+		if qualifier.Key != qualifierOS && qualifier.Key != qualifierArch {
 			unqualified.Qualifiers = append(unqualified.Qualifiers, qualifier)
 		}
 	}
@@ -114,8 +124,8 @@ func componentSiteOf(packageRepository string, purl packageurl.PackageURL) (comp
 		repository:  repository,
 		tag:         tag,
 		pinned:      pinned,
-		os:          qualifiers["os"],
-		arch:        qualifiers["arch"],
+		os:          qualifiers[qualifierOS],
+		arch:        qualifiers[qualifierArch],
 		unqualified: unqualified.ToString(),
 	}
 	return site, nil
@@ -152,23 +162,17 @@ func validSeparator(run string) string {
 	return "-"
 }
 
-// isImage reports whether purl names a container image.
-func isImage(purl packageurl.PackageURL) bool {
-	return purl.Type == packageurl.TypeOCI || purl.Type == packageurl.TypeDocker
-}
-
-// tagPattern is what an OCI tag may be.
-var tagPattern = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
-
 // versionTag returns version as an OCI tag: "latest" for none, and "+",
 // which a tag can't hold, as "_", as Helm does. Any other version that
-// isn't a valid tag is an error.
+// isn't a valid tag (see orasregistry.Reference.ValidateReferenceAsTag) is
+// an error.
 func versionTag(version string) (string, error) {
 	if version == "" {
 		return "latest", nil
 	}
 	tag := strings.ReplaceAll(version, "+", "_")
-	if !tagPattern.MatchString(tag) {
+	reference := orasregistry.Reference{Reference: tag}
+	if err := reference.ValidateReferenceAsTag(); err != nil {
 		return "", fmt.Errorf("version %q can't be a tag", version)
 	}
 	return tag, nil
