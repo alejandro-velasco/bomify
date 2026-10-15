@@ -2,16 +2,22 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
+	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 const pushShort = "Publish a bomify package to an OCI registry"
@@ -19,14 +25,24 @@ const pushShort = "Publish a bomify package to an OCI registry"
 const pushLong = `Push publishes the local package <tag> as an OCI artifact under <tag>,
 which must be a full registry reference.
 
+Each component is also published at its own repository beside the
+package's, <repository>/<purl type>/<namespace>/<name>:<version>, for
+the tools that run it to pull directly, unless
+--skip-component-repositories is given. Its plugin packs it in its
+kind's own format, so each component's plugin must be installed: an
+image for docker pull, a chart for helm pull. A kind without one is
+published as bomify's own artifact: a model as a ModelPack artifact,
+other files for oras pull. The naming rules are in the registry format
+documentation.
+
 Local vulnerability reports are attached as a separate OCI referrer, so
 re-scanning and pushing again refreshes them without changing the
 package's digest. Afterwards, all but the newest --keep-reports report
 referrers are deleted (best-effort: "bomify security prune" retries if
 the registry refuses).
 
---sign signs the package, and its reports separately, before the tag
-moves, so the tag never points at an unsigned package. --signer
+--sign signs the package, its reports, and each component repository's
+artifact separately, before the tag moves, so the tag never points at an unsigned package. --signer
 (repeatable) also signs as a signer from "bomify signer create", so one
 push can carry every signature a trust rule requiring several needs.
 
@@ -48,6 +64,9 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
   # Push using a fully qualified registry reference as the tag
   bomify push registry.example.com/myapp:latest
 
+  # Publish only the package, on a registry without nested repositories
+  bomify push registry.example.com/myapp:latest --skip-component-repositories
+
   # Upload up to 6 layers concurrently
   bomify push myapp:latest --concurrency 6
 
@@ -62,7 +81,8 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
 
 type pushOptions struct {
 	publishFlags
-	keepReports int
+	keepReports               int
+	skipComponentRepositories bool
 }
 
 func pushCmd() *cobra.Command {
@@ -84,6 +104,7 @@ func pushCmd() *cobra.Command {
 	}
 
 	opts.register(cmd, "upload", "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
+	cmd.Flags().BoolVar(&opts.skipComponentRepositories, "skip-component-repositories", false, "publish only the package, not each component at its own repository")
 	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
 
 	return cmd
@@ -91,11 +112,6 @@ func pushCmd() *cobra.Command {
 
 func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logger := opts.logger(cmd)
-
-	sbomHash, err := build.ResolveTag(dataDir, tag)
-	if err != nil {
-		return err
-	}
 
 	repo, err := newRepository(tag)
 	if err != nil {
@@ -106,8 +122,17 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	if err != nil {
 		return err
 	}
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, transferOpts)
+	if !opts.skipComponentRepositories {
+		transferOpts.ComponentTarget = func(repository string) (oras.Target, error) {
+			return newRepository(repository)
+		}
+		transferOpts.ComponentPacker = pluginPacker{logger: logger}
+	}
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, transferOpts)
 	done()
+	if errors.Is(err, push.ErrComponentRepository) {
+		return fmt.Errorf("%w (on a registry that can't host nested repositories, or doesn't create them on push, publish only the package with --skip-component-repositories)", err)
+	}
 	if err != nil {
 		return err
 	}
@@ -115,8 +140,50 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logPushedLayers(logger, result)
 	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
-	opts.printPinned(cmd, tag, result.ManifestDigest)
+	opts.printPinned(cmd, tag, result.Manifest.Digest.String())
 	return nil
+}
+
+// pluginPacker packs each component with its plugin's "component pack"
+// (see plugin.Pack), for push to publish it in its kind's own format.
+type pluginPacker struct {
+	logger *slog.Logger
+}
+
+// CanPack fails if component's plugin isn't installed, or doesn't speak
+// the component contract bomify needs.
+func (p pluginPacker) CanPack(component cdx.Component) error {
+	_, err := p.find(component)
+	return err
+}
+
+func (p pluginPacker) Pack(_ context.Context, component cdx.Component, input, output string, annotations map[string]string) (pluginlib.PackResult, error) {
+	path, err := p.find(component)
+	if err != nil || path == "" {
+		return pluginlib.PackResult{}, err
+	}
+	result, err := plugin.Pack(path, component, dataDir, input, output, annotations, p.logger)
+	if err != nil {
+		return pluginlib.PackResult{}, err
+	}
+	return *result, nil
+}
+
+// find returns the path of component's plugin, or "" for a plugin binary,
+// which bomify publishes itself, as it pulls one.
+func (p pluginPacker) find(component cdx.Component) (string, error) {
+	kind, err := plugin.Detect(component)
+	if err != nil {
+		return "", err
+	}
+	if kind == plugin.PurlType {
+		return "", nil
+	}
+	path, err := plugin.Find(layout.Plugins(dataDir), kind, pluginlib.ComponentContract)
+	if errors.Is(err, plugin.ErrNotInstalled) {
+		return "", fmt.Errorf("%w, or publish only the package with --skip-component-repositories", err)
+	}
+	return path, err
 }
 
 // pruneReports deletes all but the newest keep vulnerability report
@@ -133,9 +200,21 @@ func pruneReports(ctx context.Context, logger *slog.Logger, repo security.PruneT
 }
 
 func logPushedLayers(logger *slog.Logger, result push.Result) {
-	logger.Info("manifest pushed", "digest", result.ManifestDigest)
+	logger.Info("manifest pushed", "digest", result.Manifest.Digest.String())
+	// Where each layer's component was published at its own repository,
+	// if it was.
+	publishedAt := map[string]string{}
+	for _, component := range result.Components {
+		for _, purl := range component.Purls {
+			publishedAt[purl] = component.Reference
+		}
+	}
 	for _, layer := range result.Layers {
-		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
+		attrs := []any{"purl", layer.Purl, "hash", layer.Hash}
+		if reference, published := publishedAt[layer.Purl]; published {
+			attrs = append(attrs, "published", reference)
+		}
+		logger.Info("layer pushed", attrs...)
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report attached", "purl", report.Purl, "hash", report.Hash)
@@ -148,5 +227,8 @@ func logPushedLayers(logger *slog.Logger, result push.Result) {
 	}
 	if result.Provenance.Digest != "" {
 		logger.Info("provenance attached", "digest", result.Provenance.Digest.String())
+	}
+	for _, component := range result.Components {
+		logger.Info("component published", "reference", component.Reference, "digest", component.Digest, "purls", strings.Join(component.Purls, ","))
 	}
 }

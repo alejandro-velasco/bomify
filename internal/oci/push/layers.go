@@ -19,10 +19,12 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/parallel"
 )
 
-// layerPlan is one layer Push pushes for a component, its owner: a tarPlan
-// or a filePlan. push pushes it, returning its descriptor.
+// layerPlan is one layer Push pushes for a component, its owner, from the
+// component's directory: a tarPlan or a filePlan. push pushes it,
+// returning its descriptor.
 type layerPlan interface {
 	owner() cdx.Component
+	directory() string
 	push(ctx context.Context, target oras.Target, progress transfer.ProgressFunc) (ocispec.Descriptor, error)
 }
 
@@ -35,6 +37,10 @@ type componentDir struct {
 
 func (c componentDir) owner() cdx.Component {
 	return c.component
+}
+
+func (c componentDir) directory() string {
+	return c.dir
 }
 
 // planLayers plans each of components' layers, in the order they go in

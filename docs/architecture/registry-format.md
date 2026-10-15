@@ -60,11 +60,77 @@ The vulnerability reports referrer's `created` is its newest report's
 time. A re-scan pushes a new one rather than changing the package, and a
 pull restores only the newest.
 
+## Component repositories
+
+`push` also publishes each component at its own repository beside the
+package's, so tools that don't know bomify can pull it:
+
+```
+<package repository>/<purl type>/<namespace>/<name>:<version>
+```
+
+```sh
+docker pull registry.example.com/packages/llm-serving/oci/nginx:1.27
+helm pull   oci://registry.example.com/packages/llm-serving/helm/vllm --version 0.7.0
+oras pull   registry.example.com/packages/llm-serving/huggingface/microsoft/phi-4:<commit>
+```
+
+- Each of the purl's type, namespace segments, and name is one
+  repository segment, lowercased, with any other character than a
+  letter or digit as a separator: a run of them that a repository name
+  doesn't allow (anything but `.`, `_`, `__`, or `-`s) becomes `-`, and
+  none is kept at either end. A purl without a namespace is one level
+  shorter.
+- The version is the tag, with `+` as `_` (as Helm does), or `latest`
+  without one. A version that still isn't a valid tag fails the push.
+- An image (`oci` or `docker` purl) is tagged with its `tag` qualifier,
+  if it has one, else its version. One whose version is a digest and
+  has no `tag` qualifier is published by digest, untagged.
+- Qualifiers and subpath are left out, except `os` and `arch`:
+  components that differ only in those are published as one index of
+  them, each entry's platform set from them.
+- Two components with different content at one repository and tag fail
+  the push; with the same content, it's published once.
+Each is signed like the package, and published in its kind's own
+format, as its plugin's `component pack` describes it (see the
+[component contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
+
+- **Images** (`oci` and `docker`): the image `build` stored, copied as
+  it is, so it keeps its digest and isn't annotated.
+- **Charts** (`helm`): Helm's own format, as `helm push` builds it and
+  `helm pull` reads it: the chart's `Chart.yaml` as JSON as the config
+  (`application/vnd.cncf.helm.config.v1+json`), and its archive as it is
+  as the one layer (`application/vnd.cncf.helm.chart.content.v1.tar+gzip`).
+  Annotated as `helm push` annotates one (`org.opencontainers.image.title`,
+  `.version`, `.description`, `.url`, `.source`, `.authors`, and the
+  chart's own annotations), and as below. A chart whose `Chart.yaml`
+  names another name or version than its purl fails the push.
+- **Anything else**, whose plugin packs nothing: bomify's own artifact
+  of the component's files, as below.
+
+bomify's own artifacts, a chart's, and an index of platforms are
+annotated `land.bomify.purl` (but an index), `land.bomify.package.digest`
+(the package it was published with), and
+`org.opencontainers.image.created` (the package's, so an unchanged
+package publishes the same digests). An artifact of files is laid out so
+`oras pull` writes the component's files out:
+
+| Part | Type | Holds |
+| --- | --- | --- |
+| Manifest | artifact type `application/vnd.bomify.component.v1+json`, or ModelPack's `application/vnd.cncf.model.manifest.v1+json` for a `machine-learning-model` component | |
+| Config | empty, or for a model, ModelPack's `application/vnd.cncf.model.config.v1+json`: the component's name and version, and `modelfs.diffIds`, each layer's uncompressed digest | |
+| Small files | `application/vnd.bomify.component.layer.v1.tar+gzip`, or for a model ModelPack's `application/vnd.cncf.model.weight.config.v1.tar+gzip` | One gzipped tar of every file the package's tar layers hold, with an entry for each directory. Titled `.` and annotated `io.deis.oras.content.unpack` and `io.deis.oras.content.digest`, so `oras pull` unpacks it where it pulls to. |
+| Large files | the package's `application/vnd.bomify.component.file.v1`, or for a model ModelPack's `application/vnd.cncf.model.weight.v1.raw` | The package's file layers, the same blobs and `land.bomify.file.*` annotations, also titled with their path, so `oras pull` writes them out. A model's is also annotated `org.cncf.model.filepath`. |
+
+A model's layer types are chosen by size rather than content, so
+they're annotated `org.cncf.model.file.mediatype.untested`.
+
 ## Annotations
 
 | Annotation | On | Value |
 | --- | --- | --- |
-| `land.bomify.purl` | package layers, report layers | The component's purl. |
+| `land.bomify.purl` | package layers, report layers, component repository artifacts and their layers | The component's purl. |
+| `land.bomify.package.digest` | component repository artifacts | The digest of the package the component was published with. |
 | `land.bomify.file.path` | file layers | The file's `/`-separated path within the component. |
 | `land.bomify.file.mode` | file layers | The file's permission bits, in octal, e.g. `0755`. |
 | `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |

@@ -79,16 +79,12 @@ func TestPublisherVEXNeedsItsOwnSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
 	}
-	sbomHash, err := build.ResolveTag(baseDir, hookTag)
-	if err != nil {
-		t.Fatalf("ResolveTag: %v", err)
-	}
 	stage := t.TempDir()
 	store, err := oci.New(stage)
 	if err != nil {
 		t.Fatalf("new oci store: %v", err)
 	}
-	pushed, err := push.Push(ctx, store, hookTag, baseDir, sbomHash, transfer.Options{Sign: signer})
+	pushed, err := push.Push(ctx, store, hookTag, baseDir, transfer.Options{Sign: signer})
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

@@ -35,7 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Component plugin subcommands (pull/push/remote) — see plugins/contracts/component/v1/CONTRACT.md
+    /// Component plugin subcommands (pull/push/remote/pack) — see plugins/contracts/component/v1/CONTRACT.md
     Component {
         #[command(subcommand)]
         command: ComponentCommand,
@@ -86,6 +86,20 @@ enum ComponentCommand {
     Remote {
         #[command(flatten)]
         common: CommonFlags,
+    },
+    /// Report that a model has no registry format of its own, for bomify to publish as its own artifact
+    Pack {
+        #[command(flatten)]
+        common: CommonFlags,
+        /// directory a prior pull wrote the component into
+        #[arg(long)]
+        input: PathBuf,
+        /// directory to write any new blob into
+        #[arg(long)]
+        output: PathBuf,
+        /// annotation, as key=value, to add to the manifest built (repeatable)
+        #[arg(long = "annotation")]
+        annotations: Vec<String>,
     },
 }
 
@@ -210,6 +224,24 @@ fn run_component(command: ComponentCommand) -> Result<()> {
         ComponentCommand::Remote { common } => {
             with_reference(&common, |reference, _| run_remote(reference))
         }
+        // A model has no registry format of its own here: bomify publishes
+        // it as its own artifact, a ModelPack one, from --input.
+        ComponentCommand::Pack {
+            common,
+            input,
+            output,
+            annotations,
+        } => with_reference(&common, |_, logger| {
+            logger.info(
+                "packing nothing: bomify publishes a model as its own artifact",
+                &[
+                    ("input", &input.display()),
+                    ("output", &output.display()),
+                    ("annotations", &annotations.len()),
+                ],
+            );
+            print_json(&PackResult {})
+        }),
     }
 }
 
@@ -281,6 +313,11 @@ struct RemoteResult {
     remote: String,
 }
 
+/// What "component pack" prints, per the component contract: {}, for a
+/// kind with no registry format of its own.
+#[derive(Serialize)]
+struct PackResult {}
+
 fn run_remote(reference: &Ref) -> Result<()> {
     let result = RemoteResult {
         remote: reference.remote(),
@@ -321,5 +358,34 @@ mod tests {
     fn reports_contracts() {
         let json = serde_json::to_string(&contract_result()).unwrap();
         assert_eq!(json, r#"{"contracts":{"component":1,"sbom":1}}"#);
+    }
+
+    #[test]
+    fn packs_nothing() {
+        let json = serde_json::to_string(&PackResult {}).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn parses_pack() {
+        let cli = Cli::try_parse_from([
+            "bomify-plugin-huggingface",
+            "component",
+            "pack",
+            "--purl",
+            "pkg:huggingface/org/model@abc",
+            "--input",
+            "in",
+            "--output",
+            "out",
+            "--annotation",
+            "a=b",
+            "--annotation",
+            "c=d",
+            "--log",
+            "log",
+            "--log-color=false",
+        ]);
+        assert!(cli.is_ok(), "{:?}", cli.err());
     }
 }

@@ -6,6 +6,8 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // Signer signs a bomify package Push has just packed into target — its
@@ -37,6 +39,21 @@ type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, m
 // annotations. Push calls it, like Signer, before tagging ref.
 type Attester func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error)
 
+// ComponentPacker packs the components Push publishes at their own
+// repositories, each in its kind's own registry format, typically with its
+// plugin's "pack" (see plugins/contracts/component/v1/CONTRACT.md).
+type ComponentPacker interface {
+	// CanPack fails if component can't be packed, as when its plugin
+	// isn't installed. Push calls it for every component before pushing
+	// anything.
+	CanPack(component cdx.Component) error
+	// Pack packs component, which a prior pull wrote into input, writing
+	// any blob it builds into output and adding annotations to the
+	// manifest it builds. The zero PackResult means the component's kind
+	// has no format of its own.
+	Pack(ctx context.Context, component cdx.Component, input, output string, annotations map[string]string) (pluginlib.PackResult, error)
+}
+
 // Options are what Push, Pull, and Save/Load take beyond what to
 // transfer: how, and the optional steps to run around a package.
 type Options struct {
@@ -61,6 +78,14 @@ type Options struct {
 	// Attach are documents Push attaches to every package it pushes, each
 	// as its own referrer, signed like the package (see transfer.Attach).
 	Attach []Attachment
+	// ComponentTarget, if set, returns the target for another repository
+	// of the registry Push pushes to, where Push publishes each of the
+	// package's components, signed like the package. Nil publishes only
+	// the package.
+	ComponentTarget func(repository string) (oras.Target, error)
+	// ComponentPacker packs each component ComponentTarget's repositories
+	// get. Nil publishes every component as an artifact of its files.
+	ComponentPacker ComponentPacker
 }
 
 // WithDefaults returns o with Concurrency at least 1 and a non-nil

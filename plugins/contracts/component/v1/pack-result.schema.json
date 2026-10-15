@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/component/v1/pack-result.schema.json",
+  "title": "bomify plugin PackResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"pack\" subcommand, per plugins/contracts/component/v1/CONTRACT.md: the component as an OCI artifact in its kind's own registry format, or {} for none. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "dependencies": {
+    "blobs": ["manifest"]
+  },
+  "properties": {
+    "manifest": {
+      "$ref": "#/definitions/blob",
+      "description": "The artifact's manifest, or an index of several. Absent, with blobs, for a kind with no format of its own."
+    },
+    "blobs": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/blob" },
+      "description": "Every other blob the manifest refers to, directly or through the manifests an index names, in any order."
+    }
+  },
+  "definitions": {
+    "blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "digest", "size", "path"],
+      "properties": {
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The blob's OCI media type."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$",
+          "description": "The blob's OCI digest, e.g. sha256:<hex>."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The blob's size in bytes."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A file holding exactly the blob's bytes, within --input or --output."
+        }
+      }
+    }
+  }
+}

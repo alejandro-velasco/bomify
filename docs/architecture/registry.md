@@ -48,6 +48,25 @@ downloading anything, then unpacks the tars and writes the large files,
 refusing any that names a file another layer wrote, each through an
 `os.Root`, so no symlink a tar made can lead a write outside.
 
+`push` then publishes each component at its own repository beside the
+package's (see `push.publishComponents`, and
+[Registry format](registry-format.md#component-repositories) for what's
+published), unless `--skip-component-repositories`. Each component's
+plugin packs it in its kind's own format with `component pack`, which
+only describes the artifact; `push` uploads, signs, and tags it (see
+`push.newComponentPublisher`), since a plugin's own push picks its own
+tag and reports no digest to sign. bomify-plugin-oci describes the image
+`build` stored as it is, so it keeps its digest, and bomify-plugin-helm
+builds Helm's format from the stored archive. A kind whose plugin packs
+nothing (`{}`) is published as bomify's own artifact of its files.
+`push` checks every component's plugin is installed before uploading
+anything. A blob the package already pushed, a large file or an image
+layer of 64 MiB or more, is mounted from the package's repository rather
+than uploaded again (see `transfer.MountBlob`); a registry that won't
+mount it takes the upload instead. Each artifact is signed and tagged
+before the package's tag moves, so a failure leaves the package's tag
+where it was.
+
 ## Save and load
 
 `bomify save`/`load` ([`internal/oci/save`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/save)) run

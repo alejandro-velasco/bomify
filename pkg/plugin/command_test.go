@@ -104,6 +104,57 @@ func TestComponentCommandRemote(t *testing.T) {
 	}
 }
 
+// fakePacker is a fakeComponent that packs, recording the request.
+type fakePacker struct {
+	fakeComponent
+	pack PackRequest
+}
+
+func (f *fakePacker) Pack(_ context.Context, req PackRequest) (*PackResult, error) {
+	f.pack = req
+	manifest := PackedBlob{
+		MediaType: "application/vnd.oci.image.manifest.v1+json",
+		Digest:    "sha256:abc",
+		Size:      2,
+		Path:      req.Output + "/manifest.json",
+	}
+	return &PackResult{Manifest: &manifest}, nil
+}
+
+func TestComponentCommandPackWithoutAFormat(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	out, err := runComponent(t, &fakeComponent{}, "pack", "--purl", "p", "--input", "in", "--output", "out", "--annotation", "a=b", "--log", log)
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if strings.TrimSpace(out) != `{}` {
+		t.Errorf("stdout = %q, want {} from a plugin without a format of its own", out)
+	}
+}
+
+func TestComponentCommandPack(t *testing.T) {
+	p := &fakePacker{}
+	log := filepath.Join(t.TempDir(), "log")
+	out, err := runComponent(t, p, "pack", "--purl", "p", "--input", "in", "--output", "out", "--annotation", "a=b=c", "--annotation", "d=", "--log", log)
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if p.pack.Input != "in" || p.pack.Output != "out" || p.pack.Annotations["a"] != "b=c" || p.pack.Annotations["d"] != "" || len(p.pack.Annotations) != 2 {
+		t.Errorf("request = %+v", p.pack)
+	}
+	var result PackResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil || result.Manifest == nil || result.Manifest.Path != "out/manifest.json" {
+		t.Errorf("stdout = %q, %v; want the PackResult", out, err)
+	}
+}
+
+func TestComponentCommandPackRefusesAMalformedAnnotation(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	if _, err := runComponent(t, &fakePacker{}, "pack", "--purl", "p", "--input", "in", "--output", "out", "--annotation", "novalue", "--log", log); err == nil {
+		t.Error("pack with --annotation novalue succeeded")
+	}
+}
+
 func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 	var out bytes.Buffer
 	if err := Print(&out, RemoteResult{Remote: "a?b=1&c=2"}); err != nil {

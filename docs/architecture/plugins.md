@@ -4,7 +4,7 @@ A plugin binary can implement any of four independent contracts:
 
 | Contract | Subcommands | Used by | `<kind>` names |
 | --- | --- | --- | --- |
-| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull/push/remote` | `build`, `distribute` | a purl type |
+| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull/push/remote/pack` | `build`, `distribute`, `push` | a purl type |
 | [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
 | [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
 | [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
@@ -51,6 +51,18 @@ passes on whether bomify's stdout is a terminal.
 `--output`/`--input`, asking the plugin to cheaply confirm the transfer
 would succeed. `plugin.CheckPull`/`CheckPush` are stateless: no pid
 file, manifest, or layer directory, and `build --check` records no build.
+
+`bomify push` calls `component pack --purl --input --output
+--annotation <key>=<value>...` for each component it publishes at its
+own repository (see [Registry](registry.md)). The plugin only describes
+the component in its kind's own registry format, a manifest and every
+blob it refers to, each a file in `--input` or `--output`; `push` checks
+every path, uploads the blobs, mounting what the package already holds,
+then signs and tags. A plugin with no format of its own prints `{}`, and
+`push` publishes bomify's own artifact of the files instead; `pkg/plugin`
+answers `{}` for any plugin that doesn't implement `ComponentPacker`.
+`push` checks each component's plugin is installed before uploading
+anything.
 
 ![Plugin dispatch sequence](../diagrams/plugin-dispatch.svg)
 

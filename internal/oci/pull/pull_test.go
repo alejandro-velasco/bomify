@@ -283,7 +283,10 @@ func TestPullSkipsExistingUntarredLayer(t *testing.T) {
 
 	ctx := context.Background()
 	const tag = "test"
-	if _, err := push.Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
+	if err := build.UpdateRepositories(baseDir, []string{tag}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+	if _, err := push.Push(ctx, store, tag, baseDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 
@@ -375,7 +378,10 @@ func pushComponentFixture(t *testing.T, component cdx.Component, layerContent []
 	}
 
 	tag = "test"
-	if _, err := push.Push(context.Background(), store, tag, sourceDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
+	if err := build.UpdateRepositories(sourceDir, []string{tag}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+	if _, err := push.Push(context.Background(), store, tag, sourceDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 

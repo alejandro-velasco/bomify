@@ -85,7 +85,7 @@ func TestPushGivesLargeFilesALayerEach(t *testing.T) {
 	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
 	store := newStore(t)
 
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
+	if _, err := pushTagged(t, context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -164,7 +164,7 @@ func TestPushSharesLargeFiles(t *testing.T) {
 			"name.txt":    component.Name,
 		})
 		sbomHash := recordSBOM(t, baseDir, []cdx.Component{component})
-		if _, err := Push(context.Background(), store, component.Name, baseDir, sbomHash, transfer.Options{Concurrency: 2}); err != nil {
+		if _, err := pushTagged(t, context.Background(), store, component.Name, baseDir, sbomHash, transfer.Options{Concurrency: 2}); err != nil {
 			t.Fatalf("Push %s: %v", component.Name, err)
 		}
 		for _, layer := range manifestOf(t, store, component.Name).Layers {
@@ -186,7 +186,7 @@ func TestPushEmptyComponent(t *testing.T) {
 	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
 	store := newStore(t)
 
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{}); err != nil {
+	if _, err := pushTagged(t, context.Background(), store, "model", baseDir, sbomHash, transfer.Options{}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if layers := manifestOf(t, store, "model").Layers; len(layers) != 1 || layers[0].MediaType != transfer.LayerMediaType {
@@ -408,7 +408,7 @@ func TestPushAndPullLabelLayersAlike(t *testing.T) {
 	store := newStore(t)
 
 	var pushed, pulled []string
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 2, Progress: recordLabels(&pushed)}); err != nil {
+	if _, err := pushTagged(t, context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 2, Progress: recordLabels(&pushed)}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if _, err := pull.Pull(context.Background(), store, "model", t.TempDir(), transfer.Options{Concurrency: 2, Progress: recordLabels(&pulled)}); err != nil {
@@ -497,7 +497,7 @@ func TestPullBoundsDownloads(t *testing.T) {
 	store := countingStore{
 		Store: newStore(t),
 	}
-	if _, err := Push(context.Background(), store.Store, "models", baseDir, sbomHash, transfer.Options{Concurrency: 4}); err != nil {
+	if _, err := pushTagged(t, context.Background(), store.Store, "models", baseDir, sbomHash, transfer.Options{Concurrency: 4}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -528,7 +528,7 @@ func TestPushAndPullSymlinks(t *testing.T) {
 	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
 	store := newStore(t)
 
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
+	if _, err := pushTagged(t, context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	pulledDir := t.TempDir()

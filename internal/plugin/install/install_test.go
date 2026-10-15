@@ -125,7 +125,10 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
+	if err := build.UpdateRepositories(sourceDir, []string{ref}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+	if _, err := push.Push(ctx, store, ref, sourceDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	return store

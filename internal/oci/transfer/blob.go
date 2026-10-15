@@ -12,6 +12,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/errdef"
+	"oras.land/oras-go/v2/registry"
 )
 
 // PushBytes pushes data to target as a single blob of the given media
@@ -66,6 +67,86 @@ func PushBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, 
 		return fmt.Errorf("push %s: %w", desc.Digest, err)
 	}
 	return nil
+}
+
+// MountBlob makes desc available in target by asking the registry to mount
+// it from the repository from, another of the registry's that may already
+// hold it, instead of uploading it, so a blob a registry stores once is
+// sent once. A registry that can't or won't mount should answer by starting
+// an upload, and one that refuses the request outright gets the blob pushed
+// as PushBlob pushes it, so the blob ends up in target either way, as it
+// does when target can't mount at all (a local store, say) or from is "".
+// open returns the blob's content, and is only called to upload it, which
+// alone shows progress under label. Never mount a manifest: a registry
+// mounts only blobs.
+func MountBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, from string, open func() (io.ReadCloser, error), label string, progress ProgressFunc) error {
+	if progress == nil {
+		progress = Discard
+	}
+	mounter, canMount := target.(registry.Mounter)
+	if !canMount || from == "" {
+		return pushOpened(ctx, target, desc, open, label, progress)
+	}
+
+	// Mounting a blob the target already has is wasted, and a local store
+	// would reject it, as PushBlob explains.
+	if exists, err := target.Exists(ctx, desc); err != nil {
+		return fmt.Errorf("check %s: %w", desc.Digest, err)
+	} else if exists {
+		return nil
+	}
+
+	// The registry asks for the content only if it started an upload
+	// instead of mounting the blob.
+	var uploading bool
+	getContent := func() (io.ReadCloser, error) {
+		uploading = true
+		content, err := open()
+		if err != nil {
+			return nil, err
+		}
+		pw := progress(label, desc.Size)
+		reported := reportedContent{
+			Reader:   io.TeeReader(content, pw),
+			content:  content,
+			progress: pw,
+		}
+		return reported, nil
+	}
+	err := mounter.Mount(ctx, desc, from, getContent)
+	if err == nil || errors.Is(err, errdef.ErrAlreadyExists) {
+		return nil
+	}
+	if uploading {
+		return fmt.Errorf("upload %s: %w", desc.Digest, err)
+	}
+
+	// The spec asks a registry that won't mount to start an upload, but
+	// some refuse the request instead (an unsupported method, say).
+	return pushOpened(ctx, target, desc, open, label, progress)
+}
+
+// pushOpened pushes desc to target, as PushBlob does, from the content open
+// returns.
+func pushOpened(ctx context.Context, target oras.Target, desc ocispec.Descriptor, open func() (io.ReadCloser, error), label string, progress ProgressFunc) error {
+	content, err := open()
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+	return PushBlob(ctx, target, desc, content, label, progress)
+}
+
+// reportedContent is a blob's content, reporting what is read of it
+// through progress, closing both when it is.
+type reportedContent struct {
+	io.Reader
+	content  io.Closer
+	progress io.Closer
+}
+
+func (c reportedContent) Close() error {
+	return errors.Join(c.content.Close(), c.progress.Close())
 }
 
 // LayerLabel names one of a component's layers, a tar or a large file, in
