@@ -114,8 +114,8 @@ func resolvedDataDir(cmd *cobra.Command) string {
 }
 
 // completeLocalTags is a cobra ValidArgsFunction shared by every command
-// that takes an already-tagged local package (push, distribute, save,
-// package remove/rmp).
+// that takes an already-tagged local package (push, save, package
+// remove/rmp).
 func completeLocalTags(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	repos, err := build.ReadRepositories(resolvedDataDir(cmd))
 	if err != nil {

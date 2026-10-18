@@ -77,5 +77,4 @@ bomify build myapp.cdx.json --tag myapp:1.4.0
 ```
 
 From here it's an ordinary package: [scan it](scanning-with-grype.md),
-[sign and push it](signing-and-verifying-packages.md), or
-[distribute it](distributing-a-package.md).
+or [sign and push it](signing-and-verifying-packages.md).

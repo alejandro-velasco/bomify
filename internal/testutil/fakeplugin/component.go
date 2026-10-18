@@ -24,15 +24,10 @@ type result struct {
 	Hash       hash   `json:"hash,omitempty"`
 }
 
-type remoteResult struct {
-	Remote string `json:"remote"`
-}
-
-// componentMain implements the component contract: "component
-// <pull|push|remote>".
+// componentMain implements the component contract: "component pull".
 func componentMain() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin component <pull|push|remote> --purl <purl> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin component pull --purl <purl> ...")
 		os.Exit(1)
 	}
 
@@ -40,9 +35,7 @@ func componentMain() {
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
 	purl := fs.String("purl", "", "component purl")
 	output := fs.String("output", "", "output directory (pull)")
-	input := fs.String("input", "", "input directory (push)")
-	remote := fs.String("remote", "", "remote endpoint (push)")
-	check := fs.Bool("check", false, "check-only mode: skip --output/--input and any real transfer")
+	check := fs.Bool("check", false, "check-only mode: skip --output and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
 	fs.Parse(os.Args[3:])
@@ -121,28 +114,6 @@ func componentMain() {
 				Value:     fmt.Sprintf("fakehash-%s-%s", name, version),
 			}
 		}
-	case "push":
-		if !*check {
-			if info, err := os.Stat(*input); err != nil || !info.IsDir() {
-				fmt.Fprintf(os.Stderr, "expected --input %q to already exist as a directory: %v\n", *input, err)
-				os.Exit(1)
-			}
-		}
-
-		if *check {
-			res = result{OutputPath: fmt.Sprintf("checked:%s/%s:%s", *remote, name, version), Message: "fake push check ok"}
-		} else {
-			res = result{
-				OutputPath: fmt.Sprintf("%s/%s:%s", *remote, name, version),
-				Message:    "fake push ok",
-			}
-		}
-	case "remote":
-		if err := json.NewEncoder(os.Stdout).Encode(remoteResult{Remote: fmt.Sprintf("fake-origin/%s", name)}); err != nil {
-			fmt.Fprintf(os.Stderr, "encode remote result: %v\n", err)
-			os.Exit(1)
-		}
-		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown verb %q\n", verb)
 		os.Exit(1)

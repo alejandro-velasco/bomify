@@ -19,7 +19,6 @@ func TestCallsParseWithPkgPlugin(t *testing.T) {
 	bin := testutil.InstallLibPlugin(t, dir, "lib")
 	baseDir := t.TempDir()
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-	const remote = "registry.example.com/mirror"
 
 	if _, err := Find(dir, "lib", pluginlib.ComponentContract); err != nil {
 		t.Errorf("Find: %v", err)
@@ -28,19 +27,6 @@ func TestCallsParseWithPkgPlugin(t *testing.T) {
 		t.Errorf("CheckPull: %v", err)
 	}
 	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
-		t.Fatalf("Pull: %v", err)
-	}
-	if result, err := Push(bin, component, baseDir, remote, testLogger()); err != nil {
-		t.Errorf("Push: %v", err)
-	} else if result.OutputPath != remote {
-		t.Errorf("Push = %q, want the plugin to have been given --remote %q", result.OutputPath, remote)
-	}
-	if _, err := CheckPush(bin, component, baseDir, remote, testLogger()); err != nil {
-		t.Errorf("CheckPush: %v", err)
-	}
-	if got, err := Remote(bin, component, baseDir, testLogger()); err != nil {
-		t.Errorf("Remote: %v", err)
-	} else if want := "remote-of-" + component.PackageURL; got != want {
-		t.Errorf("Remote = %q, want %q", got, want)
+		t.Errorf("Pull: %v", err)
 	}
 }

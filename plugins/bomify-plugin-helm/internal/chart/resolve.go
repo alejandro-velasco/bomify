@@ -1,5 +1,5 @@
 // Package chart resolves component purls to Helm chart references and
-// pulls/pushes them using the Helm SDK (helm.sh/helm/v4).
+// pulls them using the Helm SDK (helm.sh/helm/v4).
 package chart
 
 import (
@@ -49,8 +49,7 @@ func Resolve(purlString string) (Ref, error) {
 }
 
 // Filename returns the name ref's pulled chart archive is stored under,
-// both by Pull (as it writes into --output) and Push (as it reads back
-// from --input).
+// by Pull as it writes into --output.
 func (r Ref) Filename() string {
 	return fmt.Sprintf("%s-%s.tgz", r.Name, r.Version)
 }

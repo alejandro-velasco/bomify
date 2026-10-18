@@ -20,7 +20,6 @@ nav = [
   { "How-to guides" = [
       "how-to/index.md",
       { "Building a package" = "how-to/building-a-package.md" },
-      { "Distributing a package" = "how-to/distributing-a-package.md" },
       { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Composing a multi-medium package" = "how-to/composing-a-multi-medium-package.md" },
@@ -32,13 +31,6 @@ nav = [
       "usage/index.md",
       { "bomify" = "usage/reference/bomify.md" },
       { "bomify build" = "usage/reference/bomify_build.md" },
-      { "bomify distribute" = "usage/reference/bomify_distribute.md" },
-      { "bomify distribution" = [
-          { "bomify distribution" = "usage/reference/bomify_distribution.md" },
-          { "bomify distribution create" = "usage/reference/bomify_distribution_create.md" },
-          { "bomify distribution list" = "usage/reference/bomify_distribution_list.md" },
-          { "bomify distribution remove" = "usage/reference/bomify_distribution_remove.md" },
-      ] },
       { "bomify login" = "usage/reference/bomify_login.md" },
       { "bomify logout" = "usage/reference/bomify_logout.md" },
       { "bomify plugin" = [
@@ -90,7 +82,6 @@ nav = [
           { "bomify packages" = "usage/reference/bomify_packages.md" },
           { "bomify package" = "usage/reference/bomify_package.md" },
           { "bomify package build" = "usage/reference/bomify_package_build.md" },
-          { "bomify package distribute" = "usage/reference/bomify_package_distribute.md" },
           { "bomify package load" = "usage/reference/bomify_package_load.md" },
           { "bomify package manifest" = "usage/reference/bomify_package_manifest.md" },
           { "bomify package prune" = "usage/reference/bomify_package_prune.md" },

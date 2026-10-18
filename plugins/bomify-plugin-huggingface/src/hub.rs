@@ -26,7 +26,7 @@ const RETRY_WAITS: [Duration; 4] = [
 
 /// A hub, with the token for it.
 pub struct Hub {
-    pub client: HFClientSync,
+    client: HFClientSync,
     /// The hub's base URL, e.g. "https://huggingface.co".
     pub endpoint: String,
     token: Option<String>,
@@ -67,26 +67,15 @@ impl Hub {
         self.model(&reference.namespace, &reference.name)
     }
 
-    /// Every file in reference's repository at its commit (see
-    /// list_repository).
+    /// Every file in reference's repository at its commit. Each path is
+    /// checked to stay inside the directory it's written into, since the
+    /// listing comes from the network.
     pub fn list_files(&self, reference: &Ref) -> Result<Vec<RepoFile>> {
-        self.list_repository(&reference.namespace, &reference.name, &reference.revision)
-    }
-
-    /// Every file in namespace/name at revision. Each path is checked to
-    /// stay inside the directory it's written into, since the listing
-    /// comes from the network.
-    pub fn list_repository(
-        &self,
-        namespace: &str,
-        name: &str,
-        revision: &str,
-    ) -> Result<Vec<RepoFile>> {
-        let repo_id = format!("{namespace}/{name}");
+        let repo_id = reference.repo_id();
         let entries = self
-            .model(namespace, name)
+            .repository(reference)
             .list_tree()
-            .revision(revision.to_string())
+            .revision(reference.revision.clone())
             .recursive(true)
             .send()
             .with_context(|| format!("list {repo_id}'s files"))?;
@@ -96,7 +85,7 @@ impl Hub {
             .filter(|file| file.lfs && file.sha256.is_none())
         {
             let sha256 = self
-                .lfs_sha256(&repo_id, revision, &file.path)
+                .lfs_sha256(&repo_id, &reference.revision, &file.path)
                 .with_context(|| format!("read {}'s SHA-256", file.path))?;
             file.sha256 = Some(sha256);
         }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +16,6 @@ import (
 // fakeComponent records the requests ComponentCommand hands it.
 type fakeComponent struct {
 	pull PullRequest
-	push PushRequest
 }
 
 func (f *fakeComponent) Pull(_ context.Context, req PullRequest) (*Result, error) {
@@ -26,15 +24,6 @@ func (f *fakeComponent) Pull(_ context.Context, req PullRequest) (*Result, error
 		return nil, errors.New("no logger")
 	}
 	return &Result{OutputPath: req.Output, Hash: NewHash("abc")}, nil
-}
-
-func (f *fakeComponent) Push(_ context.Context, req PushRequest) (*Result, error) {
-	f.push = req
-	return &Result{OutputPath: req.Remote + "/x"}, nil
-}
-
-func (f *fakeComponent) Remote(_ context.Context, purl string, _ *slog.Logger) (string, error) {
-	return "origin-of-" + purl, nil
 }
 
 // runComponent executes the component command tree around p with args,
@@ -86,27 +75,9 @@ func TestComponentCommandOutputRequiredUnlessCheck(t *testing.T) {
 	}
 }
 
-func TestComponentCommandPushRequiresRemote(t *testing.T) {
-	log := filepath.Join(t.TempDir(), "log")
-	if _, err := runComponent(t, &fakeComponent{}, "push", "--purl", "p", "--input", "in", "--log", log); err == nil {
-		t.Error("push without --remote succeeded")
-	}
-}
-
-func TestComponentCommandRemote(t *testing.T) {
-	log := filepath.Join(t.TempDir(), "log")
-	out, err := runComponent(t, &fakeComponent{}, "remote", "--purl", "p", "--log", log)
-	if err != nil {
-		t.Fatalf("remote: %v", err)
-	}
-	if strings.TrimSpace(out) != `{"remote":"origin-of-p"}` {
-		t.Errorf("stdout = %q", out)
-	}
-}
-
 func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 	var out bytes.Buffer
-	if err := Print(&out, RemoteResult{Remote: "a?b=1&c=2"}); err != nil {
+	if err := Print(&out, Result{OutputPath: "a?b=1&c=2"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "&c=2") {

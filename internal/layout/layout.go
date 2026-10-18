@@ -121,9 +121,6 @@ func VEX(dataDir string) string { return filepath.Join(dataDir, "vex") }
 // version (see CheckVersion).
 func VersionFile(dataDir string) string { return filepath.Join(dataDir, "version.json") }
 
-// DistributionConfig returns "<dataDir>/conf/distribution.json".
-func DistributionConfig(dataDir string) string { return conf(dataDir, "distribution.json") }
-
 // TrustConfig returns "<dataDir>/conf/trust.json".
 func TrustConfig(dataDir string) string { return conf(dataDir, "trust.json") }
 

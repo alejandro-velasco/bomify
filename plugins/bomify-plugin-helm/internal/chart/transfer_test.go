@@ -106,42 +106,46 @@ func buildTestChart(t *testing.T, dir, name, version string) []byte {
 	return data
 }
 
-// TestOCIPushThenPullRoundTrip exercises Push and Pull against a real
-// in-process OCI registry, using the real Helm SDK push/pull actions (not
-// mocked): it proves a chart pushed there lands at the expected
-// "<remote>/<name>:<version>" reference, and that pulling it back by that
-// same name and version returns the exact chart that was pushed.
-func TestOCIPushThenPullRoundTrip(t *testing.T) {
+// pushTestChart builds a chart per name/version, as buildTestChart does,
+// and pushes it to the OCI registry repositoryURL ("oci://host/path")
+// names, at "<path>/<name>:<version>", returning its contents.
+func pushTestChart(t *testing.T, repositoryURL, name, version string) []byte {
+	t.Helper()
+
+	data := buildTestChart(t, t.TempDir(), name, version)
+
+	registryClient, err := newRegistryClient(registryHost(repositoryURL))
+	if err != nil {
+		t.Fatalf("newRegistryClient: %v", err)
+	}
+	ref := strings.TrimPrefix(repositoryURL, helmregistry.OCIScheme+"://") + "/" + name + ":" + version
+	if _, err := registryClient.Push(data, ref); err != nil {
+		t.Fatalf("push %s: %v", ref, err)
+	}
+	return data
+}
+
+// TestOCIPull exercises Pull against a real in-process OCI registry,
+// using the real Helm SDK pull action (not mocked): it proves pulling a
+// chart by name and version returns the exact chart pushed there.
+func TestOCIPull(t *testing.T) {
 	usePlainHTTPRegistryClient(t)
 	host := newTestOCIRegistry(t)
 
 	const name, version = "widget", "1.2.3"
-	remote := "oci://" + host + "/charts"
-
-	inputDir := t.TempDir()
-	wantContent := buildTestChart(t, inputDir, name, version)
-
-	pushRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	pushResult, err := Push(inputDir, pushRef, remote, testLogger())
-	if err != nil {
-		t.Fatalf("Push() error = %v", err)
-	}
-
-	wantDst := remote + "/" + name + ":" + version
-	if pushResult.OutputPath != wantDst {
-		t.Errorf("Push() OutputPath = %q, want %q", pushResult.OutputPath, wantDst)
-	}
+	repositoryURL := "oci://" + host + "/charts"
+	wantContent := pushTestChart(t, repositoryURL, name, version)
 
 	outputDir := t.TempDir()
-	pullRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	pullResult, err := Pull(pullRef, outputDir, testLogger())
+	ref := Ref{Name: name, Version: version, RepositoryURL: repositoryURL, OCI: true}
+	result, err := Pull(ref, outputDir, testLogger())
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
 
-	wantPath := filepath.Join(outputDir, pullRef.Filename())
-	if pullResult.OutputPath != wantPath {
-		t.Errorf("Pull() OutputPath = %q, want %q", pullResult.OutputPath, wantPath)
+	wantPath := filepath.Join(outputDir, ref.Filename())
+	if result.OutputPath != wantPath {
+		t.Errorf("Pull() OutputPath = %q, want %q", result.OutputPath, wantPath)
 	}
 
 	gotContent, err := os.ReadFile(wantPath)
@@ -153,55 +157,31 @@ func TestOCIPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	wantSum := sha256.Sum256(wantContent)
-	if pullResult.Hash.Algorithm != cdx.HashAlgoSHA256 {
-		t.Errorf("Pull() Hash.Algorithm = %q, want %q", pullResult.Hash.Algorithm, cdx.HashAlgoSHA256)
+	if result.Hash.Algorithm != cdx.HashAlgoSHA256 {
+		t.Errorf("Pull() Hash.Algorithm = %q, want %q", result.Hash.Algorithm, cdx.HashAlgoSHA256)
 	}
-	if want := hex.EncodeToString(wantSum[:]); pullResult.Hash.Value != want {
-		t.Errorf("Pull() Hash.Value = %q, want %q", pullResult.Hash.Value, want)
+	if want := hex.EncodeToString(wantSum[:]); result.Hash.Value != want {
+		t.Errorf("Pull() Hash.Value = %q, want %q", result.Hash.Value, want)
 	}
 }
 
-// TestOCICheckPullAndCheckPush exercises CheckPull/CheckPush against a
-// real in-process OCI registry, proving they report success without
-// ever actually publishing or downloading anything — unlike
-// TestOCIPushThenPullRoundTrip, no chart should exist server-side by the
-// time these calls return.
-func TestOCICheckPullAndCheckPush(t *testing.T) {
+// TestOCICheckPull exercises CheckPull against a real in-process OCI
+// registry holding the chart.
+func TestOCICheckPull(t *testing.T) {
 	usePlainHTTPRegistryClient(t)
 	host := newTestOCIRegistry(t)
 
 	const name, version = "widget", "1.2.3"
-	remote := "oci://" + host + "/charts"
+	repositoryURL := "oci://" + host + "/charts"
+	pushTestChart(t, repositoryURL, name, version)
 
-	pushRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	if _, err := CheckPush(pushRef, remote, testLogger()); err != nil {
-		t.Fatalf("CheckPush() error = %v", err)
-	}
-
-	// Nothing was actually published, so resolving it must fail.
-	registryClient, err := newRegistryClient(registryHost(remote))
-	if err != nil {
-		t.Fatalf("newRegistryClient: %v", err)
-	}
-	ociRef := host + "/charts/" + name + ":" + version
-	if _, err := registryClient.Resolve(ociRef); err == nil {
-		t.Fatal("CheckPush() published a chart, want no-op")
-	}
-
-	// Seed it for real, then confirm CheckPull finds it.
-	inputDir := t.TempDir()
-	buildTestChart(t, inputDir, name, version)
-	if _, err := Push(inputDir, pushRef, remote, testLogger()); err != nil {
-		t.Fatalf("Push() (seeding) error = %v", err)
-	}
-
-	pullRef := Ref{Name: name, Version: version, RepositoryURL: remote, OCI: true}
-	pullResult, err := CheckPull(pullRef, testLogger())
+	ref := Ref{Name: name, Version: version, RepositoryURL: repositoryURL, OCI: true}
+	result, err := CheckPull(ref, testLogger())
 	if err != nil {
 		t.Fatalf("CheckPull() error = %v", err)
 	}
-	if want := remote + "/" + name + ":" + version; pullResult.OutputPath != want {
-		t.Errorf("CheckPull() OutputPath = %q, want %q", pullResult.OutputPath, want)
+	if want := repositoryURL + "/" + name + ":" + version; result.OutputPath != want {
+		t.Errorf("CheckPull() OutputPath = %q, want %q", result.OutputPath, want)
 	}
 }
 
@@ -212,13 +192,6 @@ func TestOCICheckPullMissingChart(t *testing.T) {
 	ref := Ref{Name: "does-not-exist", Version: "1.0.0", RepositoryURL: "oci://" + host + "/charts", OCI: true}
 	if _, err := CheckPull(ref, testLogger()); err == nil {
 		t.Fatal("CheckPull() for a chart never pushed: expected error, got nil")
-	}
-}
-
-func TestOCICheckPushClassicRepoRejected(t *testing.T) {
-	ref := Ref{Name: "widget", Version: "1.2.3", RepositoryURL: "https://charts.example.com", OCI: false}
-	if _, err := CheckPush(ref, "https://charts.example.com", testLogger()); err == nil {
-		t.Fatal("CheckPush() against a classic repository: expected error, got nil")
 	}
 }
 

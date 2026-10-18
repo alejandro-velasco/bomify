@@ -56,4 +56,4 @@ To add more charts, images, or files to the same package, list them as
 more sources; see
 [Composing a multi-medium package](composing-a-multi-medium-package.md).
 Then [scan it](scanning-with-grype.md) or
-[distribute it](distributing-a-package.md).
+[push it](publishing-and-pulling-packages.md).

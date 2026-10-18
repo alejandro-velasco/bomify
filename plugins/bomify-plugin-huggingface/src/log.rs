@@ -17,7 +17,6 @@ pub struct Logger {
 #[derive(Clone, Copy)]
 enum Level {
     Info,
-    Warn,
     Error,
 }
 
@@ -59,10 +58,6 @@ impl Logger {
         self.write(Level::Info, message, attrs);
     }
 
-    pub fn warn(&self, message: &str, attrs: &[(&str, &dyn Display)]) {
-        self.write(Level::Warn, message, attrs);
-    }
-
     pub fn error(&self, message: &str, attrs: &[(&str, &dyn Display)]) {
         self.write(Level::Error, message, attrs);
     }
@@ -82,7 +77,6 @@ impl Logger {
         let time = chrono::Local::now().format("%H:%M:%S").to_string();
         let (name, color) = match level {
             Level::Info => ("INF", "92"),
-            Level::Warn => ("WRN", "93"),
             Level::Error => ("ERR", "91"),
         };
         let mut line = if self.color {

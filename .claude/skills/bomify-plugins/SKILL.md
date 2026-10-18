@@ -1,6 +1,6 @@
 ---
 name: bomify-plugins
-description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/push/remote), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
+description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
 ---
 
 # bomify plugins
@@ -12,7 +12,7 @@ comments or rely on memory of it, since the contracts keep growing.
 
 | Contract | Subcommands | Spec |
 | --- | --- | --- |
-| Component | `component pull/push/remote` | [`contracts/component/v1`](../../../plugins/contracts/component/v1/CONTRACT.md) |
+| Component | `component pull` | [`contracts/component/v1`](../../../plugins/contracts/component/v1/CONTRACT.md) |
 | SBOM generation | `sbom generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
 | Security scanning | `security scan/supported-components` | [`contracts/security/v1`](../../../plugins/contracts/security/v1/CONTRACT.md) |
 | Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`contracts/signing/v1`](../../../plugins/contracts/signing/v1/CONTRACT.md) |
