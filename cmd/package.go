@@ -41,7 +41,6 @@ func packageCmd() *cobra.Command {
 	cmd.AddCommand(saveCmd())
 	cmd.AddCommand(signCmd())
 	cmd.AddCommand(loadCmd())
-	cmd.AddCommand(distributeCmd())
 
 	return cmd
 }

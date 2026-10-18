@@ -3,10 +3,10 @@
 bomify's plugin for [Hugging Face Hub](https://huggingface.co) models. It
 implements two contracts:
 
-- **Component** (`component pull|push|remote`,
-  [contract](../contracts/component/v1/CONTRACT.md)): fetches and
-  publishes `pkg:huggingface/...` models. `bomify build` and `bomify
-  distribute` call these; you normally don't.
+- **Component** (`component pull`,
+  [contract](../contracts/component/v1/CONTRACT.md)): fetches
+  `pkg:huggingface/...` models. `bomify build` calls it; you normally
+  don't.
 - **SBOM generation** (`sbom generate`,
   [contract](../contracts/sbom/v1/CONTRACT.md)): describes a model from
   the Hub's metadata. List it as a `huggingface` source in a `bomify sbom
@@ -19,21 +19,8 @@ a commit; a `repository_url` qualifier (or `$HF_ENDPOINT`) names another
 hub. The version must be the full 40-character commit hash, so every pull
 gets the same files. Datasets, Spaces, and subpaths aren't supported.
 
-- **pull** downloads every file and checks it against the hash the Hub
-  lists. `--check` lists the files and resolves one, without downloading.
-- **push** uploads to `--remote`, `<hub URL>/<namespace>` (e.g.
-  `https://huggingface.co/my-org`), on the main branch of a repository of
-  the same name, created private if it doesn't exist. Only files the
-  repository doesn't already hold go up, large ones through
-  [Xet storage](https://huggingface.co/docs/xet), so pushing again
-  resumes a failed push and an unchanged model commits nothing. It
-  reports the commit the repository ends at, and refuses a repository
-  holding files the model doesn't (other than the `.gitattributes` the
-  Hub creates). A hub without Xet storage isn't supported, and files
-  `.gitignore` excludes are still committed. `--check` only confirms the
-  token.
-- **remote** is `https://huggingface.co/<namespace>`, or the
-  `repository_url` hub's.
+**pull** downloads every file and checks it against the hash the Hub
+lists. `--check` lists the files and resolves one, without downloading.
 
 The hash is the SHA-256 of the sorted `sha256sum` listing of every file,
 so an SBOM author can compute it from a download (after `hf download
@@ -85,30 +72,26 @@ make test-rust            # cargo fmt --check, clippy, and cargo test
 
 ## What's ours, and what's hf-hub's
 
-[hf-hub](https://github.com/huggingface/hf-hub) lists, downloads, creates
-repositories, and commits, sending large files through Xet. On top, this
-crate has:
+[hf-hub](https://github.com/huggingface/hf-hub) lists and downloads. On
+top, this crate has:
 
 - `main.rs`: the [component](../contracts/component/v1/CONTRACT.md) and
   [SBOM generation](../contracts/sbom/v1/CONTRACT.md) contracts' commands,
   flags, and results, which a Go plugin would get from `pkg/plugin`;
 - `log.rs`: logging to `--log` in bomify's format;
-- `refs.rs`: purls, hub addresses, and `--remote`;
+- `refs.rs`: purls and hub addresses;
 - `token.rs`: the token, `$HF_TOKEN`, else `bomify login`'s, else
   `hf auth login`'s;
 - `hub.rs`: the Hub, with the requests hf-hub can't make (see below);
 - `hash.rs`: checking each file against the hash the Hub lists, and the
   tree hash;
-- `transfer.rs`: pull, and push's rules (refusing a repository holding
-  other files, skipping files already there, committing on top of a
-  known parent);
+- `transfer.rs`: pull;
 - `sbom.rs`: the SBOM.
 
 ## hf-hub 1.0.0 workarounds
 
 hf-hub 1.0.0 can't give an LFS file's SHA-256, which pull checks
-downloads against, push compares to skip unchanged files, and the SBOM
-hashes:
+downloads against and the SBOM hashes:
 
 - its tree listing reads it from the key `sha256`, but the Hub sends
   `oid`;

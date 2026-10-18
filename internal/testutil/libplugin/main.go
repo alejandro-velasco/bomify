@@ -47,7 +47,7 @@ func (generator) Generate(_ context.Context, options json.RawMessage, _ *slog.Lo
 }
 
 // component pulls a one-file artifact named after the purl's last path
-// segment, pushes nowhere, and reports "remote-of-<purl>" as the remote.
+// segment.
 type component struct{}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
@@ -59,14 +59,6 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 		return nil, err
 	}
 	return &plugin.Result{OutputPath: out}, nil
-}
-
-func (component) Push(_ context.Context, req plugin.PushRequest) (*plugin.Result, error) {
-	return &plugin.Result{OutputPath: req.Remote}, nil
-}
-
-func (component) Remote(_ context.Context, purl string, _ *slog.Logger) (string, error) {
-	return "remote-of-" + purl, nil
 }
 
 // scanner finds nothing, and supports oci components, and generic ones

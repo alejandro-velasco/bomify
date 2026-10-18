@@ -4,7 +4,7 @@ A plugin binary can implement any of four independent contracts:
 
 | Contract | Subcommands | Used by | `<kind>` names |
 | --- | --- | --- | --- |
-| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull/push/remote` | `build`, `distribute` | a purl type |
+| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull` | `build` | a purl type |
 | [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
 | [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
 | [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
@@ -25,21 +25,16 @@ speaks (see
 
 ## Component plugins
 
-For each SBOM component, `bomify build` and `bomify distribute`:
+For each SBOM component, `bomify build`:
 
 1. **Detect** the kind from the purl type (`plugin.Detect`):
    `pkg:oci/...` is `oci`. A missing or unparseable purl fails.
 2. **Find** `bomify-plugin-<kind>` in `plugins/`. The exception is
    `pkg:bomify-plugin/...`: a plugin binary itself, which `build` copies
-   directly (see [Plugin installation](plugin-installation.md)) and
-   `distribute` skips.
-3. **Delegate**: `component pull --purl --output` or `component push
-   --purl --input --remote`. The plugin prints one JSON `{outputPath,
-   message, hash}`, where `hash` is the SHA-256 of what it pulled.
-   `distribute` first calls `component remote` to learn the component's
-   origin, then picks the destination: `--remote <kind>=<endpoint>`,
-   else the best `conf/distribution.json` rule matching that origin
-   ([`internal/distribution`](https://github.com/alejandro-velasco/bomify/tree/main/internal/distribution)).
+   directly (see [Plugin installation](plugin-installation.md)).
+3. **Delegate**: `component pull --purl --output`. The plugin prints one
+   JSON `{outputPath, message, hash}`, where `hash` is the SHA-256 of
+   what it pulled.
 
 stdout is reserved for the result and stderr for one fatal message.
 Plugins log to `--log`, `logs/<purlHash>.log`, which bomify creates
@@ -47,10 +42,10 @@ fresh before each call, streams to its own stdout under `--verbose`
 (prefixed `[<verb> <purl>]`), and deletes afterwards. `--log-color`
 passes on whether bomify's stdout is a terminal.
 
-`--check` on `build`/`distribute` passes `--check=true` instead of
-`--output`/`--input`, asking the plugin to cheaply confirm the transfer
-would succeed. `plugin.CheckPull`/`CheckPush` are stateless: no pid
-file, manifest, or layer directory, and `build --check` records no build.
+`build --check` passes `--check=true` instead of `--output`, asking the
+plugin to cheaply confirm the pull would succeed. `plugin.CheckPull` is
+stateless: no pid file, manifest, or layer directory, and `build
+--check` records no build.
 
 ![Plugin dispatch sequence](../diagrams/plugin-dispatch.svg)
 

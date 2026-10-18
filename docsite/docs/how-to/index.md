@@ -9,8 +9,6 @@ Task-focused guides. They assume bomify and the plugins you need are
 [command reference](../usage/index.md) rather than repeat it.
 
 - [Building a package](building-a-package.md) from an SBOM.
-- [Distributing a package](distributing-a-package.md)'s components to
-  their own endpoints.
 - [Publishing and pulling packages](publishing-and-pulling-packages.md)
   through an OCI registry.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md).

@@ -19,7 +19,7 @@ const buildShort = "Build the package described by a CycloneDX SBOM"
 
 const buildLong = `Build pulls every component a CycloneDX SBOM describes, each through
 the plugin for its purl type, and records the SBOM as the build so
-push, distribute, tag, and packages can find it.
+push, tag, and packages can find it.
 
 A "pkg:bomify-plugin/..." component is a plugin binary: bomify copies it
 from the path or file:// URL in its "distribution" external reference

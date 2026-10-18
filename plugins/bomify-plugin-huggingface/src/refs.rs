@@ -1,4 +1,4 @@
-//! Purls, hub addresses, and remotes: what a component names, and where.
+//! Purls and hub addresses: what a component names, and where.
 
 use std::str::FromStr;
 
@@ -13,8 +13,8 @@ pub const PURL_TYPE: &str = "huggingface";
 /// used when none is given.
 pub const DEFAULT_ENDPOINT: &str = "https://huggingface.co";
 
-/// The branch a Hub repository starts with: push commits to it, and sbom
-/// generate describes it unless given a revision.
+/// The branch a Hub repository starts with, which sbom generate describes
+/// unless given a revision.
 pub const DEFAULT_BRANCH: &str = "main";
 
 /// The environment variable hf reads another hub's address from.
@@ -38,15 +38,6 @@ impl Ref {
     /// The repository's "<namespace>/<name>", as hf takes it.
     pub fn repo_id(&self) -> String {
         format!("{}/{}", self.namespace, self.name)
-    }
-
-    /// Where the ref comes from: the hub's URL (its repository_url, else
-    /// DEFAULT_ENDPOINT) and its namespace, e.g.
-    /// "https://huggingface.co/meta-llama", in the shape push's --remote
-    /// takes.
-    pub fn remote(&self) -> String {
-        let endpoint = self.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT);
-        format!("{endpoint}/{}", self.namespace)
     }
 }
 
@@ -114,38 +105,6 @@ fn endpoint_of(repository_url: &str) -> Result<String> {
     Ok(repository_url.trim_end_matches('/').to_string())
 }
 
-/// Where push uploads to: a namespace on a hub, as its --remote names it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Remote {
-    /// The hub's base URL, e.g. "https://huggingface.co".
-    pub endpoint: String,
-    /// The user or organization to upload into.
-    pub namespace: String,
-}
-
-impl Remote {
-    /// The "<namespace>/<name>" of the repository name in the namespace.
-    pub fn repo_id(&self, name: &str) -> String {
-        format!("{}/{name}", self.namespace)
-    }
-}
-
-/// Parses push's --remote, "https://<host>[/<path>]/<namespace>".
-pub fn parse_remote(remote: &str) -> Result<Remote> {
-    let trimmed = remote.trim_end_matches('/');
-    let Some((endpoint, namespace)) = trimmed.rsplit_once('/') else {
-        bail!("--remote {remote:?} isn't <hub URL>/<namespace>, e.g. {DEFAULT_ENDPOINT}/my-org");
-    };
-    if endpoint.is_empty() || namespace.is_empty() || endpoint_of(endpoint).is_err() {
-        bail!("--remote {remote:?} isn't <hub URL>/<namespace>, e.g. {DEFAULT_ENDPOINT}/my-org");
-    }
-    let parsed = Remote {
-        endpoint: endpoint.to_string(),
-        namespace: namespace.to_string(),
-    };
-    Ok(parsed)
-}
-
 /// The hub to use: endpoint, else $HF_ENDPOINT, else huggingface.co. It
 /// must be an http or https URL with a host; it's returned without a
 /// trailing slash.
@@ -198,7 +157,6 @@ mod tests {
         assert_eq!(reference.repo_id(), "microsoft/phi-4");
         assert_eq!(reference.revision, COMMIT);
         assert_eq!(reference.endpoint, None);
-        assert_eq!(reference.remote(), "https://huggingface.co/microsoft");
 
         let mirrored = resolve(&format!(
             "pkg:huggingface/org/model@{COMMIT}?repository_url=https://hub.example.com/mirror/"
@@ -208,7 +166,6 @@ mod tests {
             mirrored.endpoint.as_deref(),
             Some("https://hub.example.com/mirror")
         );
-        assert_eq!(mirrored.remote(), "https://hub.example.com/mirror/org");
     }
 
     #[test]
@@ -241,46 +198,6 @@ mod tests {
                 "resolve({purl}) = {error:#}, want {want:?}"
             );
         }
-    }
-
-    fn remote(endpoint: &str, namespace: &str) -> Remote {
-        Remote {
-            endpoint: endpoint.to_string(),
-            namespace: namespace.to_string(),
-        }
-    }
-
-    #[test]
-    fn parses_remotes() {
-        assert_eq!(
-            parse_remote("https://huggingface.co/my-org").unwrap(),
-            remote("https://huggingface.co", "my-org")
-        );
-        assert_eq!(
-            parse_remote("https://hub.example.com/mirror/my-org/").unwrap(),
-            remote("https://hub.example.com/mirror", "my-org")
-        );
-        for text in [
-            "my-org",
-            "huggingface.co/my-org",
-            "https://huggingface.co/",
-            "https://my-org",
-            "http://huggingface.co/my-org",
-        ] {
-            assert!(
-                parse_remote(text).is_err(),
-                "parse_remote({text}) succeeded"
-            );
-        }
-        // What remote reports, push takes back.
-        let reference = resolve(&format!(
-            "pkg:huggingface/org/model@{COMMIT}?repository_url=https://hub.example.com"
-        ))
-        .unwrap();
-        assert_eq!(
-            parse_remote(&reference.remote()).unwrap(),
-            remote("https://hub.example.com", "org")
-        );
     }
 
     #[test]

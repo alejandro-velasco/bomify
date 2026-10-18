@@ -27,9 +27,8 @@ nowhere else.
 - **`provenance/<sbomHash>.json`** is a build's SLSA provenance, if it
   was built with `--provenance` (see [Build provenance](provenance.md)).
 - **`package/repositories.json`** maps `repo -> tag -> sbom hash`.
-- **`conf/*.json`** are the rule files: `distribution.json` (`bomify
-  distribute` endpoints), `trust.json` (signature verification), and
-  `scan.json` (scan policy). All three go through
+- **`conf/*.json`** are the rule files: `trust.json` (signature
+  verification) and `scan.json` (scan policy). Both go through
   [`internal/rules`](https://github.com/alejandro-velasco/bomify/tree/main/internal/rules): a JSON array with one rule per
   identity, written atomically, resolved by the most specific
   `/`-segment prefix match ([`internal/prefix`](https://github.com/alejandro-velasco/bomify/tree/main/internal/prefix)).

@@ -12,10 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
-	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
-
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/cli"
 	"helm.sh/helm/v4/pkg/registry"
@@ -26,13 +22,6 @@ import (
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// keychain resolves registry credentials from bomify's shared credential
-// store (see pkg/auth), for CheckPush's remote.CheckPushPermission probe
-// — a Helm OCI chart is an ordinary OCI Distribution artifact, so
-// go-containerregistry's permission check applies here too, same as
-// bomify-plugin-oci.
-var keychain = authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get))
-
 // newRegistryClient is a var — rather than a plain func — solely so tests
 // can substitute a different constructor (e.g. one that enables plain
 // HTTP for a local, in-process test registry) without changing real CLI
@@ -42,7 +31,7 @@ var newRegistryClient = defaultRegistryClient
 
 // defaultRegistryClient builds a Helm OCI registry client authenticated
 // with host's credentials. A host with nothing stored gets an anonymous
-// client, exactly like a bomify pull/push against a public registry.
+// client, exactly like a bomify pull against a public registry.
 func defaultRegistryClient(host string) (*registry.Client, error) {
 	var opts []registry.ClientOption
 
@@ -61,7 +50,7 @@ func defaultRegistryClient(host string) (*registry.Client, error) {
 	return client, nil
 }
 
-// newActionConfig builds the Helm SDK action configuration Pull, Push and
+// newActionConfig builds the Helm SDK action configuration Pull and
 // Generate run their actions with. Helm v4's Configuration carries its
 // own internal logger, set up by NewConfiguration (a bare struct literal
 // leaves it unset); it's pointed at logger so anything the SDK itself
@@ -284,61 +273,4 @@ func entryURL(repositoryURL string, entry *repo.ChartVersion) string {
 		return entry.URLs[0]
 	}
 	return base.ResolveReference(ref).String()
-}
-
-// Push uploads the chart a prior Pull wrote into inputDir to remote,
-// using the Helm SDK's push action — the same implementation behind the
-// `helm push` CLI command.
-//
-// Unlike Pull, Push only supports OCI registries (remote must be an
-// "oci://..." reference): the Helm SDK registers no pusher for classic
-// HTTP(S) chart repositories, since they're read-only static index.yaml
-// listings with no upload API.
-func Push(inputDir string, ref Ref, remote string, logger *slog.Logger) (*plugin.Result, error) {
-	path := filepath.Join(inputDir, ref.Filename())
-
-	registryClient, err := newRegistryClient(registryHost(remote))
-	if err != nil {
-		return nil, err
-	}
-
-	push := action.NewPushWithOpts(action.WithPushConfig(newActionConfig(registryClient, logger)))
-	push.Settings = cli.New()
-
-	logger.Info("pushing chart", "path", path, "remote", remote)
-	if _, err := push.Run(path, remote); err != nil {
-		return nil, fmt.Errorf("push %s to %s: %w", path, remote, err)
-	}
-
-	// The push action appends "/<chart-name>:<chart-version>" (read from
-	// the chart archive's own metadata) onto remote itself; mirror that
-	// here purely to report where it landed.
-	dst := strings.TrimSuffix(remote, "/") + "/" + ref.Name + ":" + ref.Version
-	logger.Info("push complete", "destination", dst)
-
-	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", path, dst)}, nil
-}
-
-// CheckPush verifies the caller is authorized to push ref to remote,
-// without publishing anything, via remote.CheckPushPermission (see the
-// keychain doc comment). Like Push, it's OCI-only; a classic HTTP(S)
-// remote fails the same way a real Push would.
-func CheckPush(ref Ref, remote string, logger *slog.Logger) (*plugin.Result, error) {
-	if !registry.IsOCI(remote) {
-		return nil, fmt.Errorf("push only supports OCI registries, got %q", remote)
-	}
-
-	dst := strings.TrimSuffix(strings.TrimPrefix(remote, registry.OCIScheme+"://"), "/") + "/" + ref.Name + ":" + ref.Version
-	nameRef, err := name.ParseReference(dst)
-	if err != nil {
-		return nil, fmt.Errorf("parse destination %q: %w", dst, err)
-	}
-
-	logger.Info("checking push permission", "destination", dst)
-	if err := gcrremote.CheckPushPermission(nameRef, keychain, http.DefaultTransport); err != nil {
-		return nil, fmt.Errorf("check push permission for %s: %w", dst, err)
-	}
-	logger.Info("check complete", "destination", dst)
-
-	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("authorized to push to %s", dst)}, nil
 }

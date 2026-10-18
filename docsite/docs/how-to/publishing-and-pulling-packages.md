@@ -9,12 +9,6 @@ its config, each component as a layer), with any vulnerability reports
 attached alongside. `bomify pull` restores it into another data
 directory. Any OCI registry works.
 
-!!! tip "push or distribute?"
-    `push` moves the *package* for another bomify to `pull`. To publish
-    each *component* to its own native destination (images to an image
-    registry, charts to a chart repository), see
-    [Distributing a package](distributing-a-package.md).
-
 ## 1. Log in
 
 Needed for pushes, and for pulls from private registries:

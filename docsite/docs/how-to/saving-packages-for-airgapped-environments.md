@@ -30,8 +30,7 @@ cat packages.tar | bomify load   # stdin
 ```
 
 Every package is restored, reports included, and its tags recorded, just
-as `bomify pull` would. `packages`, `push`, and `distribute` then work
-offline.
+as `bomify pull` would. `packages` and `push` then work offline.
 
 To verify signatures without network access, sign with a key pair (see
 [Signing and verifying packages](signing-and-verifying-packages.md#5-offline-tarballs)).

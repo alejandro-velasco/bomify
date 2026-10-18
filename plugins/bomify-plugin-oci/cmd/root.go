@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/spf13/cobra"
 
@@ -16,10 +15,7 @@ import (
 func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("oci", "bomify plugin for container/OCI image components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
-			Pull:       "Download the component's image and save it as an OCI Image Layout",
-			Push:       "Push the OCI Image Layout a prior pull wrote into --input to a remote endpoint",
-			Remote:     "Report the registry/namespace this component's purl names",
-			RemoteFlag: "remote registry/repository to push to",
+			Pull: "Download the component's image and save it as an OCI Image Layout",
 		}))
 }
 
@@ -38,20 +34,4 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 		return image.CheckPull(ref, req.Logger)
 	}
 	return image.Pull(ref, req.Output, req.Logger)
-}
-
-func (component) Push(_ context.Context, req plugin.PushRequest) (*plugin.Result, error) {
-	if req.Check {
-		return image.CheckPush(req.Purl, req.Remote, req.Logger)
-	}
-	return image.Push(req.Input, req.Purl, req.Remote, req.Logger)
-}
-
-func (component) Remote(_ context.Context, purl string, logger *slog.Logger) (string, error) {
-	location, err := image.Location(purl)
-	if err != nil {
-		return "", err
-	}
-	logger.Info("resolved location", "location", location)
-	return location, nil
 }

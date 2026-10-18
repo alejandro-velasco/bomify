@@ -6,13 +6,12 @@ func TestPackageCmdHasVerbAliases(t *testing.T) {
 	pkg := packageCmd()
 
 	want := map[string]string{
-		"build":      "build <sbom-file>",
-		"push":       "push <tag>",
-		"pull":       "pull <reference>",
-		"tag":        "tag <source-tag> <destination-tag>",
-		"save":       "save <tag>...",
-		"load":       "load",
-		"distribute": "distribute <tag>",
+		"build": "build <sbom-file>",
+		"push":  "push <tag>",
+		"pull":  "pull <reference>",
+		"tag":   "tag <source-tag> <destination-tag>",
+		"save":  "save <tag>...",
+		"load":  "load",
 	}
 
 	for name, wantUse := range want {

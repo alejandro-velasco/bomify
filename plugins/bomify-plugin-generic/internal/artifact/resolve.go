@@ -14,8 +14,7 @@ import (
 type Ref struct {
 	Name    string
 	Version string
-	// DownloadURL is where the artifact is fetched from (pull) and, unless
-	// overridden by --remote, the base for where it's uploaded to (push).
+	// DownloadURL is where the artifact is fetched from.
 	DownloadURL string
 }
 

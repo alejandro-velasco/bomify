@@ -1,8 +1,7 @@
 // Package rules implements what bomify's JSON rule files under
-// "<data-dir>/conf" — distribution.json (internal/distribution),
-// trust.json and signers.json (internal/signature), and scan.json
-// (internal/security) — have in common: storage as an unordered JSON
-// array with at most one rule per identity, read strictly (an unknown
+// "<data-dir>/conf" — trust.json and signers.json (internal/signature),
+// and scan.json (internal/security) — have in common: storage as an
+// unordered JSON array with at most one rule per identity, read strictly (an unknown
 // field is an error, so a typo can't silently drop a requirement), and
 // resolution by most specific "/"-segment prefix match (see
 // internal/prefix). What a rule means, and what makes one valid, is left
@@ -69,16 +68,16 @@ func (f File[R]) Remove(key R) error {
 	return fmt.Errorf("no such rule: %s", want)
 }
 
-// Best returns the rule score ranks highest among those it accepts (ok),
+// best returns the rule score ranks highest among those it accepts (ok),
 // the earliest winning ties; ok is false if it accepts none.
-func Best[R any](rules []R, score func(R) (int, bool)) (best R, ok bool) {
+func best[R any](rules []R, score func(R) (int, bool)) (winner R, ok bool) {
 	top := -1
 	for _, rule := range rules {
 		if s, accepted := score(rule); accepted && s > top {
-			best, top, ok = rule, s, true
+			winner, top, ok = rule, s, true
 		}
 	}
-	return best, ok
+	return winner, ok
 }
 
 // ForReference returns the rule whose match (see match) is the most
@@ -87,15 +86,15 @@ func Best[R any](rules []R, score func(R) (int, bool)) (best R, ok bool) {
 // package.
 func ForReference[R any](rules []R, ref string, match func(R) string) (R, bool) {
 	repository := prefix.Repository(ref)
-	return Best(rules, func(r R) (int, bool) {
-		return PrefixScore(repository, match(r))
+	return best(rules, func(r R) (int, bool) {
+		return prefixScore(repository, match(r))
 	})
 }
 
-// PrefixScore scores a rule's match against address: its number of
+// prefixScore scores a rule's match against address: its number of
 // segments (see prefix.Segments) if it matches (see prefix.Matches), so a
 // more specific match ranks higher.
-func PrefixScore(address, match string) (int, bool) {
+func prefixScore(address, match string) (int, bool) {
 	if !prefix.Matches(address, match) {
 		return 0, false
 	}

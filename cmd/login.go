@@ -16,7 +16,7 @@ import (
 const loginShort = "Log in to an OCI registry, or store credentials for another host"
 
 const loginLong = `Login authenticates against an OCI registry (default: docker.io) and
-stores the credentials for later build/distribute/pull/push
+stores the credentials for later build/pull/push
 operations to reuse.
 
 Credentials are stored through <data-dir>/conf/auth.json, in the OS

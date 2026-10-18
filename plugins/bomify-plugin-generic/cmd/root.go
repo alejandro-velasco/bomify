@@ -14,12 +14,9 @@ import (
 // NewRootCmd builds the bomify-plugin-generic root command, implementing the
 // component plugin contract (see plugins/contracts/component/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
-	return plugin.NewRootCommand("generic", "bomify plugin for plain HTTP GET/PUT artifacts",
+	return plugin.NewRootCommand("generic", "bomify plugin for plain HTTP artifacts",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
-			Pull:       "GET the artifact's download_url and save it",
-			Push:       "PUT the artifact a prior pull wrote into --input to --remote",
-			Remote:     "Report the download URL this component's purl names",
-			RemoteFlag: "destination URL to PUT the artifact to",
+			Pull: "GET the artifact's download_url and save it",
 		}))
 }
 
@@ -35,22 +32,6 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 		return artifact.CheckPull(ref, req.Logger)
 	}
 	return artifact.Pull(ref, req.Output, req.Logger)
-}
-
-func (component) Push(_ context.Context, req plugin.PushRequest) (*plugin.Result, error) {
-	if req.Check {
-		return artifact.CheckPush(req.Remote, req.Logger)
-	}
-	ref, err := resolve(req.Purl, req.Logger)
-	if err != nil {
-		return nil, err
-	}
-	return artifact.Push(req.Input, ref, req.Remote, req.Logger)
-}
-
-func (component) Remote(_ context.Context, purl string, logger *slog.Logger) (string, error) {
-	ref, err := resolve(purl, logger)
-	return ref.DownloadURL, err
 }
 
 func resolve(purl string, logger *slog.Logger) (artifact.Ref, error) {

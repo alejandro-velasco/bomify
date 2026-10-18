@@ -1,8 +1,7 @@
 // Package prefix implements the "/"-separated, segment-boundary prefix
-// matching that bomify's rule files share: conf/distribution.json's
-// Match against a component's origin (see internal/distribution), and
-// conf/trust.json's and conf/scan.json's Match against a package
-// reference (see internal/signature and internal/security).
+// matching that bomify's rule files share: conf/trust.json's and
+// conf/scan.json's Match against a package reference (see
+// internal/signature and internal/security).
 package prefix
 
 import "strings"
@@ -10,14 +9,14 @@ import "strings"
 // Matches reports whether match — a "/"-separated prefix, e.g.
 // "docker.io/myorg" — matches address at segment boundaries:
 // "docker.io/org" matches "docker.io/org/repo" but not
-// "docker.io/organization". Both are normalized first (see Normalize). An
+// "docker.io/organization". Both are normalized first (see normalize). An
 // empty match matches any address, including an empty one.
 func Matches(address, match string) bool {
-	match = Normalize(match)
+	match = normalize(match)
 	if match == "" {
 		return true
 	}
-	address = Normalize(address)
+	address = normalize(address)
 	if address == "" {
 		return false
 	}
@@ -39,17 +38,17 @@ func Matches(address, match string) bool {
 // rules by specificity. An empty match — matching any address — is the
 // least specific, at 0.
 func Segments(match string) int {
-	match = Normalize(match)
+	match = normalize(match)
 	if match == "" {
 		return 0
 	}
 	return len(strings.Split(match, "/"))
 }
 
-// Normalize strips address's URL scheme (e.g. "oci://"), if any, and any
+// normalize strips address's URL scheme (e.g. "oci://"), if any, and any
 // leading/trailing "/", so values written by hand (with a scheme or a
 // trailing slash) still compare equal to machine-produced ones.
-func Normalize(address string) string {
+func normalize(address string) string {
 	if i := strings.Index(address, "://"); i >= 0 {
 		address = address[i+len("://"):]
 	}

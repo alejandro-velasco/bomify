@@ -2,7 +2,7 @@
 //! host> --verify=false" stored, else the one "hf auth login" stored.
 //! It's resolved here, rather than left to
 //! hf-hub, because the plugin also makes requests of its own (see
-//! Hub::list_repository), and hf-hub doesn't say which token it found.
+//! Hub::lfs_sha256), and hf-hub doesn't say which token it found.
 
 use std::collections::HashMap;
 use std::io::Write;

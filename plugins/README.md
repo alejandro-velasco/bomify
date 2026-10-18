@@ -3,9 +3,9 @@
 The first-party plugins. Each directory is a standalone
 `bomify-plugin-<kind>` binary implementing one or more contracts:
 
-- **Component** (`component pull|push|remote`,
+- **Component** (`component pull`,
   [`contracts/component/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
-  fetches and publishes the components an SBOM describes.
+  fetches the components an SBOM describes.
 - **SBOM generation** (`sbom generate`,
   [`contracts/sbom/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   builds an SBOM for a deployment medium.
@@ -43,7 +43,7 @@ of its results:
 ```
 plugins/contracts/
 ├── contract-result.schema.json    the "contract" command's result, below
-├── component/v1/                  CONTRACT.md, result, remote-result
+├── component/v1/                  CONTRACT.md, result
 ├── sbom/v1/                       CONTRACT.md, generate-output
 ├── security/v1/                   CONTRACT.md, security-result, supported-components-result
 └── signing/v1/                    CONTRACT.md, sign-result, verify-result,
@@ -174,7 +174,7 @@ way by `make plugin-packages` and `make push-plugin-packages` (see
 
 ## bomify-plugin-oci
 
-Pulls and pushes `pkg:oci/...` and `pkg:docker/...` images. The
+Pulls `pkg:oci/...` and `pkg:docker/...` images. The
 reference comes from the purl's `tag` qualifier, else a digest-shaped
 version, else a plain tag, else the bare repository; `repository_url`
 overrides the registry address.
@@ -183,8 +183,7 @@ overrides the registry address.
 
 - **Component**: pulls from HTTP(S) chart repositories
   (`pkg:helm/<name>@<version>?repository_url=https://...`) and OCI
-  registries (`repository_url=oci://...`). `push` and `push --check`
-  support OCI only, since classic repositories are read-only.
+  registries (`repository_url=oci://...`).
 - **SBOM generation**: renders a chart locally, as `helm template` does,
   and reports every image it references plus the chart itself. See
   [its README](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md)
@@ -196,18 +195,14 @@ larger than the others.
 ## bomify-plugin-generic
 
 Handles `pkg:generic/<name>@<version>?download_url=<url>`: `pull` GETs
-`download_url`; `push` PUTs the file to `--remote` exactly as given
-(with a real `Content-Length`), which suits presigned upload URLs.
-`push --check` only tries a HEAD, since a presigned URL can't be checked
-without writing to it.
+`download_url`.
 
 ## bomify-plugin-huggingface
 
 - **Component**: pulls a [Hugging Face Hub](https://huggingface.co)
   model repository at a commit
   (`pkg:huggingface/<namespace>/<name>@<commit>`, with `repository_url`
-  naming another hub), and pushes it to another namespace or hub, large
-  files through [Xet storage](https://huggingface.co/docs/xet).
+  naming another hub).
 - **SBOM generation**: describes a model as a `machine-learning-model`
   component pinned to a commit, with its hash and a model card from the
   Hub's metadata, without downloading the weights. See

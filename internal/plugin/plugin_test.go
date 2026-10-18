@@ -21,14 +21,14 @@ import (
 )
 
 // testLogger returns a non-verbose logger that discards its output,
-// standing in for the real logger Pull/Push otherwise use to decide
+// standing in for the real logger Pull otherwise uses to decide
 // whether to stream a plugin's log file to stdout.
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 // verboseTestLogger is like testLogger, but with debug-level logging
-// enabled, so Pull/Push stream the plugin's log file to stdout.
+// enabled, so Pull streams the plugin's log file to stdout.
 func verboseTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
@@ -704,60 +704,6 @@ func TestMergeHash(t *testing.T) {
 	}
 }
 
-// simulatePriorPull creates baseDir's component directory and manifest as
-// a successful Pull would, so Push has something to find.
-func simulatePriorPull(t *testing.T, baseDir string, component cdx.Component) {
-	t.Helper()
-
-	if err := os.MkdirAll(layout.ComponentLayer(baseDir, component.PackageURL), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := WriteManifest(baseDir, component, pluginlib.Hash{}); err != nil {
-		t.Fatalf("writeManifest: %v", err)
-	}
-}
-
-func TestPush(t *testing.T) {
-	bin := buildFakePlugin(t)
-	baseDir := t.TempDir()
-
-	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-
-	simulatePriorPull(t, baseDir, component)
-
-	result, err := Push(bin, component, baseDir, "registry.example.com/mirror", testLogger())
-	if err != nil {
-		t.Fatalf("Push returned error: %v", err)
-	}
-
-	if want := "registry.example.com/mirror/nginx:1.27"; result.OutputPath != want {
-		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
-	}
-}
-
-func TestPushWithoutPriorPull(t *testing.T) {
-	bin := buildFakePlugin(t)
-
-	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-
-	if _, err := Push(bin, component, t.TempDir(), "registry.example.com/mirror", testLogger()); err == nil {
-		t.Fatal("Push() with no prior Pull: expected error, got nil")
-	}
-}
-
-func TestPushFailure(t *testing.T) {
-	bin := buildFakePlugin(t)
-	baseDir := t.TempDir()
-
-	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
-
-	simulatePriorPull(t, baseDir, component)
-
-	if _, err := Push(bin, component, baseDir, "registry.example.com/mirror", testLogger()); err == nil {
-		t.Fatal("Push() with failing plugin: expected error, got nil")
-	}
-}
-
 func TestCheckPull(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
@@ -780,7 +726,7 @@ func TestCheckPullDoesNotRequirePriorState(t *testing.T) {
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
 	// Unlike Pull, CheckPull never creates componentDir, a manifest, or a
-	// pid file — it's a pure query, exactly like Remote.
+	// pid file — it's a pure query.
 	baseDir := t.TempDir()
 	if _, err := CheckPull(bin, component, baseDir, testLogger()); err != nil {
 		t.Fatalf("CheckPull returned error: %v", err)
@@ -814,73 +760,6 @@ func TestCheckPullHashMismatchFails(t *testing.T) {
 
 	if _, err := CheckPull(bin, component, t.TempDir(), testLogger()); err == nil {
 		t.Fatal("CheckPull() with mismatched hash: expected error, got nil")
-	}
-}
-
-func TestCheckPush(t *testing.T) {
-	bin := buildFakePlugin(t)
-
-	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-
-	// Unlike Push, CheckPush requires no prior Pull for this component.
-	result, err := CheckPush(bin, component, t.TempDir(), "registry.example.com/mirror", testLogger())
-	if err != nil {
-		t.Fatalf("CheckPush returned error: %v", err)
-	}
-
-	if want := "checked:registry.example.com/mirror/nginx:1.27"; result.OutputPath != want {
-		t.Errorf("OutputPath = %q, want %q", result.OutputPath, want)
-	}
-}
-
-func TestCheckPushFailure(t *testing.T) {
-	bin := buildFakePlugin(t)
-
-	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
-
-	if _, err := CheckPush(bin, component, t.TempDir(), "registry.example.com/mirror", testLogger()); err == nil {
-		t.Fatal("CheckPush() with failing plugin: expected error, got nil")
-	}
-}
-
-func TestRemote(t *testing.T) {
-	bin := buildFakePlugin(t)
-	baseDir := t.TempDir()
-
-	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-
-	remote, err := Remote(bin, component, baseDir, testLogger())
-	if err != nil {
-		t.Fatalf("Remote returned error: %v", err)
-	}
-
-	if want := "fake-origin/nginx"; remote != want {
-		t.Errorf("Remote() = %q, want %q", remote, want)
-	}
-}
-
-func TestRemoteFailure(t *testing.T) {
-	bin := buildFakePlugin(t)
-
-	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
-
-	if _, err := Remote(bin, component, t.TempDir(), testLogger()); err == nil {
-		t.Fatal("Remote() with failing plugin: expected error, got nil")
-	}
-}
-
-func TestRemoteRemovesLogFileAfterSuccess(t *testing.T) {
-	bin := buildFakePlugin(t)
-	baseDir := t.TempDir()
-
-	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
-
-	if _, err := Remote(bin, component, baseDir, testLogger()); err != nil {
-		t.Fatalf("Remote returned error: %v", err)
-	}
-
-	if _, err := os.Stat(layout.ComponentLog(baseDir, component.PackageURL)); !os.IsNotExist(err) {
-		t.Errorf("log file still exists after Remote: %v", err)
 	}
 }
 

@@ -267,11 +267,6 @@ func TestBuildPluginPackage(t *testing.T) {
 		t.Errorf("plugin binary in package = %q, %v", data, err)
 	}
 
-	// distribute has nowhere to send a plugin binary, and needs no plugin
-	// to skip it.
-	if _, err := runRootCmd(t, baseDir, "distribute", "fake:v1.0.0"); err != nil {
-		t.Errorf("distribute: %v", err)
-	}
 }
 
 func TestPluginListCmd(t *testing.T) {

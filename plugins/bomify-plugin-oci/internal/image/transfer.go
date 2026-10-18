@@ -3,30 +3,18 @@ package image
 import (
 	"fmt"
 	"log/slog"
-	"net/http"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
-	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/package-url/packageurl-go"
 
 	"github.com/alejandro-velasco/bomify/pkg/auth"
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// keychain resolves registry credentials from bomify's shared credential
+// craneAuth resolves registry credentials from bomify's shared credential
 // store (see pkg/auth) rather than crane's own default keychain, so
-// `bomify login` covers this plugin too. Kept as a raw authn.Keychain,
-// not just the crane.Option craneAuth wraps it in, since CheckPush needs
-// it directly for remote.CheckPushPermission.
-var keychain = authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get))
-
-// craneAuth is keychain adapted to a crane.Option, for the crane-level
-// calls (Pull, Push).
-var craneAuth = crane.WithAuthFromKeychain(keychain)
+// `bomify login` covers this plugin too.
+var craneAuth = crane.WithAuthFromKeychain(authn.NewKeychainFromHelper(auth.HelperFunc(auth.Get)))
 
 // Pull downloads ref and saves it into outputDir as an OCI Image Layout,
 // so the pulled artifact is in OCI format rather than a docker-style
@@ -77,90 +65,4 @@ func CheckPull(ref string, logger *slog.Logger) (*plugin.Result, error) {
 	logger.Info("check complete", "ref", ref, "hash", hash.Value)
 
 	return &plugin.Result{OutputPath: ref, Message: fmt.Sprintf("%s exists and is pullable", ref), Hash: hash}, nil
-}
-
-// Push reads the OCI Image Layout a prior Pull wrote into inputDir and
-// pushes it to a tag under remote.
-func Push(inputDir string, purlString string, remote string, logger *slog.Logger) (*plugin.Result, error) {
-	logger.Info("reading OCI image layout", "input", inputDir)
-	idx, err := layout.ImageIndexFromPath(inputDir)
-	if err != nil {
-		return nil, fmt.Errorf("read OCI layout at %s: %w", inputDir, err)
-	}
-
-	manifest, err := idx.IndexManifest()
-	if err != nil {
-		return nil, fmt.Errorf("read OCI layout manifest at %s: %w", inputDir, err)
-	}
-	if len(manifest.Manifests) == 0 {
-		return nil, fmt.Errorf("no images found in OCI layout at %s", inputDir)
-	}
-
-	img, err := idx.Image(manifest.Manifests[0].Digest)
-	if err != nil {
-		return nil, fmt.Errorf("read image from OCI layout at %s: %w", inputDir, err)
-	}
-
-	dst, err := destinationReference(remote, purlString)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Info("pushing image", "destination", dst)
-	if err := crane.Push(img, dst, craneAuth); err != nil {
-		return nil, fmt.Errorf("push %s to %s: %w", inputDir, dst, err)
-	}
-	logger.Info("push complete", "destination", dst)
-
-	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("pushed %s to %s", inputDir, dst)}, nil
-}
-
-// CheckPush verifies the caller is authorized to push purlString to
-// remote, without publishing anything: remote.CheckPushPermission
-// initiates an upload session and immediately cancels it.
-func CheckPush(purlString string, remote string, logger *slog.Logger) (*plugin.Result, error) {
-	dst, err := destinationReference(remote, purlString)
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := name.ParseReference(dst)
-	if err != nil {
-		return nil, fmt.Errorf("parse destination %q: %w", dst, err)
-	}
-
-	logger.Info("checking push permission", "destination", dst)
-	if err := gcrremote.CheckPushPermission(ref, keychain, http.DefaultTransport); err != nil {
-		return nil, fmt.Errorf("check push permission for %s: %w", dst, err)
-	}
-	logger.Info("check complete", "destination", dst)
-
-	return &plugin.Result{OutputPath: dst, Message: fmt.Sprintf("authorized to push to %s", dst)}, nil
-}
-
-// destinationReference derives a "<remote>/<name>" reference from
-// purlString, preferring the "tag" qualifier, then a digest-shaped version
-// (joined with "@"), then a plain tag-shaped version (joined with ":"), and
-// finally the "latest" tag when purlString declares neither — the same
-// precedence Resolve uses for pull.
-func destinationReference(remote, purlString string) (string, error) {
-	purl, err := packageurl.FromString(purlString)
-	if err != nil {
-		return "", fmt.Errorf("parse purl %q: %w", purlString, err)
-	}
-
-	remote = strings.TrimSuffix(remote, "/")
-	repository := remote + "/" + purl.Name
-
-	qualifiers := purl.Qualifiers.Map()
-	switch {
-	case qualifiers["tag"] != "":
-		return repository + ":" + qualifiers["tag"], nil
-	case strings.HasPrefix(purl.Version, "sha256:"):
-		return repository + "@" + purl.Version, nil
-	case purl.Version != "":
-		return repository + ":" + purl.Version, nil
-	default:
-		return repository + ":latest", nil
-	}
 }

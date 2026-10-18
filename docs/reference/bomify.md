@@ -35,8 +35,6 @@ bomify [flags]
 
 * [bomify build](bomify_build.md)	 - Build the package described by a CycloneDX SBOM
 * [bomify completion](bomify_completion.md)	 - Generate the autocompletion script for the specified shell
-* [bomify distribute](bomify_distribute.md)	 - Publish a locally available package to a remote endpoint
-* [bomify distribution](bomify_distribution.md)	 - Manage remote-endpoint rules for bomify distribute
 * [bomify load](bomify_load.md)	 - Load packages from a tarball
 * [bomify login](bomify_login.md)	 - Log in to an OCI registry, or store credentials for another host
 * [bomify logout](bomify_logout.md)	 - Log out from an OCI registry

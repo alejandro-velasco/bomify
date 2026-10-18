@@ -35,7 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Component plugin subcommands (pull/push/remote) — see plugins/contracts/component/v1/CONTRACT.md
+    /// Component plugin subcommands (pull) — see plugins/contracts/component/v1/CONTRACT.md
     Component {
         #[command(subcommand)]
         command: ComponentCommand,
@@ -67,25 +67,6 @@ enum ComponentCommand {
         /// verify the component exists and is pullable without downloading it
         #[arg(long, action = ArgAction::Set, num_args = 0..=1, require_equals = true, default_value = "false", default_missing_value = "true")]
         check: bool,
-    },
-    /// Upload a pulled model repository to --remote as one commit
-    Push {
-        #[command(flatten)]
-        common: CommonFlags,
-        /// directory a prior pull wrote the component into (required unless --check)
-        #[arg(long)]
-        input: Option<PathBuf>,
-        /// the hub and namespace to upload into, e.g. https://huggingface.co/my-org; the repository keeps the purl's name, and is created private if it doesn't exist
-        #[arg(long)]
-        remote: String,
-        /// verify pushing to remote would succeed, without publishing anything
-        #[arg(long, action = ArgAction::Set, num_args = 0..=1, require_equals = true, default_value = "false", default_missing_value = "true")]
-        check: bool,
-    },
-    /// Report the hub and namespace this component's purl names
-    Remote {
-        #[command(flatten)]
-        common: CommonFlags,
     },
 }
 
@@ -199,17 +180,6 @@ fn run_component(command: ComponentCommand) -> Result<()> {
         } => with_reference(&common, |reference, logger| {
             run_pull(reference, output.as_deref(), check, logger)
         }),
-        ComponentCommand::Push {
-            common,
-            input,
-            remote,
-            check,
-        } => with_reference(&common, |reference, logger| {
-            run_push(reference, input.as_deref(), &remote, check, logger)
-        }),
-        ComponentCommand::Remote { common } => {
-            with_reference(&common, |reference, _| run_remote(reference))
-        }
     }
 }
 
@@ -251,39 +221,6 @@ fn run_pull(reference: &Ref, output: Option<&Path>, check: bool, logger: &Logger
             bail!("--output is required unless --check");
         };
         transfer::pull(&hub, reference, output, logger)?
-    };
-    print_json(&result)
-}
-
-fn run_push(
-    reference: &Ref,
-    input: Option<&Path>,
-    remote: &str,
-    check: bool,
-    logger: &Logger,
-) -> Result<()> {
-    let remote = refs::parse_remote(remote)?;
-    let hub = Hub::connect(Some(&remote.endpoint), logger)?;
-    let result = if check {
-        transfer::check_push(&hub, reference, &remote)?
-    } else {
-        let Some(input) = input else {
-            bail!("--input is required unless --check");
-        };
-        transfer::push(&hub, reference, input, &remote, logger)?
-    };
-    print_json(&result)
-}
-
-/// What "component remote" prints, per the component contract.
-#[derive(Serialize)]
-struct RemoteResult {
-    remote: String,
-}
-
-fn run_remote(reference: &Ref) -> Result<()> {
-    let result = RemoteResult {
-        remote: reference.remote(),
     };
     print_json(&result)
 }

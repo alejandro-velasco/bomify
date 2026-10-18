@@ -20,7 +20,6 @@ Manage individual bomify packages
 
 * [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
 * [bomify package build](bomify_package_build.md)	 - Build the package described by a CycloneDX SBOM
-* [bomify package distribute](bomify_package_distribute.md)	 - Publish a locally available package to a remote endpoint
 * [bomify package load](bomify_package_load.md)	 - Load packages from a tarball
 * [bomify package manifest](bomify_package_manifest.md)	 - Print a remote package's CycloneDX manifest
 * [bomify package prune](bomify_package_prune.md)	 - Remove packages not associated with any tag

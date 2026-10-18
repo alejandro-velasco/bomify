@@ -1,6 +1,6 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
-// binary: the Result/Hash/RemoteResult types the component plugin contract's
-// JSON output mirrors, SecurityResult for the security scanning contract's,
+// binary: the Result/Hash types the component plugin contract's JSON output
+// mirrors, SecurityResult for the security scanning contract's,
 // SignResult/VerifyResult for the signing contract's, ContractResult for the
 // contract versions every plugin reports, and Print to emit any of them
 // correctly. On top of those, ComponentCommand, SecurityCommand, and
@@ -39,21 +39,6 @@ type Result struct {
 type Hash struct {
 	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
 	Value     string            `json:"value,omitempty"`
-}
-
-// RemoteResult is the structured output a plugin prints to stdout on
-// success for its "remote" subcommand.
-type RemoteResult struct {
-	// Remote identifies where a component's content comes from or is
-	// published under — a registry/namespace address, a source URL, etc. It
-	// must be in the same shape push's own --remote expects to receive:
-	// without the component's own trailing name if push appends that itself,
-	// or the exact complete destination if push doesn't append anything at
-	// all — see plugins/contracts/component/v1/CONTRACT.md's RemoteResult
-	// section for why. A distribution rule matched by --match can substitute
-	// part of this value back into --remote for a later push, preserving
-	// whatever came after the matched prefix.
-	Remote string `json:"remote"`
 }
 
 // SecurityResult is the JSON object a plugin's "security scan"

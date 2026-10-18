@@ -4,11 +4,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 
-	"fmt"
 	"log/slog"
-	"os"
-
-	"github.com/alejandro-velasco/bomify/internal/layout"
 )
 
 // Pull invokes the plugin binary's "pull" subcommand, which fetches or
@@ -41,28 +37,12 @@ func Pull(path string, component cdx.Component, baseDir string, logger *slog.Log
 	})
 }
 
-// Push invokes the plugin binary's "push" subcommand, which publishes to
-// remote the component a prior call to Pull wrote into baseDir. Push looks
-// for that pull's manifest and fails before invoking the plugin if it
-// doesn't exist (Pull only writes it after succeeding).
-//
-// logger controls log streaming exactly as it does for Pull.
-func Push(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
-	dir := layout.ComponentLayer(baseDir, component.PackageURL)
-
-	if _, err := os.Stat(layout.ComponentManifest(baseDir, component.PackageURL)); err != nil {
-		return nil, fmt.Errorf("component not found in %s (run bomify build first): %w", dir, err)
-	}
-
-	return runComponent[pluginlib.Result](path, "push", component, baseDir, logger, "--input", dir, "--remote", remote)
-}
-
 // CheckPull invokes the plugin's "pull" subcommand in --check mode: an
 // inexpensive verification that a real Pull would succeed, without
-// transferring content. Like Remote, it's stateless — no component
-// directory, pid file, or dedup against a concurrent/prior call. If the
-// plugin reports a hash, CheckPull verifies it against component's
-// SBOM-declared hash exactly as Pull does.
+// transferring content. It's stateless — no component directory, pid
+// file, or dedup against a concurrent/prior call. If the plugin reports a
+// hash, CheckPull verifies it against component's SBOM-declared hash
+// exactly as Pull does.
 func CheckPull(path string, component cdx.Component, baseDir string, logger *slog.Logger) (*pluginlib.Result, error) {
 	result, err := runComponent[pluginlib.Result](path, "pull", component, baseDir, logger, "--check=true")
 	if err != nil {
@@ -74,29 +54,4 @@ func CheckPull(path string, component cdx.Component, baseDir string, logger *slo
 	}
 
 	return result, nil
-}
-
-// CheckPush invokes the plugin's "push" subcommand in --check mode: an
-// inexpensive verification that a real Push to remote would succeed,
-// without publishing anything. Like CheckPull, it's stateless and
-// requires no prior Pull.
-func CheckPush(path string, component cdx.Component, baseDir, remote string, logger *slog.Logger) (*pluginlib.Result, error) {
-	return runComponent[pluginlib.Result](path, "push", component, baseDir, logger, "--remote", remote, "--check=true")
-}
-
-// Remote invokes the plugin binary's "remote" subcommand, which reports
-// where component's content comes from or is published under (see
-// pluginlib.RemoteResult), independent of any specific --remote a push
-// might target — this is what a distribution rule's --match compares
-// against (see internal/distribution). Unlike Pull/Push, Remote is a
-// pure, stateless query: it never touches baseDir beyond a throwaway log
-// file, and nothing about its result is cached.
-//
-// logger controls log streaming exactly as it does for Pull/Push.
-func Remote(path string, component cdx.Component, baseDir string, logger *slog.Logger) (string, error) {
-	result, err := runComponent[pluginlib.RemoteResult](path, "remote", component, baseDir, logger)
-	if err != nil {
-		return "", err
-	}
-	return result.Remote, nil
 }

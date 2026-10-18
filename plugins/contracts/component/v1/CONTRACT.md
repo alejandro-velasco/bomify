@@ -5,8 +5,7 @@ A plugin reports the contract versions it speaks with
 [contract versions](https://github.com/alejandro-velasco/bomify/blob/main/plugins/README.md#contract-versions)).
 
 The authoritative spec for a `bomify-plugin-<kind>` binary's **component
-plugin** subcommands (`component pull`, `component push`, `component
-remote`), which `bomify build` and `bomify distribute` call. It's
+plugin** subcommand (`component pull`), which `bomify build` calls. It's
 independent of the
 [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md),
 [security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md),
@@ -39,7 +38,7 @@ binary bomify handles itself (see
 
 ## Commands
 
-All three subcommands take `--purl`, `--log`, and `--log-color` (see
+Every subcommand takes `--purl`, `--log`, and `--log-color` (see
 [Logging](#logging)).
 
 ### `component pull`
@@ -58,54 +57,14 @@ Fetch or build the component `--purl` identifies into `--output`.
 
 On success, print one [`Result`](#result) and exit `0`.
 
-### `component push`
-
-```
-bomify-plugin-<kind> component push --purl <purl> --input <dir> --remote <endpoint> --log <path> --log-color <bool>
-```
-
-Publish what a prior `pull` wrote into `--input` to `--remote`.
-
-| Flag | Required | Meaning |
-| --- | --- | --- |
-| `--purl` | yes | Same purl as the `pull` that filled `--input`. |
-| `--input` | unless `--check` | Directory a successful `pull` for the same purl wrote into, exactly as it left it. Not passed with `--check=true`, and no prior `pull` is needed then. |
-| `--remote` | yes | Where to publish. Its shape is up to the plugin (a registry prefix, a URL, ...); document it in `--help`. |
-| `--check` | no | See [Check mode](#check-mode). Default `false`. |
-
-On success, print one [`Result`](#result) and exit `0`. Leave `hash`
-unset.
-
-### `component remote`
-
-```
-bomify-plugin-<kind> component remote --purl <purl> --log <path> --log-color <bool>
-```
-
-Report where the component comes from or is published under, without
-fetching or publishing anything. `bomify distribute` matches this against
-a rule's `--match` and, for a non-empty match, keeps whatever follows
-the matched prefix when building the `--remote` it passes to `push`, so
-a mirror rule preserves each component's path.
-
-On success, print one [`RemoteResult`](#remoteresult) and exit `0`.
-
-`remote` must be a pure function of `--purl`: no network, registry, or
-files. bomify may call it any number of times and never caches it.
-
 ## Check mode
 
-`--check=true` on `pull`/`push` asks the plugin to confirm a real
-transfer would succeed (the artifact exists and is readable, or the
-destination is reachable and writable) without transferring content.
-`--output`/`--input` aren't passed; don't require them.
+`--check=true` on `pull` asks the plugin to confirm a real pull would
+succeed (the artifact exists and is readable) without transferring
+content. `--output` isn't passed; don't require it.
 
 Use the cheapest check available: a manifest HEAD, a resolve, a small
-index fetch. For `pull --check`, a full pull is an acceptable last
-resort. For `push --check`, a real write never is, since it can have
-side effects (consuming a single-use presigned URL, overwriting
-something); report whatever partial check was possible instead, as
-`bomify-plugin-generic` does.
+index fetch. A full pull is an acceptable last resort.
 
 Print one `Result` on success, or exit non-zero with a one-line stderr
 message. `hash` may be set if the check learns it for free (e.g. a
@@ -115,7 +74,7 @@ registry HEAD returning a digest).
 
 | Stream | Reserved for |
 | --- | --- |
-| stdout | Exactly one `Result` or `RemoteResult`, only on success. Nothing else, ever: bomify fails if stdout isn't that one JSON object. |
+| stdout | Exactly one `Result`, only on success. Nothing else, ever: bomify fails if stdout isn't that one JSON object. |
 | stderr | One short fatal error message, only on failure. bomify appends it to its own error. |
 | exit code | `0` on success; non-zero on failure. |
 
@@ -123,12 +82,12 @@ Everything else goes to the `--log` file.
 
 ## Result
 
-Printed by `pull` and `push`. A missing key and a zero value are
-equivalent, so `hash` may be absent, `{}`, or fully set.
+Printed by `pull`. A missing key and a zero value are equivalent, so
+`hash` may be absent, `{}`, or fully set.
 
 ```json
 {
-  "outputPath": "path/to/artifact/or/remote/reference",
+  "outputPath": "path/to/artifact",
   "message": "optional human-readable summary",
   "hash": { "algorithm": "SHA-256", "value": "9d5aec50e4ace532e44f5459f1f4d9c17180c96318103a6f64b765864967d31" }
 }
@@ -136,9 +95,9 @@ equivalent, so `hash` may be absent, `{}`, or fully set.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `outputPath` | string | yes | `pull`: the path written (normally `--output`). `push`: the reference published (e.g. `<remote>/<name>:<version>`). `--check`: whatever identifies what was checked (a resolved reference, a download URL). |
+| `outputPath` | string | yes | The path written (normally `--output`). With `--check`: whatever identifies what was checked (a resolved reference, a download URL). |
 | `message` | string | no | Short human-readable summary. Logged, never parsed. |
-| `hash` | object | no | The pulled artifact's SHA-256 (see [Hashes](#hashes)). `pull` only; unset for `push`, and when it can't be computed. Never guess. |
+| `hash` | object | no | The pulled artifact's SHA-256 (see [Hashes](#hashes)). Unset when it can't be computed. Never guess. |
 | `hash.algorithm` | string | with `hash.value` | Always `SHA-256`. |
 | `hash.value` | string | with `hash.algorithm` | Hex digest. Compared case-insensitively; lowercase by convention. |
 
@@ -151,33 +110,6 @@ declares and keys its data directory by SHA-256, so that's the only
 algorithm a plugin reports (`plugin.NewHash` builds one from a hex
 digest). If a plugin can't compute it, it omits `hash` rather than
 failing.
-
-## RemoteResult
-
-Printed by `remote`:
-
-```json
-{ "remote": "docker.io/library" }
-```
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `remote` | string | yes | Where the component comes from or is published under, in the plugin's own shape (registry namespace, URL, ...). |
-
-Report `remote` in the shape your `push` expects `--remote` in, since a
-distribution rule can hand it back as `--remote`:
-
-- If `push` appends the component's name/tag to `--remote` (as the OCI
-  and Helm plugins do), leave that off: `docker.io/library`, not
-  `docker.io/library/nginx`.
-- If `push` uses `--remote` as the complete destination (as
-  `bomify-plugin-generic` does, since a presigned URL can't be appended
-  to), report the complete address.
-
-Components with a common origin must report values sharing a common
-`/`-separated prefix; that's what rules match and substitute.
-
-Schema: [`remote-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/remote-result.schema.json).
 
 ## Logging
 
@@ -198,7 +130,6 @@ Caching, concurrency, and state are bomify's job:
 - Each invocation is fresh; nothing needs remembering between calls.
 - bomify decides when a `pull` can be skipped and prevents concurrent
   pulls of the same purl.
-- `--output`/`--input` are always in the state described above.
+- `--output` is always in the state described above.
 
-Given the same flags, a plugin should do the same thing. `remote` in
-particular must always report the same value for the same `--purl`.
+Given the same flags, a plugin should do the same thing.
