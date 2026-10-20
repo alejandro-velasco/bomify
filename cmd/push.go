@@ -2,22 +2,38 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/oci/push"
 	"github.com/alejandro-velasco/bomify/internal/security"
 )
 
 const pushShort = "Publish a bomify package to an OCI registry"
 
-const pushLong = `Push publishes the local package <tag> as an OCI artifact under <tag>,
-which must be a full registry reference.
+const pushLong = `Push publishes the local package <tag> under <tag>, which must be a full
+registry reference, as one OCI image index: the SBOM, and each component
+in its kind's own registry format where it has one (an image as itself,
+a chart as Helm stores one, a model as ModelPack), all in that one
+repository, so copying the index copies the whole package. Each
+component's plugin describes it in its format, so it must be installed.
+
+Each component is also tagged in a repository of its own beside the
+package's, <repository>/<purl type>/<namespace>/<name>:<version>, where
+its own tools pull it by name (docker pull, helm pull --version), unless
+--skip-component-repositories is given, as a registry without nested
+repositories needs. It's the same manifest the index holds, its blobs
+mounted from the package's repository rather than uploaded again. Two
+components that would be tagged alike with different content fail the
+push, unless --skip-component-repositories is given. The naming rules
+are in the registry format documentation.
 
 Local vulnerability reports are attached as a separate OCI referrer, so
 re-scanning and pushing again refreshes them without changing the
@@ -25,10 +41,11 @@ package's digest. Afterwards, all but the newest --keep-reports report
 referrers are deleted (best-effort: "bomify security prune" retries if
 the registry refuses).
 
---sign signs the package, and its reports separately, before the tag
-moves, so the tag never points at an unsigned package. --signer
-(repeatable) also signs as a signer from "bomify signer create", so one
-push can carry every signature a trust rule requiring several needs.
+--sign signs the package, its reports, and each component in its own
+repository separately, before the tag moves, so the tag never points at
+an unsigned package. --signer (repeatable) also signs as a signer from
+"bomify signer create", so one push can carry every signature a trust
+rule requiring several needs.
 
 Provenance recorded by "bomify build --provenance" is attached as an
 in-toto attestation, signed as a DSSE envelope with --sign, or unsigned
@@ -48,6 +65,9 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
   # Push using a fully qualified registry reference as the tag
   bomify push registry.example.com/myapp:latest
 
+  # Push only the package, on a registry without nested repositories
+  bomify push registry.example.com/myapp:latest --skip-component-repositories
+
   # Upload up to 6 layers concurrently
   bomify push myapp:latest --concurrency 6
 
@@ -62,7 +82,8 @@ const pushExample = `  # Push the package tagged myapp:latest to its own registr
 
 type pushOptions struct {
 	publishFlags
-	keepReports int
+	keepReports               int
+	skipComponentRepositories bool
 }
 
 func pushCmd() *cobra.Command {
@@ -84,6 +105,7 @@ func pushCmd() *cobra.Command {
 	}
 
 	opts.register(cmd, "upload", "print only the pushed package's pinned reference (<repository>@<digest>), with no progress or informational logging")
+	cmd.Flags().BoolVar(&opts.skipComponentRepositories, "skip-component-repositories", false, "don't tag each component in a repository of its own beside the package's")
 	cmd.Flags().IntVar(&opts.keepReports, "keep-reports", 1, "number of newest vulnerability report referrers to keep on the registry after pushing; older ones are deleted (0 keeps them all)")
 
 	return cmd
@@ -91,11 +113,6 @@ func pushCmd() *cobra.Command {
 
 func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	logger := opts.logger(cmd)
-
-	sbomHash, err := build.ResolveTag(dataDir, tag)
-	if err != nil {
-		return err
-	}
 
 	repo, err := newRepository(tag)
 	if err != nil {
@@ -106,13 +123,21 @@ func runPush(cmd *cobra.Command, tag string, opts *pushOptions) error {
 	if err != nil {
 		return err
 	}
-	result, err := push.Push(cmd.Context(), repo, tag, dataDir, sbomHash, transferOpts)
+	if !opts.skipComponentRepositories {
+		transferOpts.ComponentTarget = func(repository string) (oras.Target, error) {
+			return newRepository(repository)
+		}
+	}
+	result, err := push.Push(cmd.Context(), repo, tag, dataDir, transferOpts)
 	done()
+	if errors.Is(err, push.ErrComponentRepository) {
+		return fmt.Errorf("%w (to push only the package, without tagging its components in repositories of their own, pass --skip-component-repositories)", err)
+	}
 	if err != nil {
 		return err
 	}
 
-	logPushedLayers(logger, result)
+	logPushedComponents(logger, result)
 	pruneReports(cmd.Context(), logger, repo, result.Manifest, opts.keepReports)
 
 	opts.printPinned(cmd, tag, result.ManifestDigest)
@@ -132,10 +157,13 @@ func pruneReports(ctx context.Context, logger *slog.Logger, repo security.PruneT
 	}
 }
 
-func logPushedLayers(logger *slog.Logger, result push.Result) {
-	logger.Info("manifest pushed", "digest", result.ManifestDigest)
-	for _, layer := range result.Layers {
-		logger.Info("layer pushed", "purl", layer.Purl, "hash", layer.Hash)
+func logPushedComponents(logger *slog.Logger, result push.Result) {
+	logger.Info("package index pushed", "digest", result.ManifestDigest)
+	for _, component := range result.Components {
+		logger.Info("component pushed", "purl", component.Purl, "digest", component.Manifest.Digest.String(), "mediaType", component.Manifest.MediaType, "artifactType", component.Manifest.ArtifactType)
+	}
+	for _, component := range result.TaggedComponents {
+		logger.Info("component tagged", "reference", component.Reference, "digest", component.Digest, "purls", strings.Join(component.Purls, ","))
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report attached", "purl", report.Purl, "hash", report.Hash)

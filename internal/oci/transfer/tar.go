@@ -19,21 +19,22 @@ import (
 // alone, so those would be redundant.
 //
 // Every header is normalized (see normalizeHeader) before it's written,
-// so the resulting tar — and so the digest Push computes over it —
-// depends only on the archived files' names, modes, and content, never
-// on incidental local filesystem metadata. This matters because
-// ExtractTar (deliberately, see its own doc comment) doesn't restore a
-// file's original mtime/uid/gid on unpack: without normalizing here,
-// re-tarring a layer bomify itself just pulled would reproduce a
-// different tar — and so a different digest — than the one originally
-// pushed, even though the content is byte-for-byte identical, making
-// Push treat it as new and re-upload it every time.
+// so the resulting tar depends only on the archived files' names, modes,
+// and content, never on incidental local filesystem metadata, which
+// ExtractTar (deliberately, see its own doc comment) doesn't restore:
+// archiving what was just extracted gives the same tar.
 func WriteTar(dir string, w io.Writer) error {
 	files, err := TarFiles(dir)
 	if err != nil {
 		return err
 	}
-	return WriteTarFiles(dir, files, w)
+	tw := tar.NewWriter(w)
+	for _, file := range files {
+		if err := writeTarEntry(tw, dir, file.Path); err != nil {
+			return err
+		}
+	}
+	return tw.Close()
 }
 
 // TarFile is one file WriteTar archives from a directory.
@@ -48,7 +49,7 @@ type TarFile struct {
 // TarFiles returns every file WriteTar archives from dir, in its order:
 // its regular files and symlinks. It fails on anything else, or on a
 // symlink that doesn't resolve inside dir (see fsutil.CheckSymlinks),
-// which pull would refuse.
+// which ExtractTar would refuse.
 func TarFiles(dir string) ([]TarFile, error) {
 	var files []TarFile
 	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
@@ -84,30 +85,6 @@ func TarFiles(dir string) ([]TarFile, error) {
 		return nil, err
 	}
 	return files, nil
-}
-
-// tarBlockSize is the tar format's block size: an entry's header takes
-// one block, and its content is padded to a whole number of blocks.
-const tarBlockSize = 512
-
-// TarSize returns how much a file of size adds to a tar stream: its
-// header block and its content padded to whole blocks, not counting the
-// longer headers a long name needs.
-func TarSize(size int64) int64 {
-	blocks := (size + tarBlockSize - 1) / tarBlockSize
-	return tarBlockSize + blocks*tarBlockSize
-}
-
-// WriteTarFiles archives files, some of TarFiles(dir), into w, as
-// WriteTar does all of dir's.
-func WriteTarFiles(dir string, files []TarFile, w io.Writer) error {
-	tw := tar.NewWriter(w)
-	for _, file := range files {
-		if err := writeTarEntry(tw, dir, file.Path); err != nil {
-			return err
-		}
-	}
-	return tw.Close()
 }
 
 func writeTarEntry(tw *tar.Writer, dir, path string) error {
@@ -179,25 +156,14 @@ func normalizeHeader(hdr *tar.Header) {
 // the tar made earlier can lead one outside it, and every symlink is
 // checked once all are in place (see fsutil.CheckSymlinks).
 func ExtractTar(tr *tar.Reader, destDir string) error {
-	if err := extractTar(tr, destDir, os.O_TRUNC); err != nil {
+	if err := extractTar(tr, destDir); err != nil {
 		return err
 	}
 	return fsutil.CheckSymlinks(destDir)
 }
 
-// ExtractTarExclusive is ExtractTar, but fails on an entry naming a file
-// that already exists, rather than replacing it: a component's layers
-// each hold different files, so no layer may overwrite another's. It
-// leaves its symlinks unchecked, since one may point to a file another
-// layer holds: check them with fsutil.CheckSymlinks once every layer
-// is in.
-func ExtractTarExclusive(tr *tar.Reader, destDir string) error {
-	return extractTar(tr, destDir, os.O_EXCL)
-}
-
-// extractTar is ExtractTar, opening each file with flag added: O_TRUNC to
-// replace one that exists, O_EXCL to fail on it.
-func extractTar(tr *tar.Reader, destDir string, flag int) error {
+// extractTar is ExtractTar, short of checking the symlinks.
+func extractTar(tr *tar.Reader, destDir string) error {
 	if err := os.MkdirAll(destDir, DirPerm); err != nil {
 		return err
 	}
@@ -242,7 +208,7 @@ func extractTar(tr *tar.Reader, destDir string, flag int) error {
 				return err
 			}
 			mode := fs.FileMode(hdr.Mode) & fs.ModePerm
-			f, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|flag, mode)
+			f, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return err
 			}
@@ -263,7 +229,7 @@ func extractTar(tr *tar.Reader, destDir string, flag int) error {
 				return err
 			}
 		default:
-			// Bomify's own tar layers only ever contain regular files and
+			// WriteTar only ever writes regular files and
 			// symlinks; silently skip anything else (devices, ...) a
 			// foreign tar might contain rather than trying to recreate it.
 		}

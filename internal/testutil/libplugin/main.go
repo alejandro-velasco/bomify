@@ -47,8 +47,19 @@ func (generator) Generate(_ context.Context, options json.RawMessage, _ *slog.Lo
 }
 
 // component pulls a one-file artifact named after the purl's last path
-// segment.
+// segment, and packs it as an artifact whose manifest, inline, names the
+// --input it was given.
 type component struct{}
+
+func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {
+	annotations := map[string]string{"input": req.Input}
+	data, err := json.Marshal(map[string]any{"schemaVersion": 2, "annotations": annotations})
+	if err != nil {
+		return nil, err
+	}
+	manifest := plugin.InlineBlob("application/vnd.oci.image.manifest.v1+json", data)
+	return &plugin.PackResult{Manifest: &manifest}, nil
+}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
 	if req.Check {

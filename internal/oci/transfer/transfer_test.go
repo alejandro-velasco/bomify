@@ -1,9 +1,12 @@
 package transfer
 
 import (
-	"maps"
+	"encoding/json"
+	"io/fs"
 	"strings"
 	"testing"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func TestLayerLabel(t *testing.T) {
@@ -22,42 +25,49 @@ func TestLayerLabel(t *testing.T) {
 	}
 }
 
-// TestFileRoundTrip pins the file layer format: ParseFile reads back
-// exactly what Annotations writes.
-func TestFileRoundTrip(t *testing.T) {
-	file := File{
-		Path: "dir/model.gguf",
-		Mode: 0o755,
+// TestFileBlobJSON pins the files map's file format: a mode is octal, and
+// reads back as written.
+func TestFileBlobJSON(t *testing.T) {
+	blob := NewFileBlob("dir/model.gguf", fs.ModeDir|0o755, ocispec.Descriptor{})
+	data, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
 	}
-	annotations := file.Annotations("pkg:huggingface/org/model@abc")
-	if got := annotations[AnnotationPurl]; got != "pkg:huggingface/org/model@abc" {
-		t.Errorf("purl annotation = %q", got)
+	if !strings.Contains(string(data), `"mode":"0755"`) {
+		t.Errorf("JSON = %s, want mode 0755", data)
 	}
 
-	parsed, err := ParseFile(annotations)
-	if err != nil {
-		t.Fatalf("ParseFile: %v", err)
+	var parsed FileBlob
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
 	}
-	if parsed != file {
-		t.Errorf("ParseFile = %+v, want %+v", parsed, file)
+	if parsed != blob {
+		t.Errorf("parsed %+v, want %+v", parsed, blob)
 	}
 }
 
-func TestParseFileRejects(t *testing.T) {
-	valid := File{Path: "f", Mode: 0o644}.Annotations("p")
-	for name, tc := range map[string]struct {
-		key, value, want string
-	}{
-		"escaping path": {AnnotationFilePath, "../f", "outside its component"},
-		"backslash":     {AnnotationFilePath, `dir\f`, "outside its component"},
-		"NUL byte":      {AnnotationFilePath, "f\x00", "outside its component"},
-		"bad mode":      {AnnotationFileMode, "rwx", "invalid file mode"},
-		"mode too wide": {AnnotationFileMode, "4755", "invalid file mode"},
+func TestFileModeRejects(t *testing.T) {
+	for _, mode := range []string{`"rwx"`, `"4755"`, `"0644x"`, `""`, `420`} {
+		var parsed FileMode
+		if err := json.Unmarshal([]byte(mode), &parsed); err == nil {
+			t.Errorf("mode %s parsed as %o, want an error", mode, parsed)
+		}
+	}
+}
+
+func TestIsSafePath(t *testing.T) {
+	for path, want := range map[string]bool{
+		"f":           true,
+		"dir/f":       true,
+		"":            false,
+		"../f":        false,
+		"dir/../../f": false,
+		"/etc/passwd": false,
+		`dir\f`:       false,
+		"f\x00":       false,
 	} {
-		annotations := maps.Clone(valid)
-		annotations[tc.key] = tc.value
-		if _, err := ParseFile(annotations); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: ParseFile = %v, want an error containing %q", name, err, tc.want)
+		if got := isSafePath(path); got != want {
+			t.Errorf("isSafePath(%q) = %v, want %v", path, got, want)
 		}
 	}
 }

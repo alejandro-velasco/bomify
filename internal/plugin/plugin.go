@@ -1,7 +1,7 @@
 // Package plugin is bomify's caller-side orchestration of external
 // "bomify-plugin-<kind>" binaries: finding one (Find), running one and
 // parsing its JSON result (Invoke), and, for the component plugin contract,
-// dispatching SBOM components to one (Pull and CheckPull), with
+// dispatching SBOM components to one (Pull, CheckPull, and Pack), with
 // bookkeeping around Pull so each component is fetched
 // once. See plugins/contracts/component/v1/CONTRACT.md for the subprocess
 // contract a component plugin implements, and pkg/plugin for the Go library a

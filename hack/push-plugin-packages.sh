@@ -6,7 +6,10 @@
 # `make push-plugin-packages`, which supplies BOMIFY, VERSION,
 # PACKAGES_DIR, and PLUGIN_REGISTRY. Each package's pinned reference
 # (<repository>@<digest>) is written to PLUGIN_DIGESTS_FILE (default
-# PACKAGES_DIR/plugin-digests.txt), for the release to publish.
+# PACKAGES_DIR/plugin-digests.txt), for the release to publish. Only the
+# package is pushed (--skip-component-repositories): "bomify plugin
+# install" pulls the package, so a repository per binary would only be
+# clutter, each a new package on GHCR.
 #
 # Every package is built with --provenance, so it's pushed with SLSA
 # build provenance attached, signed along with the package when signing
@@ -178,7 +181,7 @@ for sbom in "${sboms[@]}"; do
 		fi
 		# --quiet prints just <repository>@<digest> for what was pushed
 		# (and signed) — never re-resolved from the tag afterwards.
-		pinned=$(bomify push "$repo:$tag" "${sign_args[@]}" --quiet)
+		pinned=$(bomify push "$repo:$tag" "${sign_args[@]}" --skip-component-repositories --quiet)
 		echo "    pushed $pinned"
 		if [ "$tag" = "$VERSION" ]; then
 			echo "$pinned" >>"$digests_file"

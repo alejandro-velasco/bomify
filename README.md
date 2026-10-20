@@ -8,7 +8,10 @@ the way Docker builds images from Dockerfiles.
 - `bomify build` pulls each component an SBOM describes, through a
   plugin for its type (OCI images, Helm charts, plain files, ...).
 - `bomify push`/`pull` and `save`/`load` move packages through an OCI
-  registry or a tarball.
+  registry or a tarball, as one OCI index holding each component in its
+  own format (an image as itself, a chart as Helm stores one), which any
+  registry tool can copy. Push also tags each component by name beside
+  the package, for `docker pull` and `helm pull` to fetch directly.
 - `bomify sbom compose` builds one SBOM from the deployment mediums a
   package spans, such as Helm charts, through each medium's plugin.
 - `bomify security scan` scans a package's components for

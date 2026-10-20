@@ -24,17 +24,20 @@ type result struct {
 	Hash       hash   `json:"hash,omitempty"`
 }
 
-// componentMain implements the component contract: "component pull".
+// componentMain implements the component contract: "component
+// <pull|pack>". Its pack prints {}, so bomify packages the component in
+// its default format.
 func componentMain() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin component pull --purl <purl> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin component <pull|pack> --purl <purl> ...")
 		os.Exit(1)
 	}
 
 	verb := os.Args[2]
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
 	purl := fs.String("purl", "", "component purl")
-	output := fs.String("output", "", "output directory (pull)")
+	output := fs.String("output", "", "output directory")
+	fs.String("input", "", "input directory (pack)")
 	check := fs.Bool("check", false, "check-only mode: skip --output and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
@@ -114,6 +117,9 @@ func componentMain() {
 				Value:     fmt.Sprintf("fakehash-%s-%s", name, version),
 			}
 		}
+	case "pack":
+		fmt.Println("{}")
+		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown verb %q\n", verb)
 		os.Exit(1)

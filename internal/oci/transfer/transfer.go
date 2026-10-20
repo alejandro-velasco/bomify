@@ -1,9 +1,9 @@
 // Package transfer holds the pieces internal/oci/pull, internal/oci/push,
-// and internal/oci/save need to agree on: the OCI artifact type and
-// annotation bomify's package format uses, the progress-reporting contract
+// and internal/oci/save need to agree on: the types and annotations
+// bomify's package format uses (see Package), the progress-reporting contract
 // Pull and Push expose to their callers, a filename-safety check for
-// untrusted OCI annotations, and the tar/untar primitives all three use to
-// pack a directory into a single blob and unpack one back.
+// untrusted OCI annotations, and the tar/untar primitives save uses to
+// archive a directory and unpack one back.
 package transfer
 
 import (
@@ -12,28 +12,17 @@ import (
 	"strings"
 )
 
-// ArtifactType identifies a bomify package: an OCI artifact whose config is
-// the aggregate SBOM manifest (see internal/build) and whose layers are the
-// components that SBOM describes.
+// ArtifactType identifies a bomify package: an OCI image index of the
+// SBOM's manifest and each component's (see Package).
 const ArtifactType = "application/vnd.bomify.package.v1+json"
 
-// AnnotationPurl is the OCI descriptor annotation identifying the purl a
-// layer was pulled from, or is being pushed for.
+// AnnotationPurl is the OCI annotation naming the purl of the component a
+// package index entry, layer, or report is of.
 const AnnotationPurl = "land.bomify.purl"
-
-// LayerMediaType identifies a pushed component layer: a tar archive of
-// whatever `bomify build` wrote into "<baseDir>/layers/<purl-hash>/" for
-// it — a single file or a whole directory tree, since an OCI layer is
-// always exactly one blob either way. Pull unpacks a layer with this
-// media type back into that same directory shape; any other media type
-// is instead written verbatim as a single file, since Pull has no way to
-// know how to unpack an arbitrary foreign format.
-const LayerMediaType = "application/vnd.bomify.component.layer.v1.tar"
 
 // VulnerabilityReportMediaType identifies a component's vulnerability
 // report blob: the CycloneDX document `bomify security scan` wrote for
-// it (see internal/security), annotated with the same AnnotationPurl as
-// the component's own layer. Push attaches every report that exists
+// it (see internal/security), annotated with its AnnotationPurl. Push attaches every report that exists
 // locally at push time as a layer of one VulnerabilityReportsArtifactType
 // referrer of the package — a component never scanned, or one no
 // installed scanner supports, simply carries none. Pull writes each
@@ -83,9 +72,9 @@ func (discardWriteCloser) Close() error                { return nil }
 // IsSafeFilename reports whether name is usable, as-is, as a single path
 // component on any OS bomify runs on: no separators, no traversal, and none
 // of the characters Windows reserves (":*?\"<>|" plus the two we already
-// check for on every platform, "/" and "\"). Both Pull (reading an OCI
-// title annotation from whoever published the artifact) and Push (choosing
-// a title to publish) treat that annotation as untrusted input.
+// check for on every platform, "/" and "\"), for a name that comes from
+// whoever published an artifact, such as a vulnerability report's scanner
+// (see internal/security).
 func IsSafeFilename(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false
@@ -94,6 +83,6 @@ func IsSafeFilename(name string) bool {
 }
 
 // DirPerm is the permission bits of every directory bomify creates while
-// restoring a package into a data directory: tar entries' parents, large
-// files' parents, and staging directories.
+// restoring a package into a data directory, files' parents and staging
+// directories, or unpacking a tar.
 const DirPerm fs.FileMode = 0o755

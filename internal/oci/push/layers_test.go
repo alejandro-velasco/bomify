@@ -1,11 +1,7 @@
 package push
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -21,6 +17,7 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/content/oci"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
@@ -28,20 +25,22 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
-var modelComponent = cdx.Component{
-	Type:       cdx.ComponentTypeMachineLearningModel,
-	Name:       "model",
+// dataComponent is packaged in bomify's own format: it's no model, and
+// these tests give Push no packer.
+var dataComponent = cdx.Component{
+	Type:       cdx.ComponentTypeData,
+	Name:       "data",
 	Version:    "1.0",
-	PackageURL: "pkg:generic/model@1.0?download_url=https://example.com/model",
+	PackageURL: "pkg:generic/data@1.0?download_url=https://example.com/data",
 }
 
-// layerLimits makes transfer.LargeFileSize and transfer.MaxTarSize
-// small for a test.
-func layerLimits(t *testing.T, largeFile, maxTar int64) {
+// weightSize makes modelWeightSize, from which a model's file is a
+// weight, size for a test.
+func weightSize(t *testing.T, size int64) {
 	t.Helper()
-	originalLarge, originalMax := transfer.LargeFileSize, transfer.MaxTarSize
-	transfer.LargeFileSize, transfer.MaxTarSize = largeFile, maxTar
-	t.Cleanup(func() { transfer.LargeFileSize, transfer.MaxTarSize = originalLarge, originalMax })
+	original := modelWeightSize
+	modelWeightSize = size
+	t.Cleanup(func() { modelWeightSize = original })
 }
 
 func newStore(t *testing.T) *oci.Store {
@@ -53,87 +52,65 @@ func newStore(t *testing.T) *oci.Store {
 	return store
 }
 
-func manifestOf(t *testing.T, store *oci.Store, tag string) ocispec.Manifest {
-	t.Helper()
-	_, data, err := oras.FetchBytes(context.Background(), store, tag, oras.DefaultFetchBytesOptions)
-	if err != nil {
-		t.Fatalf("fetch manifest: %v", err)
-	}
-	var manifest ocispec.Manifest
-	if err := jsonUnmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	return manifest
-}
-
-func TestPushGivesLargeFilesALayerEach(t *testing.T) {
-	// Each small file takes 1024 bytes of a tar, so two fit in one.
-	layerLimits(t, 16, 2100)
+// TestPushGivesEachFileALayer covers bomify's own format: a layer per
+// file, by path, titled with it, whose files map entry keeps its mode.
+func TestPushGivesEachFileALayer(t *testing.T) {
 	baseDir := t.TempDir()
 	files := map[string]string{
-		"a.json":          "small file one.",
 		"b.json":          "small file two.",
-		"c.json":          "small file 3...",
+		"a.json":          "small file one.",
 		"big.bin":         strings.Repeat("0123456789", 10),
 		"nested/huge.bin": strings.Repeat("abcde", 10),
 	}
-	writeLayer(t, baseDir, modelComponent, files)
-	executable := filepath.Join(layout.ComponentLayer(baseDir, modelComponent.PackageURL), "big.bin")
+	writeLayer(t, baseDir, dataComponent, files)
+	executable := filepath.Join(layout.ComponentLayer(baseDir, dataComponent.PackageURL), "big.bin")
 	if err := os.Chmod(executable, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{dataComponent})
 	store := newStore(t)
 
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
+	tagPackage(t, baseDir, "data", sbomHash)
+	if _, err := Push(context.Background(), store, "data", baseDir, transfer.Options{Concurrency: 3}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
-	manifest := manifestOf(t, store, "model")
-	var tars, fileLayers []ocispec.Descriptor
+	manifest := componentManifestOf(t, store, "data", dataComponent.PackageURL)
+	var titles []string
 	for _, layer := range manifest.Layers {
-		switch layer.MediaType {
-		case transfer.LayerMediaType:
-			tars = append(tars, layer)
-		case transfer.FileMediaType:
-			fileLayers = append(fileLayers, layer)
+		title := layer.Annotations[ocispec.AnnotationTitle]
+		titles = append(titles, title)
+		wantAnnotations := map[string]string{
+			transfer.AnnotationPurl: dataComponent.PackageURL,
+			ocispec.AnnotationTitle: title,
+		}
+		if layer.MediaType != transfer.FileMediaType || !maps.Equal(layer.Annotations, wantAnnotations) || layer.Size != int64(len(files[title])) {
+			t.Errorf("%s's layer = %+v, want its own bytes, annotated %v", title, layer, wantAnnotations)
 		}
 	}
-	// The small files in two tars, then each large file whole, by path.
-	if len(tars) != 2 || len(fileLayers) != 2 {
-		t.Fatalf("got %d tar and %d file layers, want 2 and 2", len(tars), len(fileLayers))
+	if want := []string{"a.json", "b.json", "big.bin", "nested/huge.bin"}; !slices.Equal(titles, want) {
+		t.Errorf("layers = %v, want %v", titles, want)
 	}
-	if first := manifest.Layers[0]; first.MediaType != transfer.LayerMediaType {
-		t.Errorf("first layer is a %s, want a tar", first.MediaType)
-	}
-	big := fileLayers[0]
+
+	_, pkg := fetchPackage(t, store, "data")
+	mapped := filesOf(t, store, pkg, dataComponent.PackageURL)
 	// 0755, but where the file system keeps no such bits, what it has.
 	info, err := os.Stat(executable)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAnnotations := map[string]string{
-		transfer.AnnotationPurl:     modelComponent.PackageURL,
-		transfer.AnnotationFilePath: "big.bin",
-		transfer.AnnotationFileMode: fmt.Sprintf("%04o", info.Mode().Perm()),
-	}
-	if !maps.Equal(big.Annotations, wantAnnotations) || big.Size != 100 {
-		t.Errorf("big.bin's layer = %d bytes, %v; want 100 bytes, %v", big.Size, big.Annotations, wantAnnotations)
+	big := slices.IndexFunc(mapped.Files, func(file transfer.FileBlob) bool { return file.Path == "big.bin" })
+	if big < 0 || fs.FileMode(mapped.Files[big].Mode) != info.Mode().Perm() {
+		t.Errorf("files map = %+v, want big.bin's mode", mapped.Files)
 	}
 
 	pulledDir := t.TempDir()
-	if _, err := pull.Pull(context.Background(), store, "model", pulledDir, transfer.Options{Concurrency: 3}); err != nil {
+	if _, err := pull.Pull(context.Background(), store, "data", pulledDir, transfer.Options{Concurrency: 3}); err != nil {
 		t.Fatalf("Pull: %v", err)
 	}
-	restored := layout.ComponentLayer(pulledDir, modelComponent.PackageURL)
-	got := readDir(t, restored)
-	for path, want := range files {
-		if got[path] != want {
-			t.Errorf("%s = %q, want %q", path, got[path], want)
-		}
-	}
-	if len(got) != len(files) {
-		t.Errorf("restored %d files, want %d", len(got), len(files))
+	restored := layout.ComponentLayer(pulledDir, dataComponent.PackageURL)
+	if got := readDir(t, restored); !mapsEqual(got, files) {
+		t.Errorf("pulled %v, want %v", got, files)
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(restored, "big.bin"))
@@ -143,210 +120,89 @@ func TestPushGivesLargeFilesALayerEach(t *testing.T) {
 	}
 }
 
-// TestPushSharesLargeFiles covers what file layers are for: another
-// package holding the same large file reuses its blob.
-func TestPushSharesLargeFiles(t *testing.T) {
-	layerLimits(t, 16, 40)
+// TestPushSharesFiles covers what a layer per file is for: another
+// package holding the same file reuses its blob.
+func TestPushSharesFiles(t *testing.T) {
 	weights := strings.Repeat("shared weights ", 10)
 	other := cdx.Component{
-		Type:       cdx.ComponentTypeMachineLearningModel,
+		Type:       cdx.ComponentTypeData,
 		Name:       "other",
 		Version:    "2.0",
 		PackageURL: "pkg:generic/other@2.0?download_url=https://example.com/other",
 	}
 	store := newStore(t)
 
-	fileDigests := map[string][]string{}
-	for _, component := range []cdx.Component{modelComponent, other} {
+	weightDigests := map[string]string{}
+	for _, component := range []cdx.Component{dataComponent, other} {
 		baseDir := t.TempDir()
 		writeLayer(t, baseDir, component, map[string]string{
 			"weights.bin": weights,
 			"name.txt":    component.Name,
 		})
 		sbomHash := recordSBOM(t, baseDir, []cdx.Component{component})
-		if _, err := Push(context.Background(), store, component.Name, baseDir, sbomHash, transfer.Options{Concurrency: 2}); err != nil {
+		tagPackage(t, baseDir, component.Name, sbomHash)
+		if _, err := Push(context.Background(), store, component.Name, baseDir, transfer.Options{Concurrency: 2}); err != nil {
 			t.Fatalf("Push %s: %v", component.Name, err)
 		}
-		for _, layer := range manifestOf(t, store, component.Name).Layers {
-			if layer.MediaType == transfer.FileMediaType {
-				fileDigests[component.Name] = append(fileDigests[component.Name], layer.Digest.String())
+		for _, layer := range componentManifestOf(t, store, component.Name, component.PackageURL).Layers {
+			if layer.Annotations[ocispec.AnnotationTitle] == "weights.bin" {
+				weightDigests[component.Name] = layer.Digest.String()
 			}
 		}
 	}
-	if strings.Join(fileDigests["model"], ",") != strings.Join(fileDigests["other"], ",") || len(fileDigests["model"]) == 0 {
-		t.Errorf("file digests = %v, want the same blob in both packages", fileDigests)
+	if weightDigests["data"] != weightDigests["other"] || weightDigests["data"] == "" {
+		t.Errorf("weights.bin digests = %v, want the same blob in both packages", weightDigests)
 	}
 }
 
+// TestPushEmptyComponent covers a component with no files: the empty
+// descriptor its one layer, as OCI suggests, and no files in the files
+// map, from which pull still restores its directory.
 func TestPushEmptyComponent(t *testing.T) {
 	baseDir := t.TempDir()
-	if err := os.MkdirAll(layout.ComponentLayer(baseDir, modelComponent.PackageURL), 0o755); err != nil {
+	if err := os.MkdirAll(layout.ComponentLayer(baseDir, dataComponent.PackageURL), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{dataComponent})
 	store := newStore(t)
 
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{}); err != nil {
+	tagPackage(t, baseDir, "data", sbomHash)
+	if _, err := Push(context.Background(), store, "data", baseDir, transfer.Options{}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if layers := manifestOf(t, store, "model").Layers; len(layers) != 1 || layers[0].MediaType != transfer.LayerMediaType {
-		t.Fatalf("layers = %v, want one empty tar", layers)
+	if layers := componentManifestOf(t, store, "data", dataComponent.PackageURL).Layers; len(layers) != 1 || layers[0].MediaType != ocispec.MediaTypeEmptyJSON {
+		t.Fatalf("layers = %v, want the empty descriptor", layers)
+	}
+	_, pkg := fetchPackage(t, store, "data")
+	if files := filesOf(t, store, pkg, dataComponent.PackageURL); files == nil || len(files.Files) != 0 {
+		t.Errorf("files map = %+v, want the component, with no files", files)
 	}
 	pulledDir := t.TempDir()
-	if _, err := pull.Pull(context.Background(), store, "model", pulledDir, transfer.Options{}); err != nil {
+	if _, err := pull.Pull(context.Background(), store, "data", pulledDir, transfer.Options{}); err != nil {
 		t.Fatalf("Pull: %v", err)
 	}
-	if info, err := os.Stat(layout.ComponentLayer(pulledDir, modelComponent.PackageURL)); err != nil || !info.IsDir() {
+	if info, err := os.Stat(layout.ComponentLayer(pulledDir, dataComponent.PackageURL)); err != nil || !info.IsDir() {
 		t.Errorf("component directory not restored: %v", err)
 	}
 }
 
-// craftedLayer describes a layer for craftPackage: a file layer, or with
-// tarOfFileNamed, a tar of one file of that name, or with symlinkTo, a
-// tar of a symlink at path to it.
-type craftedLayer struct {
-	path, mode     string
-	content        string
-	tarOfFileNamed string
-	symlinkTo      string
-}
-
-// craftPackage pushes a package of modelComponent of layers, annotated as
-// given, as a hostile registry might serve.
-func craftPackage(t *testing.T, store *oci.Store, crafted []craftedLayer) {
-	t.Helper()
-	ctx := context.Background()
-	sbom := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[{"type":"machine-learning-model","name":"model","version":"1.0","purl":"` + modelComponent.PackageURL + `"}]}`)
-	config, err := oras.PushBytes(ctx, store, "application/vnd.cyclonedx+json", sbom)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var layers []ocispec.Descriptor
-	for _, p := range crafted {
-		if p.symlinkTo != "" {
-			var buffer bytes.Buffer
-			tw := tar.NewWriter(&buffer)
-			header := &tar.Header{
-				Typeflag: tar.TypeSymlink,
-				Name:     p.path,
-				Linkname: p.symlinkTo,
-				Mode:     0o777,
-			}
-			if err := tw.WriteHeader(header); err != nil {
-				t.Fatal(err)
-			}
-			if err := tw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			desc, err := oras.PushBytes(ctx, store, transfer.LayerMediaType, buffer.Bytes())
-			if err != nil {
-				t.Fatal(err)
-			}
-			desc.Annotations = map[string]string{transfer.AnnotationPurl: modelComponent.PackageURL}
-			layers = append(layers, desc)
-			continue
+// TestPushRefusesSymlinks covers what no blob holds: push refuses a
+// component with a symlink, whatever its format.
+func TestPushRefusesSymlinks(t *testing.T) {
+	for _, component := range []cdx.Component{dataComponent, modelComponent} {
+		baseDir := t.TempDir()
+		writeLayer(t, baseDir, component, map[string]string{"weights.bin": "weights"})
+		dir := layout.ComponentLayer(baseDir, component.PackageURL)
+		if err := os.Symlink("weights.bin", filepath.Join(dir, "model.bin")); err != nil {
+			t.Skipf("can't create symlinks here: %v", err)
 		}
-		if p.tarOfFileNamed != "" {
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, p.tarOfFileNamed), []byte(p.content), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			var buffer strings.Builder
-			if err := transfer.WriteTar(dir, &buffer); err != nil {
-				t.Fatal(err)
-			}
-			desc, err := oras.PushBytes(ctx, store, transfer.LayerMediaType, []byte(buffer.String()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			desc.Annotations = map[string]string{transfer.AnnotationPurl: modelComponent.PackageURL}
-			layers = append(layers, desc)
-			continue
-		}
-		desc, err := oras.PushBytes(ctx, store, transfer.FileMediaType, []byte(p.content))
-		if err != nil {
-			t.Fatal(err)
-		}
-		desc.Annotations = map[string]string{
-			transfer.AnnotationPurl:     modelComponent.PackageURL,
-			transfer.AnnotationFilePath: p.path,
-			transfer.AnnotationFileMode: p.mode,
-		}
-		layers = append(layers, desc)
-	}
+		sbomHash := recordSBOM(t, baseDir, []cdx.Component{component})
 
-	manifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, transfer.ArtifactType, oras.PackManifestOptions{
-		ConfigDescriptor: &config,
-		Layers:           layers,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Tag(ctx, manifest, "crafted"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestPullRejectsMalformedFiles(t *testing.T) {
-	for name, tc := range map[string]struct {
-		layers []craftedLayer
-		// want is what the error contains: any of its "|"-separated
-		// alternatives, for layers whose order of restore decides.
-		want string
-	}{
-		"escaping path": {
-			layers: []craftedLayer{{path: "../escape", mode: "0644", content: "abc"}},
-			want:   "outside its component",
-		},
-		"absolute path": {
-			layers: []craftedLayer{{path: "/etc/passwd", mode: "0644", content: "abc"}},
-			want:   "outside its component",
-		},
-		"one path twice": {
-			layers: []craftedLayer{
-				{path: "f", mode: "0644", content: "abc"},
-				{path: "f", mode: "0644", content: "def"},
-			},
-			want: "two layers hold f",
-		},
-		"bad mode": {
-			layers: []craftedLayer{{path: "f", mode: "rwx", content: "abc"}},
-			want:   "invalid file mode",
-		},
-		"a tar and a file layer hold one file": {
-			layers: []craftedLayer{
-				{path: "f", mode: "0644", content: "abc"},
-				{tarOfFileNamed: "f", content: "evil"},
-			},
-			want: "unpack|create f",
-		},
-		// The tar restores first, at a concurrency of 1: a file layer
-		// mustn't follow its link out of the component.
-		"a file layer through a symlink out": {
-			layers: []craftedLayer{
-				{path: "out", symlinkTo: ".."},
-				{path: "out/evil", mode: "0644", content: "evil"},
-			},
-			want: "create out/evil|unpack",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			store := newStore(t)
-			craftPackage(t, store, tc.layers)
-			pulledDir := t.TempDir()
-
-			_, err := pull.Pull(context.Background(), store, "crafted", pulledDir, transfer.Options{Concurrency: 1})
-			if err == nil || !containsAny(err.Error(), strings.Split(tc.want, "|")) {
-				t.Fatalf("Pull = %v, want an error containing %q", err, tc.want)
-			}
-			if escaped := findFile(t, pulledDir, "evil"); escaped != "" {
-				t.Errorf("a layer wrote %s", escaped)
-			}
-			if _, statErr := os.Stat(layout.ComponentLayer(pulledDir, modelComponent.PackageURL)); !os.IsNotExist(statErr) {
-				t.Errorf("component directory restored despite the error: %v", statErr)
-			}
-		})
+		tagPackage(t, baseDir, "pkg", sbomHash)
+		_, err := Push(context.Background(), newStore(t), "pkg", baseDir, transfer.Options{})
+		if err == nil || !strings.Contains(err.Error(), "model.bin isn't a regular file") {
+			t.Errorf("Push %s = %v, want the symlink refused", component.Name, err)
+		}
 	}
 }
 
@@ -369,15 +225,6 @@ func findFile(t *testing.T, dir, name string) string {
 	return found
 }
 
-// containsAny reports whether s contains any of substrings.
-func containsAny(s string, substrings []string) bool {
-	return slices.ContainsFunc(substrings, func(substring string) bool { return strings.Contains(s, substring) })
-}
-
-func jsonUnmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
-}
-
 // recordLabels returns a ProgressFunc recording every label it's given.
 func recordLabels(labels *[]string) transfer.ProgressFunc {
 	var mutex sync.Mutex
@@ -395,30 +242,30 @@ func (nopWriteCloser) Write(data []byte) (int, error) { return len(data), nil }
 func (nopWriteCloser) Close() error                   { return nil }
 
 // TestPushAndPullLabelLayersAlike covers a component's progress bars: one
-// per layer, a tar's or a large file's, each naming the component but
-// telling its layers apart, the same way on push and pull.
+// per layer, each naming the component but telling its layers apart,
+// the same way on push and pull.
 func TestPushAndPullLabelLayersAlike(t *testing.T) {
-	layerLimits(t, 16, 40)
 	baseDir := t.TempDir()
-	writeLayer(t, baseDir, modelComponent, map[string]string{
+	writeLayer(t, baseDir, dataComponent, map[string]string{
 		"big.bin":   strings.Repeat("0123456789", 10),
 		"small.txt": "small",
 	})
-	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{dataComponent})
 	store := newStore(t)
 
 	var pushed, pulled []string
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 2, Progress: recordLabels(&pushed)}); err != nil {
+	tagPackage(t, baseDir, "data", sbomHash)
+	if _, err := Push(context.Background(), store, "data", baseDir, transfer.Options{Concurrency: 2, Progress: recordLabels(&pushed)}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if _, err := pull.Pull(context.Background(), store, "model", t.TempDir(), transfer.Options{Concurrency: 2, Progress: recordLabels(&pulled)}); err != nil {
+	if _, err := pull.Pull(context.Background(), store, "data", t.TempDir(), transfer.Options{Concurrency: 2, Progress: recordLabels(&pulled)}); err != nil {
 		t.Fatalf("Pull: %v", err)
 	}
 
-	// Two layers, small.txt's tar and big.bin's file.
+	// Two layers, small.txt and big.bin.
 	componentLabels := func(labels []string) []string {
 		kept := slices.DeleteFunc(slices.Clone(labels), func(label string) bool {
-			return !strings.HasSuffix(label, " "+modelComponent.PackageURL)
+			return !strings.HasSuffix(label, " "+dataComponent.PackageURL)
 		})
 		slices.Sort(kept)
 		return slices.Compact(kept)
@@ -475,7 +322,6 @@ func (f *countedFetch) Close() error {
 // once, each downloading its layers at once, but no more than Concurrency
 // layers download at a time in all.
 func TestPullBoundsDownloads(t *testing.T) {
-	layerLimits(t, 16, 40)
 	baseDir := t.TempDir()
 	var components []cdx.Component
 	for _, name := range []string{"one", "two", "three"} {
@@ -497,7 +343,8 @@ func TestPullBoundsDownloads(t *testing.T) {
 	store := countingStore{
 		Store: newStore(t),
 	}
-	if _, err := Push(context.Background(), store.Store, "models", baseDir, sbomHash, transfer.Options{Concurrency: 4}); err != nil {
+	tagPackage(t, baseDir, "models", sbomHash)
+	if _, err := Push(context.Background(), store.Store, "models", baseDir, transfer.Options{Concurrency: 4}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -513,34 +360,51 @@ func TestPullBoundsDownloads(t *testing.T) {
 	}
 }
 
-// TestPushAndPullSymlinks covers a symlink to a large file: the link
-// travels in a tar and the file as a layer of its own, so pull may only
-// check the link once every layer is in.
-func TestPushAndPullSymlinks(t *testing.T) {
-	layerLimits(t, 16, 40)
+// TestOrasPullsAComponent covers what bomify's own format and ModelPack
+// are annotated for: `oras pull` of a component's manifest writes out its
+// files as build pulled them, each at its path.
+func TestOrasPullsAComponent(t *testing.T) {
 	baseDir := t.TempDir()
-	weights := strings.Repeat("0123456789", 10)
-	writeLayer(t, baseDir, modelComponent, map[string]string{"weights.bin": weights})
-	dir := layout.ComponentLayer(baseDir, modelComponent.PackageURL)
-	if err := os.Symlink("weights.bin", filepath.Join(dir, "model.bin")); err != nil {
-		t.Skipf("can't create symlinks here: %v", err)
+	dataFiles := map[string]string{
+		"LICENSE":         "the license",
+		"docs/README.md":  "a nested small file",
+		"nested/huge.bin": strings.Repeat("abcde", 10),
 	}
-	sbomHash := recordSBOM(t, baseDir, []cdx.Component{modelComponent})
+	modelFiles := map[string]string{
+		"config.json":         "{}",
+		"weights/model.bin":   strings.Repeat("0123456789", 10),
+		"tokenizer/vocab.txt": "vocab",
+	}
+	writeLayer(t, baseDir, dataComponent, dataFiles)
+	writeLayer(t, baseDir, modelComponent, modelFiles)
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{dataComponent, modelComponent})
 	store := newStore(t)
-
-	if _, err := Push(context.Background(), store, "model", baseDir, sbomHash, transfer.Options{Concurrency: 3}); err != nil {
+	tagPackage(t, baseDir, "pkg", sbomHash)
+	if _, err := Push(context.Background(), store, "pkg", baseDir, transfer.Options{}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	pulledDir := t.TempDir()
-	if _, err := pull.Pull(context.Background(), store, "model", pulledDir, transfer.Options{Concurrency: 3}); err != nil {
-		t.Fatalf("Pull: %v", err)
-	}
 
-	restored := layout.ComponentLayer(pulledDir, modelComponent.PackageURL)
-	if link, err := os.Readlink(filepath.Join(restored, "model.bin")); err != nil || link != "weights.bin" {
-		t.Errorf("model.bin points to %q, %v; want weights.bin", link, err)
+	_, pkg := fetchPackage(t, store, "pkg")
+	for component, want := range map[cdx.Component]map[string]string{dataComponent: dataFiles, modelComponent: modelFiles} {
+		manifest := componentEntry(t, pkg, component.PackageURL)
+		if got := orasPull(t, store, manifest); !mapsEqual(got, want) {
+			t.Errorf("oras pull of %s wrote %v, want %v", component.Name, got, want)
+		}
 	}
-	if data, err := os.ReadFile(filepath.Join(restored, "model.bin")); err != nil || string(data) != weights {
-		t.Errorf("model.bin reads %d bytes, %v; want the weights", len(data), err)
+}
+
+// orasPull pulls manifest from store as `oras pull` does, into a new
+// directory, returning what it wrote.
+func orasPull(t *testing.T, store *oci.Store, manifest ocispec.Descriptor) map[string]string {
+	t.Helper()
+	dir := t.TempDir()
+	fileStore, err := file.New(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer fileStore.Close()
+	if err := oras.CopyGraph(context.Background(), store, fileStore, manifest, oras.DefaultCopyGraphOptions); err != nil {
+		t.Fatalf("oras pull %s: %v", manifest.Digest, err)
+	}
+	return readDir(t, dir)
 }

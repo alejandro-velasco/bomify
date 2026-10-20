@@ -88,7 +88,10 @@ func TestPublisherVEXNeedsItsOwnSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new oci store: %v", err)
 	}
-	pushed, err := push.Push(ctx, store, hookTag, baseDir, sbomHash, transfer.Options{Sign: signer})
+	if err := build.UpdateRepositories(baseDir, []string{hookTag}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+	pushed, err := push.Push(ctx, store, hookTag, baseDir, transfer.Options{Sign: signer})
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

@@ -35,7 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Component plugin subcommands (pull) — see plugins/contracts/component/v1/CONTRACT.md
+    /// Component plugin subcommands (pull/pack) — see plugins/contracts/component/v1/CONTRACT.md
     Component {
         #[command(subcommand)]
         command: ComponentCommand,
@@ -67,6 +67,14 @@ enum ComponentCommand {
         /// verify the component exists and is pullable without downloading it
         #[arg(long, action = ArgAction::Set, num_args = 0..=1, require_equals = true, default_value = "false", default_missing_value = "true")]
         check: bool,
+    },
+    /// Report that a model has no registry format of its own: bomify packages it as ModelPack
+    Pack {
+        #[command(flatten)]
+        common: CommonFlags,
+        /// directory a prior pull wrote the component into
+        #[arg(long)]
+        input: PathBuf,
     },
 }
 
@@ -180,8 +188,18 @@ fn run_component(command: ComponentCommand) -> Result<()> {
         } => with_reference(&common, |reference, logger| {
             run_pull(reference, output.as_deref(), check, logger)
         }),
+        // The flags are the contract's, but a model has nothing to read
+        // or write: bomify builds its ModelPack artifact itself.
+        ComponentCommand::Pack { common, .. } => {
+            with_reference(&common, |_, _| print_json(&PackResult {}))
+        }
     }
 }
+
+/// What "component pack" prints, per the component contract: empty, as a
+/// model's registry format, ModelPack, is bomify's to build.
+#[derive(Serialize)]
+struct PackResult {}
 
 /// What every component subcommand does around its own work: opens the
 /// log, resolves the purl, runs command on it, and logs a failure.

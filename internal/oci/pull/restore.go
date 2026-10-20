@@ -3,15 +3,17 @@ package pull
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
-	"slices"
+	"path/filepath"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
 
-	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/parallel"
@@ -19,23 +21,12 @@ import (
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
-// isComponentLayer reports whether desc is one of a component's own
-// layers, a tar or a large file (see transfer.FileMediaType), naming
-// its component's purl, which componentRestore restores together. Any
-// other layer is foreign, written as-is by foreignRestore.
-func isComponentLayer(desc ocispec.Descriptor) bool {
-	if desc.Annotations[transfer.AnnotationPurl] == "" {
-		return false
-	}
-	return desc.MediaType == transfer.LayerMediaType || desc.MediaType == transfer.FileMediaType
-}
-
 // restoreOptions are what every restore of a pull shares: where layers
 // come from and go, and how.
 type restoreOptions struct {
 	target  oras.ReadOnlyTarget
 	dataDir string
-	// concurrency is how many layerRestores run at once, and how many
+	// concurrency is how many componentRestores run at once, and how many
 	// layers download at once across all of them (see download).
 	concurrency int
 	// downloadSlots holds concurrency slots, one taken by each layer
@@ -56,25 +47,22 @@ func (o restoreOptions) download(ctx context.Context, fetch func() error) error 
 	return fetch()
 }
 
-// layerRestore restores some of a package's layers: one component's,
-// together (see componentRestore), or one foreign layer (see
-// foreignRestore). run returns one RestoredLayer per layer.
-type layerRestore interface {
-	run(ctx context.Context) ([]RestoredLayer, error)
-}
-
-// packageRestore restores a package's layers, descs.
+// packageRestore restores a package's components, from their manifests,
+// descs.
 type packageRestore struct {
 	restoreOptions
 	descs []ocispec.Descriptor
+	// files is the package's files map, of the components restored file by
+	// file.
+	files transfer.Files
 	// componentsByPurl is the package's SBOM's components, to give each
 	// componentRestore its own.
 	componentsByPurl map[string]*cdx.Component
 }
 
-// newPackageRestore prepares the restore of descs, the layers of the
-// package bom describes, into dataDir.
-func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, dataDir string, bom *cdx.BOM, concurrency int, progress transfer.ProgressFunc) *packageRestore {
+// newPackageRestore prepares the restore of descs, the component manifests
+// of the package bom describes, whose files map is files, into dataDir.
+func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, files transfer.Files, dataDir string, bom *cdx.BOM, concurrency int, progress transfer.ProgressFunc) *packageRestore {
 	restore := packageRestore{
 		restoreOptions: restoreOptions{
 			target:        target,
@@ -84,150 +72,88 @@ func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, d
 			progress:      progress,
 		},
 		descs:            descs,
+		files:            files,
 		componentsByPurl: indexComponentsByPurl(bom),
 	}
 	return &restore
 }
 
-// restoreLayers restores r's layers into its data directory (see
-// restores), up to its concurrency at once. It returns one RestoredLayer
-// per layer, each component's together.
-func (r *packageRestore) restoreLayers(ctx context.Context) ([]RestoredLayer, error) {
-	run := func(ctx context.Context, _ int, restore layerRestore) ([]RestoredLayer, error) {
+// restoreComponents restores r's components into its data directory (see
+// componentRestore), up to its concurrency at once, in its index's order.
+// It fails before restoring anything if the index names a component twice.
+func (r *packageRestore) restoreComponents(ctx context.Context) ([]RestoredComponent, error) {
+	restores := make([]componentRestore, 0, len(r.descs))
+	seen := map[string]bool{}
+	for _, desc := range r.descs {
+		purl := desc.Annotations[transfer.AnnotationPurl]
+		if seen[purl] {
+			return nil, fmt.Errorf("package index names %s twice", purl)
+		}
+		seen[purl] = true
+		files, ok := r.files.Component(purl)
+		if !ok {
+			return nil, fmt.Errorf("package's files map doesn't lay out %s", purl)
+		}
+		restore := componentRestore{
+			restoreOptions: r.restoreOptions,
+			manifest:       desc,
+			files:          files,
+			component:      r.componentsByPurl[purl],
+		}
+		restores = append(restores, restore)
+	}
+
+	run := func(ctx context.Context, _ int, restore componentRestore) (RestoredComponent, error) {
 		return restore.run(ctx)
 	}
-	restored, err := parallel.Map(ctx, r.concurrency, r.restores(), run)
-	if err != nil {
-		return nil, err
-	}
-	return slices.Concat(restored...), nil
+	return parallel.Map(ctx, r.concurrency, restores, run)
 }
 
-// restores sorts r's layers into layerRestores, in the order each first
-// appears: one per component, and one per foreign layer, which packages
-// bomify pushes don't have. For example, these layers:
-//
-//	0: tar         pkg:oci/nginx@1.27
-//	1: tar         pkg:huggingface/org/model@abc
-//	2: foreign     (no purl, or another media type)
-//	3: large file  pkg:huggingface/org/model@abc
-//	4: tar         pkg:oci/nginx@1.27
-//
-// give the restores nginx [0 4], model [1 3], and foreign 2.
-func (r *packageRestore) restores() []layerRestore {
-	var restores []layerRestore
-	components := map[string]*componentRestore{}
-	for _, desc := range r.descs {
-		if !isComponentLayer(desc) {
-			restore := foreignRestore{
-				restoreOptions: r.restoreOptions,
-				desc:           desc,
-			}
-			restores = append(restores, restore)
-			continue
-		}
-		purl := desc.Annotations[transfer.AnnotationPurl]
-		component, seen := components[purl]
-		if !seen {
-			component = &componentRestore{
-				restoreOptions: r.restoreOptions,
-				purl:           purl,
-				component:      r.componentsByPurl[purl],
-			}
-			components[purl] = component
-			restores = append(restores, component)
-		}
-		component.descs = append(component.descs, desc)
-	}
-	return restores
-}
-
-// foreignRestore writes a foreign layer, desc, as-is (see fetchLayer).
-type foreignRestore struct {
-	restoreOptions
-	desc ocispec.Descriptor
-}
-
-func (r foreignRestore) run(ctx context.Context) ([]RestoredLayer, error) {
-	var layer RestoredLayer
-	fetch := func() error {
-		var err error
-		layer, err = fetchLayer(ctx, r.target, r.desc, r.dataDir, r.progress)
-		return err
-	}
-	if err := r.download(ctx, fetch); err != nil {
-		return nil, fmt.Errorf("fetch layer %s: %w", r.desc.Digest, err)
-	}
-	return []RestoredLayer{layer}, nil
-}
-
-// componentRestore restores one component, purl's, from its layers, descs,
-// to "<dataDir>/layers/<purl-hash>/", the directory `bomify build` would
+// componentRestore restores one component, whose manifest is manifest,
+// from its files in its package's files map, to
+// "<dataDir>/layers/<purl-hash>/", the directory `bomify build` would
 // have written.
 type componentRestore struct {
 	restoreOptions
-	purl  string
-	descs []ocispec.Descriptor
-	// component is the package's SBOM's entry for purl, or nil if it has
-	// none (see recordManifest).
+	manifest ocispec.Descriptor
+	files    transfer.ComponentFiles
+	// component is the package's SBOM's entry for the component, or nil if
+	// it has none (see recordManifest).
 	component *cdx.Component
 }
 
-// run restores the component, returning one RestoredLayer per layer.
-// Every layer goes into a staging directory, each verified against its
-// digest, and the component's directory appears only once all are: a
-// failed pull leaves nothing behind. No layer may write a file another
-// already did, or outside the directory.
-func (r componentRestore) run(ctx context.Context) (layers []RestoredLayer, err error) {
+// run restores the component. Every file goes into a staging directory,
+// each verified against its digest, and the component's directory appears
+// only once all are: a failed pull leaves nothing behind.
+func (r componentRestore) run(ctx context.Context) (restored RestoredComponent, err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("restore %s: %w", r.purl, err)
+			err = fmt.Errorf("restore %s: %w", r.files.Purl, err)
 		}
 	}()
 
-	layers, err = r.layers()
-	if err != nil {
-		return nil, err
+	restored = RestoredComponent{
+		Purl:   r.files.Purl,
+		Digest: r.manifest.Digest.String(),
+		Path:   r.dir(),
 	}
 	// The component already exists, from a build or an earlier pull: a
 	// component's directory only ever appears whole, so it's kept, and
 	// only its manifest record is filled in if missing.
 	if r.exists() {
-		return layers, r.recordManifest()
+		return restored, r.recordManifest()
 	}
 
-	componentLayers, err := newComponentLayers(r.descs)
-	if err != nil {
-		return nil, err
-	}
-	write := func(dir string) error { return r.apply(ctx, dir, componentLayers) }
+	write := func(dir string) error { return r.apply(ctx, dir) }
 	if err := writeStaged(r.dir(), write); err != nil {
-		return nil, err
+		return RestoredComponent{}, err
 	}
-	return layers, r.recordManifest()
+	return restored, r.recordManifest()
 }
 
 // dir is the component's directory.
 func (r componentRestore) dir() string {
-	return layout.ComponentLayer(r.dataDir, r.purl)
-}
-
-// layers returns the RestoredLayer run reports for each of r's layers.
-func (r componentRestore) layers() ([]RestoredLayer, error) {
-	layers := make([]RestoredLayer, 0, len(r.descs))
-	for _, desc := range r.descs {
-		hash, err := blobHash(desc)
-		if err != nil {
-			return nil, err
-		}
-		layer := RestoredLayer{
-			Purl: r.purl,
-			Hash: hash,
-			Path: r.dir(),
-		}
-		layers = append(layers, layer)
-	}
-	return layers, nil
+	return layout.ComponentLayer(r.dataDir, r.files.Purl)
 }
 
 // exists reports whether the component's directory is already in place.
@@ -247,18 +173,55 @@ func (r componentRestore) recordManifest() error {
 	return plugin.WriteManifest(r.dataDir, *r.component, pluginlib.Hash{})
 }
 
-// apply restores layers, a component's, into dir, each as soon as a
-// download slot is free (see download), then checks its symlinks, which
-// may point across layers (see fsutil.CheckSymlinks).
-func (r componentRestore) apply(ctx context.Context, dir string, layers []componentLayer) error {
-	restoreLayer := func(ctx context.Context, _ int, layer componentLayer) error {
-		label := transfer.LayerLabel(r.purl, layer.descriptor().Digest.Encoded())
-		fetch := func() error { return layer.restore(ctx, r.target, dir, label, r.progress) }
+// apply restores the component's files into dir, each as soon as a
+// download slot is free (see download).
+func (r componentRestore) apply(ctx context.Context, dir string) error {
+	restore := func(ctx context.Context, _ int, file transfer.FileBlob) error {
+		fetch := func() error { return r.restoreFile(ctx, dir, file) }
 		return r.download(ctx, fetch)
 	}
-	// No limit of its own: download is what bounds the layers.
-	if err := parallel.ForEach(ctx, 0, layers, restoreLayer); err != nil {
+	// No limit of its own: download is what bounds the files.
+	return parallel.ForEach(ctx, 0, r.files.Files, restore)
+}
+
+// restoreFile writes file under dir through an os.Root of dir, so it
+// can't be led outside, failing if it exists, or unless its blob matches
+// its digest. transfer.FetchFiles has checked its path is inside dir.
+func (r componentRestore) restoreFile(ctx context.Context, dir string, file transfer.FileBlob) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
 		return err
 	}
-	return fsutil.CheckSymlinks(dir)
+	defer root.Close()
+
+	path := filepath.FromSlash(file.Path)
+	if err := root.MkdirAll(filepath.Dir(path), transfer.DirPerm); err != nil {
+		return fmt.Errorf("create %s: %w", file.Path, err)
+	}
+	written, err := root.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fs.FileMode(file.Mode))
+	if err != nil {
+		return fmt.Errorf("create %s: %w", file.Path, err)
+	}
+	defer written.Close()
+
+	desc := file.Descriptor()
+	rc, err := r.target.Fetch(ctx, desc)
+	if err != nil {
+		return fmt.Errorf("fetch %s: %w", desc.Digest, err)
+	}
+	defer rc.Close()
+
+	label := transfer.LayerLabel(r.files.Purl, desc.Digest.Encoded())
+	pw := r.progress(label, desc.Size)
+	defer pw.Close()
+
+	verified := content.NewVerifyReader(rc, desc)
+	reader := io.TeeReader(verified, pw)
+	if _, err := io.Copy(written, reader); err != nil {
+		return fmt.Errorf("%s: %w", desc.Digest, err)
+	}
+	if err := verified.Verify(); err != nil {
+		return fmt.Errorf("verify %s: %w", desc.Digest, err)
+	}
+	return written.Close()
 }

@@ -1,17 +1,21 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
+	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/security"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // transferFlags are the flags every command moving whole packages shares:
@@ -166,5 +170,26 @@ func (f *publishFlags) transferOptions(cmd *cobra.Command, logger *slog.Logger) 
 
 	opts, done := f.transferFlags.transferOptions(cmd)
 	opts.Sign, opts.Attest, opts.Attach = signer, attester, attach
+	opts.Pack = packComponent(logger)
 	return opts, done, nil
+}
+
+// packComponent returns a transfer.Packer packing each component with its
+// plugin's "component pack" (see plugin.Pack). A plugin binary, which has
+// no plugin of its own, is packaged in bomify's own format.
+func packComponent(logger *slog.Logger) transfer.Packer {
+	return func(ctx context.Context, component cdx.Component, dir string) (*pluginlib.PackResult, error) {
+		_, isBinary, err := plugin.ParseBinary(component)
+		if err != nil {
+			return nil, err
+		}
+		if isBinary {
+			return &pluginlib.PackResult{}, nil
+		}
+		_, path, err := resolvePlugin(component, logger)
+		if err != nil {
+			return nil, err
+		}
+		return plugin.Pack(path, component, dataDir, dir, logger)
+	}
 }
