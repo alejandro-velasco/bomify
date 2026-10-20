@@ -1,6 +1,8 @@
-// Package sigstore signs and verifies a bomify signing payload as a
-// Sigstore bundle (v0.3), via sigstore-go. Two modes are supported,
-// selected by whether a key option is given:
+// Package sigstore signs and verifies a bomify package as cosign 3 signs
+// and verifies an artifact, a Sigstore bundle (v0.3) of a DSSE envelope
+// (see Sign), via sigstore-go, so cosign and bomify each verify what the
+// other signs. Two modes are supported, selected by whether a key option
+// is given:
 //
 //   - Key-based: sign with a local private key and verify against its
 //     public key. Nothing is uploaded anywhere and no network access is
@@ -12,7 +14,6 @@
 package sigstore
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/opencontainers/go-digest"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -30,6 +32,7 @@ import (
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // BundleMediaType is both the referrer artifact type and the envelope
@@ -37,15 +40,82 @@ import (
 // v0.3 bundle.
 const BundleMediaType = "application/vnd.dev.sigstore.bundle.v0.3+json"
 
-// Sign signs payload's raw bytes — with the private key opts names, or
-// keyless if it names none — returning the resulting Sigstore bundle as
-// JSON.
+// SignPredicateType is the predicate type of the in-toto statement cosign
+// 3 signs an artifact with, and so Sign does (see signStatement): cosign's
+// types.CosignSignPredicateType.
+const SignPredicateType = "https://sigstore.dev/cosign/sign/v1"
+
+// Annotations of a referrer holding a Sigstore bundle, which Sigstore's own
+// tools (cosign, gh attestation) find it by. cosign 3 writes both in
+// pkg/oci/remote, naming the predicate type's remote.BundlePredicateType;
+// the content's is a literal there.
+const (
+	annotationBundleContent       = "dev.sigstore.bundle.content"
+	annotationBundlePredicateType = "dev.sigstore.bundle.predicateType"
+)
+
+// Sign signs the manifest payload names — a bomify signing payload, its
+// descriptor as JSON — as cosign 3 signs an artifact: an in-toto
+// statement of SignPredicateType whose subject is the manifest's digest
+// (see signStatement), as a DSSE envelope in a Sigstore bundle, with the
+// private key opts names, or keyless if it names none. So `cosign verify`
+// accepts it. It returns the bundle as JSON.
 func Sign(ctx context.Context, payload []byte, opts Options) ([]byte, error) {
-	return signBundle(ctx, &sign.PlainData{Data: payload}, opts)
+	statement, err := signStatement(payload)
+	if err != nil {
+		return nil, err
+	}
+	return Attest(ctx, statement, opts)
 }
 
-// Attest signs statement, an in-toto statement, as Sign does, but as a
-// DSSE envelope: the bundle form cosign and gh attestation verify read.
+// SignatureAnnotations returns the referrer annotations cosign finds a
+// signature Sign made by: those of an attestation of SignPredicateType.
+func SignatureAnnotations() map[string]string {
+	annotations := map[string]string{
+		annotationBundleContent:       "dsse-envelope",
+		annotationBundlePredicateType: SignPredicateType,
+	}
+	return annotations
+}
+
+// signStatement returns the in-toto statement Sign signs for the manifest
+// payload names, as cosign writes it: SignPredicateType, an empty
+// predicate, and the manifest's digest as the one subject.
+func signStatement(payload []byte) ([]byte, error) {
+	manifest, err := payloadDigest(payload)
+	if err != nil {
+		return nil, err
+	}
+	signed := &intoto.ResourceDescriptor{
+		Digest: map[string]string{manifest.Algorithm().String(): manifest.Encoded()},
+	}
+	statement := &intoto.Statement{
+		Type:          intoto.StatementTypeUri,
+		Subject:       []*intoto.ResourceDescriptor{signed},
+		PredicateType: SignPredicateType,
+		Predicate:     &structpb.Struct{},
+	}
+	return protojson.Marshal(statement)
+}
+
+// payloadDigest returns the manifest digest payload, a bomify signing
+// payload, names.
+func payloadDigest(payload []byte) (digest.Digest, error) {
+	var descriptor struct {
+		Digest digest.Digest `json:"digest"`
+	}
+	if err := json.Unmarshal(payload, &descriptor); err != nil {
+		return "", fmt.Errorf("parse payload: %w", err)
+	}
+	if err := descriptor.Digest.Validate(); err != nil {
+		return "", fmt.Errorf("payload digest %q: %w", descriptor.Digest, err)
+	}
+	return descriptor.Digest, nil
+}
+
+// Attest signs statement, an in-toto statement, as a DSSE envelope in a
+// Sigstore bundle, the form cosign and gh attestation verify read, with
+// the private key opts names, or keyless if it names none.
 func Attest(ctx context.Context, statement []byte, opts Options) ([]byte, error) {
 	return signBundle(ctx, &sign.DSSEData{Data: statement, PayloadType: pluginlib.InTotoPayloadType}, opts)
 }
@@ -87,12 +157,12 @@ func signBundle(ctx context.Context, content sign.Content, opts Options) ([]byte
 // tools (cosign, gh attestation) use to find an Attest bundle: that it
 // holds a DSSE envelope and, if statement names one, its predicate type.
 func AttestationAnnotations(statement []byte) map[string]string {
-	annotations := map[string]string{"dev.sigstore.bundle.content": "dsse-envelope"}
+	annotations := map[string]string{annotationBundleContent: "dsse-envelope"}
 	var s struct {
 		PredicateType string `json:"predicateType"`
 	}
 	if json.Unmarshal(statement, &s) == nil && s.PredicateType != "" {
-		annotations["dev.sigstore.bundle.predicateType"] = s.PredicateType
+		annotations[annotationBundlePredicateType] = s.PredicateType
 	}
 	return annotations
 }
@@ -134,16 +204,34 @@ func keylessBundleOptions(opts *sign.BundleOptions, o Options) error {
 	return nil
 }
 
-// Verify checks that envelope — a Sigstore bundle as JSON — is a valid
-// signature over payload by the signer opts trusts (a public key, or a
-// keyless certificate identity and issuer), returning a human-readable
-// identity of that signer.
+// Verify checks that envelope — a Sigstore bundle as JSON — is a
+// signature of the manifest payload names, as Sign or cosign 3 makes one:
+// a DSSE envelope of an in-toto statement of SignPredicateType, naming the
+// manifest's digest as a subject, validly signed by the signer opts
+// trusts (a public key, or a keyless certificate identity and issuer). It
+// returns a human-readable identity of that signer. Any other attestation
+// that signer made of the manifest, such as its provenance, isn't a
+// signature of it, and fails.
 func Verify(payload, envelope []byte, opts Options) (string, error) {
-	var b bundle.Bundle
-	if err := b.UnmarshalJSON(envelope); err != nil {
-		return "", fmt.Errorf("parse bundle: %w", err)
+	manifest, err := payloadDigest(payload)
+	if err != nil {
+		return "", err
 	}
-	return verifyBundle(&b, verify.WithArtifact(bytes.NewReader(payload)), opts)
+	signer, signed, err := VerifyAttestation(envelope, manifest.String(), opts)
+	if err != nil {
+		return "", err
+	}
+	var statement intoto.Statement
+	if err := protojson.Unmarshal(signed, &statement); err != nil {
+		return "", fmt.Errorf("parse statement: %w", err)
+	}
+	if err := statement.Validate(); err != nil {
+		return "", fmt.Errorf("statement: %w", err)
+	}
+	if statement.PredicateType != SignPredicateType {
+		return "", fmt.Errorf("statement is of predicate type %q, not a signature's, %q", statement.PredicateType, SignPredicateType)
+	}
+	return signer, nil
 }
 
 // VerifyAttestation checks that envelope — a Sigstore bundle as JSON —

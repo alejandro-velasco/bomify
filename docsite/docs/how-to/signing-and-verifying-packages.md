@@ -67,6 +67,20 @@ bomify pull registry.example.com/team/myapp:1.0 --verify sigstore --verify-optio
 The signature is checked before anything is downloaded; if none
 verifies, nothing is written.
 
+Signatures are in cosign's format, so cosign, and the admission
+controllers built on it (Kyverno, the Sigstore policy-controller),
+verify them too, on the package and on each component's own repository.
+A key signature isn't logged in Rekor, so tell cosign not to look for
+it there:
+
+```sh
+cosign verify --key signing.pub --insecure-ignore-tlog=true registry.example.com/team/myapp:1.0
+cosign verify --key signing.pub --insecure-ignore-tlog=true registry.example.com/team/myapp/oci/alpine:3.20
+```
+
+It works the other way round too: `--verify sigstore` accepts a package
+`cosign sign` signed.
+
 ## 4. Require verification with a trust rule
 
 ```sh
@@ -126,7 +140,9 @@ jobs:
 ```
 
 Verify by naming the workflow and issuer instead of a key (this needs
-network access to Sigstore). The same options work in a trust rule.
+network access to Sigstore). The same options work in a trust rule, and
+as `cosign verify`'s `--certificate-identity` and
+`--certificate-oidc-issuer`.
 
 ```sh
 bomify pull ghcr.io/my-org/myapp:1.0 --verify sigstore \

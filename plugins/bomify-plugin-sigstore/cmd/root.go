@@ -40,6 +40,7 @@ func (signer) Sign(ctx context.Context, req pluginlib.SignRequest) (pluginlib.Si
 		ArtifactType: sigstore.BundleMediaType,
 		MediaType:    sigstore.BundleMediaType,
 		Envelope:     envelope,
+		Annotations:  sigstore.SignatureAnnotations(),
 	}, nil
 }
 
