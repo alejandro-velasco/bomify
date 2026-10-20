@@ -31,14 +31,14 @@ As for the [component contract](https://github.com/alejandro-velasco/bomify/blob
 A plugin only turns a payload into an envelope, and decides whether an
 envelope is a trusted signature over a payload. bomify does the rest:
 
-1. **Pack** the package as an OCI manifest, which pins the SBOM and every
-   layer by digest, so one signature covers the whole package.
+1. **Pack** the package as an OCI image index, which pins the SBOM and
+   every component by digest, so one signature covers the whole package.
 2. **Sign** (push/save): write the [payload](#payload), call `signature
    sign`, and push the envelope as a [referrer](#where-signatures-live)
-   of the manifest, before tagging, so a failed signing never leaves a
-   tag on an unsigned package.
+   of the index, before tagging, so a failed signing never leaves a tag
+   on an unsigned package.
 3. **Verify** (pull/load): before fetching anything else, list the
-   manifest's referrers, keep those whose artifact type `signature
+   index's referrers, keep those whose artifact type `signature
    supported-types` lists, and call `signature verify` on each until one
    passes. If none does, the pull fails and nothing is written. A trust
    rule can require several signers, each verified this way with its own
@@ -54,16 +54,18 @@ it works the same for registries and `bomify save` tarballs.
 
 ## Payload
 
-`--payload` names a file holding the package manifest's descriptor as
-compact JSON, exactly these fields in this order:
+`--payload` names a file holding the descriptor of what's signed, as
+compact JSON, exactly these fields in this order: the package's index,
+or, where push tags a component in a repository of its own, the
+component's manifest.
 
 ```json
-{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:ae88...","size":1234}
+{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:ae88...","size":1234}
 ```
 
-Treat it as opaque bytes: sign and verify exactly those bytes. bomify
-produces it identically at sign and verify time. A plugin may parse it
-(e.g. to embed the digest in a statement) but never needs to.
+bomify produces it identically at sign and verify time. Sign either
+exactly those bytes, or, as cosign does, a statement naming its digest,
+which pins the same content; `verify` must check whichever `sign` signed.
 
 ## Commands
 
@@ -133,7 +135,7 @@ trusted.
 | --- | --- | --- |
 | `--envelope` | yes | One attestation envelope, byte for byte as some `attest` produced it (not necessarily this plugin's, nor a trusted signer's). |
 | `--media-type` | yes | The envelope's media type, as its `attest` reported it. |
-| `--subject` | yes | The package manifest's digest, `<algorithm>:<hex>` (e.g. `sha256:ae88...`). |
+| `--subject` | yes | The package index's digest, `<algorithm>:<hex>` (e.g. `sha256:ae88...`). |
 | `--reference` | yes | As for `verify`. |
 | `--option` | no, repeatable | As for `verify`. |
 
@@ -234,8 +236,9 @@ Schema: [`supported-signature-types-result.schema.json`](https://github.com/alej
 
 ## Where signatures live
 
-Each signature is an OCI 1.1 referrer of the package manifest: a
-manifest of the plugin's `artifactType`, `subject` set to the package,
+Each signature is an OCI 1.1 referrer of what it signs: a manifest of
+the plugin's `artifactType`, `subject` set to the package's index or
+the component's manifest,
 with the envelope as its one layer. Registries expose it through the
 Referrers API (or its tag-schema fallback); a `save` tarball holds it as
 an untagged manifest in `index.json`. Re-signing adds a signature rather

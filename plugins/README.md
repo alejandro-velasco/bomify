@@ -243,8 +243,13 @@ a file it finds nothing in is reported `unscanned`.
 ## bomify-plugin-sigstore
 
 Signs and verifies with [sigstore-go](https://github.com/sigstore/sigstore-go),
-producing v0.3 Sigstore bundles
-(`application/vnd.dev.sigstore.bundle.v0.3+json`):
+in cosign 3's format, so `cosign verify` checks what it signs and it
+verifies what `cosign sign` signs: a v0.3 Sigstore bundle
+(`application/vnd.dev.sigstore.bundle.v0.3+json`) holding a DSSE
+envelope of an in-toto statement of predicate type
+`https://sigstore.dev/cosign/sign/v1` whose subject is the signed
+manifest's digest. Verifying requires that predicate type, so no other
+attestation counts as a signature.
 
 - **Key pair**: `--sign-option key=signing.key`, `--verify-option
   key=signing.pub`. Any PEM pair works (OpenSSL, plain or encrypted

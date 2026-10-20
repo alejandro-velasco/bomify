@@ -3,14 +3,18 @@ package sigstore
 import (
 	"context"
 	"crypto/elliptic"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
+	"github.com/sigstore/sigstore-go/pkg/sign"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // githubIssuer is GitHub Actions' OIDC issuer, used here only as a
@@ -96,7 +100,9 @@ func TestVerifyWrongKeyFails(t *testing.T) {
 	}
 }
 
-func TestVerifyTamperedPayloadFails(t *testing.T) {
+// TestVerifyOtherManifestFails covers what a signature pins: the
+// manifest's digest, so it's no signature of any other manifest.
+func TestVerifyOtherManifestFails(t *testing.T) {
 	priv, pub := writeKeyPair(t, "")
 
 	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
@@ -104,9 +110,99 @@ func TestVerifyTamperedPayloadFails(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	tampered := []byte(strings.Replace(string(payload), `"size":123`, `"size":124`, 1))
-	if _, err := Verify(tampered, envelope, Options{OptionKey: pub}); err == nil {
-		t.Fatal("Verify of a different payload: nil, want error")
+	other := []byte(strings.Replace(string(payload), "sha256:0000", "sha256:1111", 1))
+	if _, err := Verify(other, envelope, Options{OptionKey: pub}); err == nil {
+		t.Fatal("Verify of another manifest: nil, want error")
+	}
+}
+
+// TestSignWritesCosignsStatement pins the signature to what cosign 3
+// signs, and so verifies: a DSSE envelope of an in-toto statement of
+// cosign's sign predicate type, an empty predicate, and the manifest's
+// digest as its one subject.
+func TestSignWritesCosignsStatement(t *testing.T) {
+	priv, _ := writeKeyPair(t, "")
+
+	envelope, err := Sign(context.Background(), payload, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	var b bundle.Bundle
+	if err := b.UnmarshalJSON(envelope); err != nil {
+		t.Fatal(err)
+	}
+	dsse, err := b.Envelope()
+	if err != nil {
+		t.Fatalf("bundle holds no DSSE envelope: %v", err)
+	}
+	if dsse.PayloadType != pluginlib.InTotoPayloadType {
+		t.Errorf("payload type = %q, want %q", dsse.PayloadType, pluginlib.InTotoPayloadType)
+	}
+	signed, err := dsse.DecodeB64Payload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var statement intoto.Statement
+	if err := protojson.Unmarshal(signed, &statement); err != nil {
+		t.Fatalf("parse statement %s: %v", signed, err)
+	}
+	subjects := statement.GetSubject()
+	wantDigest := map[string]string{"sha256": strings.Repeat("0", 64)}
+	if statement.GetType() != intoto.StatementTypeUri || statement.GetPredicateType() != SignPredicateType || len(statement.GetPredicate().GetFields()) != 0 {
+		t.Errorf("statement = %s, want cosign's signature statement", signed)
+	}
+	if len(subjects) != 1 || subjects[0].GetName() != "" || !maps.Equal(subjects[0].GetDigest(), wantDigest) {
+		t.Errorf("subjects = %v, want just the manifest's digest, %v", subjects, wantDigest)
+	}
+
+	annotations := SignatureAnnotations()
+	if annotations["dev.sigstore.bundle.content"] != "dsse-envelope" || annotations["dev.sigstore.bundle.predicateType"] != SignPredicateType {
+		t.Errorf("annotations = %v, want cosign's for a signature", annotations)
+	}
+}
+
+// TestVerifyRefusesOtherAttestations covers telling a signature from any
+// other attestation the same signer made of the manifest, such as a
+// provenance `cosign attest` attached: only a signature verifies.
+func TestVerifyRefusesOtherAttestations(t *testing.T) {
+	priv, pub := writeKeyPair(t, "")
+	provenance := []byte(`{"_type":"https://in-toto.io/Statement/v1","subject":[{"digest":{"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}`)
+
+	envelope, err := Attest(context.Background(), provenance, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("Attest: %v", err)
+	}
+	if _, err := Verify(payload, envelope, Options{OptionKey: pub}); err == nil || !strings.Contains(err.Error(), "predicate type") {
+		t.Fatalf("Verify of a provenance attestation = %v, want it refused as no signature", err)
+	}
+}
+
+// TestVerifyRefusesMessageSignatures covers signatures this plugin made
+// before it signed as cosign does: a message signature of the payload,
+// which cosign never verified, isn't verified either.
+func TestVerifyRefusesMessageSignatures(t *testing.T) {
+	priv, pub := writeKeyPair(t, "")
+
+	envelope, err := signBundle(context.Background(), &sign.PlainData{Data: payload}, Options{OptionKey: priv})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := Verify(payload, envelope, Options{OptionKey: pub}); err == nil {
+		t.Fatal("Verify of a message signature: nil, want error")
+	}
+}
+
+func TestSignRefusesAPayloadWithoutADigest(t *testing.T) {
+	priv, _ := writeKeyPair(t, "")
+	for name, bad := range map[string]string{
+		"not JSON":     "not json",
+		"no digest":    `{"mediaType":"application/vnd.oci.image.manifest.v1+json","size":123}`,
+		"a bad digest": `{"digest":"sha256:xyz","size":123}`,
+		"an empty one": `{}`,
+	} {
+		if _, err := Sign(context.Background(), []byte(bad), Options{OptionKey: priv}); err == nil {
+			t.Errorf("%s: Sign = nil, want error", name)
+		}
 	}
 }
 

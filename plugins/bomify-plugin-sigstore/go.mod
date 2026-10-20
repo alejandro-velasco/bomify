@@ -6,6 +6,7 @@ replace github.com/alejandro-velasco/bomify => ../..
 
 require (
 	github.com/alejandro-velasco/bomify v0.0.0-00010101000000-000000000000
+	github.com/in-toto/attestation v1.2.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/sigstore/protobuf-specs v0.5.2
 	github.com/sigstore/sigstore v1.11.0
@@ -56,7 +57,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
-	github.com/in-toto/attestation v1.2.0 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b // indirect
