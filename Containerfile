@@ -18,9 +18,10 @@ ARG PLUGINS=prebuilt
 # A shell and coreutils for the install scripts, CA certificates for the
 # registry pulls a release image's install makes, and the passwd/group
 # entries the final stage takes. Docker's official debian image, pulled
-# from its ECR Public mirror rather than Docker Hub, whose anonymous pull
-# limit CI's shared runners can hit; the two serve the same image digests.
-FROM public.ecr.aws/docker/library/debian:bookworm-slim AS base
+# from Google's Docker Hub mirror, which serves the same image digests:
+# Docker Hub's anonymous pull limit, and ECR Public's anonymous data
+# limit, are both per IP, which CI's shared runners exhaust.
+FROM mirror.gcr.io/library/debian:bookworm-slim AS base
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
