@@ -6,6 +6,8 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // Signer signs a bomify package Push has just packed into target — its
@@ -37,9 +39,25 @@ type Scanner func(ctx context.Context, target oras.ReadOnlyTarget, ref string, m
 // annotations. Push calls it, like Signer, before tagging ref.
 type Attester func(ctx context.Context, target oras.Target, ref string, subject ocispec.Descriptor, statement []byte, annotations map[string]string) (ocispec.Descriptor, error)
 
+// Packer describes component, which `bomify build` pulled into dir, in its
+// kind's own registry format (see plugin.Pack), any blob that isn't a
+// file in dir inline. The zero PackResult means its kind has none. Push
+// calls it for each component.
+type Packer func(ctx context.Context, component cdx.Component, dir string) (*pluginlib.PackResult, error)
+
 // Options are what Push, Pull, and Save/Load take beyond what to
 // transfer: how, and the optional steps to run around a package.
 type Options struct {
+	// Pack is called when pushing, for each component; nil, or a zero
+	// PackResult, packages a component in bomify's own format, or a model
+	// as ModelPack.
+	Pack Packer
+	// ComponentTarget, when pushing, returns the repository named
+	// repository, a full reference without a tag, which Push tags a
+	// component in beside the package's (see
+	// AnnotationComponentReference). Nil tags no component.
+	ComponentTarget func(repository string) (oras.Target, error)
+
 	// Concurrency bounds how many layers transfer at once; values less
 	// than 1 are treated as 1.
 	Concurrency int

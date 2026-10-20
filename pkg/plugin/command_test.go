@@ -75,6 +75,69 @@ func TestComponentCommandOutputRequiredUnlessCheck(t *testing.T) {
 	}
 }
 
+// fakePacker is a fakeComponent that packs, recording the request.
+type fakePacker struct {
+	fakeComponent
+	pack PackRequest
+}
+
+func (f *fakePacker) Pack(_ context.Context, req PackRequest) (*PackResult, error) {
+	f.pack = req
+	manifest := InlineBlob("application/vnd.oci.image.manifest.v1+json", []byte("{}"))
+	return &PackResult{Manifest: &manifest}, nil
+}
+
+func TestComponentCommandPackWithoutAFormat(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	out, err := runComponent(t, &fakeComponent{}, "pack", "--purl", "p", "--input", "in", "--log", log)
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if strings.TrimSpace(out) != "{}" {
+		t.Errorf("stdout = %q, want {}", out)
+	}
+}
+
+func TestComponentCommandPack(t *testing.T) {
+	p := &fakePacker{}
+	log := filepath.Join(t.TempDir(), "log")
+	out, err := runComponent(t, p, "pack", "--purl", "p", "--input", "in", "--log", log)
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if p.pack.Purl != "p" || p.pack.Input != "in" || p.pack.Logger == nil {
+		t.Errorf("request = %+v", p.pack)
+	}
+	var result PackResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil || result.Manifest == nil || string(result.Manifest.Data) != "{}" {
+		t.Errorf("stdout = %q, %v; want the PackResult", out, err)
+	}
+}
+
+func TestComponentCommandPackRequiresInput(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	if _, err := runComponent(t, &fakePacker{}, "pack", "--purl", "p", "--log", log); err == nil {
+		t.Error("pack without --input succeeded")
+	}
+}
+
+// TestInlineBlob pins an inline blob's descriptor to its data, and its
+// JSON to base64, as the contract has it.
+func TestInlineBlob(t *testing.T) {
+	blob := InlineBlob("application/json", []byte("{}"))
+	want := "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+	if blob.Digest != want || blob.Size != 2 || blob.Path != "" {
+		t.Errorf("InlineBlob = %+v, want digest %s, size 2, no path", blob, want)
+	}
+	data, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"data":"e30="`) || strings.Contains(string(data), `"path"`) {
+		t.Errorf("JSON = %s, want the data in base64, and no path", data)
+	}
+}
+
 func TestPrintKeepsPurlQueryIntact(t *testing.T) {
 	var out bytes.Buffer
 	if err := Print(&out, Result{OutputPath: "a?b=1&c=2"}); err != nil {

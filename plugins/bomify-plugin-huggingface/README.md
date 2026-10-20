@@ -3,10 +3,11 @@
 bomify's plugin for [Hugging Face Hub](https://huggingface.co) models. It
 implements two contracts:
 
-- **Component** (`component pull`,
+- **Component** (`component pull|pack`,
   [contract](../contracts/component/v1/CONTRACT.md)): fetches
-  `pkg:huggingface/...` models. `bomify build` calls it; you normally
-  don't.
+  `pkg:huggingface/...` models, which bomify packages as
+  [ModelPack](https://github.com/modelpack/model-spec), so `pack` gives
+  nothing. `bomify build` and `bomify push` call it; you normally don't.
 - **SBOM generation** (`sbom generate`,
   [contract](../contracts/sbom/v1/CONTRACT.md)): describes a model from
   the Hub's metadata. List it as a `huggingface` source in a `bomify sbom

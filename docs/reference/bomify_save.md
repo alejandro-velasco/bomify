@@ -9,8 +9,10 @@ reports and signatures, to a single tarball (an OCI image layout) that
 "bomify load" can restore anywhere without a registry. Shared components
 are stored once. It writes to stdout unless --output is given.
 
---sign and --vex work as for "bomify push", and provenance is attached
-the same way; all of it travels inside the tarball.
+Each package is saved as "bomify push" publishes it, so its components'
+plugins must be installed. --sign and --vex work as for "bomify push",
+and provenance is attached the same way; all of it travels inside the
+tarball.
 
 ```
 bomify save <tag>... [flags]

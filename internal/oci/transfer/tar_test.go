@@ -188,13 +188,3 @@ func TestWriteTarIsStableAcrossExtractRoundTrip(t *testing.T) {
 		t.Errorf("tar digest changed across an extract round trip for identical content: %x != %x", first, second)
 	}
 }
-
-// TestTarSize checks a file's content is padded to whole blocks, after
-// a header block of its own.
-func TestTarSize(t *testing.T) {
-	for size, want := range map[int64]int64{0: 512, 1: 1024, 512: 1024, 513: 1536} {
-		if got := TarSize(size); got != want {
-			t.Errorf("TarSize(%d) = %d, want %d", size, got, want)
-		}
-	}
-}

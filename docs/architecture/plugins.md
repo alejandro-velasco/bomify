@@ -4,7 +4,7 @@ A plugin binary can implement any of four independent contracts:
 
 | Contract | Subcommands | Used by | `<kind>` names |
 | --- | --- | --- | --- |
-| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull` | `build` | a purl type |
+| [Component](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md) | `component pull/pack` | `build`, `push`/`save` | a purl type |
 | [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
 | [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
 | [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
@@ -35,6 +35,13 @@ For each SBOM component, `bomify build`:
 3. **Delegate**: `component pull --purl --output`. The plugin prints one
    JSON `{outputPath, message, hash}`, where `hash` is the SHA-256 of
    what it pulled.
+
+`bomify push` and `save` find each component's plugin the same way and
+call `component pack --purl --input` on what `build` pulled,
+for its kind's registry format, which goes in the package's index as it
+is (see [Push and pull](registry.md)). A plugin binary component has no
+plugin, and is packaged in bomify's own format. `pull` and `load` call no
+component plugin.
 
 stdout is reserved for the result and stderr for one fatal message.
 Plugins log to `--log`, `logs/<purlHash>.log`, which bomify creates

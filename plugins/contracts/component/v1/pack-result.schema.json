@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/component/v1/pack-result.schema.json",
+  "title": "bomify plugin PackResult",
+  "description": "The single JSON object a bomify-plugin-<kind> binary must print to stdout on success for its \"pack\" subcommand, per plugins/contracts/component/v1/CONTRACT.md: the component as an OCI artifact in its kind's own registry format, or {} for none. Validate a plugin's actual stdout output (one line, one object) against this schema to check it for structural conformance.",
+  "type": "object",
+  "additionalProperties": false,
+  "dependencies": {
+    "blobs": ["manifest"]
+  },
+  "properties": {
+    "manifest": {
+      "$ref": "#/definitions/blob",
+      "description": "The artifact's manifest, or an index of several. Absent, with blobs, for a kind with no format of its own."
+    },
+    "blobs": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/blob" },
+      "description": "Every other blob the manifest refers to, directly or through the manifests an index names, in any order."
+    }
+  },
+  "definitions": {
+    "blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "digest", "size"],
+      "oneOf": [{ "required": ["path"] }, { "required": ["data"] }],
+      "properties": {
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The blob's OCI media type."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "The blob's OCI digest: sha256:<lowercase hex>."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The blob's size in bytes."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A file within --input holding exactly the blob's bytes. bomify pull restores --input from the blobs whose file is there."
+        },
+        "data": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 5592408,
+          "description": "The bytes of a blob the plugin builds, such as a config or a manifest, base64: at most 4 MiB before encoding."
+        }
+      }
+    }
+  }
+}

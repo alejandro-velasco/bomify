@@ -46,9 +46,8 @@ func PurlHash(purl string) string {
 // Layers returns "<dataDir>/layers".
 func Layers(dataDir string) string { return filepath.Join(dataDir, "layers") }
 
-// Layer returns "<dataDir>/layers/<hash>": a component's pulled content
-// when hash is its PurlHash, or a foreign OCI layer's when hash is that
-// blob's digest.
+// Layer returns "<dataDir>/layers/<hash>": a component's pulled content,
+// hash being its PurlHash.
 func Layer(dataDir, hash string) string { return filepath.Join(Layers(dataDir), hash) }
 
 // Manifests returns "<dataDir>/manifests".

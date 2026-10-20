@@ -155,9 +155,9 @@ together (`Gate.CanFail`). The package is always scanned fresh, never
 judged by the reports its publisher attached. For the same reason, a
 rule's `--on pull` requires `--fail-on`.
 
-The hook runs as `transfer.Options.Scan`: `pull.PullLayers` hands it the
-SBOM, along with the target and package manifest, once the package's
-component layers are written and before its reports are restored, so a
+The hook runs as `transfer.Options.Scan`: `pull.PullComponents` hands it the
+SBOM, along with the target and package index, once the package's
+components are written and before its reports are restored, so a
 type scanned from files is scanned from them (`ContentDir` is the data
 directory). A refused package fails the pull before its tags are
 recorded; what was written stays, untagged, for `bomify package prune`
@@ -173,10 +173,10 @@ unless asked.
 
 ## Reports in a registry
 
-Reports travel as an **OCI referrer** of the package manifest, not
+Reports travel as an **OCI referrer** of the package's index, not
 inside it (`security.Attach`, called by `push.Push` after packing and
 before tagging). Reports go stale and get refreshed; keeping them out of
-the manifest means re-scanning never changes the package digest or
+the index means re-scanning never changes the package digest or
 orphans its signature.
 
 - **Attach**: one referrer (artifact type

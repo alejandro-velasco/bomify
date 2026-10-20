@@ -3,9 +3,10 @@
 The first-party plugins. Each directory is a standalone
 `bomify-plugin-<kind>` binary implementing one or more contracts:
 
-- **Component** (`component pull`,
+- **Component** (`component pull|pack`,
   [`contracts/component/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/CONTRACT.md)):
-  fetches the components an SBOM describes.
+  fetches the components an SBOM describes, and describes each in its
+  kind's registry format for a package's index.
 - **SBOM generation** (`sbom generate`,
   [`contracts/sbom/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md)):
   builds an SBOM for a deployment medium.
@@ -43,7 +44,7 @@ of its results:
 ```
 plugins/contracts/
 ├── contract-result.schema.json    the "contract" command's result, below
-├── component/v1/                  CONTRACT.md, result
+├── component/v1/                  CONTRACT.md, result, pack-result
 ├── sbom/v1/                       CONTRACT.md, generate-output
 ├── security/v1/                   CONTRACT.md, security-result, supported-components-result
 └── signing/v1/                    CONTRACT.md, sign-result, verify-result,
@@ -177,13 +178,15 @@ way by `make plugin-packages` and `make push-plugin-packages` (see
 Pulls `pkg:oci/...` and `pkg:docker/...` images. The
 reference comes from the purl's `tag` qualifier, else a digest-shaped
 version, else a plain tag, else the bare repository; `repository_url`
-overrides the registry address.
+overrides the registry address. `pack` gives the image as it is, so it
+keeps its digest in a package.
 
 ## bomify-plugin-helm
 
 - **Component**: pulls from HTTP(S) chart repositories
   (`pkg:helm/<name>@<version>?repository_url=https://...`) and OCI
-  registries (`repository_url=oci://...`).
+  registries (`repository_url=oci://...`), and packs the chart as `helm
+  push` stores one.
 - **SBOM generation**: renders a chart locally, as `helm template` does,
   and reports every image it references plus the chart itself. See
   [its README](https://github.com/alejandro-velasco/bomify/blob/main/plugins/bomify-plugin-helm/README.md)
@@ -195,14 +198,16 @@ larger than the others.
 ## bomify-plugin-generic
 
 Handles `pkg:generic/<name>@<version>?download_url=<url>`: `pull` GETs
-`download_url`.
+`download_url`. It has no registry format, so a package holds the file
+in bomify's own.
 
 ## bomify-plugin-huggingface
 
 - **Component**: pulls a [Hugging Face Hub](https://huggingface.co)
   model repository at a commit
   (`pkg:huggingface/<namespace>/<name>@<commit>`, with `repository_url`
-  naming another hub).
+  naming another hub). It packs nothing: bomify packages a model as
+  [ModelPack](https://github.com/modelpack/model-spec).
 - **SBOM generation**: describes a model as a `machine-learning-model`
   component pinned to a commit, with its hash and a model card from the
   Hub's metadata, without downloading the weights. See

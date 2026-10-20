@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/alejandro-velasco/bomify/internal/fsutil"
 )
 
 // symlink makes link point to target, skipping the test where the OS
@@ -141,31 +139,18 @@ func TestExtractTarRejectsBadSymlinks(t *testing.T) {
 			{name: "up/escaped.txt", content: "malicious content"},
 		},
 	}
-	extracts := map[string]func(*tar.Reader, string) error{
-		"ExtractTar": ExtractTar,
-		// It leaves checking its links to its caller, but nothing may
-		// still be written through one.
-		"ExtractTarExclusive": func(tr *tar.Reader, destDir string) error {
-			if err := ExtractTarExclusive(tr, destDir); err != nil {
-				return err
-			}
-			return fsutil.CheckSymlinks(destDir)
-		},
-	}
-	for extractName, extract := range extracts {
-		for name, entries := range tests {
-			t.Run(extractName+"/"+name, func(t *testing.T) {
-				parent := t.TempDir()
-				destDir := filepath.Join(parent, "dest")
-				data := buildOrderedTar(t, entries)
+	for name, entries := range tests {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			destDir := filepath.Join(parent, "dest")
+			data := buildOrderedTar(t, entries)
 
-				if err := extract(tar.NewReader(bytes.NewReader(data)), destDir); err == nil {
-					t.Error("extract succeeded, want an error")
-				}
-				if _, err := os.Stat(filepath.Join(parent, "escaped.txt")); err == nil {
-					t.Error("a file was written outside the destination")
-				}
-			})
-		}
+			if err := ExtractTar(tar.NewReader(bytes.NewReader(data)), destDir); err == nil {
+				t.Error("ExtractTar succeeded, want an error")
+			}
+			if _, err := os.Stat(filepath.Join(parent, "escaped.txt")); err == nil {
+				t.Error("a file was written outside the destination")
+			}
+		})
 	}
 }

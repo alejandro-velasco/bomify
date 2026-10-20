@@ -107,7 +107,7 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 		return err
 	}
 
-	logPulledLayers(logger, result)
+	logPulledComponents(logger, result)
 
 	// Record ref as a local tag, unless it's a digest reference
 	// (repo@sha256:...), which would mis-split on its own colon.
@@ -124,10 +124,10 @@ func runPull(cmd *cobra.Command, ref string, opts *pullOptions) error {
 	return nil
 }
 
-func logPulledLayers(logger *slog.Logger, result pull.Result) {
+func logPulledComponents(logger *slog.Logger, result pull.Result) {
 	logger.Info("sbom manifest restored", "hash", result.SBOMHash)
-	for _, layer := range result.Layers {
-		logger.Info("layer restored", "purl", layer.Purl, "hash", layer.Hash, "path", layer.Path)
+	for _, component := range result.Components {
+		logger.Info("component restored", "purl", component.Purl, "digest", component.Digest, "path", component.Path)
 	}
 	for _, report := range result.VulnerabilityReports {
 		logger.Info("vulnerability report restored", "purl", report.Purl, "hash", report.Hash, "path", report.Path)

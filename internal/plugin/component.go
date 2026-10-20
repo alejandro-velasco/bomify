@@ -55,3 +55,13 @@ func CheckPull(path string, component cdx.Component, baseDir string, logger *slo
 
 	return result, nil
 }
+
+// Pack invokes the plugin binary's "pack" subcommand, which describes the
+// component a prior Pull wrote into input in its kind's own registry
+// format (see pluginlib.PackResult), any blob it builds inline. The zero
+// PackResult means the kind has no format of its own.
+//
+// logger controls log streaming exactly as it does for Pull.
+func Pack(path string, component cdx.Component, baseDir, input string, logger *slog.Logger) (*pluginlib.PackResult, error) {
+	return runComponent[pluginlib.PackResult](path, "pack", component, baseDir, logger, "--input", input)
+}

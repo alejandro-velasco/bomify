@@ -17,7 +17,7 @@ itself:
   `<registry>/<name>:<version>` (`--registry` defaults to
   `ghcr.io/alejandro-velasco/bomify/plugins`) into a staging directory
   inside `plugins/`, never recording it as a local package.
-  `pull.PullLayers` downloads only this machine's OS/arch binaries.
+  `pull.PullComponents` restores only this machine's OS/arch binaries.
   Each binary is checked against its declared SHA-256, and only once all
   pass are they renamed into `plugins/` and recorded in
   `installed.json`. Any failure installs nothing.

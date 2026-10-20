@@ -23,10 +23,11 @@ when a `bomify trust` rule matches it (the most specific wins).
   `--require` count of them, verifies. Each signer is checked with its
   own options, so one key can't stand in for another's signer unless
   both rules name it.
-- The signature covers the manifest digest, which pins the SBOM and
-  every layer. Each blob is checked against its digest as it streams,
-  and everything is fetched by the verified descriptor, so re-tagging
-  the reference mid-pull can't substitute content.
+- The signature covers the package index's digest, which pins the SBOM
+  and every component's manifest, and so every blob. Each blob is
+  checked against its digest as it streams, and everything is fetched
+  by the verified descriptor, so re-tagging the reference mid-pull
+  can't substitute content.
 - Which signers count is up to the plugin's options, e.g. a key, or a
   keyless certificate's identity and issuer.
 
@@ -75,7 +76,7 @@ consumer's VEX says otherwise.
 ## Pull and load gates
 
 `--scan <scanners> --fail-on <conditions>`, or a scan policy rule with
-`--on pull`, scans the package fresh, once its layers are written and
+`--on pull`, scans the package fresh, once its components are written and
 before it's tagged. A refused package fails the command untagged, and
 `bomify package prune` removes it.
 
@@ -103,7 +104,7 @@ signed SLSA provenance attestation that bomify built the package's SBOM
 (see [Build provenance](provenance.md#verifying)).
 
 **Guarantees:** the attestation is signed by someone one of the
-package's trusted signers trusts, names the package manifest, records
+package's trusted signers trusts, names the package's index, records
 bomify as the builder, and matches the package's SBOM. One such
 attestation is enough, even where the rule requires several signatures
 on the package.

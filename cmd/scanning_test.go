@@ -12,6 +12,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/build"
 	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/security"
+	"github.com/alejandro-velasco/bomify/internal/testutil"
 )
 
 // hookComponent is the one component of every hook test package: one
@@ -22,11 +23,14 @@ const hookTag = "registry.example.com/team/app:1.0"
 
 // setUpHookPackage records hookTag in a fresh data directory — its SBOM
 // and a pulled layer, everything save needs to produce a tarball for
-// the load tests — with the fake scanner installed as "grype".
+// the load tests — with the fake scanner installed as "grype", and the
+// fake component plugin, which save packs its component with, as
+// "generic".
 func setUpHookPackage(t *testing.T) string {
 	t.Helper()
 	baseDir := newDataDir(t)
 	usePlugin(t, baseDir, "grype")
+	testutil.InstallFakePlugin(t, layout.Plugins(baseDir), "generic")
 	writeHookResponses(t)
 	writePackage(t, baseDir, hookTag, hookComponent)
 

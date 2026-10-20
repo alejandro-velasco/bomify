@@ -2,7 +2,6 @@ package signature
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,15 +9,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/provenance"
 )
-
-// maxManifestSize bounds the package manifest NewProvenanceVerifier
-// reads for its SBOM digest, as transfer bounds referrers.
-const maxManifestSize = 4 << 20
 
 // NewProvenanceVerifier returns a transfer.Verifier requiring, for each
 // reference policy says needs it (see Policy.ProvenanceRequired), build
@@ -40,7 +34,7 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 		if !isSHA256(manifest.Digest) {
 			return fmt.Errorf("provenance: manifest digest %s isn't SHA-256, as provenance names packages by", manifest.Digest)
 		}
-		sbom, err := configDigest(ctx, target, manifest)
+		sbom, err := sbomDigest(ctx, target, manifest)
 		if err != nil {
 			return err
 		}
@@ -67,25 +61,19 @@ func NewProvenanceVerifier(pluginDir string, policy Policy, logger *slog.Logger)
 	}
 }
 
-// configDigest returns the hex SHA-256 of manifest's config, the
-// package's SBOM, failing unless it's a SHA-256 digest, as provenance
-// names SBOMs by.
-func configDigest(ctx context.Context, target oras.ReadOnlyTarget, manifest ocispec.Descriptor) (string, error) {
-	if manifest.Size > maxManifestSize {
-		return "", fmt.Errorf("manifest %s is %d bytes, larger than the %d allowed", manifest.Digest, manifest.Size, maxManifestSize)
-	}
-	data, err := content.FetchAll(ctx, target, manifest)
+// sbomDigest returns the hex SHA-256 of the SBOM of the package whose
+// index is index (see transfer.FetchPackage), failing unless it's a
+// SHA-256 digest, as provenance names SBOMs by.
+func sbomDigest(ctx context.Context, target oras.ReadOnlyTarget, index ocispec.Descriptor) (string, error) {
+	pkg, err := transfer.FetchPackage(ctx, target, index)
 	if err != nil {
-		return "", fmt.Errorf("fetch manifest %s: %w", manifest.Digest, err)
+		return "", fmt.Errorf("provenance: %w", err)
 	}
-	var m ocispec.Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return "", fmt.Errorf("parse manifest %s: %w", manifest.Digest, err)
+	config := pkg.SBOMManifest.Config.Digest
+	if !isSHA256(config) {
+		return "", fmt.Errorf("provenance: SBOM digest %q in package %s isn't SHA-256", config, index.Digest)
 	}
-	if !isSHA256(m.Config.Digest) {
-		return "", fmt.Errorf("provenance: SBOM digest %q in manifest %s isn't SHA-256", m.Config.Digest, manifest.Digest)
-	}
-	return m.Config.Digest.Encoded(), nil
+	return config.Encoded(), nil
 }
 
 // isSHA256 reports whether d is a valid SHA-256 digest.

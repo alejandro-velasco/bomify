@@ -81,15 +81,16 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
+	tagPackage(t, baseDir, tag, sbomHash)
+	result, err := Push(ctx, store, tag, baseDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
 	if result.ManifestDigest == "" {
 		t.Error("ManifestDigest is empty")
 	}
-	if len(result.Layers) != 2 {
-		t.Fatalf("got %d layers, want 2", len(result.Layers))
+	if len(result.Components) != 2 {
+		t.Fatalf("got %d components, want 2", len(result.Components))
 	}
 
 	pulledDir := t.TempDir()
@@ -106,11 +107,11 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 		t.Errorf("pulled manifest = %q, want %q", gotManifest, sbomBytes)
 	}
 
-	if len(pullResult.Layers) != 2 {
-		t.Fatalf("pulled %d layers, want 2", len(pullResult.Layers))
+	if len(pullResult.Components) != 2 {
+		t.Fatalf("pulled %d components, want 2", len(pullResult.Components))
 	}
 
-	for _, layer := range pullResult.Layers {
+	for _, layer := range pullResult.Components {
 		var component cdx.Component
 		switch layer.Purl {
 		case singleFileComponent.PackageURL:
@@ -122,7 +123,7 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 			continue
 		}
 
-		// The whole point of unpacking on pull: the layer must land at
+		// The whole point of restoring on pull: the files must land at
 		// exactly the path `bomify build` would have used for this
 		// component, not some digest-keyed directory of Pull's own
 		// invention.
@@ -194,12 +195,13 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	ctx := context.Background()
 	const tag = "test"
 
-	result, err := Push(ctx, store, tag, baseDir, sbomHash, transfer.Options{Concurrency: 2})
+	tagPackage(t, baseDir, tag, sbomHash)
+	result, err := Push(ctx, store, tag, baseDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
-	if len(result.Layers) != 2 {
-		t.Fatalf("got %d component layers, want 2", len(result.Layers))
+	if len(result.Components) != 2 {
+		t.Fatalf("got %d components, want 2", len(result.Components))
 	}
 	if len(result.VulnerabilityReports) != 1 {
 		t.Fatalf("got %d vulnerability reports, want 1", len(result.VulnerabilityReports))
@@ -213,8 +215,8 @@ func TestPushAttachesVulnerabilityReportOnMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
-	if len(pullResult.Layers) != 2 {
-		t.Fatalf("pulled %d component layers, want 2", len(pullResult.Layers))
+	if len(pullResult.Components) != 2 {
+		t.Fatalf("pulled %d components, want 2", len(pullResult.Components))
 	}
 	if len(pullResult.VulnerabilityReports) != 1 {
 		t.Fatalf("pulled %d vulnerability reports, want 1", len(pullResult.VulnerabilityReports))
@@ -262,7 +264,8 @@ func TestPushFailsWithoutLocalLayer(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 
-	if _, err := Push(context.Background(), store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1}); err == nil {
+	tagPackage(t, baseDir, "test", sbomHash)
+	if _, err := Push(context.Background(), store, "test", baseDir, transfer.Options{Concurrency: 1}); err == nil {
 		t.Fatal("Push() error = nil, want error for a component never built locally")
 	}
 }
@@ -316,7 +319,7 @@ func readDir(t *testing.T, dir string) map[string]string {
 }
 
 // TestPushAttachesReportsAsReferrer guards where vulnerability reports
-// live: never in the package manifest itself, but as the layers of one
+// live: never in the package itself, but as the layers of one
 // report referrer of it, in the SBOM's component order rather than the
 // order their uploads happen to finish in.
 func TestPushAttachesReportsAsReferrer(t *testing.T) {
@@ -343,13 +346,14 @@ func TestPushAttachesReportsAsReferrer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: n})
+		tagPackage(t, baseDir, "test", sbomHash)
+		result, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: n})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}
 
-		if manifest := fetchManifest(t, store, result.Manifest); len(manifest.Layers) != n {
-			t.Fatalf("package manifest has %d layers, want only the %d component layers", len(manifest.Layers), n)
+		if _, pkg := fetchPackage(t, store, "test"); len(pkg.Index.Manifests) != n+1 {
+			t.Fatalf("package index has %d manifests, want only the SBOM's and the %d components'", len(pkg.Index.Manifests), n)
 		}
 
 		referrers, err := security.ReportReferrers(ctx, store, result.Manifest)
@@ -404,7 +408,8 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		return nil
 	}
 
-	first, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1, Sign: sign})
+	tagPackage(t, baseDir, "test", sbomHash)
+	first, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 1, Sign: sign})
 	if err != nil {
 		t.Fatalf("first Push() error = %v", err)
 	}
@@ -412,7 +417,8 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 		t.Fatalf("signed %v, want the package manifest then its report referrer", signed)
 	}
 
-	again, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
+	tagPackage(t, baseDir, "test", sbomHash)
+	again, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("second Push() error = %v", err)
 	}
@@ -421,7 +427,8 @@ func TestPushRescanKeepsPackageDigest(t *testing.T) {
 	}
 
 	writeReport(t, baseDir, singleFileComponent, "CVE-NEW", "2026-02-01T00:00:00Z")
-	rescanned, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
+	tagPackage(t, baseDir, "test", sbomHash)
+	rescanned, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("third Push() error = %v", err)
 	}
@@ -464,7 +471,8 @@ func TestPullSkipsUnverifiedReports(t *testing.T) {
 		t.Fatalf("new oci store: %v", err)
 	}
 	ctx := context.Background()
-	pushed, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
+	tagPackage(t, baseDir, "test", sbomHash)
+	pushed, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -582,12 +590,13 @@ func TestPushIsDeterministic(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	push := func() (string, ocispec.Manifest) {
+	push := func() (string, ocispec.Index) {
 		store, err := oci.New(t.TempDir())
 		if err != nil {
 			t.Fatalf("new oci store: %v", err)
 		}
-		result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 1})
+		tagPackage(t, baseDir, "test", sbomHash)
+		result, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 1})
 		if err != nil {
 			t.Fatalf("Push() error = %v", err)
 		}
@@ -597,16 +606,16 @@ func TestPushIsDeterministic(t *testing.T) {
 		}
 		data, err := content.FetchAll(ctx, store, desc)
 		if err != nil {
-			t.Fatalf("fetch manifest: %v", err)
+			t.Fatalf("fetch index: %v", err)
 		}
-		var manifest ocispec.Manifest
-		if err := json.Unmarshal(data, &manifest); err != nil {
-			t.Fatalf("parse manifest: %v", err)
+		var index ocispec.Index
+		if err := json.Unmarshal(data, &index); err != nil {
+			t.Fatalf("parse index: %v", err)
 		}
-		return result.ManifestDigest, manifest
+		return result.ManifestDigest, index
 	}
 
-	first, manifest := push()
+	first, index := push()
 	// Sleep past a second boundary, so a wall-clock timestamp would
 	// certainly differ between the two pushes.
 	time.Sleep(1100 * time.Millisecond)
@@ -615,7 +624,7 @@ func TestPushIsDeterministic(t *testing.T) {
 	if first != second {
 		t.Errorf("manifest digests differ across pushes: %s vs %s", first, second)
 	}
-	if got := manifest.Annotations[ocispec.AnnotationCreated]; got != "2026-09-28T10:00:00Z" {
+	if got := index.Annotations[ocispec.AnnotationCreated]; got != "2026-09-28T10:00:00Z" {
 		t.Errorf("created annotation = %q, want the SBOM's timestamp", got)
 	}
 }
@@ -657,7 +666,8 @@ func TestPushPullKeepsEveryScannersReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	result, err := Push(ctx, store, "test", baseDir, sbomHash, transfer.Options{Concurrency: 2})
+	tagPackage(t, baseDir, "test", sbomHash)
+	result, err := Push(ctx, store, "test", baseDir, transfer.Options{Concurrency: 2})
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
@@ -713,5 +723,14 @@ func TestPushPullKeepsEveryScannersReport(t *testing.T) {
 	}
 	if pulled.ReportsSkipped == nil || len(pulled.VulnerabilityReports) != 0 {
 		t.Errorf("pull of an unannotated report: %d restored, skipped %v; want none restored and a reason", len(pulled.VulnerabilityReports), pulled.ReportsSkipped)
+	}
+}
+
+// tagPackage records ref as a local tag of the package sbomHash names in
+// baseDir, as `bomify build --tag` does, for Push to resolve.
+func tagPackage(t *testing.T, baseDir, ref, sbomHash string) {
+	t.Helper()
+	if err := build.UpdateRepositories(baseDir, []string{ref}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
 	}
 }

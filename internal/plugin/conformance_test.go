@@ -1,10 +1,12 @@
 package plugin
 
 import (
+	"encoding/json"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
+	"github.com/alejandro-velasco/bomify/internal/layout"
 	"github.com/alejandro-velasco/bomify/internal/testutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
@@ -28,5 +30,16 @@ func TestCallsParseWithPkgPlugin(t *testing.T) {
 	}
 	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
 		t.Errorf("Pull: %v", err)
+	}
+	input := layout.ComponentLayer(baseDir, component.PackageURL)
+	packed, err := Pack(bin, component, baseDir, input, testLogger())
+	if err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	var manifest struct {
+		Annotations map[string]string `json:"annotations"`
+	}
+	if packed.Manifest == nil || json.Unmarshal(packed.Manifest.Data, &manifest) != nil || manifest.Annotations["input"] != input {
+		t.Errorf("Pack = %+v, want the plugin to have been given --input %s", packed, input)
 	}
 }

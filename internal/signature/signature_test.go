@@ -51,7 +51,7 @@ func pushPackage(t *testing.T, store *oci.Store, ref, name string) ocispec.Descr
 	if err != nil {
 		t.Fatalf("push config: %v", err)
 	}
-	layer, err := transfer.PushBytes(ctx, store, []byte("layer "+name), transfer.LayerMediaType, "layer", nil)
+	layer, err := transfer.PushBytes(ctx, store, []byte("layer "+name), transfer.FileMediaType, "layer", nil)
 	if err != nil {
 		t.Fatalf("push layer: %v", err)
 	}

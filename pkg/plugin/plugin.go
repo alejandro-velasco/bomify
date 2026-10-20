@@ -1,6 +1,6 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
-// binary: the Result/Hash types the component plugin contract's JSON output
-// mirrors, SecurityResult for the security scanning contract's,
+// binary: the Result/Hash/PackResult types the component plugin contract's
+// JSON output mirrors, SecurityResult for the security scanning contract's,
 // SignResult/VerifyResult for the signing contract's, ContractResult for the
 // contract versions every plugin reports, and Print to emit any of them
 // correctly. On top of those, ComponentCommand, SecurityCommand, and
@@ -16,6 +16,8 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +41,51 @@ type Result struct {
 type Hash struct {
 	Algorithm cdx.HashAlgorithm `json:"algorithm,omitempty"`
 	Value     string            `json:"value,omitempty"`
+}
+
+// PackResult is what a plugin's "pack" subcommand prints: the component
+// as an OCI artifact in its kind's own registry format, a Manifest and
+// every blob it refers to, for bomify to put in the package's index as it
+// is. The zero PackResult, printed as {}, means the kind has no format of
+// its own, and bomify packages the component in its default (see
+// plugins/contracts/component/v1/CONTRACT.md).
+type PackResult struct {
+	// Manifest is the artifact's manifest, or an index of several.
+	Manifest *PackedBlob `json:"manifest,omitempty"`
+	// Blobs is every other blob the Manifest refers to, directly or
+	// through the manifests an index names, in any order.
+	Blobs []PackedBlob `json:"blobs,omitempty"`
+}
+
+// PackedBlob is one blob of a PackResult: its OCI descriptor's media type,
+// digest, and size, and its bytes: either Path, a file within pack's
+// --input holding exactly them, or, for a blob the plugin builds, Data,
+// inline (see InlineBlob).
+type PackedBlob struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+	Path      string `json:"path,omitempty"`
+	// Data is base64 in JSON, at most MaxInlineBlobSize bytes.
+	Data []byte `json:"data,omitempty"`
+}
+
+// MaxInlineBlobSize bounds a PackedBlob's Data: as large as a registry
+// commonly allows a manifest, which is what a plugin builds.
+const MaxInlineBlobSize = 4 << 20
+
+// InlineBlob returns data, of mediaType, as a blob of a PackResult that
+// carries its bytes inline, as a blob a plugin builds, such as a config
+// or a manifest, does.
+func InlineBlob(mediaType string, data []byte) PackedBlob {
+	sum := sha256.Sum256(data)
+	blob := PackedBlob{
+		MediaType: mediaType,
+		Digest:    "sha256:" + hex.EncodeToString(sum[:]),
+		Size:      int64(len(data)),
+		Data:      data,
+	}
+	return blob
 }
 
 // SecurityResult is the JSON object a plugin's "security scan"

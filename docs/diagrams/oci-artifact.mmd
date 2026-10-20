@@ -6,47 +6,47 @@ flowchart LR
     classDef vuln fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
 
     subgraph Local["bomify data directory"]
-        SBOM[("SBOM manifest file")]
-        C1[("Component A files")]
-        C2[("Component B files")]
-        V1[("Component A<br/>vulnerability report")]
+        SBOM[("SBOM")]
+        Image[("image, as an OCI image layout<br/>pkg:oci")]
+        Chart[("chart archive<br/>pkg:helm")]
+        Model[("model files<br/>pkg:huggingface")]
+        Files[("other files<br/>pkg:generic")]
+        Report[("vulnerability reports")]
     end
 
-    subgraph OCI["OCI artifact"]
-        Config("config blob")
-        Layer1("layer blob A")
-        Layer2("layer blob B")
-        Manifest{{"OCI manifest"}}
+    subgraph Package["package, in one repository"]
+        Index{{"index — what the tag points at"}}
+        SBOMManifest("SBOM manifest<br/>config: the SBOM<br/>layers: files map, extra files")
+        ImageManifest("the image's own manifest")
+        ChartManifest("the chart's manifest, as helm push builds it")
+        ModelManifest("ModelPack manifest")
+        FilesManifest("bomify component manifest")
     end
 
-    subgraph Reports["report referrer (only if any component was scanned)"]
-        Vuln1("vulnerability report<br/>layer blob A")
-        ReportManifest{{"referrer manifest"}}
+    subgraph Referrers["referrers"]
+        Reports("vulnerability reports<br/>(only if any component was scanned)")
+        Signed("signatures, VEX, provenance")
     end
 
-    subgraph Referrer["signature referrer (push --sign only)"]
-        Envelope("envelope blob")
-        SigManifest{{"referrer manifest"}}
-    end
+    SBOM -- "verbatim" --> SBOMManifest
+    Image -- "oci plugin's pack: as it is,<br/>its digest kept" --> ImageManifest
+    Chart -- "helm plugin's pack" --> ChartManifest
+    Model -- "a raw layer per file" --> ModelManifest
+    Files -- "a layer per file" --> FilesManifest
+    Report -- "verbatim, annotated with purl" --> Reports
+    Index --> SBOMManifest
+    Index -- "annotated with purl" --> ImageManifest
+    Index -- "annotated with purl" --> ChartManifest
+    Index -- "annotated with purl" --> ModelManifest
+    Index -- "annotated with purl" --> FilesManifest
+    Reports -- "subject" --> Index
+    Signed -- "subject" --> Index
 
-    SBOM -- "pushed verbatim" --> Config
-    C1 -- "small files tarred, large files whole,<br/>annotated with purl, pushed" --> Layer1
-    C2 -- "small files tarred, large files whole,<br/>annotated with purl, pushed" --> Layer2
-    V1 -- "pushed verbatim, annotated with purl<br/>(only components that were scanned)" --> Vuln1
-    Config --> Manifest
-    Layer1 --> Manifest
-    Layer2 --> Manifest
-    Vuln1 --> ReportManifest
-    ReportManifest -- "subject: package manifest digest" --> Manifest
-    Envelope --> SigManifest
-    SigManifest -- "subject: signs manifest digest" --> Manifest
-
-    class SBOM,C1,C2,V1 local
-    class Config,Layer1,Layer2 oci
-    class Manifest ociFinal
-    class Vuln1,ReportManifest vuln
-    class Envelope,SigManifest sig
+    class SBOM,Image,Chart,Model,Files,Report local
+    class SBOMManifest,ImageManifest,ChartManifest,ModelManifest,FilesManifest oci
+    class Index ociFinal
+    class Reports vuln
+    class Signed sig
     style Local fill:#F8FAFF,stroke:#C7D2FE,stroke-width:1px,color:#334155
-    style OCI fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
-    style Reports fill:#FFF8F8,stroke:#FECACA,stroke-width:1px,color:#334155
-    style Referrer fill:#FFFDF5,stroke:#FDE68A,stroke-width:1px,color:#334155
+    style Package fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
+    style Referrers fill:#FFFDF5,stroke:#FDE68A,stroke-width:1px,color:#334155

@@ -4,12 +4,12 @@ flowchart LR
     classDef sig fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#78350f
     classDef lookup fill:#EEF2FF,stroke:#6366F1,stroke-width:1.5px,color:#1e1b4b
 
-    subgraph Repo["registry repository (e.g. registry.example.com/team/myapp)"]
-        Tag["tag: 1.0"]
-        Package{{"package manifest<br/>sha256:ae88…<br/>(config + layers, unchanged by signing)"}}
+    subgraph Repo["registry repository"]
+        Tag["registry.example.com/team/myapp:1.0"]
+        Package{{"package index<br/>sha256:ae88…<br/>(its manifests, unchanged by signing)"}}
 
-        subgraph Signature["signature referrer — untagged"]
-            SigManifest{{"referrer manifest<br/>artifactType: plugin's own<br/>(e.g. application/vnd.dev.sigstore.bundle.v0.3+json)<br/>annotation land.bomify.signature.plugin: &lt;kind&gt;"}}
+        subgraph Signature["signature referrer"]
+            SigManifest{{"referrer manifest, untagged<br/>artifactType: plugin's own<br/>(e.g. application/vnd.dev.sigstore.bundle.v0.3+json)<br/>annotation land.bomify.signature.plugin: &lt;kind&gt;"}}
             Envelope[("envelope blob<br/>layers[0], e.g. a Sigstore bundle")]
         end
     end

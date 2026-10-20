@@ -3,11 +3,13 @@ package sign
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/oci"
@@ -15,10 +17,10 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
-// pushPackage packs a bomify-package-shaped manifest into store, tagged
-// ref, with a vulnerability report, a VEX document, and an unrelated
-// referrer attached, and returns the manifest and the referrers Sign
-// should sign.
+// pushPackage packs a bomify-package-shaped index, of just an SBOM
+// manifest, into store, tagged ref, with a vulnerability report, a VEX
+// document, and an unrelated referrer attached, and returns the index
+// and the referrers Sign should sign.
 func pushPackage(t *testing.T, store *oci.Store, ref string) (ocispec.Descriptor, []ocispec.Descriptor) {
 	t.Helper()
 	ctx := context.Background()
@@ -27,15 +29,30 @@ func pushPackage(t *testing.T, store *oci.Store, ref string) (ocispec.Descriptor
 	if err != nil {
 		t.Fatal(err)
 	}
-	layer, err := transfer.PushBytes(ctx, store, []byte("layer"), transfer.LayerMediaType, "layer", nil)
+	files, err := transfer.PushBytes(ctx, store, []byte(`{"components":[]}`), transfer.FilesMediaType, "files", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	options := oras.PackManifestOptions{
 		ConfigDescriptor: &config,
-		Layers:           []ocispec.Descriptor{layer},
+		Layers:           []ocispec.Descriptor{files},
 	}
-	manifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, transfer.ArtifactType, options)
+	sbomManifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, transfer.SBOMArtifactType, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sbomManifest.ArtifactType = transfer.SBOMArtifactType
+	index := ocispec.Index{
+		Versioned:    specs.Versioned{SchemaVersion: 2},
+		MediaType:    ocispec.MediaTypeImageIndex,
+		ArtifactType: transfer.ArtifactType,
+		Manifests:    []ocispec.Descriptor{sbomManifest},
+	}
+	data, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := transfer.PushBytes(ctx, store, data, ocispec.MediaTypeImageIndex, "index", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +118,7 @@ func TestSignSignsPackageAndItsReferrers(t *testing.T) {
 	}
 
 	if result.Manifest.Digest != manifest.Digest || signer.signed[0].Digest != manifest.Digest {
-		t.Errorf("signed first %v, result manifest %v; want the package manifest %v", signer.signed[0].Digest, result.Manifest.Digest, manifest.Digest)
+		t.Errorf("signed first %v, result manifest %v; want the package index %v", signer.signed[0].Digest, result.Manifest.Digest, manifest.Digest)
 	}
 	want := digests(referrers)
 	if got := digests(result.Referrers); !slices.Equal(got, want) {

@@ -16,10 +16,12 @@ func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("oci", "bomify plugin for container/OCI image components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
 			Pull: "Download the component's image and save it as an OCI Image Layout",
+			Pack: "Describe the image a prior pull wrote into --input as it is, keeping its digest",
 		}))
 }
 
-// component implements plugin.ComponentPlugin over internal/image.
+// component implements plugin.ComponentPlugin, and plugin.ComponentPacker,
+// over internal/image.
 type component struct{}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
@@ -34,4 +36,8 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 		return image.CheckPull(ref, req.Logger)
 	}
 	return image.Pull(ref, req.Output, req.Logger)
+}
+
+func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {
+	return image.Pack(req.Input, req.Logger)
 }

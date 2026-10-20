@@ -1,49 +1,31 @@
 flowchart LR
     classDef ref fill:#F8FAFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
-    classDef manifest fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
-    classDef component fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
-    classDef vuln fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#7f1d1d
+    classDef index fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#022c22
+    classDef manifest fill:#ECFDF5,stroke:#10B981,stroke-width:1.5px,color:#064e3b
+    classDef referrer fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#78350f
 
-    subgraph Repo["registry repository (e.g. registry.example.com/team/myapp)"]
-        Tag["tag: 1.0"]
-
-        Manifest{{"package manifest<br/>artifactType: application/vnd.bomify.package.v1+json"}}
-
-        subgraph Descriptors["manifest descriptors, in this order"]
-            Config["config<br/>mediaType: application/vnd.cyclonedx+json (or +xml)"]
-            L1["layers[0]: component A's small files<br/>mediaType: application/vnd.bomify.component.layer.v1.tar<br/>title: &lt;hash&gt;.tar · land.bomify.purl: &lt;purl A&gt;"]
-            L2["layers[1..]: component A's large files, one each<br/>mediaType: application/vnd.bomify.component.file.v1<br/>land.bomify.purl · land.bomify.file.path, .mode"]
-        end
-
-        ReportRef{{"report referrer (untagged)<br/>artifactType: application/vnd.bomify.vulnerabilities.v1+json<br/>created: newest report's scan time"}}
-        R1["layers[0]: component A's report<br/>mediaType: application/vnd.bomify.component.vulnerabilities.v1+json<br/>title: &lt;purl-hash&gt;.json · land.bomify.purl: &lt;purl A&gt;"]
-
-        subgraph Blobs["blob store — content-addressed, shared across every tag and package in the repository"]
-            BConfig[("sha256:… SBOM")]
-            BL1[("sha256:… tar A")]
-            BL2[("sha256:… part of A's large file")]
-            BR1[("sha256:… report A")]
-        end
+    subgraph Repo["package repository"]
+        Tag["registry.example.com/team/myapp:1.0"]
+        Index{{"package index"}}
+        SBOM("SBOM manifest<br/>config: the SBOM<br/>layers: files map, extra files")
+        Components("each component's own manifest:<br/>an image, a chart, ModelPack, or bomify's format")
+        Referrers("referrers: reports, signatures,<br/>VEX, provenance")
     end
 
-    Tag --> Manifest
-    Manifest --> Config
-    Manifest --> L1
-    Manifest --> L2
-    ReportRef -- "subject" --> Manifest
-    ReportRef --> R1
-    Config -- "digest" --> BConfig
-    L1 -- "digest" --> BL1
-    L2 -- "digest" --> BL2
-    R1 -- "digest" --> BR1
+    subgraph Alias["component repository"]
+        AliasTag["registry.example.com/team/myapp/helm/podinfo:6.7.1"]
+    end
 
-    Note["reports never change the package manifest: one referrer per scan,<br/>one report layer per scanned component, in SBOM order —<br/>none for a component never scanned"]
-    Note -.- ReportRef
+    Tag --> Index
+    Index -- "first" --> SBOM
+    Index -- "then each, with its<br/>purl and reference" --> Components
+    SBOM -. "files map: which blob<br/>holds each file" .-> Components
+    Referrers -- "subject" --> Index
+    AliasTag -- "the same manifest,<br/>its blobs mounted" --> Components
 
-    class Tag ref
-    class Manifest manifest
-    class Config,L1,L2,BConfig,BL1,BL2 component
-    class ReportRef,R1,BR1 vuln
+    class Tag,AliasTag ref
+    class Index index
+    class SBOM,Components manifest
+    class Referrers referrer
     style Repo fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
-    style Descriptors fill:#F0FDF9,stroke:#A7F3D0,stroke-width:1px,color:#334155
-    style Blobs fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1px,color:#334155
+    style Alias fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155

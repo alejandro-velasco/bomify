@@ -19,11 +19,13 @@ func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("helm", "bomify plugin for Helm chart components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
 			Pull: "Download the chart from its HTTP repository or OCI registry and save it as a .tgz",
+			Pack: "Describe the chart a prior pull wrote into --input as Helm stores one in a registry",
 		}),
 		sbomCmd())
 }
 
-// component implements plugin.ComponentPlugin over internal/chart.
+// component implements plugin.ComponentPlugin, and plugin.ComponentPacker,
+// over internal/chart.
 type component struct{}
 
 func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result, error) {
@@ -35,6 +37,14 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 		return chart.CheckPull(ref, req.Logger)
 	}
 	return chart.Pull(ref, req.Output, req.Logger)
+}
+
+func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {
+	ref, err := resolve(req.Purl, req.Logger)
+	if err != nil {
+		return nil, err
+	}
+	return chart.Pack(req.Input, ref, req.Logger)
 }
 
 func resolve(purl string, logger *slog.Logger) (chart.Ref, error) {

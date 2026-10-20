@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/oci"
@@ -125,7 +127,10 @@ func publishPackage(t *testing.T, binaries []platformBinary, opts packageOptions
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := push.Push(ctx, store, ref, sourceDir, sbomHash, transfer.Options{Concurrency: 1}); err != nil {
+	if err := build.UpdateRepositories(sourceDir, []string{ref}, sbomHash); err != nil {
+		t.Fatalf("UpdateRepositories: %v", err)
+	}
+	if _, err := push.Push(ctx, store, ref, sourceDir, transfer.Options{Concurrency: 1}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	return store
@@ -198,21 +203,19 @@ func TestInstallPicksHostBinary(t *testing.T) {
 	}
 }
 
-// fetchRecorder is a target that records the purl annotation of every
-// descriptor fetched through it.
+// fetchRecorder is a target that records the digest of every blob fetched
+// through it.
 type fetchRecorder struct {
 	oras.ReadOnlyTarget
-	purls []string
+	digests []digest.Digest
 }
 
 func (r *fetchRecorder) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
-	if purl := desc.Annotations[transfer.AnnotationPurl]; purl != "" {
-		r.purls = append(r.purls, purl)
-	}
+	r.digests = append(r.digests, desc.Digest)
 	return r.ReadOnlyTarget.Fetch(ctx, desc)
 }
 
-func TestInstallFetchesOnlyHostLayers(t *testing.T) {
+func TestInstallFetchesOnlyTheHostsComponent(t *testing.T) {
 	store := publishPackage(t, []platformBinary{otherPlatform, hostBinary("host binary")}, packageOptions{})
 	recorder := &fetchRecorder{ReadOnlyTarget: store}
 
@@ -220,8 +223,11 @@ func TestInstallFetchesOnlyHostLayers(t *testing.T) {
 		t.Fatalf("Install() error = %v", err)
 	}
 
-	if len(recorder.purls) != 1 || !strings.Contains(recorder.purls[0], "os="+hostOS) {
-		t.Errorf("fetched layers for %v, want only the host's", recorder.purls)
+	// The host's binary, and not the other platform's.
+	host := digest.FromString("host binary")
+	other := digest.FromString(otherPlatform.content)
+	if !slices.Contains(recorder.digests, host) || slices.Contains(recorder.digests, other) {
+		t.Errorf("fetched %v, want the host's binary, %s, and not %s", recorder.digests, host, other)
 	}
 }
 

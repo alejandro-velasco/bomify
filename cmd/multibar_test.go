@@ -47,8 +47,8 @@ func TestBarLabel(t *testing.T) {
 	for name, want := range map[string]string{
 		"pkg:generic/migrate@3.1": "pkg:generic/migrate@3.1",
 		"pkg:oci/nginx@1.27.2-debian-12-r1?repository_url=index.docker.io%2Fbitnami%2Fnginx": "pkg:oci/nginx@1.27.2-debian-12-r1",
-		"sbom manifest": "sbom manifest",
-		long:            long[:maxBarLabel-1] + "…",
+		"sbom": "sbom",
+		long:   long[:maxBarLabel-1] + "…",
 		// Cut by characters, never mid-character.
 		"pkg:generic/" + strings.Repeat("é", 60): "pkg:generic/" + strings.Repeat("é", maxBarLabel-1-len("pkg:generic/")) + "…",
 	} {

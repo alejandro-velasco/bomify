@@ -39,8 +39,8 @@ fails the build. Only `externalParameters` is bomify's own schema.
 ## Attaching
 
 `push.Push` (and so `save`) calls `provenance.Attach` if the build has a
-record. It builds an in-toto statement whose subject is the package
-manifest digest, named by the reference's repository (e.g.
+record. It builds an in-toto statement whose subject is the package's
+index digest, named by the reference's repository (e.g.
 `registry.example.com/team/app`), and attaches it as a referrer of the
 package, annotated `land.bomify.attestation.predicateType` and with the
 statement's SHA-256 (`land.bomify.provenance.statement`). If the package
@@ -85,12 +85,12 @@ signer, it keeps the referrers annotated
 and an artifact type its plugin supports, and asks the plugin's
 `signature verify-attestation` (see the
 [signing contract](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md#signature-verify-attestation))
-about each, with the manifest digest as the subject and the signer's
+about each, with the index digest as the subject and the signer's
 options, until one passes and `provenance.Check` accepts the statement
 it returns:
 
 - a valid in-toto statement of the SLSA v1 predicate type, naming the
-  package manifest's digest as a subject (its name isn't checked, so a
+  package index's digest as a subject (its name isn't checked, so a
   copied package still verifies);
 - valid SLSA provenance with this page's `buildType` and bomify's
   `builder.id`;
