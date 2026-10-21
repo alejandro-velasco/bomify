@@ -17,10 +17,9 @@ import (
 // PackageComponent is one component of a package in a registry.
 type PackageComponent struct {
 	Component cdx.Component
-	// Files is how many files the package's files map lays out for it, and
-	// Size how many bytes they take.
-	Files int
-	Size  int64
+	// Files is its files, as the package's files map lays them out, or the
+	// zero ComponentFiles if the map has none for it.
+	Files transfer.ComponentFiles
 	// Reference is where push tagged the component's own manifest (see
 	// transfer.AnnotationComponentReference), resolved against the
 	// package's repository, or "" if push tagged none.
@@ -54,14 +53,11 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 	components := sliceutil.Deref(p.sbom.bom.Components)
 	listed := make([]PackageComponent, 0, len(components))
 	for _, component := range components {
+		files, _ := p.files.Component(component.PackageURL)
 		entry := PackageComponent{
 			Component: component,
+			Files:     files,
 			Reference: references[component.PackageURL],
-		}
-		files, _ := p.files.Component(component.PackageURL)
-		for _, file := range files.Files {
-			entry.Files++
-			entry.Size += file.Size
 		}
 		listed = append(listed, entry)
 	}
@@ -142,9 +138,8 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 	if err != nil {
 		return ComponentResult{}, err
 	}
-	purl := selected.Component.PackageURL
-	files, ok := pkg.files.Component(purl)
-	if !ok {
+	files := selected.Files
+	if files.Purl == "" {
 		return ComponentResult{}, fmt.Errorf("%q has no files in this package", selector)
 	}
 
@@ -154,7 +149,7 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 	}
 	write := func(dir string) error { return restore.apply(ctx, dir) }
 	if err := writeInto(into.Dir, into.Replace, write); err != nil {
-		return ComponentResult{}, fmt.Errorf("restore %s: %w", purl, err)
+		return ComponentResult{}, fmt.Errorf("restore %s: %w", files.Purl, err)
 	}
 
 	result := ComponentResult{

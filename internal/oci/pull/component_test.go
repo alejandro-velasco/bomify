@@ -181,11 +181,13 @@ func TestComponentsListsEachWithItsFiles(t *testing.T) {
 		}
 	}
 	alpha, beta := listed[0], listed[1]
-	if alpha.Files != 3 || alpha.Size != int64(len(`{"a": 1}`)+len("alpha weights")+len("tail")) {
-		t.Errorf("alpha: %d files, %d bytes, want 3 files and their bytes", alpha.Files, alpha.Size)
+	alphaFiles, alphaSize := len(alpha.Files.Files), alpha.Files.Size()
+	if alphaFiles != 3 || alphaSize != int64(len(`{"a": 1}`)+len("alpha weights")+len("tail")) {
+		t.Errorf("alpha: %d files, %d bytes, want 3 files and their bytes", alphaFiles, alphaSize)
 	}
-	if beta.Files != 1 || beta.Size != int64(len("beta weights")) {
-		t.Errorf("beta: %d files, %d bytes, want 1 file and its bytes", beta.Files, beta.Size)
+	betaFiles, betaSize := len(beta.Files.Files), beta.Files.Size()
+	if betaFiles != 1 || betaSize != int64(len("beta weights")) {
+		t.Errorf("beta: %d files, %d bytes, want 1 file and its bytes", betaFiles, betaSize)
 	}
 	if want := "registry.example.com/team/platform/huggingface/org/alpha:1"; alpha.Reference != want {
 		t.Errorf("alpha: reference = %q, want %q", alpha.Reference, want)

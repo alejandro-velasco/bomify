@@ -111,7 +111,6 @@ func writeInto(dir string, replace bool, write func(stageDir string) error) (err
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	var moved []string
 	stageDir, err := os.MkdirTemp(dir, ".pull-*")
 	if err != nil {
 		if created {
@@ -121,13 +120,7 @@ func writeInto(dir string, replace bool, write func(stageDir string) error) (err
 	}
 	defer func() {
 		os.RemoveAll(stageDir)
-		if err == nil {
-			return
-		}
-		for _, path := range moved {
-			os.RemoveAll(path)
-		}
-		if created {
+		if err != nil && created {
 			os.Remove(dir)
 		}
 	}()
@@ -135,19 +128,32 @@ func writeInto(dir string, replace bool, write func(stageDir string) error) (err
 	if err := write(stageDir); err != nil {
 		return err
 	}
+	// Every new file has verified, so clear out what dir held before,
+	// sparing the staging directory, which holds the new files.
 	if replace {
 		if err := removeAllBut(dir, filepath.Base(stageDir)); err != nil {
 			return err
 		}
 	}
-	entries, err := os.ReadDir(stageDir)
+	return moveEntries(stageDir, dir)
+}
+
+// moveEntries moves everything in fromDir into toDir. If a move fails, it
+// removes what it already moved, so toDir is left as it was.
+func moveEntries(fromDir, toDir string) error {
+	entries, err := os.ReadDir(fromDir)
 	if err != nil {
-		return fmt.Errorf("list %s: %w", stageDir, err)
+		return fmt.Errorf("list %s: %w", fromDir, err)
 	}
+	var moved []string
 	for _, entry := range entries {
-		destination := filepath.Join(dir, entry.Name())
-		if err := os.Rename(filepath.Join(stageDir, entry.Name()), destination); err != nil {
-			return fmt.Errorf("move %s into %s: %w", entry.Name(), dir, err)
+		source := filepath.Join(fromDir, entry.Name())
+		destination := filepath.Join(toDir, entry.Name())
+		if err := os.Rename(source, destination); err != nil {
+			for _, path := range moved {
+				os.RemoveAll(path)
+			}
+			return fmt.Errorf("move %s into %s: %w", entry.Name(), toDir, err)
 		}
 		moved = append(moved, destination)
 	}

@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
+	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 )
 
 func TestComponentCmdHasListAndPull(t *testing.T) {
@@ -94,18 +96,29 @@ func TestComponentPullRequiresOutputAndTwoArguments(t *testing.T) {
 	}
 }
 
+// filesOf is the files of purl, one of each size in sizes.
+func filesOf(purl string, sizes ...int64) transfer.ComponentFiles {
+	files := transfer.ComponentFiles{Purl: purl}
+	for index, size := range sizes {
+		file := transfer.FileBlob{
+			Path: fmt.Sprintf("file-%d", index),
+			Size: size,
+		}
+		files.Files = append(files.Files, file)
+	}
+	return files
+}
+
 func TestWriteComponentTable(t *testing.T) {
 	components := []pull.PackageComponent{
 		{
 			Component: cdx.Component{Name: "model", Type: cdx.ComponentTypeMachineLearningModel, PackageURL: "pkg:huggingface/org/model@abc"},
-			Files:     3,
-			Size:      5 << 30,
+			Files:     filesOf("pkg:huggingface/org/model@abc", 4<<30, 1<<30, 0),
 			Reference: "registry.example.com/app/huggingface/org/model:abc",
 		},
 		{
 			Component: cdx.Component{Name: "nginx", Type: cdx.ComponentTypeContainer, PackageURL: "pkg:oci/nginx@1.27"},
-			Files:     4,
-			Size:      42 << 20,
+			Files:     filesOf("pkg:oci/nginx@1.27", 40<<20, 2<<20),
 		},
 		{
 			Component: cdx.Component{Name: "empty", Type: cdx.ComponentTypeFile, PackageURL: "pkg:generic/empty@1"},

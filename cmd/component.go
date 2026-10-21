@@ -88,8 +88,8 @@ func writeComponentTable(w io.Writer, components []pull.PackageComponent) error 
 	rows := make([][]string, 0, len(components))
 	for _, listed := range components {
 		size := "-"
-		if listed.Files > 0 {
-			size = fmt.Sprintf("%.1f", decor.SizeB1024(listed.Size))
+		if len(listed.Files.Files) > 0 {
+			size = fmt.Sprintf("%.1f", decor.SizeB1024(listed.Files.Size()))
 		}
 		reference := "-"
 		if listed.Reference != "" {
