@@ -1,7 +1,7 @@
 [project]
 site_url = "https://alejandro-velasco.github.io/bomify/"
 site_name = "bomify"
-site_description = "bomify builds packages from CycloneDX Software Bills of Materials (SBOMs)."
+site_description = "bomify packages an entire platform as one signed, scanned OCI artifact, and delivers it through any registry or air gap to the tools that deploy it."
 # site_author = "Your name"
 
 # copyright = "Copyright &copy; 2026 Your name"

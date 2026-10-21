@@ -18,7 +18,7 @@ Manage named signers for bomify push and save
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify signer create](bomify_signer_create.md)	 - Create or update a named signer
 * [bomify signer list](bomify_signer_list.md)	 - List named signers
 * [bomify signer remove](bomify_signer_remove.md)	 - Remove a named signer

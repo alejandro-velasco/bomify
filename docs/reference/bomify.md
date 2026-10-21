@@ -1,11 +1,17 @@
 ## bomify
 
-bomify builds packages from CycloneDX SBOMs
+bomify packages, verifies, and ships whole platforms as one OCI artifact
 
 ### Synopsis
 
-bomify is a CLI that consumes a CycloneDX Software Bill of Materials
-(SBOM) and builds packages from the components it describes.
+bomify packages an entire platform (container images, Helm charts,
+models, and files) as one signed, scanned OCI artifact, and delivers it
+through any registry or air gap to the tools that deploy it.
+
+A package starts from a CycloneDX SBOM, the platform's bill of
+materials, and pins every part by digest. Signatures, vulnerability
+reports, and build provenance travel with it, and are checked before a
+pull writes anything.
 
 ```
 bomify [flags]

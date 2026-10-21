@@ -59,5 +59,5 @@ bomify sign [<reference>] [flags]
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 

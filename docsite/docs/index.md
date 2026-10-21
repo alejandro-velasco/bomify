@@ -9,11 +9,21 @@ title: bomify
 
 # Overview
 
-`bomify` builds OCI packages from [CycloneDX](https://cyclonedx.org/)
-SBOMs. It orchestrates; plugins (`bomify-plugin-<kind>`) do the
+`bomify` packages an entire platform (container images, Helm charts,
+models, and files) as one signed, scanned OCI artifact, and delivers it
+through any registry or air gap to the tools that deploy it.
+
+It starts from a [CycloneDX](https://cyclonedx.org/) SBOM, the
+platform's bill of materials, and pins every part by digest. The proof
+travels with the package: signatures in cosign's format, vulnerability
+reports with VEX, and SLSA provenance, all checked before a pull writes
+anything. Each part is also tagged where its own tool expects it, so
+`docker pull`, `helm pull`, and `modctl` fetch it directly.
+
+bomify orchestrates; plugins (`bomify-plugin-<kind>`) do the
 type-specific work of fetching, publishing, scanning, and signing.
 
-It mirrors Docker and Podman:
+If you know Docker or Podman:
 
 - A **package** is built from an SBOM the way an image is built from a
   Dockerfile, and a **tag** names one.

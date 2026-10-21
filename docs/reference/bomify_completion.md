@@ -24,7 +24,7 @@ See each sub-command's help for details on how to use the generated script.
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify completion bash](bomify_completion_bash.md)	 - Generate the autocompletion script for bash
 * [bomify completion fish](bomify_completion_fish.md)	 - Generate the autocompletion script for fish
 * [bomify completion powershell](bomify_completion_powershell.md)	 - Generate the autocompletion script for powershell
