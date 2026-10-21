@@ -64,6 +64,8 @@ at an unsigned package. Signing again with another key adds a signature.
 bomify pull registry.example.com/team/myapp:1.0 --verify sigstore --verify-option key=signing.pub
 ```
 
+![bomify pull verifying a signed package, refusing an untrusted key, cosign verifying the same signature, and a trust rule requiring it](../assets/demo/signing.gif)
+
 The signature is checked before anything is downloaded; if none
 verifies, nothing is written.
 

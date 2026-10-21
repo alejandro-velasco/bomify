@@ -18,6 +18,6 @@ Compose SBOMs from deployment mediums
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify sbom compose](bomify_sbom_compose.md)	 - Compose one SBOM from several deployment mediums
 

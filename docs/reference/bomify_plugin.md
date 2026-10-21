@@ -18,7 +18,7 @@ Install and list bomify plugins
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify plugin install](bomify_plugin_install.md)	 - Install a plugin from an OCI registry
 * [bomify plugin list](bomify_plugin_list.md)	 - List installed plugins
 

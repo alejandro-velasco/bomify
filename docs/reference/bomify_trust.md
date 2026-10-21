@@ -18,7 +18,7 @@ Manage signature verification rules for bomify pull and load
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify trust create](bomify_trust_create.md)	 - Create or update a signature verification rule
 * [bomify trust key](bomify_trust_key.md)	 - Manage the public keys trust rules refer to
 * [bomify trust list](bomify_trust_list.md)	 - List signature verification rules

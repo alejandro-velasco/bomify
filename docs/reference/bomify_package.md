@@ -18,7 +18,7 @@ Manage individual bomify packages
 
 ### SEE ALSO
 
-* [bomify](bomify.md)	 - bomify builds packages from CycloneDX SBOMs
+* [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify package build](bomify_package_build.md)	 - Build the package described by a CycloneDX SBOM
 * [bomify package load](bomify_package_load.md)	 - Load packages from a tarball
 * [bomify package manifest](bomify_package_manifest.md)	 - Print a remote package's CycloneDX manifest
