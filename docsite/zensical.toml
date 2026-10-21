@@ -21,6 +21,7 @@ nav = [
       "how-to/index.md",
       { "Building a package" = "how-to/building-a-package.md" },
       { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
+      { "Pulling one component into a directory" = "how-to/pulling-one-component.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Composing a multi-medium package" = "how-to/composing-a-multi-medium-package.md" },
       { "Packaging a model with its serving stack" = "how-to/packaging-a-model-with-its-serving-stack.md" },

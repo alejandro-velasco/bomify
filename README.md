@@ -61,6 +61,8 @@ written, and can still pull each part with its own tool.
 
 ![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](docsite/docs/assets/demo/pull.gif)
 
+![bomify component list showing a package's chart, model, and image, then bomify component pull verifying the package and pulling only the model into a directory](docsite/docs/assets/demo/component.gif)
+
 **[Docs site](https://alejandro-velasco.github.io/bomify/)**: installation,
 a quickstart, how-tos, the CLI reference, and a guide to writing plugins.
 
