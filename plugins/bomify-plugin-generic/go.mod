@@ -13,12 +13,12 @@ require (
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/lmittmann/tint v1.2.0 // indirect
+	github.com/lmittmann/tint v1.2.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	oras.land/oras-go/v2 v2.6.2 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	oras.land/oras-go/v2 v2.6.4 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
