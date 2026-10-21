@@ -32,6 +32,11 @@ nav = [
       "usage/index.md",
       { "bomify" = "usage/reference/bomify.md" },
       { "bomify build" = "usage/reference/bomify_build.md" },
+      { "bomify component" = [
+          { "bomify component" = "usage/reference/bomify_component.md" },
+          { "bomify component list" = "usage/reference/bomify_component_list.md" },
+          { "bomify component pull" = "usage/reference/bomify_component_pull.md" },
+      ] },
       { "bomify login" = "usage/reference/bomify_login.md" },
       { "bomify logout" = "usage/reference/bomify_logout.md" },
       { "bomify plugin" = [
