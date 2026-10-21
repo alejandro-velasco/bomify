@@ -62,6 +62,8 @@ purl.
 bomify sbom compose bomify.yaml -o myapp.cdx.json
 ```
 
+![bomify sbom compose turning a Helm chart and a Hugging Face model into one SBOM, with the chart's image found by rendering it](../assets/demo/compose.gif)
+
 Every medium's plugin is found before any runs. Components appearing in
 several sources, like an image both charts use, are merged
 by purl; each records the sources it came from in its

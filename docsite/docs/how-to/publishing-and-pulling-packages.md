@@ -47,6 +47,8 @@ bomify tag myapp:1.0 registry.example.com/myapp:1.0
 bomify push registry.example.com/myapp:1.0 --concurrency 6
 ```
 
+![bomify push uploading a signed package and tagging each component in its own repository](../assets/demo/push.gif)
+
 Each component's plugin describes it in its registry format, so the
 plugins that built the package must be installed (see
 [installing plugins](../getting-started/installing-plugins.md)). Blobs the
@@ -72,6 +74,8 @@ helm pull oci://registry.example.com/myapp/helm/podinfo --version 6.7.1
 oras pull registry.example.com/myapp/huggingface/sshleifer/tiny-gpt2:<commit>   # or modctl
 oras pull registry.example.com/myapp/generic/license:1.0                        # writes LICENSE
 ```
+
+![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](../assets/demo/pull.gif)
 
 A chart can be a dependency the same way: `repository:
 oci://registry.example.com/myapp/helm`. Each is the same manifest the

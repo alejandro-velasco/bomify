@@ -29,6 +29,8 @@ bomify load --input packages.tar
 cat packages.tar | bomify load   # stdin
 ```
 
+![bomify save writing a signed package to a tarball, and bomify load verifying and restoring it into another data directory](../assets/demo/airgap.gif)
+
 Every package is restored, reports included, and its tags recorded, just
 as `bomify pull` would. `packages` and `push` then work offline.
 

@@ -53,6 +53,8 @@ bomify sbom compose bomify.yaml -o postgresql.cdx.json
 bomify build postgresql.cdx.json --tag postgresql:18.11.6
 ```
 
+![bomify sbom compose rendering the postgresql chart to find its image, then bomify build packaging both](../assets/demo/helm-sbom.gif)
+
 To add more charts, images, or files to the same package, list them as
 more sources; see
 [Composing a multi-medium package](composing-a-multi-medium-package.md).

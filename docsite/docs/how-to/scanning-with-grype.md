@@ -24,6 +24,8 @@ bomify build sbom.cdx.json --tag myapp:1.0
 bomify security scan grype myapp:1.0 --concurrency 4
 ```
 
+![bomify security scan grype scanning a package, counting its findings by severity, and failing on high with --fail-on](../assets/demo/scan.gif)
+
 Each component's report goes to `<data-dir>/vulnerabilities/`, shared by
 every package containing that component, alongside any other scanner's
 report of it. To scan with several scanners at once, list them:

@@ -50,6 +50,8 @@ Nothing is recorded.
 bomify build sbom.json --tag myapp:1.0 --tag myapp:latest --concurrency 4
 ```
 
+![bomify build pulling each component through its plugin into one package](../assets/demo/build.gif)
+
 A component whose SHA-256 doesn't match the SBOM fails the build.
 
 ## 4. Find it later

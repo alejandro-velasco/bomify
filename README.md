@@ -22,6 +22,10 @@ written, and can still pull each part with its own tool.
   OCI images and artifacts, Helm charts, Hugging Face models, and plain
   files.
 
+![bomify sbom compose turning a Helm chart and a Hugging Face model into one SBOM, with the chart's image found by rendering it](docsite/docs/assets/demo/compose.gif)
+
+![bomify build pulling each component through its plugin into one package](docsite/docs/assets/demo/build.gif)
+
 **Trust** what you deploy:
 
 - `--sign` and `--verify` (or `bomify trust` rules) sign whole packages
@@ -45,11 +49,15 @@ written, and can still pull each part with its own tool.
 - `bomify save`/`load` carry it to air-gapped sites as a tarball, its
   signatures and reports included.
 
+![bomify push uploading a signed package and tagging each component in its own repository](docsite/docs/assets/demo/push.gif)
+
 **Deploy** with the tools you already use:
 
 - Push tags each component by name beside the package, so `docker
   pull`, `helm pull`, and `modctl` fetch it directly, and nothing where
   the platform runs needs bomify.
+
+![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](docsite/docs/assets/demo/pull.gif)
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)**: installation,
 a quickstart, how-tos, the CLI reference, and a guide to writing plugins.

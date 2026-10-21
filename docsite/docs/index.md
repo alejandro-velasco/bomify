@@ -20,6 +20,8 @@ reports with VEX, and SLSA provenance, all checked before a pull writes
 anything. Each part is also tagged where its own tool expects it, so
 `docker pull`, `helm pull`, and `modctl` fetch it directly.
 
+![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](assets/demo/pull.gif)
+
 bomify orchestrates; plugins (`bomify-plugin-<kind>`) do the
 type-specific work of fetching, publishing, scanning, and signing.
 
