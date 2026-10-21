@@ -42,7 +42,8 @@ chart renders (and checks its `kubeVersion`) as it would there:
       repo: https://charts.anchore.io
       version: 4.4.0
       kube-version: 1.31.0
-      values: [values.yaml]
+      values:
+        - values.yaml
 ```
 
 ## 3. Compose and build it

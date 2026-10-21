@@ -14,6 +14,8 @@ Task-focused guides. They assume bomify and the plugins you need are
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md).
 - [Composing a multi-medium package](composing-a-multi-medium-package.md)
   from several mediums' SBOMs.
+- [Packaging a model with its serving stack](packaging-a-model-with-its-serving-stack.md):
+  a model, its runtime image, and its Helm chart.
 - [Scanning with grype](scanning-with-grype.md), and gating on the
   results.
 - [Saving packages for airgapped environments](saving-packages-for-airgapped-environments.md).

@@ -181,6 +181,14 @@ version, else a plain tag, else the bare repository; `repository_url`
 overrides the registry address. `pack` gives the image as it is, so it
 keeps its digest in a package.
 
+A model published as an OCI artifact rather than an image (a
+[ModelPack](https://github.com/modelpack/model-spec) artifact, a
+[KitOps](https://kitops.org) ModelKit, or a Docker Model Runner model)
+is a `pkg:oci` component the same way: its manifest, whatever its
+config, is kept as it is, so its own tool, such as `modctl` or `kit`,
+pulls it from the package's component repository. See
+[packaging a model with its serving stack](https://alejandro-velasco.github.io/bomify/how-to/packaging-a-model-with-its-serving-stack/).
+
 ## bomify-plugin-helm
 
 - **Component**: pulls from HTTP(S) chart repositories

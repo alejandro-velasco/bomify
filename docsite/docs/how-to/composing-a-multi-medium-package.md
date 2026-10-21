@@ -21,7 +21,8 @@ sources:
       chart: web
       repo: oci://registry.example.com/charts
       version: 2.1.0
-      values: [values/web.yaml]
+      values:
+        - values/web.yaml
   - name: db
     medium: helm
     options:
