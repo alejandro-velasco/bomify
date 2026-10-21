@@ -1,0 +1,85 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "bom-ref": "pkg:generic/llm-serving@1.0.0",
+      "type": "application",
+      "name": "llm-serving",
+      "version": "1.0.0",
+      "purl": "pkg:generic/llm-serving@1.0.0"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:helm/vllm-stack@0.1.13?repository_url=https:%2F%2Fvllm-project.github.io%2Fproduction-stack",
+      "type": "application",
+      "name": "vllm-stack",
+      "version": "0.1.13",
+      "purl": "pkg:helm/vllm-stack@0.1.13?repository_url=https:%2F%2Fvllm-project.github.io%2Fproduction-stack",
+      "properties": [
+        {
+          "name": "land.bomify.compose.sources",
+          "value": "stack"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "type": "machine-learning-model",
+      "name": "SmolLM2-135M",
+      "version": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "purl": "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "properties": [
+        {
+          "name": "land.bomify.compose.sources",
+          "value": "components"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:oci/lmstack-router@v0.1.13?repository_url=index.docker.io%2Flmcache%2Flmstack-router",
+      "type": "container",
+      "name": "lmstack-router",
+      "version": "v0.1.13",
+      "purl": "pkg:oci/lmstack-router@v0.1.13?repository_url=index.docker.io%2Flmcache%2Flmstack-router",
+      "properties": [
+        {
+          "name": "land.bomify.compose.sources",
+          "value": "stack"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:oci/vllm-openai@v0.32.0?repository_url=index.docker.io%2Fvllm%2Fvllm-openai",
+      "type": "container",
+      "name": "vllm-openai",
+      "version": "v0.32.0",
+      "purl": "pkg:oci/vllm-openai@v0.32.0?repository_url=index.docker.io%2Fvllm%2Fvllm-openai",
+      "properties": [
+        {
+          "name": "land.bomify.compose.sources",
+          "value": "stack"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/llm-serving@1.0.0",
+      "dependsOn": [
+        "pkg:helm/vllm-stack@0.1.13?repository_url=https:%2F%2Fvllm-project.github.io%2Fproduction-stack",
+        "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2"
+      ]
+    },
+    {
+      "ref": "pkg:helm/vllm-stack@0.1.13?repository_url=https:%2F%2Fvllm-project.github.io%2Fproduction-stack",
+      "dependsOn": [
+        "pkg:oci/lmstack-router@v0.1.13?repository_url=index.docker.io%2Flmcache%2Flmstack-router",
+        "pkg:oci/vllm-openai@v0.32.0?repository_url=index.docker.io%2Fvllm%2Fvllm-openai"
+      ]
+    }
+  ]
+}

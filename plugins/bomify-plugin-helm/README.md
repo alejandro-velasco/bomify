@@ -60,7 +60,8 @@ chart: enterprise
 repo: https://charts.anchore.io
 version: 4.4.0
 kube-version: 1.31.0
-values: [values.yaml]
+values:
+  - values.yaml
 ```
 
 ```yaml

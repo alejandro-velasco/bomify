@@ -23,6 +23,7 @@ nav = [
       { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Composing a multi-medium package" = "how-to/composing-a-multi-medium-package.md" },
+      { "Packaging a model with its serving stack" = "how-to/packaging-a-model-with-its-serving-stack.md" },
       { "Scanning with grype" = "how-to/scanning-with-grype.md" },
       { "Saving packages for airgapped environments" = "how-to/saving-packages-for-airgapped-environments.md" },
       { "Signing and verifying packages" = "how-to/signing-and-verifying-packages.md" },
