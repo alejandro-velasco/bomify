@@ -27,6 +27,19 @@
       ]
     },
     {
+      "bom-ref": "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "type": "machine-learning-model",
+      "name": "SmolLM2-135M",
+      "version": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "purl": "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+      "properties": [
+        {
+          "name": "land.bomify.compose.sources",
+          "value": "components"
+        }
+      ]
+    },
+    {
       "bom-ref": "pkg:oci/lmstack-router@v0.1.13?repository_url=index.docker.io%2Flmcache%2Flmstack-router",
       "type": "container",
       "name": "lmstack-router",
@@ -36,19 +49,6 @@
         {
           "name": "land.bomify.compose.sources",
           "value": "stack"
-        }
-      ]
-    },
-    {
-      "bom-ref": "pkg:oci/smollm2@135m-safetensors?repository_url=docker.io/ai/smollm2",
-      "type": "machine-learning-model",
-      "name": "smollm2",
-      "version": "135m-safetensors",
-      "purl": "pkg:oci/smollm2@135m-safetensors?repository_url=docker.io/ai/smollm2",
-      "properties": [
-        {
-          "name": "land.bomify.compose.sources",
-          "value": "components"
         }
       ]
     },
@@ -71,7 +71,7 @@
       "ref": "pkg:generic/llm-serving@1.0.0",
       "dependsOn": [
         "pkg:helm/vllm-stack@0.1.13?repository_url=https:%2F%2Fvllm-project.github.io%2Fproduction-stack",
-        "pkg:oci/smollm2@135m-safetensors?repository_url=docker.io/ai/smollm2"
+        "pkg:huggingface/HuggingFaceTB/SmolLM2-135M@93efa2f097d58c2a74874c7e644dbc9b0cee75a2"
       ]
     },
     {
