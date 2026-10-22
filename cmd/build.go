@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"path/filepath"
 
@@ -71,7 +72,7 @@ func buildCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			buildOpts.file = args[0]
-			if err := runBuild(buildOpts, logging.FromContext(cmd.Context())); err != nil {
+			if err := runBuild(buildOpts, logging.FromContext(cmd.Context()), cmd.ErrOrStderr()); err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
 			return nil
@@ -87,7 +88,9 @@ func buildCmd() *cobra.Command {
 	return buildCmd
 }
 
-func runBuild(opts *buildOptions, logger *slog.Logger) error {
+// runBuild builds opts.file, showing each plugin's pull on out (see
+// pluginTracker).
+func runBuild(opts *buildOptions, logger *slog.Logger, out io.Writer) error {
 	var (
 		rec       *provenance.Recorder
 		installed map[string]*install.Record
@@ -104,7 +107,9 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 		}
 	}
 
-	if err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
+	bars, settle := startBars(out)
+	tracker := pluginTracker{progress: bars}
+	err := forEachComponent(opts.file, logger, opts.concurrency, func(component cdx.Component, log *slog.Logger) error {
 		if _, isBinary, err := plugin.ParseBinary(component); err != nil {
 			return err
 		} else if isBinary {
@@ -127,7 +132,7 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 			return nil
 		}
 
-		result, err := plugin.Pull(path, component, dataDir, log)
+		result, err := plugin.Pull(path, component, dataDir, log, tracker)
 		if err != nil {
 			return err
 		}
@@ -145,7 +150,11 @@ func runBuild(opts *buildOptions, logger *slog.Logger) error {
 		log.Info("pull complete", "output", result.OutputPath, "message", result.Message, "hash", result.Hash.Value)
 
 		return nil
-	}); err != nil {
+	})
+	// Every pull has ended its bars by now, failed or not (see
+	// pluginTracker).
+	settle()
+	if err != nil {
 		return err
 	}
 

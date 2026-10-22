@@ -35,7 +35,7 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 	if req.Check {
 		return image.CheckPull(ref, req.Logger)
 	}
-	return image.Pull(ref, req.Output, req.Logger)
+	return image.Pull(ref, req.Output, req.Logger, req.Progress)
 }
 
 func (component) Pack(_ context.Context, req plugin.PackRequest) (*plugin.PackResult, error) {

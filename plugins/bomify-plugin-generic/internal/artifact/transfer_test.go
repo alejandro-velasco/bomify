@@ -3,15 +3,19 @@ package artifact
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+
+	"github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 func testLogger() *slog.Logger {
@@ -32,10 +36,29 @@ func TestPull(t *testing.T) {
 
 	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL + "/widget-1.0.bin"}
 	outputDir := t.TempDir()
+	progressFile := filepath.Join(t.TempDir(), "progress")
+	progress, closeProgress, err := plugin.OpenProgress(progressFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProgress()
 
-	result, err := Pull(ref, outputDir, testLogger())
+	result, err := Pull(ref, outputDir, testLogger(), progress)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
+	}
+
+	lines, err := os.ReadFile(progressFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reported := strings.Split(strings.TrimSpace(string(lines)), "\n")
+	var last plugin.ProgressEvent
+	if err := json.Unmarshal([]byte(reported[len(reported)-1]), &last); err != nil {
+		t.Fatalf("progress %q: %v", lines, err)
+	}
+	if want := (plugin.ProgressEvent{Name: "widget-1.0.bin", Current: int64(len(content)), Total: int64(len(content))}); last != want {
+		t.Errorf("last progress = %+v, want %+v", last, want)
 	}
 
 	wantPath := filepath.Join(outputDir, "widget-1.0.bin")
@@ -69,7 +92,7 @@ func TestPullNonSuccessStatus(t *testing.T) {
 
 	ref := Ref{Name: "widget", Version: "1.0", DownloadURL: srv.URL}
 
-	if _, err := Pull(ref, t.TempDir(), testLogger()); err == nil {
+	if _, err := Pull(ref, t.TempDir(), testLogger(), nil); err == nil {
 		t.Fatal("Pull() with a 404 response: expected error, got nil")
 	}
 }

@@ -6,6 +6,7 @@
 mod hash;
 mod hub;
 mod log;
+mod progress;
 mod refs;
 mod sbom;
 mod token;
@@ -21,6 +22,7 @@ use serde::Serialize;
 
 use crate::hub::Hub;
 use crate::log::Logger;
+use crate::progress::Progress;
 use crate::refs::Ref;
 
 #[derive(Parser)]
@@ -67,6 +69,9 @@ enum ComponentCommand {
         /// verify the component exists and is pullable without downloading it
         #[arg(long, action = ArgAction::Set, num_args = 0..=1, require_equals = true, default_value = "false", default_missing_value = "true")]
         check: bool,
+        /// file to report the pull's progress to (not passed with --check)
+        #[arg(long)]
+        progress: Option<String>,
     },
     /// Report that a model has no registry format of its own: bomify packages it as ModelPack
     Pack {
@@ -185,8 +190,15 @@ fn run_component(command: ComponentCommand) -> Result<()> {
             common,
             output,
             check,
+            progress,
         } => with_reference(&common, |reference, logger| {
-            run_pull(reference, output.as_deref(), check, logger)
+            run_pull(
+                reference,
+                output.as_deref(),
+                check,
+                progress.as_deref(),
+                logger,
+            )
         }),
         // The flags are the contract's, but a model has nothing to read
         // or write: bomify builds its ModelPack artifact itself.
@@ -230,7 +242,13 @@ fn resolve_purl(purl: &str, logger: &Logger) -> Result<Ref> {
     Ok(reference)
 }
 
-fn run_pull(reference: &Ref, output: Option<&Path>, check: bool, logger: &Logger) -> Result<()> {
+fn run_pull(
+    reference: &Ref,
+    output: Option<&Path>,
+    check: bool,
+    progress: Option<&str>,
+    logger: &Logger,
+) -> Result<()> {
     let hub = Hub::connect(reference.endpoint.as_deref(), logger)?;
     let result = if check {
         transfer::check_pull(&hub, reference)?
@@ -238,7 +256,8 @@ fn run_pull(reference: &Ref, output: Option<&Path>, check: bool, logger: &Logger
         let Some(output) = output else {
             bail!("--output is required unless --check");
         };
-        transfer::pull(&hub, reference, output, logger)?
+        let progress = progress.map(Progress::open).transpose()?;
+        transfer::pull(&hub, reference, output, progress, logger)?
     };
     print_json(&result)
 }

@@ -75,6 +75,48 @@ func TestComponentCommandOutputRequiredUnlessCheck(t *testing.T) {
 	}
 }
 
+// fakeProgress reports pulling one 5-byte part through req.Progress.
+type fakeProgress struct{}
+
+func (fakeProgress) Pull(_ context.Context, req PullRequest) (*Result, error) {
+	writer := req.Progress.Writer("part", 5)
+	if _, err := writer.Write([]byte("bytes")); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return &Result{OutputPath: req.Output}, nil
+}
+
+func TestComponentCommandPullReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "log")
+	progress := filepath.Join(dir, "progress")
+
+	if _, err := runComponent(t, fakeProgress{}, "pull", "--purl", "p", "--output", "out", "--log", log, "--progress", progress); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+
+	data, err := os.ReadFile(progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"name":"part","current":0,"total":5}` + "\n" + `{"name":"part","current":5,"total":5}` + "\n"
+	if string(data) != want {
+		t.Errorf("progress file = %q, want %q", data, want)
+	}
+}
+
+func TestComponentCommandPullWithoutProgress(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+
+	// --check passes no --progress, and the plugin reports anyway.
+	if _, err := runComponent(t, fakeProgress{}, "pull", "--purl", "p", "--check", "--log", log); err != nil {
+		t.Fatalf("pull --check: %v", err)
+	}
+}
+
 // fakePacker is a fakeComponent that packs, recording the request.
 type fakePacker struct {
 	fakeComponent

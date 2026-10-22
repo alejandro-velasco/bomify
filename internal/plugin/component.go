@@ -28,12 +28,15 @@ import (
 // for the exact rules it follows to avoid pulling the same component
 // twice at once.
 //
-// logger controls whether the plugin's own log file is streamed live to
-// stdout while it runs: it is if logger has debug-level logging enabled
-// (i.e. bomify was run with --verbose), and isn't otherwise.
-func Pull(path string, component cdx.Component, baseDir string, logger *slog.Logger) (*pluginlib.Result, error) {
+// logger controls whether the plugin's own log file is printed with
+// bomify's log while it runs: it is if logger has debug-level logging
+// enabled (i.e. bomify was run with --verbose), and isn't otherwise.
+//
+// tracker, if not nil, shows the plugin's run and the progress it
+// reports; a pull reused from a prior or concurrent one shows nothing.
+func Pull(path string, component cdx.Component, baseDir string, logger *slog.Logger, tracker Tracker) (*pluginlib.Result, error) {
 	return pull(component, baseDir, func(dir string) (*pluginlib.Result, error) {
-		return runComponent[pluginlib.Result](path, "pull", component, baseDir, logger, "--output", dir)
+		return runComponent[pluginlib.Result](path, "pull", component, baseDir, logger, tracker, "--output", dir)
 	})
 }
 
@@ -44,7 +47,7 @@ func Pull(path string, component cdx.Component, baseDir string, logger *slog.Log
 // hash, CheckPull verifies it against component's SBOM-declared hash
 // exactly as Pull does.
 func CheckPull(path string, component cdx.Component, baseDir string, logger *slog.Logger) (*pluginlib.Result, error) {
-	result, err := runComponent[pluginlib.Result](path, "pull", component, baseDir, logger, "--check=true")
+	result, err := runComponent[pluginlib.Result](path, "pull", component, baseDir, logger, nil, "--check=true")
 	if err != nil {
 		return nil, err
 	}
@@ -63,5 +66,5 @@ func CheckPull(path string, component cdx.Component, baseDir string, logger *slo
 //
 // logger controls log streaming exactly as it does for Pull.
 func Pack(path string, component cdx.Component, baseDir, input string, logger *slog.Logger) (*pluginlib.PackResult, error) {
-	return runComponent[pluginlib.PackResult](path, "pack", component, baseDir, logger, "--input", input)
+	return runComponent[pluginlib.PackResult](path, "pack", component, baseDir, logger, nil, "--input", input)
 }

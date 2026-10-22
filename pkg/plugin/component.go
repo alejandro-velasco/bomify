@@ -41,6 +41,10 @@ type PullRequest struct {
 	Check  bool
 	// Logger writes to the invocation's --log file (see OpenLog).
 	Logger *slog.Logger
+	// Progress reports to the invocation's --progress file (see
+	// OpenProgress); nil, which reports nothing, when it has none, as
+	// with Check.
+	Progress *Progress
 }
 
 // PackRequest is one "component pack" invocation.
@@ -107,8 +111,9 @@ func requiredUnlessCheck(check bool, flag, value string) error {
 
 func pullCommand(p ComponentPlugin, short string) *cobra.Command {
 	var (
-		flags componentFlags
-		req   PullRequest
+		flags        componentFlags
+		req          PullRequest
+		progressFile string
 	)
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -118,7 +123,15 @@ func pullCommand(p ComponentPlugin, short string) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, &flags, func(logger *slog.Logger) (*Result, error) {
-				req.Purl, req.Logger = flags.purl, logger
+				progress, closeProgress, err := OpenProgress(progressFile)
+				if err != nil {
+					return nil, err
+				}
+				defer closeProgress()
+
+				req.Purl = flags.purl
+				req.Logger = logger
+				req.Progress = progress
 				return p.Pull(cmd.Context(), req)
 			})
 		},
@@ -126,6 +139,7 @@ func pullCommand(p ComponentPlugin, short string) *cobra.Command {
 	flags.register(cmd)
 	cmd.Flags().StringVar(&req.Output, "output", "", "directory to save the pulled component into (required unless --check)")
 	cmd.Flags().BoolVar(&req.Check, "check", false, "verify the component exists and is pullable without downloading it")
+	cmd.Flags().StringVar(&progressFile, "progress", "", "file to report the pull's progress to (not passed with --check)")
 	return cmd
 }
 
@@ -146,7 +160,8 @@ func packCommand(p ComponentPlugin, short string) *cobra.Command {
 				if !packs {
 					return &PackResult{}, nil
 				}
-				req.Purl, req.Logger = flags.purl, logger
+				req.Purl = flags.purl
+				req.Logger = logger
 				return packer.Pack(cmd.Context(), req)
 			})
 		},

@@ -20,10 +20,11 @@ var craneAuth = crane.WithAuthFromKeychain(authn.NewKeychainFromHelper(auth.Help
 // so the pulled artifact is in OCI format rather than a docker-style
 // tarball. outputDir is a directory bomify has already created dedicated
 // to this component, so Pull writes directly into it.
-// The reported hash is the image's own SHA-256 digest.
-func Pull(ref string, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
+// The reported hash is the image's own SHA-256 digest, and each blob's
+// download is reported to progress.
+func Pull(ref string, outputDir string, logger *slog.Logger, progress *plugin.Progress) (*plugin.Result, error) {
 	logger.Info("pulling image", "ref", ref)
-	img, err := crane.Pull(ref, craneAuth)
+	img, err := crane.Pull(ref, craneAuth, crane.WithTransport(withProgress(progress)))
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}

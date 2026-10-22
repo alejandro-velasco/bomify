@@ -45,9 +45,16 @@ component plugin.
 
 stdout is reserved for the result and stderr for one fatal message.
 Plugins log to `--log`, `logs/<purlHash>.log`, which bomify creates
-fresh before each call, streams to its own stdout under `--verbose`
+fresh before each call, prints with its own log under `--verbose`
 (prefixed `[<verb> <purl>]`), and deletes afterwards. `--log-color`
-passes on whether bomify's stdout is a terminal.
+passes on whether bomify's log goes to a terminal.
+
+`build` also passes `pull` a `--progress` file, `logs/<purlHash>.progress`,
+created and deleted the same way. It tails it as the log, and shows each
+part the plugin reports there as a bar of its own, alongside the bars
+of OCI transfers (`cmd/multibar.go`), or a spinner until the plugin
+reports one. Under the bars, bomify's log lines, the plugin's among
+them, print above them (`logging.SetOutput`).
 
 `build --check` passes `--check=true` instead of `--output`, asking the
 plugin to cheaply confirm the pull would succeed. `plugin.CheckPull` is
