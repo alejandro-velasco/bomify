@@ -38,7 +38,7 @@ type tarEntry struct {
 	content string
 }
 
-func buildOrderedTar(t *testing.T, entries []tarEntry) []byte {
+func buildOrderedTar(t testing.TB, entries []tarEntry) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)

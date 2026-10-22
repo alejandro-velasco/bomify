@@ -88,7 +88,11 @@ index, the SBOM, and the files map.
 `push`/`pull` unchanged against a local OCI image layout instead of a
 registry, then tar or untar it. Shared components are stored once, and
 signatures and report referrers travel inside the tarball, so `load`
-verifies and restores exactly as `pull` does.
+verifies and restores exactly as `pull` does. A tarball comes from
+whoever made it, so `load` unpacks only its regular files, directories,
+and symlinks, all inside the layout (`transfer.ExtractTar`), and refuses
+a sparse file, which could declare far more bytes than the tarball
+holds.
 
 ![Save and load flow](../diagrams/save-load.svg)
 

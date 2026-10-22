@@ -68,8 +68,13 @@ a quickstart, how-tos, the CLI reference, and a guide to writing plugins.
 
 ## Status
 
-**Pre-alpha.** Flags, the data directory layout, and the plugin
-contracts may change without notice.
+**Beta.** These are stable: the commands and their flags, the
+[registry format](docs/architecture/registry-format.md), the
+[plugin contracts](plugins/README.md#contract-versions), and the
+[data directory](docs/architecture/data-directory.md). They change only
+where they must, and the release notes call out any change that breaks
+what's built on them. Data and packages from alpha releases aren't
+guaranteed to carry over.
 
 ## Build
 

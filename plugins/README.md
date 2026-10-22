@@ -31,14 +31,18 @@ contracts:
 
 Each contract has a major version, shown in its spec's title (for
 example, "Signing plugin contract v1"). Every first-party plugin speaks
-version 1 of the contracts it implements. Changes follow this policy:
+version 1 of the contracts it implements. The contracts are stable
+since the beta, and change only where they must:
 
-- **Minor:** adding an optional flag, command, or result field keeps
-  the version. Plugins and bomify releases written before the change
-  simply ignore it.
-- **Major:** removing or renaming anything, or changing what it means,
-  bumps the version. bomify refuses a plugin that doesn't speak the
-  version it needs (see below).
+- **Compatible:** adding an optional result field, or a command bomify
+  only calls on a plugin that offers it, keeps the version. Plugins and
+  bomify releases written before the change ignore it.
+- **Breaking:** anything else, including a new flag bomify passes every
+  plugin, which a plugin written before it rejects as unknown. It keeps
+  the version too, every first-party plugin is updated in the same
+  change, and the release notes call it out. A new major version is for
+  a change bomify must tell apart: bomify refuses a plugin that doesn't
+  speak the version it needs (see below).
 
 Each version has its own folder, holding its spec and the JSON Schemas
 of its results:

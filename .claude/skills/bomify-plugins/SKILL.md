@@ -67,8 +67,12 @@ client, and test it with a fake server in the plugin's tests.
    under "Schemas" on the contract's docsite page) in the same change,
    and check every first-party plugin still conforms. Never let a
    change to one contract imply another.
-4. If that change breaks a plugin or bomify written for the current
-   version, make it in a new version instead, in the same change: copy
+4. A breaking change keeps the version: update every first-party plugin
+   in the same change, and say what it breaks in the pull request, for
+   the release notes (see
+   [contract versions](../../../plugins/README.md#contract-versions)).
+   Only a change bomify must tell apart from the old contract gets a new
+   version, in the same change: copy
    `plugins/contracts/<contract>/v<N>/` to `v<N+1>/` and edit the copy,
    leaving `v<N>/` as it was. Then point everything current at it: the
    title, every schema's `$id`, the docsite wrapper and its
