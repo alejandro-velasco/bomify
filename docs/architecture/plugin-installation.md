@@ -77,9 +77,9 @@ each as `<registry>/<kind>:<version>` and `:latest`, signed, with its
 writes the pinned references to `plugin-digests.txt`.
 
 [`release.yml`](https://github.com/alejandro-velasco/bomify/blob/main/.github/workflows/release.yml) runs only after Build
-passes on a release branch (`alpha-release` or `beta-release`; `main`
-joins at the first GA release), in three jobs so that only one can sign and that one
-runs no npm code:
+passes on a release branch (`beta-release`; `main` joins at the first
+GA release), in three jobs so that only one can sign and that one runs
+no npm code:
 
 - `release`: semantic-release ([`.releaserc.json`](https://github.com/alejandro-velasco/bomify/blob/main/.releaserc.json))
   tags, publishes the GitHub release, and pushes the image. It has no
