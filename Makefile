@@ -62,7 +62,7 @@ RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/a
 #
 ################################################################################
 
-.PHONY: build build-container container-prebuilt container-bomify container-plugins push-container plugins go-plugins rust-plugins dist prebuilt-plugins prebuilt-go-plugins prebuilt-rust-plugins plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test test-go test-rust tidy clean
+.PHONY: build build-container container-prebuilt container-bomify container-plugins push-container plugins go-plugins rust-plugins dist prebuilt-plugins prebuilt-go-plugins prebuilt-rust-plugins plugin-packages push-plugin-packages docs diagrams docs-site-sync docs-site docs-site-serve install install-bin install-plugins test test-go test-rust fuzz cover-transfer tidy clean
 
 # build builds bomify for this machine, statically (CGO_ENABLED=0), as a
 # release does (see dist), so it runs anywhere a release's does, the
@@ -262,6 +262,28 @@ test-rust:
 	for dir in $(RUST_PLUGINS); do \
 		(cd $$dir && $(CARGO) fmt --check && $(CARGO) clippy --locked --all-targets -- -D warnings && $(CARGO) test --locked) || exit 1; \
 	done
+
+# fuzz runs each of FUZZ_TESTS, a package and its fuzz test, for
+# FUZZTIME. A new input is minimized for at most 5s: the default, a
+# minute, can take a short run's whole budget.
+FUZZTIME ?= 30s
+FUZZ_TESTS := ./internal/oci/transfer:FuzzExtractTar ./internal/oci/transfer:FuzzIsSafeFilename
+fuzz:
+	for test in $(FUZZ_TESTS); do \
+		go test $${test%%:*} -run '^$$' -fuzz "^$${test##*:}$$" -fuzztime $(FUZZTIME) -fuzzminimizetime 5s || exit 1; \
+	done
+
+# cover-transfer fails if internal/oci/transfer's own tests cover less
+# than COVER_MIN percent of it: push, pull, save, and load all rely on it.
+COVER_MIN ?= 90
+cover-transfer:
+	mkdir -p bin
+	go test -coverprofile=bin/transfer.cover ./internal/oci/transfer
+	go tool cover -func=bin/transfer.cover | awk -v min=$(COVER_MIN) '/^total:/ { \
+		sub("%", "", $$3); \
+		printf "internal/oci/transfer coverage: %s%% (at least %s%%)\n", $$3, min; \
+		if ($$3 + 0 < min) exit 1 \
+	}'
 
 tidy:
 	go mod tidy

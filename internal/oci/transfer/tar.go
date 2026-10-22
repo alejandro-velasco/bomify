@@ -198,6 +198,13 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			return fmt.Errorf("unsafe tar entry name %q: escapes destination", hdr.Name)
 		}
 
+		// A sparse file's holes read back as zeros, so a few bytes of tar
+		// could declare, and fill the disk with, terabytes of them.
+		// WriteTar never writes one.
+		if isSparse(hdr) {
+			return fmt.Errorf("unsupported tar entry %q: sparse file", hdr.Name)
+		}
+
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, DirPerm); err != nil {
@@ -234,4 +241,19 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			// foreign tar might contain rather than trying to recreate it.
 		}
 	}
+}
+
+// isSparse reports whether hdr is a sparse file: in the old GNU format,
+// or in PAX's, which archive/tar reports as a regular file with
+// "GNU.sparse." records.
+func isSparse(hdr *tar.Header) bool {
+	if hdr.Typeflag == tar.TypeGNUSparse {
+		return true
+	}
+	for key := range hdr.PAXRecords {
+		if strings.HasPrefix(key, "GNU.sparse.") {
+			return true
+		}
+	}
+	return false
 }

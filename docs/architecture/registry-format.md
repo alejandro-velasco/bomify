@@ -166,7 +166,7 @@ pull restores only the newest.
 | --- | --- | --- |
 | `land.bomify.purl` | component index entries, layers of bomify's component format, extra files, report layers | The component's purl. |
 | `land.bomify.component.reference` | component index entries | Where the component is tagged beside the package, relative to its repository (see [Component repositories](#component-repositories)). |
-| `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
+| `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name, so it must be usable as a file name on every OS bomify runs on (`transfer.IsSafeFilename`), or the pull fails. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
 | `land.bomify.signature.plugin` | signature and signed attestation referrers | The kind of signing plugin that made it. Informational. |
 | `land.bomify.attestation.predicateType` | provenance referrers | The in-toto predicate type, `https://slsa.dev/provenance/v1`. Marks the referrer as an attestation, which signature verification skips. |
 | `land.bomify.provenance.statement` | provenance referrers | The SHA-256 of the statement, so pushing the same provenance again attaches nothing new. |

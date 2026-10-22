@@ -27,6 +27,16 @@ jobs:
       - name: Test
         run: make test-go
 
+      # Push, pull, save, and load all rely on internal/oci/transfer: its
+      # own tests must cover at least 90% of it.
+      - name: Check transfer coverage
+        run: make cover-transfer
+
+      # What bomify unpacks and names from others' packages, fuzzed for a
+      # short budget. Their corpora, in testdata, run with every test.
+      - name: Fuzz
+        run: make fuzz FUZZTIME=30s
+
       # The bomify this job built and tested, static (make build), for
       # build-container's image: this runner is linux/amd64, the image's
       # platform.

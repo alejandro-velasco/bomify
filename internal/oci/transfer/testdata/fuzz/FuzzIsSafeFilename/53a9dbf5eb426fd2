@@ -1,0 +1,2 @@
+go test fuzz v1
+string("ﴤ\U00034d7f")

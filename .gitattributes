@@ -1,0 +1,2 @@
+# Fuzz corpora are read byte for byte: never convert their line endings.
+internal/oci/transfer/testdata/fuzz/** -text

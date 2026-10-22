@@ -9,7 +9,10 @@ package transfer
 import (
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // ArtifactType identifies a bomify package: an OCI image index of the
@@ -70,16 +73,43 @@ func (discardWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (discardWriteCloser) Close() error                { return nil }
 
 // IsSafeFilename reports whether name is usable, as-is, as a single path
-// component on any OS bomify runs on: no separators, no traversal, and none
-// of the characters Windows reserves (":*?\"<>|" plus the two we already
-// check for on every platform, "/" and "\"), for a name that comes from
-// whoever published an artifact, such as a vulnerability report's scanner
-// (see internal/security).
+// component on any OS bomify runs on, for a name that comes from whoever
+// published an artifact, such as a vulnerability report's scanner (see
+// internal/security). It must be valid UTF-8, at most maxFilenameBytes
+// long, and free of:
+//   - separators and traversal ("/", "\", ".", "..");
+//   - the other characters Windows reserves (":*?\"<>|") and control
+//     characters, NUL among them;
+//   - a trailing dot or space, which Windows drops, naming another file;
+//   - a name Windows reserves for a device, such as "CON" or "nul.json".
 func IsSafeFilename(name string) bool {
-	if name == "" || name == "." || name == ".." {
+	if name == "" || name == "." || name == ".." || len(name) > maxFilenameBytes {
 		return false
 	}
-	return !strings.ContainsAny(name, `/\:*?"<>|`)
+	if !utf8.ValidString(name) || strings.ContainsAny(name, `/\:*?"<>|`) || strings.ContainsFunc(name, unicode.IsControl) {
+		return false
+	}
+	if strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ") {
+		return false
+	}
+	// Windows reserves a device's name whatever follows its first dot, and
+	// ignores spaces before that dot.
+	device, _, _ := strings.Cut(name, ".")
+	device = strings.ToUpper(strings.TrimRight(device, " "))
+	return !slices.Contains(windowsDevices, device)
+}
+
+// maxFilenameBytes is the longest name IsSafeFilename accepts: short of
+// the 255 bytes most file systems allow in one path component, leaving
+// room for a suffix bomify appends, such as a report's ".json".
+const maxFilenameBytes = 200
+
+// windowsDevices are the names Windows reserves for devices, in upper
+// case.
+var windowsDevices = []string{
+	"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+	"COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+	"LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³",
 }
 
 // DirPerm is the permission bits of every directory bomify creates while
