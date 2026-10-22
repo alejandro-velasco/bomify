@@ -41,6 +41,7 @@ func componentMain() {
 	check := fs.Bool("check", false, "check-only mode: skip --output and any real transfer")
 	logFile := fs.String("log", "", "log file path")
 	fs.Bool("log-color", false, "enable ANSI color codes in the log output")
+	progressFile := fs.String("progress", "", "progress file path (pull)")
 	fs.Parse(os.Args[3:])
 
 	// Mirrors the real contract: log to --log, never to stdout, so
@@ -97,6 +98,16 @@ func componentMain() {
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
+			}
+		}
+
+		// Reports pulling its one 4-byte file, from none of it to all of
+		// it, so bomify-side tests have progress to show.
+		if *progressFile != "" {
+			if f, err := os.OpenFile(*progressFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				part := fmt.Sprintf("%s-%s.tar", name, version)
+				fmt.Fprintf(f, "{\"name\":%q,\"current\":0,\"total\":4}\n{\"name\":%q,\"current\":4,\"total\":4}\n", part, part)
+				f.Close()
 			}
 		}
 

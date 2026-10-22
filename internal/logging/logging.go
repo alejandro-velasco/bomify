@@ -27,6 +27,11 @@ func New(verbose bool) *slog.Logger {
 // output is where New's loggers write.
 var output = &redirectWriter{fallback: os.Stderr}
 
+// Output is where New's loggers write: stderr, or where SetOutput
+// redirects it. Log lines from elsewhere, such as a plugin's, written to
+// it print with bomify's own.
+func Output() io.Writer { return output }
+
 // SetOutput sends the lines New's loggers write to w until the returned
 // restore is called. Progress bars use it so log lines print above them
 // (see mpb's (*Progress).Write) rather than through them: a line written
@@ -70,7 +75,7 @@ func (r *redirectWriter) Write(b []byte) (int, error) {
 //
 // Plugin binaries use this to log to the file named by their --log flag (see
 // plugins/contracts/component/v1/CONTRACT.md), passing --log-color through as
-// color: only bomify, which streams that file to its own stdout, knows
+// color: only bomify, which prints that file with its own log, knows
 // whether those bytes will land on a real terminal.
 func NewFile(w io.Writer, color, verbose bool) *slog.Logger {
 	return newLogger(w, !color, verbose)

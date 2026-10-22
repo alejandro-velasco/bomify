@@ -31,13 +31,14 @@ It implements two subcommands:
   format of its own prints `{}`.
 
 stdout carries exactly one JSON result, stderr one fatal message on
-failure, and logging goes to the `--log` file.
+failure, progress goes to the `--progress` file, and logging to the
+`--log` file.
 
 ## In Go
 
 Implement [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin)'s
-`ComponentPlugin` interface (`Pull`, given the parsed flags and a logger
-writing to `--log`), and `ComponentPacker` (`Pack`) if the kind has a
+`ComponentPlugin` interface (`Pull`, given the parsed flags, a logger
+writing to `--log`, and a `Progress` writing to `--progress`), and `ComponentPacker` (`Pack`) if the kind has a
 registry format. `plugin.ComponentCommand` builds the subcommands,
 answering `pack` with `{}` for a plugin that doesn't pack, and
 `plugin.Run` runs them with the contract's exit and stderr rules.
@@ -69,11 +70,15 @@ which builds a chart's config and manifest beside the archive it pulled.
       `--log`.
 - [ ] Support `--check` with the cheapest check there is (see
       [check mode](component-contract.md#check-mode)).
+- [ ] Report each download's [progress](component-contract.md#progress),
+      or bomify shows only that the pull is running.
 - [ ] Make `pack` reproducible: the same `--input` gives the same
       artifact, byte for byte, with no timestamp in it.
 - [ ] Validate your output against
       [`result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/result.schema.json)
-      and [`pack-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/pack-result.schema.json).
+      and [`pack-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/pack-result.schema.json),
+      and your progress lines against
+      [`progress.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/progress.schema.json).
 - [ ] To make it installable, publish it as a
       [plugin package](../getting-started/installing-plugins.md#publishing-a-plugin).
 - [ ] For a first-party plugin, add it to

@@ -68,6 +68,12 @@ func PID(dataDir, hash string) string { return filepath.Join(Manifests(dataDir),
 // the component whose PurlHash is hash.
 func Log(dataDir, hash string) string { return filepath.Join(dataDir, "logs", hash+".log") }
 
+// Progress returns "<dataDir>/logs/<hash>.progress", the transient file a
+// plugin reports its pull of the component whose PurlHash is hash to.
+func Progress(dataDir, hash string) string {
+	return filepath.Join(dataDir, "logs", hash+".progress")
+}
+
 // Reports returns "<dataDir>/vulnerabilities".
 func Reports(dataDir string) string { return filepath.Join(dataDir, "vulnerabilities") }
 
@@ -99,6 +105,9 @@ func ComponentPID(dataDir, purl string) string { return PID(dataDir, PurlHash(pu
 
 // ComponentLog is Log for the component with purl.
 func ComponentLog(dataDir, purl string) string { return Log(dataDir, PurlHash(purl)) }
+
+// ComponentProgress is Progress for the component with purl.
+func ComponentProgress(dataDir, purl string) string { return Progress(dataDir, PurlHash(purl)) }
 
 // Repositories returns "<dataDir>/package/repositories.json", the tag
 // record.

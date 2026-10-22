@@ -15,8 +15,8 @@ contracts; a binary can implement any combination.
 Go plugins should use
 [`pkg/plugin`](https://github.com/alejandro-velasco/bomify/tree/main/pkg/plugin):
 implement its `ComponentPlugin` interface and `plugin.ComponentCommand`
-provides every flag, the `--check` rules, the `--log` logger, and the
-output rules below.
+provides every flag, the `--check` rules, the `--log` logger, the
+`--progress` reporter, and the output rules below.
 
 A plugin is a standalone executable. Every input is a command-line flag;
 every output is stdout, stderr, the exit code, or the files it's told to
@@ -44,7 +44,7 @@ Every subcommand takes `--purl`, `--log`, and `--log-color` (see
 ### `component pull`
 
 ```
-bomify-plugin-<kind> component pull --purl <purl> --output <dir> --log <path> --log-color <bool>
+bomify-plugin-<kind> component pull --purl <purl> --output <dir> --progress <path> --log <path> --log-color <bool>
 ```
 
 Fetch or build the component `--purl` identifies into `--output`.
@@ -54,6 +54,7 @@ Fetch or build the component `--purl` identifies into `--output`.
 | `--purl` | yes | The component's package URL. Everything the plugin needs to know comes from it. |
 | `--output` | unless `--check` | Directory to write the artifact into. bomify creates it, empty, beforehand. Write a single file or a tree, whatever suits the artifact, of regular files only: bomify pushes each file as a blob of its own, and refuses a symlink. Not passed with `--check=true`. |
 | `--check` | no | See [Check mode](#check-mode). Default `false`. |
+| `--progress` | no | File to report the pull's progress to (see [Progress](#progress)). Not passed with `--check=true`. |
 
 On success, print one [`Result`](#result) and exit `0`.
 
@@ -114,7 +115,8 @@ registry HEAD returning a digest).
 | stderr | One short fatal error message, only on failure. bomify appends it to its own error. |
 | exit code | `0` on success; non-zero on failure. |
 
-Everything else goes to the `--log` file.
+Progress goes to the `--progress` file, and everything else to the
+`--log` file.
 
 ## Result
 
@@ -175,14 +177,43 @@ the plugin builds, its bytes inline.
 
 Schema: [`pack-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/pack-result.schema.json).
 
+## Progress
+
+`--progress <path>` is a file bomify creates empty right before a
+`pull`, shows as the plugin appends to it, and deletes when the plugin
+exits. Append one JSON object per line, written whole, for each part of
+the component as it downloads, such as a file or a layer:
+
+```json
+{"name": "model.safetensors", "current": 1048576, "total": 269060552}
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `name` | string | yes | The part, which bomify shows as a bar of its own. Keep it short: a file's path, or a layer's short digest. |
+| `current` | integer | yes | Bytes of it pulled so far, in all; not since the last line. |
+| `total` | integer | no | Its size in bytes. Absent or `0` when unknown. |
+
+Report each part at most ten times a second, and once more when it's
+done. A part whose `current` reaches its `total`, or that's still
+going when the plugin exits, is done. bomify skips a line it can't
+parse rather than failing the pull.
+
+Reporting is optional: until a plugin reports a part, bomify shows the
+component as pulling, until it exits. `plugin.PullRequest` hands each
+call a `Progress` for this (`plugin.OpenProgress` opens one directly),
+whose `Writer` counts what's written through it.
+
+Schema: [`progress.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/component/v1/progress.schema.json), one line.
+
 ## Logging
 
 - `--log <path>`: a file bomify creates empty right before the call.
-  Append your log lines to it unconditionally. bomify streams it to its
-  stdout under `--verbose` and deletes it when the plugin exits, so it's
-  not a durable log.
+  Append your log lines to it unconditionally. bomify prints it with its
+  own log under `--verbose` and deletes it when the plugin exits, so
+  it's not a durable log.
 - `--log-color <bool>`: whether ANSI colors are allowed in the log.
-  bomify decides from its own stdout; don't detect it yourself.
+  bomify decides from where it logs; don't detect it yourself.
 
 `plugin.ComponentCommand` hands each call a ready-made `*slog.Logger` for
 this (`plugin.OpenLog` opens one directly), in bomify's own log format.

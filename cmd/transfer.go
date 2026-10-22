@@ -44,22 +44,16 @@ func (f *transferFlags) logger(cmd *cobra.Command) *slog.Logger {
 }
 
 // transferOptions returns the transfer.Options f describes, rendering
-// progress bars on stderr unless --quiet, with log lines printed above
-// them meanwhile. Call done once the transfer ends, so the bars settle
-// before anything else is written.
+// progress bars on stderr unless --quiet. Call done once the transfer
+// ends, failed or not: it settles the bars (see startBars).
 func (f *transferFlags) transferOptions(cmd *cobra.Command) (opts transfer.Options, done func()) {
 	opts.Concurrency = f.concurrency
 	if f.quiet {
 		return opts, func() {}
 	}
-	mb := newMultiBar(cmd.ErrOrStderr())
-	opts.Progress = newProgressFunc(mb)
-	restoreLogs := logAboveBars(mb, cmd.ErrOrStderr())
-	done = func() {
-		mb.Wait()
-		restoreLogs()
-	}
-	return opts, done
+	bars, settle := startBars(cmd.ErrOrStderr())
+	opts.Progress = newProgressFunc(bars)
+	return opts, settle
 }
 
 // printPinned prints ref's pinned reference, <repository>@<digest>, on

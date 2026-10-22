@@ -10,25 +10,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/alejandro-velasco/bomify/internal/layout"
+	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/testutil"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // testLogger returns a non-verbose logger that discards its output,
 // standing in for the real logger Pull otherwise uses to decide
-// whether to stream a plugin's log file to stdout.
+// whether to print a plugin's log file with bomify's.
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 // verboseTestLogger is like testLogger, but with debug-level logging
-// enabled, so Pull streams the plugin's log file to stdout.
+// enabled, so Pull prints the plugin's log file with bomify's.
 func verboseTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
@@ -82,7 +84,7 @@ func TestPull(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	result, err := Pull(bin, component, baseDir, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -99,7 +101,7 @@ func TestPullRemovesLogFileAfterSuccess(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -114,7 +116,7 @@ func TestPullRemovesLogFileAfterFailure(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -123,69 +125,152 @@ func TestPullRemovesLogFileAfterFailure(t *testing.T) {
 	}
 }
 
-func TestPullVerboseStreamsLogToStdout(t *testing.T) {
+// captureLog sends bomify's log output (see logging.Output) to the
+// returned buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	t.Cleanup(logging.SetOutput(&buf))
+	return &buf
+}
+
+func TestPullVerbosePrintsPluginLogWithBomifys(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
+	logged := captureLog(t)
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
-	}
-	origStdout := os.Stdout
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = origStdout })
-
-	_, pullErr := Pull(bin, component, baseDir, verboseTestLogger())
-
-	os.Stdout = origStdout
-	w.Close()
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-
-	if pullErr != nil {
-		t.Fatalf("Pull returned error: %v", pullErr)
+	if _, err := Pull(bin, component, baseDir, verboseTestLogger(), nil); err != nil {
+		t.Fatalf("Pull returned error: %v", err)
 	}
 
 	want := "[pull pkg:oci/nginx@1.27] "
-	if !strings.Contains(buf.String(), want) {
-		t.Errorf("stdout = %q, want it to contain the %q prefix identifying which plugin invocation the streamed line is from", buf.String(), want)
+	if !strings.Contains(logged.String(), want) {
+		t.Errorf("log = %q, want it to contain the %q prefix identifying which plugin invocation the line is from", logged.String(), want)
 	}
-	if !strings.Contains(buf.String(), "starting pull") {
-		t.Errorf("stdout = %q, want it to contain the streamed plugin log line", buf.String())
+	if !strings.Contains(logged.String(), "starting pull") {
+		t.Errorf("log = %q, want it to contain the plugin's log line", logged.String())
 	}
 }
 
-func TestPullNotVerboseDoesNotStreamLogToStdout(t *testing.T) {
+func TestPullNotVerboseDoesNotPrintPluginLog(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+	logged := captureLog(t)
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if logged.Len() != 0 {
+		t.Errorf("log = %q, want empty (non-verbose must not print the plugin log)", logged.String())
+	}
+}
+
+// recordingTracker records what a Tracker is shown.
+type recordingTracker struct {
+	mu      sync.Mutex
+	started []string
+	events  []pluginlib.ProgressEvent
+	done    []bool
+}
+
+func (r *recordingTracker) Start(label string) Pulling {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.started = append(r.started, label)
+	return r
+}
+
+func (r *recordingTracker) Update(event pluginlib.ProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+func (r *recordingTracker) Done(ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.done = append(r.done, ok)
+}
+
+func TestPullShowsReportedProgress(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+	tracker := &recordingTracker{}
+
+	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
+
+	if _, err := Pull(bin, component, baseDir, testLogger(), tracker); err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+
+	if len(tracker.started) != 1 || tracker.started[0] != component.PackageURL {
+		t.Errorf("started = %q, want just %q", tracker.started, component.PackageURL)
+	}
+	want := []pluginlib.ProgressEvent{
+		{Name: "nginx-1.27.tar", Current: 0, Total: 4},
+		{Name: "nginx-1.27.tar", Current: 4, Total: 4},
+	}
+	if len(tracker.events) != len(want) {
+		t.Fatalf("events = %+v, want %+v", tracker.events, want)
+	}
+	for index := range want {
+		if tracker.events[index] != want[index] {
+			t.Errorf("event %d = %+v, want %+v", index, tracker.events[index], want[index])
+		}
+	}
+	if len(tracker.done) != 1 || !tracker.done[0] {
+		t.Errorf("done = %v, want one successful end", tracker.done)
+	}
+	if _, err := os.Stat(layout.ComponentProgress(baseDir, component.PackageURL)); !os.IsNotExist(err) {
+		t.Errorf("progress file still exists after Pull: %v", err)
+	}
+}
+
+func TestPullFailureEndsTrackedPull(t *testing.T) {
+	bin := buildFakePlugin(t)
+	baseDir := t.TempDir()
+	tracker := &recordingTracker{}
+
+	component := cdx.Component{Name: "broken", Version: "1.0", PackageURL: "fail-me"}
+
+	if _, err := Pull(bin, component, baseDir, testLogger(), tracker); err == nil {
+		t.Fatal("Pull() with failing plugin: expected error, got nil")
+	}
+
+	if len(tracker.done) != 1 || tracker.done[0] {
+		t.Errorf("done = %v, want one failed end", tracker.done)
+	}
+}
+
+func TestShowProgressSkipsLinesThatAreNotEvents(t *testing.T) {
+	tracker := &recordingTracker{}
+
+	for _, line := range []string{"not json", `{"current":3}`, `{"name":"part","current":3,"total":9}`} {
+		showProgress(tracker, []byte(line))
+	}
+
+	want := pluginlib.ProgressEvent{Name: "part", Current: 3, Total: 9}
+	if len(tracker.events) != 1 || tracker.events[0] != want {
+		t.Errorf("events = %+v, want just %+v", tracker.events, want)
+	}
+}
+
+func TestCheckPullPassesNoProgress(t *testing.T) {
 	bin := buildFakePlugin(t)
 	baseDir := t.TempDir()
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
+	if _, err := CheckPull(bin, component, baseDir, testLogger()); err != nil {
+		t.Fatalf("CheckPull returned error: %v", err)
 	}
-	origStdout := os.Stdout
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = origStdout })
-
-	_, pullErr := Pull(bin, component, baseDir, testLogger())
-
-	os.Stdout = origStdout
-	w.Close()
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-
-	if pullErr != nil {
-		t.Fatalf("Pull returned error: %v", pullErr)
-	}
-
-	if buf.Len() != 0 {
-		t.Errorf("stdout = %q, want empty (non-verbose must not stream the plugin log)", buf.String())
+	if _, err := os.Stat(layout.ComponentProgress(baseDir, component.PackageURL)); !os.IsNotExist(err) {
+		t.Errorf("CheckPull created a progress file: %v", err)
 	}
 }
 
@@ -195,7 +280,7 @@ func TestPullFailureRemovesComponentDir(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -213,7 +298,7 @@ func TestPullHashMatch(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "fakehash-nginx-1.27"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 }
@@ -227,7 +312,7 @@ func TestPullHashMismatchFails(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with mismatched hash: expected error, got nil")
 	}
 
@@ -244,7 +329,7 @@ func TestPullHashSkippedWhenSBOMHasNoDeclaredHash(t *testing.T) {
 	// there's nothing in the SBOM to compare it against, so it's fine.
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 }
@@ -261,7 +346,7 @@ func TestPullHashSkippedWhenPluginOmitsHash(t *testing.T) {
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: "some-other-hash"}},
 	}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 }
@@ -272,7 +357,7 @@ func TestPullWritesManifest(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -311,7 +396,7 @@ func TestPullFailureDoesNotWriteManifest(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -326,7 +411,7 @@ func TestPullPIDFileRemovedAfterSuccess(t *testing.T) {
 
 	component := cdx.Component{Name: "nginx", Version: "1.27", PackageURL: "pkg:oci/nginx@1.27"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
 
@@ -341,7 +426,7 @@ func TestPullPIDFileRemovedAfterFailure(t *testing.T) {
 
 	component := cdx.Component{Name: "fail-me", Version: "1.0.0", PackageURL: "fail-me"}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with failing plugin: expected error, got nil")
 	}
 
@@ -360,7 +445,7 @@ func TestPullPIDFileExistsWhilePullInFlight(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := Pull(bin, component, baseDir, testLogger())
+		_, err := Pull(bin, component, baseDir, testLogger(), nil)
 		done <- err
 	}()
 
@@ -406,7 +491,7 @@ func TestPullReusesExistingManifestWithoutPulling(t *testing.T) {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -446,7 +531,7 @@ func TestPullReusesComponentRestoredByPreviousPull(t *testing.T) {
 		t.Fatalf("WriteManifest: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -486,7 +571,7 @@ func TestPullTakesOverStalePIDFile(t *testing.T) {
 		t.Fatalf("WriteFile pid: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -532,7 +617,7 @@ func TestPullClearsPreexistingDirWithNoPIDOrManifest(t *testing.T) {
 		t.Fatalf("WriteFile leftover: %v", err)
 	}
 
-	result, err := Pull(bin, component, baseDir, testLogger())
+	result, err := Pull(bin, component, baseDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
@@ -558,27 +643,28 @@ func TestPullConcurrentCallersPullOnce(t *testing.T) {
 	invokeLog := newInvocationLog(t)
 
 	component := cdx.Component{PackageURL: "slow-me"}
-	pid := layout.ComponentPID(baseDir, component.PackageURL)
-	proceed := filepath.Join(layout.ComponentLayer(baseDir, component.PackageURL), ".proceed")
+	dir := layout.ComponentLayer(baseDir, component.PackageURL)
+	proceed := filepath.Join(dir, ".proceed")
 
 	const callers = 5
 	errs := make(chan error, callers)
 	for i := 0; i < callers; i++ {
 		go func() {
-			_, err := Pull(bin, component, baseDir, testLogger())
+			_, err := Pull(bin, component, baseDir, testLogger(), nil)
 			errs <- err
 		}()
 	}
 
-	// Wait for whichever caller won the race to claim the pull, then let
-	// it (and thus everyone waiting on it) finish.
+	// Wait for whichever caller won the race to claim the pull and create
+	// its directory, which it does just after its pid file, then let it
+	// (and thus everyone waiting on it) finish.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, err := os.Stat(pid); err == nil {
+		if _, err := os.Stat(dir); err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("pid file never appeared")
+			t.Fatal("component directory never appeared")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -614,7 +700,7 @@ func TestPullReusedHashMismatchFailsWithoutDeletingSharedState(t *testing.T) {
 		t.Fatalf("writeManifest: %v", err)
 	}
 
-	if _, err := Pull(bin, component, baseDir, testLogger()); err == nil {
+	if _, err := Pull(bin, component, baseDir, testLogger(), nil); err == nil {
 		t.Fatal("Pull() with mismatched reused hash: expected error, got nil")
 	}
 

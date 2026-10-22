@@ -54,7 +54,8 @@ nowhere else.
 - **`plugins/`** holds installed `bomify-plugin-<kind>[.exe]` binaries,
   the only place bomify looks (`plugin.Find`; never `PATH`), plus
   `installed.json` recording where `bomify plugin install` got each.
-- **`logs/<purlHash>.log`** is a plugin's log for one invocation. It is
+- **`logs/<purlHash>.log`** is a plugin's log for one invocation, and
+  **`logs/<purlHash>.progress`** the progress a `pull` reports. Both are
   deleted when the plugin exits.
 
 Every write that matters is atomic: a temp file or directory, renamed

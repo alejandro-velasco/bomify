@@ -36,8 +36,8 @@ func setAuth(req *http.Request) error {
 }
 
 // Pull downloads ref.DownloadURL with a plain HTTP GET and saves it into
-// outputDir as ref.Filename().
-func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error) {
+// outputDir as ref.Filename(), reporting its progress to progress.
+func Pull(ref Ref, outputDir string, logger *slog.Logger, progress *plugin.Progress) (*plugin.Result, error) {
 	logger.Info("GET", "url", ref.DownloadURL)
 	req, err := http.NewRequest(http.MethodGet, ref.DownloadURL, nil)
 	if err != nil {
@@ -67,7 +67,10 @@ func Pull(ref Ref, outputDir string, logger *slog.Logger) (*plugin.Result, error
 	defer f.Close()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(f, hasher), resp.Body); err != nil {
+	// ContentLength is -1 when the server doesn't say.
+	reported := progress.Writer(ref.Filename(), max(resp.ContentLength, 0))
+	defer reported.Close()
+	if _, err := io.Copy(io.MultiWriter(f, hasher, reported), resp.Body); err != nil {
 		return nil, fmt.Errorf("save %s: %w", path, err)
 	}
 	logger.Info("saved", "path", path)
