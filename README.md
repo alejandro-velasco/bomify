@@ -24,7 +24,7 @@ written, and can still pull each part with its own tool.
 
 ![bomify sbom compose turning a Helm chart and a Hugging Face model into one SBOM, with the chart's image found by rendering it](docsite/docs/assets/demo/compose.gif)
 
-![bomify build pulling each component through its plugin into one package](docsite/docs/assets/demo/build.gif)
+![bomify build pulling three components at once through their plugins, with a progress bar for each model file and image layer, into one package](docsite/docs/assets/demo/build.gif)
 
 **Trust** what you deploy:
 

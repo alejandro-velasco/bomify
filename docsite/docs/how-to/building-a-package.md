@@ -50,9 +50,11 @@ Nothing is recorded.
 bomify build sbom.json --tag myapp:1.0 --tag myapp:latest --concurrency 4
 ```
 
-![bomify build pulling each component through its plugin into one package](../assets/demo/build.gif)
+![bomify build pulling three components at once through their plugins, with a progress bar for each model file and image layer, into one package](../assets/demo/build.gif)
 
-A component whose SHA-256 doesn't match the SBOM fails the build.
+Each file or layer a plugin reports gets a progress bar; a plugin that
+reports none shows a spinner until its pull ends. A component whose
+SHA-256 doesn't match the SBOM fails the build.
 
 ## 4. Find it later
 
