@@ -24,7 +24,7 @@ written, and can still pull each part with its own tool.
 
 ![bomify sbom compose turning a Helm chart and a Hugging Face model into one SBOM, with the chart's image found by rendering it](docsite/docs/assets/demo/compose.gif)
 
-![bomify build pulling each component through its plugin into one package](docsite/docs/assets/demo/build.gif)
+![bomify build pulling three components at once through their plugins, with a progress bar for each model file and image layer, into one package](docsite/docs/assets/demo/build.gif)
 
 **Trust** what you deploy:
 
@@ -56,16 +56,25 @@ written, and can still pull each part with its own tool.
 - Push tags each component by name beside the package, so `docker
   pull`, `helm pull`, and `modctl` fetch it directly, and nothing where
   the platform runs needs bomify.
+- `bomify component list`/`pull` lists a package's components and pulls
+  one, verified, into a directory, such as a model for a server to load.
 
 ![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](docsite/docs/assets/demo/pull.gif)
+
+![bomify component list showing a package's chart, model, and image, then bomify component pull verifying the package and pulling only the model into a directory](docsite/docs/assets/demo/component.gif)
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)**: installation,
 a quickstart, how-tos, the CLI reference, and a guide to writing plugins.
 
 ## Status
 
-**Pre-alpha.** Flags, the data directory layout, and the plugin
-contracts may change without notice.
+**Beta.** These are stable: the commands and their flags, the
+[registry format](docs/architecture/registry-format.md), the
+[plugin contracts](plugins/README.md#contract-versions), and the
+[data directory](docs/architecture/data-directory.md). They change only
+where they must, and the release notes call out any change that breaks
+what's built on them. Data and packages from alpha releases aren't
+guaranteed to carry over.
 
 ## Build
 

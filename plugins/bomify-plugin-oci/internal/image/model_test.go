@@ -71,7 +71,7 @@ func TestPullAndPackAModelArtifact(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	pulled, err := Pull(ref, outputDir, testLogger())
+	pulled, err := Pull(ref, outputDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull: %v", err)
 	}

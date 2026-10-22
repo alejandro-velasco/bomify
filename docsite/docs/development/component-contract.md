@@ -17,3 +17,9 @@ icon: lucide/file-text
 ```json
 --8<-- "plugins/contracts/component/v1/pack-result.schema.json"
 ```
+
+### `progress.schema.json`
+
+```json
+--8<-- "plugins/contracts/component/v1/progress.schema.json"
+```

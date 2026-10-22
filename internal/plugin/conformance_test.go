@@ -28,7 +28,8 @@ func TestCallsParseWithPkgPlugin(t *testing.T) {
 	if _, err := CheckPull(bin, component, baseDir, testLogger()); err != nil {
 		t.Errorf("CheckPull: %v", err)
 	}
-	if _, err := Pull(bin, component, baseDir, testLogger()); err != nil {
+	// With a tracker, as build pulls, so --progress is passed too.
+	if _, err := Pull(bin, component, baseDir, testLogger(), &recordingTracker{}); err != nil {
 		t.Errorf("Pull: %v", err)
 	}
 	input := layout.ComponentLayer(baseDir, component.PackageURL)

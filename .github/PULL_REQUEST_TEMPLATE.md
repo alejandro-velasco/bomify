@@ -15,6 +15,14 @@ Relates to #456
 Leave this section empty (or remove it) if there's no related issue.
 -->
 
+## Stable surface
+
+Since the beta, these are stable: the commands and their flags, the
+registry format, the plugin contracts, and the data directory. A change
+to one is made only where it must be, and a breaking one is called out.
+
+- [ ] This doesn't change the stable surface, or the summary says how it does and what it breaks
+
 ## Type of change
 
 <!-- Pick one; this drives the release semver-release computes from your commits. -->

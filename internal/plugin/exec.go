@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -42,77 +41,108 @@ func Invoke[T any](path string, args ...string) (T, error) {
 	return result, nil
 }
 
-// logStreamPollInterval is how often streamLog checks a plugin's log file
-// for new content while the plugin is still running.
-const logStreamPollInterval = 100 * time.Millisecond
+// tailPollInterval is how often follow checks a file for new lines while
+// a plugin is still running.
+const tailPollInterval = 100 * time.Millisecond
 
-// runComponent is Invoke for the component contract's "component <verb>" (see
-// plugins/contracts/component/v1/CONTRACT.md), passing component's purl, its
-// log file (as --log), and extraArgs. It creates the log file fresh before
-// starting the plugin and — if logger has debug logging enabled (bomify was
-// run with --verbose) — streams its content live to stdout for the duration
-// of the run; either way, the file exists only to make that streaming
-// possible, so it's removed again once the plugin exits.
-func runComponent[T any](path, verb string, component cdx.Component, baseDir string, logger *slog.Logger, extraArgs ...string) (*T, error) {
+// runComponent is Invoke for the component contract's "component <verb>"
+// (see plugins/contracts/component/v1/CONTRACT.md), passing component's
+// purl, its log file (as --log), and extraArgs. It creates the log file
+// fresh before starting the plugin and, if logger has debug logging
+// enabled (bomify was run with --verbose), prints its lines with bomify's
+// own log (see logging.Output) as the plugin writes them. The file exists
+// only for that, so it's removed once the plugin exits.
+//
+// With a tracker, it also passes a progress file (as --progress), created
+// and removed the same way, and shows the plugin's run and the events it
+// reports there through the tracker.
+func runComponent[T any](path, verb string, component cdx.Component, baseDir string, logger *slog.Logger, tracker Tracker, extraArgs ...string) (*T, error) {
 	logFile := layout.ComponentLog(baseDir, component.PackageURL)
 	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
 
-	if err := prepareLogFile(logFile); err != nil {
+	if err := prepareFile(logFile); err != nil {
 		return nil, err
 	}
 	defer os.Remove(logFile)
 
-	// Only worth telling the plugin to color its log output if it's
-	// actually going to be streamed somewhere that renders color: bomify's
-	// own stdout, and only when verbose (streamLog runs at all).
-	color := verbose && logging.SupportsColor(os.Stdout)
+	// Only worth telling the plugin to color its log if it's going to be
+	// printed somewhere that renders color: with bomify's own log, and only
+	// when verbose.
+	color := verbose && logging.SupportsColor(os.Stderr)
+	args := append([]string{pluginlib.ComponentSubcommand, verb, "--purl", component.PackageURL, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
 
 	if verbose {
 		prefix := verb + " " + component.PackageURL
-		stop := make(chan struct{})
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			streamLog(logFile, prefix, stop)
-		}()
-		defer func() {
-			close(stop)
-			<-done
-		}()
+		stopLog := follow(logFile, func(line []byte) {
+			fmt.Fprintf(logging.Output(), "[%s] %s\n", prefix, line)
+		})
+		defer stopLog()
 	}
 
-	args := append([]string{pluginlib.ComponentSubcommand, verb, "--purl", component.PackageURL, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
+	if tracker == nil {
+		result, err := Invoke[T](path, args...)
+		if err != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+
+	progressFile := layout.ComponentProgress(baseDir, component.PackageURL)
+	if err := prepareFile(progressFile); err != nil {
+		return nil, err
+	}
+	defer os.Remove(progressFile)
+	args = append(args, "--progress", progressFile)
+
+	pulling := tracker.Start(component.PackageURL)
+	stopProgress := follow(progressFile, func(line []byte) {
+		showProgress(pulling, line)
+	})
 	result, err := Invoke[T](path, args...)
+	stopProgress()
+	pulling.Done(err == nil)
 	if err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// prepareLogFile creates (truncating if necessary) an empty file at path,
-// so a plugin's log always starts fresh for this run and streamLog has
-// something to open immediately without racing the plugin's own first
+// prepareFile creates (truncating if necessary) an empty file at path, so
+// a plugin's log or progress always starts fresh for this run and follow
+// has something to open immediately without racing the plugin's own first
 // write to it.
-func prepareLogFile(path string) error {
+func prepareFile(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create logs directory: %w", err)
 	}
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
-		return fmt.Errorf("create log file %s: %w", path, err)
+		return fmt.Errorf("create %s: %w", path, err)
 	}
 
 	return f.Close()
 }
 
-// streamLog tails path, writing each complete line appended to it to
-// stdout — prefixed with "[prefix] " so lines from concurrent pulls/pushes
-// streaming at once stay distinguishable — until stop is closed, at which
-// point it does one final read to flush anything written (plus any
-// trailing, not yet newline-terminated line) just before stopping. path is
-// assumed to already exist (see prepareLogFile).
-func streamLog(path, prefix string, stop <-chan struct{}) {
+// follow calls line with each line appended to path, which must exist,
+// until the returned stop is called. stop returns once every line written
+// by then, including a last one with no newline yet, has been handled.
+func follow(path string, line func([]byte)) (stop func()) {
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tail(path, quit, line)
+	}()
+	return func() {
+		close(quit)
+		<-done
+	}
+}
+
+// tail is follow's loop: it reads path every tailPollInterval until quit
+// is closed, then once more.
+func tail(path string, quit <-chan struct{}, line func([]byte)) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -127,7 +157,7 @@ func streamLog(path, prefix string, stop <-chan struct{}) {
 			n, err := f.Read(buf)
 			if n > 0 {
 				pending = append(pending, buf[:n]...)
-				pending = writeLogLines(os.Stdout, prefix, pending)
+				pending = splitLines(pending, line)
 			}
 			if err != nil {
 				return
@@ -139,28 +169,28 @@ func streamLog(path, prefix string, stop <-chan struct{}) {
 		drain()
 
 		select {
-		case <-stop:
+		case <-quit:
 			drain()
 			if len(pending) > 0 {
-				fmt.Fprintf(os.Stdout, "[%s] %s\n", prefix, pending)
+				line(pending)
 			}
 			return
-		case <-time.After(logStreamPollInterval):
+		case <-time.After(tailPollInterval):
 		}
 	}
 }
 
-// writeLogLines writes every complete ("\n"-terminated) line in data to w,
-// each prefixed with "[prefix] ", and returns whatever trailing partial
-// line remains (with no newline yet, since the writer may not be done
-// with it) for the caller to prepend to data on its next call.
-func writeLogLines(w io.Writer, prefix string, data []byte) []byte {
+// splitLines calls line with every complete ("\n"-terminated) line in
+// data, without its newline, and returns whatever trailing partial line
+// remains (the writer may not be done with it) for the caller to prepend
+// to data on its next call.
+func splitLines(data []byte, line func([]byte)) []byte {
 	for {
 		i := bytes.IndexByte(data, '\n')
 		if i < 0 {
 			return data
 		}
-		fmt.Fprintf(w, "[%s] %s\n", prefix, data[:i])
+		line(data[:i])
 		data = data[i+1:]
 	}
 }

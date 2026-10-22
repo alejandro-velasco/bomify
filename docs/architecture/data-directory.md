@@ -54,7 +54,8 @@ nowhere else.
 - **`plugins/`** holds installed `bomify-plugin-<kind>[.exe]` binaries,
   the only place bomify looks (`plugin.Find`; never `PATH`), plus
   `installed.json` recording where `bomify plugin install` got each.
-- **`logs/<purlHash>.log`** is a plugin's log for one invocation. It is
+- **`logs/<purlHash>.log`** is a plugin's log for one invocation, and
+  **`logs/<purlHash>.progress`** the progress a `pull` reports. Both are
   deleted when the plugin exits.
 
 Every write that matters is atomic: a temp file or directory, renamed
@@ -87,8 +88,12 @@ The version covers the layout above and the schemas of the files bomify
 reads back: the `conf/` rule files and `signers.json`,
 `repositories.json`, the `keys/` and `vex/` indexes, `installed.json`,
 and the manifest and provenance records. Changing any of them in a way an
-older bomify would misread bumps `layout.CurrentVersion` and adds a
-migration in the same change. Adding an optional field doesn't. The
+older bomify would misread bumps `layout.CurrentVersion`, so an older
+bomify refuses the directory rather than misreading it, and the release
+notes call the change out. Each bump adds a migration step in the same
+change: one that carries the data over, or, where that isn't worth it,
+one that refuses the older directory and says what to do. Adding an
+optional field doesn't bump the version. The
 `conf/` rule files are read strictly, so an older bomify refuses a
 field it doesn't know rather than verifying or gating less than the
 rule says; their fields are in [Signing](signing.md#rule-files) and

@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::hash::{hash_file, hash_listing, local_paths, verify};
 use crate::hub::{Hub, RepoFile};
 use crate::log::Logger;
+use crate::progress::Progress;
 use crate::refs::{Ref, repository_page};
 
 /// What pull prints, per the component contract.
@@ -30,8 +31,14 @@ pub struct ResultHash {
 
 /// Downloads every file of reference's repository at its commit into
 /// output, each checked against the hash the Hub lists for it, and
-/// returns their tree hash.
-pub fn pull(hub: &Hub, reference: &Ref, output: &Path, logger: &Logger) -> Result<PluginResult> {
+/// returns their tree hash. Each file's download is reported to progress.
+pub fn pull(
+    hub: &Hub,
+    reference: &Ref,
+    output: &Path,
+    progress: Option<Progress>,
+    logger: &Logger,
+) -> Result<PluginResult> {
     let files = hub.list_files(reference)?;
     logger.info(
         "downloading",
@@ -46,6 +53,7 @@ pub fn pull(hub: &Hub, reference: &Ref, output: &Path, logger: &Logger) -> Resul
         .snapshot_download()
         .revision(reference.revision.clone())
         .local_dir(output.to_path_buf())
+        .maybe_progress(progress.map(hf_hub::progress::Progress::new))
         .send()
         .with_context(|| format!("download {}", reference.repo_id()))?;
 

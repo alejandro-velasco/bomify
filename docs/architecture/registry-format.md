@@ -2,9 +2,8 @@
 
 What bomify writes to an OCI registry, or to a `bomify save` tarball (an
 OCI image layout), is what other tools, and older and newer bomify
-releases, have to read. From bomify's last alpha release on, this format
-is a public interface: it changes only as [Versioning](#versioning)
-describes. [Push and pull](registry.md) covers how bomify reads and
+releases, have to read. Since the beta, this format is a public
+interface: it changes only as [Versioning](#versioning) describes. [Push and pull](registry.md) covers how bomify reads and
 writes it.
 
 Everything below is OCI 1.1: an image index, and image manifests. bomify's
@@ -166,7 +165,7 @@ pull restores only the newest.
 | --- | --- | --- |
 | `land.bomify.purl` | component index entries, layers of bomify's component format, extra files, report layers | The component's purl. |
 | `land.bomify.component.reference` | component index entries | Where the component is tagged beside the package, relative to its repository (see [Component repositories](#component-repositories)). |
-| `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
+| `land.bomify.scan.plugin` | report layers, the reports referrer | On a layer, the scanner whose report it is; a pull restores it under that name, so it must be usable as a file name on every OS bomify runs on (`transfer.IsSafeFilename`), or the pull fails. On the referrer, every scanner it carries reports of, sorted, comma-separated, informational only. |
 | `land.bomify.signature.plugin` | signature and signed attestation referrers | The kind of signing plugin that made it. Informational. |
 | `land.bomify.attestation.predicateType` | provenance referrers | The in-toto predicate type, `https://slsa.dev/provenance/v1`. Marks the referrer as an attestation, which signature verification skips. |
 | `land.bomify.provenance.statement` | provenance referrers | The SHA-256 of the statement, so pushing the same provenance again attaches nothing new. |
@@ -200,10 +199,12 @@ manifest, VEX document, or signature envelope.
 
 ## Versioning
 
-Each bomify media and artifact type carries a version (`v1`). A change
-that a reader of the current version would misread, such as removing or
-renaming an annotation or changing what a blob holds, gets a new version
-(`v2`). Adding an optional annotation doesn't.
+Each bomify media and artifact type carries a version (`v1`). Adding an
+optional annotation keeps it. A change that a reader of the current
+version would misread, such as removing or renaming an annotation or
+changing what a blob holds, is made only where it must be, and the
+release notes call it out. It gets a new version (`v2`) where bomify
+must tell the two apart.
 
 What this bomify does with a type it doesn't know:
 

@@ -72,13 +72,27 @@ downloads, and each file is written through an `os.Root`, refusing one
 that exists. No more than `--concurrency` blobs download at once across
 all the components. Pull needs no component plugin.
 
+`component pull` verifies and reads the package as `pull` does, then
+restores one component's files from the files map into a directory of
+the user's choosing, without touching the data directory (see
+`pull.PullComponent`). The directory may be a mount point, such as a
+volume in a container, which can't be swapped for a staged copy, so it
+stages inside it, keeping the moves on one file system. With
+`--replace`, what it held is removed only once every file verifies, so a
+failed update keeps the old files. `component list` reads only the
+index, the SBOM, and the files map.
+
 ## Save and load
 
 `bomify save`/`load` ([`internal/oci/save`](https://github.com/alejandro-velasco/bomify/tree/main/internal/oci/save)) run
 `push`/`pull` unchanged against a local OCI image layout instead of a
 registry, then tar or untar it. Shared components are stored once, and
 signatures and report referrers travel inside the tarball, so `load`
-verifies and restores exactly as `pull` does.
+verifies and restores exactly as `pull` does. A tarball comes from
+whoever made it, so `load` unpacks only its regular files, directories,
+and symlinks, all inside the layout (`transfer.ExtractTar`), and refuses
+a sparse file, which could declare far more bytes than the tarball
+holds.
 
 ![Save and load flow](../diagrams/save-load.svg)
 

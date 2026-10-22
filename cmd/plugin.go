@@ -130,17 +130,15 @@ func runPluginInstall(cmd *cobra.Command, name string, opts *pluginInstallOption
 		return err
 	}
 
-	mb := newMultiBar(cmd.OutOrStderr())
-	restoreLogs := logAboveBars(mb, cmd.OutOrStderr())
+	bars, settle := startBars(cmd.OutOrStderr())
 	records, err := install.Install(cmd.Context(), repo, ref, dataDir, install.Options{
 		Concurrency:     opts.concurrency,
-		Progress:        newProgressFunc(mb),
+		Progress:        newProgressFunc(bars),
 		Verify:          verifier,
 		RequireChecksum: opts.verify,
 		Logger:          logger,
 	})
-	mb.Wait()
-	restoreLogs()
+	settle()
 	if err != nil {
 		return err
 	}

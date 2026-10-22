@@ -31,7 +31,7 @@ func (component) Pull(_ context.Context, req plugin.PullRequest) (*plugin.Result
 	if req.Check {
 		return artifact.CheckPull(ref, req.Logger)
 	}
-	return artifact.Pull(ref, req.Output, req.Logger)
+	return artifact.Pull(ref, req.Output, req.Logger, req.Progress)
 }
 
 func resolve(purl string, logger *slog.Logger) (artifact.Ref, error) {

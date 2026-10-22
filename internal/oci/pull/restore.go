@@ -35,6 +35,19 @@ type restoreOptions struct {
 	progress      transfer.ProgressFunc
 }
 
+// newRestoreOptions returns the restoreOptions of a pull from target into
+// dataDir.
+func newRestoreOptions(target oras.ReadOnlyTarget, dataDir string, concurrency int, progress transfer.ProgressFunc) restoreOptions {
+	options := restoreOptions{
+		target:        target,
+		dataDir:       dataDir,
+		concurrency:   concurrency,
+		downloadSlots: semaphore.NewWeighted(int64(concurrency)),
+		progress:      progress,
+	}
+	return options
+}
+
 // download runs fetch, one layer's download, once one of the pull's
 // download slots is free. Every layer takes a slot, whichever restore it's
 // part of, so components restoring at once, each downloading its layers
@@ -64,13 +77,7 @@ type packageRestore struct {
 // of the package bom describes, whose files map is files, into dataDir.
 func newPackageRestore(target oras.ReadOnlyTarget, descs []ocispec.Descriptor, files transfer.Files, dataDir string, bom *cdx.BOM, concurrency int, progress transfer.ProgressFunc) *packageRestore {
 	restore := packageRestore{
-		restoreOptions: restoreOptions{
-			target:        target,
-			dataDir:       dataDir,
-			concurrency:   concurrency,
-			downloadSlots: semaphore.NewWeighted(int64(concurrency)),
-			progress:      progress,
-		},
+		restoreOptions:   newRestoreOptions(target, dataDir, concurrency, progress),
 		descs:            descs,
 		files:            files,
 		componentsByPurl: indexComponentsByPurl(bom),

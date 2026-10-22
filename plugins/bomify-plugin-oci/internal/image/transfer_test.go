@@ -53,7 +53,7 @@ func TestPull(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	result, err := Pull(ref, outputDir, testLogger())
+	result, err := Pull(ref, outputDir, testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestPullMissingImage(t *testing.T) {
 	host := newTestRegistry(t)
 	ref := host + "/test/does-not-exist:1.0"
 
-	if _, err := Pull(ref, t.TempDir(), testLogger()); err == nil {
+	if _, err := Pull(ref, t.TempDir(), testLogger(), nil); err == nil {
 		t.Fatal("Pull() for an image never pushed: expected error, got nil")
 	}
 }
@@ -171,7 +171,7 @@ func TestCheckPullMultiPlatformReportsSameDigestAsPull(t *testing.T) {
 		t.Fatalf("crane.Head digest = %s, want the index digest %s", headDesc.Digest, indexDigest)
 	}
 
-	pullResult, err := Pull(ref, t.TempDir(), testLogger())
+	pullResult, err := Pull(ref, t.TempDir(), testLogger(), nil)
 	if err != nil {
 		t.Fatalf("Pull() error = %v", err)
 	}
