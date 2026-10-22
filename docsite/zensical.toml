@@ -21,6 +21,7 @@ nav = [
       "how-to/index.md",
       { "Building a package" = "how-to/building-a-package.md" },
       { "Publishing and pulling packages" = "how-to/publishing-and-pulling-packages.md" },
+      { "Pulling one component into a directory" = "how-to/pulling-one-component.md" },
       { "Building an SBOM from a Helm chart" = "how-to/building-an-sbom-from-a-helm-chart.md" },
       { "Composing a multi-medium package" = "how-to/composing-a-multi-medium-package.md" },
       { "Packaging a model with its serving stack" = "how-to/packaging-a-model-with-its-serving-stack.md" },
@@ -32,6 +33,11 @@ nav = [
       "usage/index.md",
       { "bomify" = "usage/reference/bomify.md" },
       { "bomify build" = "usage/reference/bomify_build.md" },
+      { "bomify component" = [
+          { "bomify component" = "usage/reference/bomify_component.md" },
+          { "bomify component list" = "usage/reference/bomify_component_list.md" },
+          { "bomify component pull" = "usage/reference/bomify_component_pull.md" },
+      ] },
       { "bomify login" = "usage/reference/bomify_login.md" },
       { "bomify logout" = "usage/reference/bomify_logout.md" },
       { "bomify plugin" = [

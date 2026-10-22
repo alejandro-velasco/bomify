@@ -105,9 +105,12 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, 
 func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options, keep func(purl string) bool) (Result, error) {
 	opts = opts.WithDefaults()
 
-	pkg, err := fetchPackage(ctx, target, ref, dataDir, opts)
+	pkg, err := fetchPackage(ctx, target, ref, opts)
 	if err != nil {
 		return Result{}, err
+	}
+	if err := pkg.sbom.write(dataDir); err != nil {
+		return Result{}, fmt.Errorf("write sbom: %w", err)
 	}
 	kept := filterByPurl(pkg.components, keep)
 	restore := newPackageRestore(target, kept, pkg.files, dataDir, pkg.sbom.bom, opts.Concurrency, opts.Progress)
@@ -148,9 +151,8 @@ type fetchedPackage struct {
 // fetchPackage resolves ref and verifies it as opts asks, its
 // signatures (opts.Verify), then its build provenance
 // (opts.VerifyProvenance), before anything is fetched; then fetches its
-// index, its SBOM, and its files map, recording the SBOM in dataDir as
-// `bomify build` would have (see packageSBOM.write).
-func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options) (*fetchedPackage, error) {
+// index, its SBOM, and its files map. It writes nothing.
+func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref string, opts transfer.Options) (*fetchedPackage, error) {
 	desc, err := oras.Resolve(ctx, target, ref, oras.DefaultResolveOptions)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", ref, err)
@@ -177,9 +179,6 @@ func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir 
 	config, err := fetchConfig(ctx, target, pkg.SBOMManifest.Config, opts.Progress)
 	if err != nil {
 		return nil, fmt.Errorf("fetch sbom: %w", err)
-	}
-	if err := config.write(dataDir); err != nil {
-		return nil, fmt.Errorf("write sbom: %w", err)
 	}
 
 	fetched := fetchedPackage{

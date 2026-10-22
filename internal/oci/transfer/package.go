@@ -132,6 +132,15 @@ type ComponentFiles struct {
 	Files []FileBlob `json:"files"`
 }
 
+// Size returns how many bytes c's files take.
+func (c ComponentFiles) Size() int64 {
+	var size int64
+	for _, file := range c.Files {
+		size += file.Size
+	}
+	return size
+}
+
 // FileBlob is one file of a component: its "/"-separated path in the
 // component's directory and permission bits, and the descriptor of the
 // blob holding exactly its bytes.

@@ -11,6 +11,8 @@ Task-focused guides. They assume bomify and the plugins you need are
 - [Building a package](building-a-package.md) from an SBOM.
 - [Publishing and pulling packages](publishing-and-pulling-packages.md)
   through an OCI registry.
+- [Pulling one component into a directory](pulling-one-component.md),
+  such as a model for a server to load.
 - [Building an SBOM from a Helm chart](building-an-sbom-from-a-helm-chart.md).
 - [Composing a multi-medium package](composing-a-multi-medium-package.md)
   from several mediums' SBOMs.

@@ -56,8 +56,12 @@ written, and can still pull each part with its own tool.
 - Push tags each component by name beside the package, so `docker
   pull`, `helm pull`, and `modctl` fetch it directly, and nothing where
   the platform runs needs bomify.
+- `bomify component list`/`pull` lists a package's components and pulls
+  one, verified, into a directory, such as a model for a server to load.
 
 ![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](docsite/docs/assets/demo/pull.gif)
+
+![bomify component list showing a package's chart, model, and image, then bomify component pull verifying the package and pulling only the model into a directory](docsite/docs/assets/demo/component.gif)
 
 **[Docs site](https://alejandro-velasco.github.io/bomify/)**: installation,
 a quickstart, how-tos, the CLI reference, and a guide to writing plugins.
