@@ -208,7 +208,7 @@ func runComponentPull(cmd *cobra.Command, ref, component string, opts *component
 	}
 	result, err := pull.PullComponent(cmd.Context(), repo, ref, component, into, transferOptions)
 	done()
-	if errors.Is(err, pull.ErrNoComponent) || errors.Is(err, pull.ErrAmbiguousComponent) {
+	if errors.Is(err, pull.ErrNoComponent) {
 		return fmt.Errorf("%w (\"bomify component list %s\" lists them)", err, ref)
 	}
 	if err != nil {
