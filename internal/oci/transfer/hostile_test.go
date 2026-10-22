@@ -14,6 +14,10 @@ import (
 
 // Tests of what bomify does with names and archives from whoever
 // published a package, which it can't trust.
+//
+// The fuzz tests' inputs are generated afresh on each run from the seeds
+// below, which a reviewer can read; no generated input is committed. An
+// input one fails on becomes a named test here.
 
 func TestIsSafeFilename(t *testing.T) {
 	for name, want := range map[string]bool{

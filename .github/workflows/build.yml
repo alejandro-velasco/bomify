@@ -33,7 +33,8 @@ jobs:
         run: make cover-transfer
 
       # What bomify unpacks and names from others' packages, fuzzed for a
-      # short budget. Their corpora, in testdata, run with every test.
+      # short budget from the seeds in the tests, which also run with
+      # every test.
       - name: Fuzz
         run: make fuzz FUZZTIME=30s
 

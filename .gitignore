@@ -1,5 +1,9 @@
 /bin/
 /dist/
+
+# Inputs a fuzz test failed on, which go test writes here: each becomes a
+# named, readable test instead, as no generated input is committed.
+testdata/fuzz/
 *.exe
 *.test
 .DS_Store
