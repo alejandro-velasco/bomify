@@ -276,9 +276,16 @@ func TestPullComponentSelectors(t *testing.T) {
 				if !strings.Contains(err.Error(), strconv.Quote(test.selector)) {
 					t.Errorf("error = %q, want it to name %q", err, test.selector)
 				}
-				// The package's components may be many, so the error lists none.
-				if strings.Contains(err.Error(), "pkg:") {
-					t.Errorf("error = %q, want no purls in it", err)
+				// The package's components may be many, so the error lists
+				// only the ones the selector names.
+				for _, purl := range []string{"pkg:generic/beta@2", "pkg:huggingface/org/beta@3"} {
+					named := errors.Is(err, ErrAmbiguousComponent)
+					if strings.Contains(err.Error(), purl) != named {
+						t.Errorf("error = %q, want %q in it only if ambiguous", err, purl)
+					}
+				}
+				if strings.Contains(err.Error(), "pkg:huggingface/org/alpha") {
+					t.Errorf("error = %q, want no purl the selector doesn't name", err)
 				}
 				if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
 					t.Errorf("a failed pull left %s behind", dir)

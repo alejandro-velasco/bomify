@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"oras.land/oras-go/v2"
@@ -66,7 +67,8 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 
 // The errors for a component selector that names no component of a
 // package, and one that names several. Neither lists the package's
-// components, which may be many.
+// components, which may be many; an ambiguous selector's error lists the
+// purls of just the ones it names.
 var (
 	ErrNoComponent        = errors.New("no such component in the package")
 	ErrAmbiguousComponent = errors.New("names several components in the package; name one by its purl")
@@ -90,7 +92,11 @@ func selectComponent(components []PackageComponent, selector string) (PackageCom
 		return named[0], nil
 	}
 	if len(named) > 1 {
-		return PackageComponent{}, fmt.Errorf("%q %w", selector, ErrAmbiguousComponent)
+		purls := make([]string, 0, len(named))
+		for _, candidate := range named {
+			purls = append(purls, candidate.Component.PackageURL)
+		}
+		return PackageComponent{}, fmt.Errorf("%q %w: %s", selector, ErrAmbiguousComponent, strings.Join(purls, ", "))
 	}
 	return PackageComponent{}, fmt.Errorf("%q: %w", selector, ErrNoComponent)
 }

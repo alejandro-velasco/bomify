@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/package-url/packageurl-go"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8/decor"
 
@@ -35,10 +36,10 @@ func componentCmd() *cobra.Command {
 
 const componentListShort = "List the components of a package in an OCI registry"
 
-const componentListLong = `List prints each component of the package <reference>: its name, type,
-the size of its files, its purl, which "bomify component pull" takes to
-name it, and the reference "bomify push" tagged it under, which tools
-such as docker, helm, and oras pull it from.
+const componentListLong = `List prints each component of the package <reference>: its name and
+version, which "bomify component pull" takes to name it, its purl type,
+the size of its files, and the reference "bomify push" tagged it under,
+which tools such as docker, helm, and oras pull it from.
 
 It reads only the package's index, SBOM, and files map, without
 downloading a component or touching the data directory, and verifies
@@ -81,24 +82,34 @@ func runComponentList(cmd *cobra.Command, ref string) error {
 	return writeComponentTable(cmd.OutOrStdout(), components)
 }
 
-// writeComponentTable prints components, one row each: the name, type,
-// size of its files, purl, and reference.
+// writeComponentTable prints components, one row each: the name, version,
+// purl type, size of its files, and reference. The purl itself, often long, is
+// left out: the name selects a component, and an ambiguous one's error
+// lists the purls that share it.
 func writeComponentTable(w io.Writer, components []pull.PackageComponent) error {
-	header := []string{"NAME", "TYPE", "SIZE", "PURL", "REFERENCE"}
+	header := []string{"NAME", "VERSION", "TYPE", "SIZE", "REFERENCE"}
 	rows := make([][]string, 0, len(components))
 	for _, listed := range components {
 		size := "-"
 		if len(listed.Files.Files) > 0 {
 			size = fmt.Sprintf("%.1f", decor.SizeB1024(listed.Files.Size()))
 		}
+		version := "-"
+		if listed.Component.Version != "" {
+			version = listed.Component.Version
+		}
+		purlType := "-"
+		if purl, err := packageurl.FromString(listed.Component.PackageURL); err == nil {
+			purlType = purl.Type
+		}
 		reference := "-"
 		if listed.Reference != "" {
 			reference = listed.Reference
 		}
-		row := []string{listed.Component.Name, string(listed.Component.Type), size, listed.Component.PackageURL, reference}
+		row := []string{listed.Component.Name, version, purlType, size, reference}
 		rows = append(rows, row)
 	}
-	table.RightAlign(2, header, rows)
+	table.RightAlign(3, header, rows)
 	return table.Write(w, header, rows)
 }
 

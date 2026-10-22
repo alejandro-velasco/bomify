@@ -4,10 +4,10 @@ List the components of a package in an OCI registry
 
 ### Synopsis
 
-List prints each component of the package <reference>: its name, type,
-the size of its files, its purl, which "bomify component pull" takes to
-name it, and the reference "bomify push" tagged it under, which tools
-such as docker, helm, and oras pull it from.
+List prints each component of the package <reference>: its name and
+version, which "bomify component pull" takes to name it, its purl type,
+the size of its files, and the reference "bomify push" tagged it under,
+which tools such as docker, helm, and oras pull it from.
 
 It reads only the package's index, SBOM, and files map, without
 downloading a component or touching the data directory, and verifies

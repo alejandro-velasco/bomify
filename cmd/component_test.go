@@ -112,16 +112,16 @@ func filesOf(purl string, sizes ...int64) transfer.ComponentFiles {
 func TestWriteComponentTable(t *testing.T) {
 	components := []pull.PackageComponent{
 		{
-			Component: cdx.Component{Name: "model", Type: cdx.ComponentTypeMachineLearningModel, PackageURL: "pkg:huggingface/org/model@abc"},
+			Component: cdx.Component{Name: "model", Version: "abc", Type: cdx.ComponentTypeMachineLearningModel, PackageURL: "pkg:huggingface/org/model@abc"},
 			Files:     filesOf("pkg:huggingface/org/model@abc", 4<<30, 1<<30, 0),
 			Reference: "registry.example.com/app/huggingface/org/model:abc",
 		},
 		{
-			Component: cdx.Component{Name: "nginx", Type: cdx.ComponentTypeContainer, PackageURL: "pkg:oci/nginx@1.27"},
+			Component: cdx.Component{Name: "nginx", Version: "1.27", Type: cdx.ComponentTypeContainer, PackageURL: "pkg:oci/nginx@1.27"},
 			Files:     filesOf("pkg:oci/nginx@1.27", 40<<20, 2<<20),
 		},
 		{
-			Component: cdx.Component{Name: "empty", Type: cdx.ComponentTypeFile, PackageURL: "pkg:generic/empty@1"},
+			Component: cdx.Component{Name: "empty", Version: "1", Type: cdx.ComponentTypeFile, PackageURL: "pkg:generic/empty@1"},
 		},
 	}
 	var out bytes.Buffer
@@ -130,10 +130,10 @@ func TestWriteComponentTable(t *testing.T) {
 		t.Fatalf("writeComponentTable() error = %v", err)
 	}
 
-	want := "NAME    TYPE                        SIZE   PURL                            REFERENCE\n" +
-		"model   machine-learning-model    5.0GiB   pkg:huggingface/org/model@abc   registry.example.com/app/huggingface/org/model:abc\n" +
-		"nginx   container                42.0MiB   pkg:oci/nginx@1.27              -\n" +
-		"empty   file                           -   pkg:generic/empty@1             -\n"
+	want := "NAME    VERSION   TYPE             SIZE   REFERENCE\n" +
+		"model   abc       huggingface    5.0GiB   registry.example.com/app/huggingface/org/model:abc\n" +
+		"nginx   1.27      oci           42.0MiB   -\n" +
+		"empty   1         generic             -   -\n"
 	if out.String() != want {
 		t.Errorf("table:\n%s\nwant:\n%s", out.String(), want)
 	}
@@ -146,7 +146,7 @@ func TestWriteComponentTableWithNoComponents(t *testing.T) {
 		t.Fatalf("writeComponentTable() error = %v", err)
 	}
 
-	if got := strings.TrimSpace(out.String()); got != "NAME   TYPE   SIZE   PURL   REFERENCE" {
+	if got := strings.TrimSpace(out.String()); got != "NAME   VERSION   TYPE   SIZE   REFERENCE" {
 		t.Errorf("table = %q, want just the header", got)
 	}
 }

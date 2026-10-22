@@ -18,7 +18,7 @@ container filling a volume.
 bomify component list registry.example.com/team/llm-serving:1.0.0
 ```
 
-This prints each component's name, type, size, and purl. It also shows
+This prints each component's name, version, purl type, and size. It also shows
 the reference `push` tagged it under, for pulling it with docker, helm,
 or oras instead (see
 [Publishing and pulling packages](publishing-and-pulling-packages.md)).
