@@ -2,9 +2,8 @@
 
 What bomify writes to an OCI registry, or to a `bomify save` tarball (an
 OCI image layout), is what other tools, and older and newer bomify
-releases, have to read. From bomify's last alpha release on, this format
-is a public interface: it changes only as [Versioning](#versioning)
-describes. [Push and pull](registry.md) covers how bomify reads and
+releases, have to read. Since the beta, this format is a public
+interface: it changes only as [Versioning](#versioning) describes. [Push and pull](registry.md) covers how bomify reads and
 writes it.
 
 Everything below is OCI 1.1: an image index, and image manifests. bomify's
@@ -200,10 +199,12 @@ manifest, VEX document, or signature envelope.
 
 ## Versioning
 
-Each bomify media and artifact type carries a version (`v1`). A change
-that a reader of the current version would misread, such as removing or
-renaming an annotation or changing what a blob holds, gets a new version
-(`v2`). Adding an optional annotation doesn't.
+Each bomify media and artifact type carries a version (`v1`). Adding an
+optional annotation keeps it. A change that a reader of the current
+version would misread, such as removing or renaming an annotation or
+changing what a blob holds, is made only where it must be, and the
+release notes call it out. It gets a new version (`v2`) where bomify
+must tell the two apart.
 
 What this bomify does with a type it doesn't know:
 

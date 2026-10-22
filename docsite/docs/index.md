@@ -33,10 +33,15 @@ If you know Docker or Podman:
 - Docker's **layers** are bomify's **components**, each pulled, cached,
   and reused independently by content hash.
 
-!!! warning "Pre-alpha"
+!!! info "Beta"
 
-    Flags, the data directory layout, and the plugin contracts may change
-    without notice.
+    These are stable: the commands and their flags, the
+    [registry format](development/architecture/registry-format.md), the
+    [plugin contracts](getting-started/installing-plugins.md#contract-versions),
+    and the [data directory](development/architecture/data-directory.md).
+    They change only where they must, and the release notes call out any
+    change that breaks what's built on them. Data and packages from alpha
+    releases aren't guaranteed to carry over.
 
 <div class="grid cards" markdown>
 
