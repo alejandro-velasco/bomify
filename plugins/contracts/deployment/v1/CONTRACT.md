@@ -1,9 +1,10 @@
 # Deployment plugin contract v1
 
 > **In progress.** bomify implements all of this but
-> [packaged deployments](#packaged-with-the-package), which are still to
-> come: until then, `bomify deploy generate` takes the deployments from
-> `--file` alone.
+> [packaged deployments](#packaged-with-the-package) and
+> [starting a deployment file from `sbom compose`](#starting-one-from-sbom-compose),
+> which are still to come: until then, `bomify deploy generate` takes
+> the deployments from `--file` alone, written by hand.
 
 A plugin reports the contract versions it speaks with
 `bomify-plugin-<type> contract` (see
