@@ -472,8 +472,8 @@ func TestWriteIntoMovesWhatWasWritten(t *testing.T) {
 		return os.WriteFile(filepath.Join(stageDir, "sub", "a.txt"), []byte("a"), 0o644)
 	}
 
-	if err := writeInto(dir, false, write); err != nil {
-		t.Fatalf("writeInto() error = %v", err)
+	if err := WriteInto(dir, false, write); err != nil {
+		t.Fatalf("WriteInto() error = %v", err)
 	}
 
 	assertTree(t, dir, map[string]string{"sub/a.txt": "a"})
@@ -489,16 +489,16 @@ func TestWriteIntoFailureRemovesItsWork(t *testing.T) {
 	}
 
 	missing := filepath.Join(t.TempDir(), "missing")
-	if err := writeInto(missing, false, write); !errors.Is(err, writeErr) {
-		t.Fatalf("writeInto() error = %v, want %v", err, writeErr)
+	if err := WriteInto(missing, false, write); !errors.Is(err, writeErr) {
+		t.Fatalf("WriteInto() error = %v, want %v", err, writeErr)
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("a failed write left the directory it created: %v", err)
 	}
 
 	empty := t.TempDir()
-	if err := writeInto(empty, false, write); !errors.Is(err, writeErr) {
-		t.Fatalf("writeInto() error = %v, want %v", err, writeErr)
+	if err := WriteInto(empty, false, write); !errors.Is(err, writeErr) {
+		t.Fatalf("WriteInto() error = %v, want %v", err, writeErr)
 	}
 	entries, err := os.ReadDir(empty)
 	if err != nil || len(entries) != 0 {

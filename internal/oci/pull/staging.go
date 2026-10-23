@@ -67,9 +67,9 @@ func (s *staging) discard() {
 	os.RemoveAll(s.dir)
 }
 
-// checkOutputDir fails unless dir is missing or a directory, and, unless
+// CheckOutputDir fails unless dir is missing or a directory, and, unless
 // replace is set, an empty one.
-func checkOutputDir(dir string, replace bool) error {
+func CheckOutputDir(dir string, replace bool) error {
 	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		return nil
@@ -93,7 +93,7 @@ func checkOutputDir(dir string, replace bool) error {
 	return nil
 }
 
-// writeInto runs write on a staging directory inside dir, then moves what
+// WriteInto runs write on a staging directory inside dir, then moves what
 // it wrote up into dir. dir must be missing or empty, unless replace is
 // set: then what it held is removed, but only once write has succeeded,
 // so a failed write leaves it as it was.
@@ -101,8 +101,8 @@ func checkOutputDir(dir string, replace bool) error {
 // Unlike writeStaged it can't swap a whole directory into place, because
 // dir may be a mount point, such as a volume in a container, which can't
 // be replaced; staging inside it keeps the moves on one file system.
-func writeInto(dir string, replace bool, write func(stageDir string) error) (err error) {
-	if err := checkOutputDir(dir, replace); err != nil {
+func WriteInto(dir string, replace bool, write func(stageDir string) error) (err error) {
+	if err := CheckOutputDir(dir, replace); err != nil {
 		return err
 	}
 	_, statErr := os.Stat(dir)

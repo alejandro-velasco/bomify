@@ -7,7 +7,7 @@ import (
 
 // allContracts is what contractMain reports by default: version 1 of
 // every contract fakeplugin implements.
-const allContracts = `{"component":1,"sbom":1,"security":1,"signing":1}`
+const allContracts = `{"component":1,"sbom":1,"security":1,"signing":1,"deployment":1}`
 
 // contractMain stands in for the "contract" subcommand every plugin
 // answers (see plugins/README.md#contract-versions), reporting

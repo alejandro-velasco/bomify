@@ -99,6 +99,7 @@ func NewRootCmd() (*cobra.Command, error) {
 
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(componentCmd())
+	rootCmd.AddCommand(deployCmd())
 	rootCmd.AddCommand(loadCmd())
 	rootCmd.AddCommand(loginCmd())
 	rootCmd.AddCommand(logoutCmd())

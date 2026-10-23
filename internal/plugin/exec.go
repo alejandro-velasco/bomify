@@ -47,37 +47,19 @@ const tailPollInterval = 100 * time.Millisecond
 
 // runComponent is Invoke for the component contract's "component <verb>"
 // (see plugins/contracts/component/v1/CONTRACT.md), passing component's
-// purl, its log file (as --log), and extraArgs. It creates the log file
-// fresh before starting the plugin and, if logger has debug logging
-// enabled (bomify was run with --verbose), prints its lines with bomify's
-// own log (see logging.Output) as the plugin writes them. The file exists
-// only for that, so it's removed once the plugin exits.
+// purl, its log file (see pluginLog), and extraArgs.
 //
 // With a tracker, it also passes a progress file (as --progress), created
 // and removed the same way, and shows the plugin's run and the events it
 // reports there through the tracker.
 func runComponent[T any](path, verb string, component cdx.Component, baseDir string, logger *slog.Logger, tracker Tracker, extraArgs ...string) (*T, error) {
-	logFile := layout.ComponentLog(baseDir, component.PackageURL)
-	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
-
-	if err := prepareFile(logFile); err != nil {
+	logArgs, stopLog, err := pluginLog(layout.ComponentLog(baseDir, component.PackageURL), verb+" "+component.PackageURL, logger)
+	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(logFile)
-
-	// Only worth telling the plugin to color its log if it's going to be
-	// printed somewhere that renders color: with bomify's own log, and only
-	// when verbose.
-	color := verbose && logging.SupportsColor(os.Stderr)
-	args := append([]string{pluginlib.ComponentSubcommand, verb, "--purl", component.PackageURL, "--log", logFile, fmt.Sprintf("--log-color=%t", color)}, extraArgs...)
-
-	if verbose {
-		prefix := verb + " " + component.PackageURL
-		stopLog := follow(logFile, func(line []byte) {
-			fmt.Fprintf(logging.Output(), "[%s] %s\n", prefix, line)
-		})
-		defer stopLog()
-	}
+	defer stopLog()
+	args := append([]string{pluginlib.ComponentSubcommand, verb, "--purl", component.PackageURL}, logArgs...)
+	args = append(args, extraArgs...)
 
 	if tracker == nil {
 		result, err := Invoke[T](path, args...)
@@ -105,6 +87,36 @@ func runComponent[T any](path, verb string, component cdx.Component, baseDir str
 		return nil, err
 	}
 	return &result, nil
+}
+
+// pluginLog creates logFile fresh, for a plugin call's --log, and, if
+// logger has debug logging enabled (bomify was run with --verbose),
+// prints its lines with bomify's own log (see logging.Output), each
+// prefixed with "[prefix] ", as the plugin writes them. It returns the
+// --log and --log-color arguments, and stop, which ends that and removes
+// the file: it exists only for the printing.
+func pluginLog(logFile, prefix string, logger *slog.Logger) (args []string, stop func(), err error) {
+	if err := prepareFile(logFile); err != nil {
+		return nil, nil, err
+	}
+	verbose := logger.Enabled(context.Background(), slog.LevelDebug)
+	// Only worth telling the plugin to color its log if it's going to be
+	// printed somewhere that renders color: with bomify's own log, and only
+	// when verbose.
+	color := verbose && logging.SupportsColor(os.Stderr)
+	args = []string{"--log", logFile, fmt.Sprintf("--log-color=%t", color)}
+
+	stopFollowing := func() {}
+	if verbose {
+		stopFollowing = follow(logFile, func(line []byte) {
+			fmt.Fprintf(logging.Output(), "[%s] %s\n", prefix, line)
+		})
+	}
+	stop = func() {
+		stopFollowing()
+		os.Remove(logFile)
+	}
+	return args, stop, nil
 }
 
 // prepareFile creates (truncating if necessary) an empty file at path, so

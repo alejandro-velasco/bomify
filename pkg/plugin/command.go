@@ -11,10 +11,11 @@ import (
 // which a plugin built with it reports through its "contract" subcommand
 // (see NewRootCommand).
 const (
-	ComponentContractVersion = 1
-	SBOMContractVersion      = 1
-	SecurityContractVersion  = 1
-	SigningContractVersion   = 1
+	ComponentContractVersion  = 1
+	SBOMContractVersion       = 1
+	SecurityContractVersion   = 1
+	SigningContractVersion    = 1
+	DeploymentContractVersion = 1
 )
 
 // Contract names a plugin contract, as ContractResult reports it.
@@ -22,39 +23,43 @@ type Contract string
 
 // The plugin contracts.
 const (
-	ComponentContract Contract = "component"
-	SBOMContract      Contract = "sbom"
-	SecurityContract  Contract = "security"
-	SigningContract   Contract = "signing"
+	ComponentContract  Contract = "component"
+	SBOMContract       Contract = "sbom"
+	SecurityContract   Contract = "security"
+	SigningContract    Contract = "signing"
+	DeploymentContract Contract = "deployment"
 )
 
 // ContractVersions maps each contract to the major version of it this
 // package implements.
 var ContractVersions = map[Contract]int{
-	ComponentContract: ComponentContractVersion,
-	SBOMContract:      SBOMContractVersion,
-	SecurityContract:  SecurityContractVersion,
-	SigningContract:   SigningContractVersion,
+	ComponentContract:  ComponentContractVersion,
+	SBOMContract:       SBOMContractVersion,
+	SecurityContract:   SecurityContractVersion,
+	SigningContract:    SigningContractVersion,
+	DeploymentContract: DeploymentContractVersion,
 }
 
 // The top-level subcommand each contract's commands live under, and the
 // one every plugin reports its contract versions with. A contract's
 // subcommand isn't always its name: signing's is "signature".
 const (
-	ComponentSubcommand = "component"
-	SBOMSubcommand      = "sbom"
-	SecuritySubcommand  = "security"
-	SigningSubcommand   = "signature"
-	ContractSubcommand  = "contract"
+	ComponentSubcommand  = "component"
+	SBOMSubcommand       = "sbom"
+	SecuritySubcommand   = "security"
+	SigningSubcommand    = "signature"
+	DeploymentSubcommand = "deployment"
+	ContractSubcommand   = "contract"
 )
 
 // contractCommands maps each contract's top-level subcommand to the
 // contract.
 var contractCommands = map[string]Contract{
-	ComponentSubcommand: ComponentContract,
-	SBOMSubcommand:      SBOMContract,
-	SecuritySubcommand:  SecurityContract,
-	SigningSubcommand:   SigningContract,
+	ComponentSubcommand:  ComponentContract,
+	SBOMSubcommand:       SBOMContract,
+	SecuritySubcommand:   SecurityContract,
+	SigningSubcommand:    SigningContract,
+	DeploymentSubcommand: DeploymentContract,
 }
 
 // NewRootCommand builds a plugin binary's root command, bomify-plugin-<kind>,

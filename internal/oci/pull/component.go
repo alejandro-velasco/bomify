@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
@@ -25,6 +26,9 @@ type PackageComponent struct {
 	// transfer.AnnotationComponentReference), resolved against the
 	// package's repository, or "" if push tagged none.
 	Reference string
+	// Manifest is the component manifest's entry in the package's index,
+	// or the zero descriptor if the index has none for it.
+	Manifest ocispec.Descriptor
 }
 
 // Components resolves ref against target and lists the components its SBOM
@@ -40,14 +44,28 @@ func Components(ctx context.Context, target oras.ReadOnlyTarget, ref string) ([]
 	return pkg.listComponents(ref), nil
 }
 
+// VerifiedComponents is Components for a package verified as opts asks,
+// as PullComponent verifies one, before anything else is fetched. It
+// returns the digest of the index ref resolved to, the one verified.
+func VerifiedComponents(ctx context.Context, target oras.ReadOnlyTarget, ref string, opts transfer.Options) (string, []PackageComponent, error) {
+	pkg, err := fetchPackage(ctx, target, ref, opts.WithDefaults())
+	if err != nil {
+		return "", nil, err
+	}
+	return pkg.desc.Digest.String(), pkg.listComponents(ref), nil
+}
+
 // listComponents pairs each component of p's SBOM with its files in p's
 // files map, and its reference, resolved against ref's repository.
 func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 	repository := prefix.Repository(ref)
 	references := map[string]string{}
+	manifests := map[string]ocispec.Descriptor{}
 	for _, desc := range p.components {
+		purl := desc.Annotations[transfer.AnnotationPurl]
+		manifests[purl] = desc
 		if reference := desc.Annotations[transfer.AnnotationComponentReference]; reference != "" {
-			references[desc.Annotations[transfer.AnnotationPurl]] = path.Join(repository, reference)
+			references[purl] = path.Join(repository, reference)
 		}
 	}
 
@@ -59,6 +77,7 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 			Component: component,
 			Files:     files,
 			Reference: references[component.PackageURL],
+			Manifest:  manifests[component.PackageURL],
 		}
 		listed = append(listed, entry)
 	}
@@ -116,7 +135,7 @@ type ComponentResult struct {
 // ComponentOptions are where PullComponent writes.
 type ComponentOptions struct {
 	// Dir is the directory the component's files go into. It must be
-	// missing or empty, unless Replace is set (see writeInto).
+	// missing or empty, unless Replace is set (see WriteInto).
 	Dir     string
 	Replace bool
 }
@@ -132,7 +151,7 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 
 	// Checked before anything is fetched too, so an unusable directory
 	// fails fast.
-	if err := checkOutputDir(into.Dir, into.Replace); err != nil {
+	if err := CheckOutputDir(into.Dir, into.Replace); err != nil {
 		return ComponentResult{}, err
 	}
 	pkg, err := fetchPackage(ctx, target, ref, opts)
@@ -154,7 +173,7 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 		files:          files,
 	}
 	write := func(dir string) error { return restore.apply(ctx, dir) }
-	if err := writeInto(into.Dir, into.Replace, write); err != nil {
+	if err := WriteInto(into.Dir, into.Replace, write); err != nil {
 		return ComponentResult{}, fmt.Errorf("restore %s: %w", files.Purl, err)
 	}
 
