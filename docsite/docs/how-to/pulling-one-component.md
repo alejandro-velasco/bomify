@@ -27,12 +27,12 @@ Only the package's index, SBOM, and file list are read.
 ## 2. Pull one component
 
 Name the component by its name, by `<name>@<version>`, or, when several
-share a name, by its purl:
+share a name, by its purl type and name, as `component list`'s TYPE and
+NAME columns show them (`oci/vllm-openai`), or its whole purl:
 
 ```sh
 bomify component pull registry.example.com/team/llm-serving:1.0.0 SmolLM2-135M --output models/smollm2
-bomify component pull registry.example.com/team/llm-serving:1.0.0 \
-  'pkg:oci/vllm-openai@v0.32.0?repository_url=index.docker.io%2Fvllm%2Fvllm-openai' --output vllm-openai
+bomify component pull registry.example.com/team/llm-serving:1.0.0 oci/vllm-openai --output vllm-openai
 ```
 
 Each component's files come out as they were when the package was built.

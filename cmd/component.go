@@ -124,9 +124,11 @@ once the component has downloaded and verified. A failed pull leaves
 --output as it was, so a failed update keeps the old files. Nothing else
 is written, and the package is not recorded in the data directory.
 
-<component> is the component's purl, as "bomify component list" prints
-it, or its name, alone or as <name>@<version>, when only one component
-has it.
+<component> is the component's purl, whole or without its qualifiers;
+its type, namespace if it has one, and name, alone or as
+<type>/<name>@<version> (oci/nginx, helm/podinfo@6.7.1); or its name,
+alone or as <name>@<version>. One that names several components fails,
+listing their purls.
 
 --verify requires a signature the named plugin verifies; without it, a
 matching "bomify trust" rule applies. The package is verified before
@@ -145,6 +147,9 @@ const componentPullExample = `  # See what a package holds, then pull one model 
 
   # By name, when only one component has it
   bomify component pull registry.example.com/llm-serving:1.0 model --output /models/model
+
+  # By type and name, when a chart and an image share a name
+  bomify component pull registry.example.com/llm-serving:1.0 oci/vllm --output /images/vllm
 
   # Update a directory pulled before to the package's newer version
   bomify component pull registry.example.com/llm-serving:1.1 model --output /models/model --replace

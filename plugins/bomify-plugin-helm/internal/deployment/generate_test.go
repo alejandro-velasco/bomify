@@ -77,7 +77,7 @@ func values(t *testing.T, req plugin.GenerateRequest) string {
 
 func TestGenerate(t *testing.T) {
 	config := `image:
-  repository: {{ (component "pkg:oci/podinfo@6.7.1").reference }}
+  repository: {{ (component "oci/podinfo").reference }}
   digest: {{ (component "pkg:oci/podinfo@6.7.1").digest }}
 package: {{ .Package.digest }}
 labels:
@@ -132,7 +132,7 @@ func TestGenerateRefuses(t *testing.T) {
 		template string
 		want     string
 	}{
-		"a missing key":               {template: "tag: {{ (component \"pkg:oci/podinfo@6.7.1\").tagged.tag }}\n", want: "map has no entry for key \"tagged\""},
+		"a missing key":               {template: "tag: {{ (component \"oci/podinfo\").tagged.tag }}\n", want: "map has no entry for key \"tagged\""},
 		"a name two components share": {template: "x: {{ (component \"podinfo\").digest }}\n", want: "names several components"},
 		"an unknown component":        {template: "x: {{ (component \"nginx\").digest }}\n", want: "no component \"nginx\""},
 		"an unknown option":           {options: map[string]string{"replicas": "3"}, want: "unknown option \"replicas\""},

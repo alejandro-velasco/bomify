@@ -26,9 +26,9 @@ const ValuesFile = "values.yaml"
 
 // The options a helm deployment takes.
 const (
-	// OptionChart selects the chart, among the package's charts: a purl,
-	// a name, or "<name>@<version>". It may be left out of a package with
-	// one chart.
+	// OptionChart selects the chart, among the package's charts, as
+	// plugin.MatchesSelector does. It may be left out of a package with one
+	// chart.
 	OptionChart = "chart"
 	// OptionRelease names the Helm release; the deployment's name by
 	// default.
@@ -90,11 +90,11 @@ func isChart(component plugin.DeploymentComponent) bool {
 }
 
 // selectChart returns the chart of components selector names (see
-// selectComponent), or, if selector is empty, the only one.
+// plugin.MatchesSelector), or, if selector is empty, the only one.
 func selectChart(components []plugin.DeploymentComponent, selector string) (plugin.DeploymentComponent, error) {
 	charts := slices.DeleteFunc(slices.Clone(components), func(c plugin.DeploymentComponent) bool { return !isChart(c) })
 	if selector != "" {
-		chart, err := selectComponent(charts, selector)
+		chart, err := plugin.SelectComponent(charts, selector)
 		if err != nil {
 			return plugin.DeploymentComponent{}, fmt.Errorf("option %s: %w", OptionChart, err)
 		}
@@ -113,32 +113,6 @@ func selectChart(components []plugin.DeploymentComponent, selector string) (plug
 	return plugin.DeploymentComponent{}, fmt.Errorf("the package has several charts (%s): choose one with option %s", strings.Join(names, ", "), OptionChart)
 }
 
-// selectComponent returns the one of components selector names, as
-// "bomify component pull" selects one: its purl, else its name, alone or
-// as "<name>@<version>".
-func selectComponent(components []plugin.DeploymentComponent, selector string) (plugin.DeploymentComponent, error) {
-	var named []plugin.DeploymentComponent
-	for _, component := range components {
-		if component.Purl == selector {
-			return component, nil
-		}
-		if component.Name == selector || component.Name+"@"+component.Version == selector {
-			named = append(named, component)
-		}
-	}
-	if len(named) == 1 {
-		return named[0], nil
-	}
-	if len(named) > 1 {
-		purls := make([]string, 0, len(named))
-		for _, component := range named {
-			purls = append(purls, component.Purl)
-		}
-		return plugin.DeploymentComponent{}, fmt.Errorf("%q names several components; name one by its purl: %s", selector, strings.Join(purls, ", "))
-	}
-	return plugin.DeploymentComponent{}, fmt.Errorf("no component %q in the package", selector)
-}
-
 // chartReference is where Helm installs chart from, pinned by digest: its
 // own repository, if it's tagged in one, else the package's.
 func chartReference(chart plugin.DeploymentComponent) string {
@@ -151,8 +125,8 @@ func chartReference(chart plugin.DeploymentComponent) string {
 // render renders the Go template at path with pkg, failing on a missing
 // key rather than rendering it empty, and parses the result as values.
 // A template is given the package as .Package, and a "component" function
-// looking one up as selectComponent does; both as the description's JSON
-// has them, so their fields are as the contract names them.
+// looking one up as plugin.SelectComponent does; both as the description's
+// JSON has them, so their fields are as the contract names them.
 func render(path string, pkg plugin.DeploymentPackage, logger *slog.Logger) (map[string]any, error) {
 	source, err := os.ReadFile(path)
 	if err != nil {
@@ -165,7 +139,7 @@ func render(path string, pkg plugin.DeploymentPackage, logger *slog.Logger) (map
 	functions := sprig.TxtFuncMap()
 	functions["toYaml"] = toYaml
 	functions["component"] = func(selector string) (map[string]any, error) {
-		component, err := selectComponent(pkg.Components, selector)
+		component, err := plugin.SelectComponent(pkg.Components, selector)
 		if err != nil {
 			return nil, err
 		}

@@ -279,6 +279,21 @@ if `bomify push` put the package there without
 copies no tags. So bomify checks each one, and sets `tagged` only for a
 tag that exists and points at the component's digest.
 
+### Naming components
+
+A plugin that lets users name a component, in an option or a template,
+should accept what `bomify component pull` does, so names work alike
+everywhere:
+
+- its purl, whole, or without its qualifiers;
+- its purl's type, namespace if it has one, and name, with or without
+  `@<version>`: `oci/podinfo`, `helm/podinfo@6.7.1`,
+  `huggingface/org/model`;
+- its name, alone or as `<name>@<version>`.
+
+One that names several components fails, listing their purls.
+`pkg/plugin`'s `SelectComponent` and `MatchesSelector` implement this.
+
 ## DeploymentResult
 
 ```json
@@ -325,11 +340,9 @@ is the user's, or their tools'.
 
 *Not part of the contract: what the first plugin might do.*
 
-For a `helm` deployment, `chart` selects the chart as `bomify component
-pull` selects a component: a purl, a name, or `<name>@<version>`,
-failing if that names several. It chooses among the package's charts
-alone, so a chart named like one of its images, as `podinfo` often is,
-needs no version. The plugin renders `--config`, a Go
+For a `helm` deployment, `chart` [names](#naming-components) the chart,
+among the package's charts alone, so a chart named like one of its
+images, as `podinfo` often is, needs nothing more than its name. The plugin renders `--config`, a Go
 template, into `values.yaml`, failing on a missing key rather than
 writing an empty value. Its `instructions` install the chart from the
 registry by digest: from its own repository if it's `tagged`, else the
@@ -341,7 +354,7 @@ image:
   repository: {{ (component "image-a").tagged.repository }}
   digest: {{ (component "image-a").digest }}
 sidecar:
-  image: {{ (component "image-b@3.1").reference }}
+  image: {{ (component "oci/podinfo@6.7.1").reference }}
 ```
 
 `component` takes the same selectors as `chart`, since names like

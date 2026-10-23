@@ -14,6 +14,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // PackageComponent is one component of a package in a registry.
@@ -90,11 +91,11 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 // purls of just the ones it names.
 var (
 	ErrNoComponent        = errors.New("no such component in the package")
-	ErrAmbiguousComponent = errors.New("names several components in the package; name one by its purl")
+	ErrAmbiguousComponent = errors.New("names several components in the package; name one by type and name, or by purl")
 )
 
-// selectComponent returns the one of components that selector names: its
-// purl, else its name, alone or as <name>@<version>; else
+// selectComponent returns the one of components that selector names (see
+// pluginlib.MatchesSelector), a whole purl naming one alone; else
 // ErrAmbiguousComponent or ErrNoComponent.
 func selectComponent(components []PackageComponent, selector string) (PackageComponent, error) {
 	var named []PackageComponent
@@ -103,7 +104,7 @@ func selectComponent(components []PackageComponent, selector string) (PackageCom
 		if component.PackageURL == selector {
 			return candidate, nil
 		}
-		if component.Name == selector || component.Name+"@"+component.Version == selector {
+		if pluginlib.MatchesSelector(component.PackageURL, component.Name, component.Version, selector) {
 			named = append(named, candidate)
 		}
 	}
