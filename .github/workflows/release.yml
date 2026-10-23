@@ -20,9 +20,9 @@ name: Release
 # each: v1.0.0-alpha.18 ran main's old jobs with the new .releaserc.json
 # and published no container image.
 #
-# Release branches (.releaserc.json): alpha-release cuts 1.0.0-alpha.N,
-# beta-release 1.0.0-beta.N, and main 1.0.0 and later. main is left out
-# of the trigger below until bomify is ready for its first GA release.
+# Release branches (.releaserc.json): beta-release cuts 1.0.0-beta.N,
+# and main 1.0.0 and later. main is left out of the trigger below until
+# bomify is ready for its first GA release.
 #
 # The work is split so only one job can sign, and that job runs no
 # third-party npm code:
@@ -48,7 +48,7 @@ on:
   workflow_run:
     workflows: [Build]
     types: [completed]
-    branches: [alpha-release, beta-release]
+    branches: [beta-release]
 
 # One release at a time: a second run waits rather than racing the first
 # to tag the same version.

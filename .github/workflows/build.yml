@@ -4,7 +4,6 @@ on:
   push:
     branches:
     - main
-    - alpha-release
     - beta-release
     - feature/**
   pull_request:
@@ -69,7 +68,7 @@ jobs:
     permissions:
       contents: read
     with:
-      all-platforms: ${{ github.event_name == 'push' && contains(fromJSON('["refs/heads/main", "refs/heads/alpha-release", "refs/heads/beta-release"]'), github.ref) }}
+      all-platforms: ${{ github.event_name == 'push' && contains(fromJSON('["refs/heads/main", "refs/heads/beta-release"]'), github.ref) }}
 
   # The image compiles nothing: it takes the linux/amd64 bomify build
   # built, and the plugins build-plugins built.

@@ -39,7 +39,7 @@ to one is made only where it must be, and a breaking one is called out.
 ## Conventional Commits
 
 This repo's releases are cut by [semantic-release](https://semantic-release.gitbook.io/) directly from commit
-messages on the release branches (`alpha-release`, `beta-release`, `main`), so **every commit in this PR** (not just the PR title) must follow
+messages on the release branches (`beta-release`, `main`), so **every commit in this PR** (not just the PR title) must follow
 [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
