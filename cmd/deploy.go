@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry"
 
 	"github.com/alejandro-velasco/bomify/internal/deploy"
@@ -39,11 +42,20 @@ func deployCmd() *cobra.Command {
 const deployGenerateShort = "Generate what deployment tools deploy, from a package in an OCI registry"
 
 const deployGenerateLong = `Generate reads the package <reference> from the registry it will be
-deployed from, verifies it as "bomify pull" would, and runs each
-deployment in --file through its plugin, writing into --output: one
-directory per deployment, named after it, and deployments.json,
-recording what each wrote, what it depends on, and what to do with it.
-Nothing is deployed, and nothing is written to the data directory.
+deployed from, verifies it as "bomify pull" would, and runs each of its
+deployments through its plugin, writing into --output: one directory per
+deployment, named after it, and deployments.json, recording what each
+wrote, what it depends on, and what to do with it. Nothing is deployed,
+and nothing is written to the data directory.
+
+The deployments are the package's own, as "bomify build --deployments"
+recorded them, with --file laid over them deployment by deployment,
+matched by name: a deployment of the same name changes the package's,
+and a new name adds one. For one the package has, --file's options are
+merged over the package's, a null removing one; its config replaces the
+package's; its overlays are laid over the package's config; its
+dependsOn replaces the package's; and "enabled: false" skips it. A
+package without deployments needs --file.
 
 Each component is pinned by digest in the package's repository, where
 every copy of the package holds it, and its tag, where "bomify push"
@@ -58,7 +70,10 @@ deployment leaves --output as it was.
 --verify, its options, and a matching "bomify trust" rule work as for
 "bomify pull"; see there.`
 
-const deployGenerateExample = `  # Generate the deployments in deploy.yaml for a package in a registry
+const deployGenerateExample = `  # Generate a package's deployments
+  bomify deploy generate registry.example.com/team/app:1.0 --output deploy/
+
+  # Change them with deploy.yaml, or generate a package's without any
   bomify deploy generate registry.example.com/team/app:1.0 --file deploy.yaml --output deploy/
 
   # Regenerate them over what was generated before
@@ -89,10 +104,9 @@ func deployGenerateCmd() *cobra.Command {
 	}
 
 	opts.verify.register(cmd)
-	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "the deployment file: the deployments to generate (required)")
+	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, or to use instead of them if it has none")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "directory to write into (must be missing or empty, unless --replace)")
 	cmd.Flags().BoolVar(&opts.replace, "replace", false, "replace what --output holds, once every deployment has generated")
-	cmd.MarkFlagRequired("file")
 	cmd.MarkFlagRequired("output")
 
 	return cmd
@@ -101,13 +115,15 @@ func deployGenerateCmd() *cobra.Command {
 func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptions) error {
 	logger := logging.FromContext(cmd.Context())
 
-	file, err := deploy.Load(opts.file)
-	if err != nil {
-		return err
-	}
-	// Checked before the registry is read, so a bad file fails fast.
-	if err := deploy.Check(file); err != nil {
-		return err
+	// Read before the registry is, so a bad file fails fast. It's checked
+	// whole once laid over the package's, which may complete it.
+	var userFile *deploy.File
+	if opts.file != "" {
+		loaded, err := deploy.Load(opts.file)
+		if err != nil {
+			return err
+		}
+		userFile = &loaded
 	}
 	if err := pull.CheckOutputDir(opts.output, opts.replace); err != nil {
 		return err
@@ -125,11 +141,22 @@ func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptio
 	if err != nil {
 		return err
 	}
-	packageDigest, components, err := pull.VerifiedComponents(cmd.Context(), repo, ref, verify)
+	pkg, err := pull.FetchVerified(cmd.Context(), repo, ref, verify)
 	if err != nil {
 		return err
 	}
-	description, err := deploy.Describe(cmd.Context(), ref, packageDigest, components, resolveTag)
+	description, err := deploy.Describe(cmd.Context(), ref, pkg.Digest, pkg.Components, resolveTag)
+	if err != nil {
+		return err
+	}
+
+	// The package's templates must stay until every deployment generates.
+	packaged, err := os.MkdirTemp("", "bomify-deployments-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(packaged)
+	file, err := deployments(cmd.Context(), repo, pkg, packaged, userFile)
 	if err != nil {
 		return err
 	}
@@ -147,6 +174,34 @@ func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptio
 	}
 	writeGenerated(cmd.OutOrStdout(), index)
 	return nil
+}
+
+// deployments is what to generate for pkg, a package in target: its own
+// deployments, fetched into dir, with user's laid over them, if user isn't
+// nil; or user's alone, for a package without deployments.
+func deployments(ctx context.Context, target content.Fetcher, pkg pull.VerifiedPackage, dir string, user *deploy.File) (deploy.File, error) {
+	var file deploy.File
+	if pkg.Deployments.Digest != "" {
+		if err := transfer.FetchDeployments(ctx, target, pkg.Deployments, dir); err != nil {
+			return deploy.File{}, err
+		}
+		packaged, err := deploy.LoadPackaged(dir)
+		if err != nil {
+			return deploy.File{}, err
+		}
+		file = packaged
+	}
+	if user != nil {
+		laid, err := deploy.Lay(file, *user)
+		if err != nil {
+			return deploy.File{}, err
+		}
+		file = laid
+	}
+	if len(file.Deployments) == 0 {
+		return deploy.File{}, errors.New("the package has no deployments: give them with --file")
+	}
+	return file, nil
 }
 
 // resolveTag is a deploy.TagResolver against reference's registry.

@@ -45,15 +45,33 @@ func Components(ctx context.Context, target oras.ReadOnlyTarget, ref string) ([]
 	return pkg.listComponents(ref), nil
 }
 
-// VerifiedComponents is Components for a package verified as opts asks,
-// as PullComponent verifies one, before anything else is fetched. It
-// returns the digest of the index ref resolved to, the one verified.
-func VerifiedComponents(ctx context.Context, target oras.ReadOnlyTarget, ref string, opts transfer.Options) (string, []PackageComponent, error) {
+// VerifiedPackage is a package in a registry, verified (see FetchVerified).
+type VerifiedPackage struct {
+	// Digest is the digest of the index its reference resolved to, the one
+	// verified.
+	Digest string
+	// Components are its components, as Components lists them.
+	Components []PackageComponent
+	// Deployments is its deployments manifest (see
+	// transfer.DeploymentsArtifactType), or the zero descriptor if it has
+	// none.
+	Deployments ocispec.Descriptor
+}
+
+// FetchVerified resolves ref against target, verifies it as opts asks,
+// as PullComponent verifies a package, before anything else is fetched,
+// and lists what's in it. Like Components, it writes nothing.
+func FetchVerified(ctx context.Context, target oras.ReadOnlyTarget, ref string, opts transfer.Options) (VerifiedPackage, error) {
 	pkg, err := fetchPackage(ctx, target, ref, opts.WithDefaults())
 	if err != nil {
-		return "", nil, err
+		return VerifiedPackage{}, err
 	}
-	return pkg.desc.Digest.String(), pkg.listComponents(ref), nil
+	verified := VerifiedPackage{
+		Digest:      pkg.desc.Digest.String(),
+		Components:  pkg.listComponents(ref),
+		Deployments: pkg.deployments,
+	}
+	return verified, nil
 }
 
 // listComponents pairs each component of p's SBOM with its files in p's

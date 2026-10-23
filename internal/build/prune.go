@@ -93,6 +93,15 @@ func Prune(baseDir string) (PruneResult, error) {
 			result.Removed = append(result.Removed, PrunedItem{Kind: "manifest", Path: manifestPath})
 		}
 
+		// A build's deployments go with its build manifest.
+		deploymentsDir := layout.Deployments(baseDir, hash)
+		if info, err := os.Stat(deploymentsDir); err == nil && info.IsDir() {
+			if err := os.RemoveAll(deploymentsDir); err != nil {
+				return PruneResult{}, fmt.Errorf("remove %s: %w", deploymentsDir, err)
+			}
+			result.Removed = append(result.Removed, PrunedItem{Kind: "deployments", Path: deploymentsDir})
+		}
+
 		// A build's provenance goes with its build manifest.
 		provenancePath := layout.Provenance(baseDir, hash)
 		if _, err := os.Stat(provenancePath); err == nil {

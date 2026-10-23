@@ -1,10 +1,9 @@
 # Deployment plugin contract v1
 
 > **In progress.** bomify implements all of this but
-> [packaged deployments](#packaged-with-the-package) and
 > [starting a deployment file from `sbom compose`](#starting-one-from-sbom-compose),
-> which are still to come: until then, `bomify deploy generate` takes
-> the deployments from `--file` alone, written by hand.
+> which is still to come: until then, an author writes the deployment
+> file by hand.
 
 A plugin reports the contract versions it speaks with
 `bomify-plugin-<type> contract` (see
@@ -102,15 +101,24 @@ deployments:
 ### Packaged with the package
 
 A package's author knows how its components wire together, so the
-deployment file, and every `config` it names, travel with the package:
+deployment file, and every `config` and overlay it names, travel with
+the package:
 
-- `bomify build --deployments deploy.yaml` records them with the build,
-  and `push` and `save` put them in the package's index as one more
+- `bomify build --deployments deploy.yaml` records them with the build.
+  Every path the file names must be inside its directory, so it names
+  the same file once packaged.
+- `push` and `save` put them in the package's index as one more
   manifest, of artifact type
   `application/vnd.bomify.deployments.v1+json`, whose layers are the
-  deployment file and its configs, each titled with its path. They're
-  part of the package's digest, so its signature covers them.
+  deployment file, as `deployments.yaml`, and its templates, each titled
+  with its path (see the
+  [registry format](https://github.com/alejandro-velasco/bomify/blob/main/docs/architecture/registry-format.md)).
+  They're part of the package's digest, so its signature covers them.
+- `pull` and `load` restore them, so pushing what was pulled or loaded,
+  into a mirror say, carries them on.
 - `bomify deploy generate <reference>` then needs no file of the user's.
+  It refuses a package whose deployment file names a path outside its
+  deployments, which would be one of the user's own files.
 
 ### Starting one from `sbom compose`
 

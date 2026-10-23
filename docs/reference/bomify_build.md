@@ -16,6 +16,11 @@ install" installs.
 --check asks each plugin to confirm its component is reachable and
 authorized, without downloading anything or recording a build.
 
+--deployments records how to deploy the package with the build: a
+deployment file, and the templates it names, all inside its directory,
+which "bomify push" and "save" package with it and "bomify deploy
+generate" reads. It replaces any recorded for the same SBOM before.
+
 --provenance records SLSA provenance of the build: the SBOM, every
 component and plugin binary by digest, and bomify's version. "bomify
 push" and "bomify save" attach it as an in-toto attestation, signed with
@@ -44,16 +49,20 @@ bomify build <sbom-file> [flags]
 
   # Record SLSA provenance, attached when the package is pushed
   bomify build sbom.json --tag myapp:1.0 --provenance
+
+  # Package how to deploy it, for "bomify deploy generate"
+  bomify build sbom.json --tag myapp:1.0 --deployments deploy.yaml
 ```
 
 ### Options
 
 ```
-      --check             verify every component is pullable and authorized, without downloading any of them or recording a build
-  -c, --concurrency int   number of components to pull concurrently (default 1)
-  -h, --help              help for build
-      --provenance        record SLSA provenance of this build, attached when the package is pushed or saved
-  -t, --tag stringArray   tag this build as name[:version] (repeatable); defaults version to "latest"
+      --check                verify every component is pullable and authorized, without downloading any of them or recording a build
+  -c, --concurrency int      number of components to pull concurrently (default 1)
+      --deployments string   record this deployment file, and the templates it names, to package how to deploy the build
+  -h, --help                 help for build
+      --provenance           record SLSA provenance of this build, attached when the package is pushed or saved
+  -t, --tag stringArray      tag this build as name[:version] (repeatable); defaults version to "latest"
 ```
 
 ### Options inherited from parent commands

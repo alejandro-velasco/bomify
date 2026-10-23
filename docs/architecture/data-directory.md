@@ -24,6 +24,10 @@ nowhere else.
   latest vulnerability report of a component (see
   [Security scanning](security-scanning.md)), shared by every package
   containing that purl.
+- **`deployments/<sbomHash>/`** is how to deploy that build, as
+  `build --deployments` recorded it or a pull restored it: its
+  deployment file, `deployments.yaml`, and the templates it names, which
+  push and save package with it. Prune removes it with its build.
 - **`provenance/<sbomHash>.json`** is a build's SLSA provenance, if it
   was built with `--provenance` (see [Build provenance](provenance.md)).
 - **`package/repositories.json`** maps `repo -> tag -> sbom hash`.

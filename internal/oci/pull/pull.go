@@ -112,6 +112,15 @@ func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDi
 	if err := pkg.sbom.write(dataDir); err != nil {
 		return Result{}, fmt.Errorf("write sbom: %w", err)
 	}
+	// Restored so a push of what was pulled, or loaded, carries them on.
+	if pkg.deployments.Digest != "" {
+		write := func(dir string) error {
+			return transfer.FetchDeployments(ctx, target, pkg.deployments, dir)
+		}
+		if err := WriteInto(layout.Deployments(dataDir, pkg.sbom.hash), true, write); err != nil {
+			return Result{}, fmt.Errorf("restore deployments: %w", err)
+		}
+	}
 	kept := filterByPurl(pkg.components, keep)
 	restore := newPackageRestore(target, kept, pkg.files, dataDir, pkg.sbom.bom, opts.Concurrency, opts.Progress)
 	components, err := restore.restoreComponents(ctx)
@@ -144,8 +153,10 @@ func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDi
 type fetchedPackage struct {
 	desc       ocispec.Descriptor
 	components []ocispec.Descriptor
-	files      transfer.Files
-	sbom       packageSBOM
+	// deployments is its deployments manifest, or the zero descriptor.
+	deployments ocispec.Descriptor
+	files       transfer.Files
+	sbom        packageSBOM
 }
 
 // fetchPackage resolves ref and verifies it as opts asks, its
@@ -182,10 +193,11 @@ func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref string, o
 	}
 
 	fetched := fetchedPackage{
-		desc:       desc,
-		components: pkg.Components,
-		files:      files,
-		sbom:       config,
+		desc:        desc,
+		components:  pkg.Components,
+		deployments: pkg.Deployments,
+		files:       files,
+		sbom:        config,
 	}
 	return &fetched, nil
 }

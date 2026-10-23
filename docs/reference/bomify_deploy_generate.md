@@ -5,11 +5,20 @@ Generate what deployment tools deploy, from a package in an OCI registry
 ### Synopsis
 
 Generate reads the package <reference> from the registry it will be
-deployed from, verifies it as "bomify pull" would, and runs each
-deployment in --file through its plugin, writing into --output: one
-directory per deployment, named after it, and deployments.json,
-recording what each wrote, what it depends on, and what to do with it.
-Nothing is deployed, and nothing is written to the data directory.
+deployed from, verifies it as "bomify pull" would, and runs each of its
+deployments through its plugin, writing into --output: one directory per
+deployment, named after it, and deployments.json, recording what each
+wrote, what it depends on, and what to do with it. Nothing is deployed,
+and nothing is written to the data directory.
+
+The deployments are the package's own, as "bomify build --deployments"
+recorded them, with --file laid over them deployment by deployment,
+matched by name: a deployment of the same name changes the package's,
+and a new name adds one. For one the package has, --file's options are
+merged over the package's, a null removing one; its config replaces the
+package's; its overlays are laid over the package's config; its
+dependsOn replaces the package's; and "enabled: false" skips it. A
+package without deployments needs --file.
 
 Each component is pinned by digest in the package's repository, where
 every copy of the package holds it, and its tag, where "bomify push"
@@ -31,7 +40,10 @@ bomify deploy generate <reference> [flags]
 ### Examples
 
 ```
-  # Generate the deployments in deploy.yaml for a package in a registry
+  # Generate a package's deployments
+  bomify deploy generate registry.example.com/team/app:1.0 --output deploy/
+
+  # Change them with deploy.yaml, or generate a package's without any
   bomify deploy generate registry.example.com/team/app:1.0 --file deploy.yaml --output deploy/
 
   # Regenerate them over what was generated before
@@ -41,7 +53,7 @@ bomify deploy generate <reference> [flags]
 ### Options
 
 ```
-  -f, --file string                 the deployment file: the deployments to generate (required)
+  -f, --file string                 a deployment file to lay over the package's deployments, or to use instead of them if it has none
   -h, --help                        help for generate
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
   -o, --output string               directory to write into (must be missing or empty, unless --replace)

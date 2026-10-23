@@ -169,8 +169,9 @@ type pushedPackage struct {
 
 // pushPackage pushes the build recorded under baseDir for sbomHash: each
 // component's manifest (see planComponent), its blobs up to
-// opts.Concurrency at once, then the SBOM manifest (see pushSBOM),
-// and then the index of them all.
+// opts.Concurrency at once, then the SBOM manifest (see pushSBOM), its
+// deployments, if it has any (see pushDeployments), and then the index
+// of them all.
 func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash string, opts transfer.Options) (*pushedPackage, error) {
 	sbomData, bom, err := readSBOM(baseDir, sbomHash)
 	if err != nil {
@@ -219,6 +220,13 @@ func pushPackage(ctx context.Context, target oras.Target, baseDir, sbomHash stri
 			Manifest: manifests[index].desc,
 		}
 		pushed = append(pushed, pushedComponent)
+	}
+	deployments, hasDeployments, err := pushDeployments(ctx, target, baseDir, sbomHash, opts.Progress)
+	if err != nil {
+		return nil, err
+	}
+	if hasDeployments {
+		entries = append(entries, deployments)
 	}
 	desc, err := pushIndex(ctx, target, entries, bom)
 	if err != nil {

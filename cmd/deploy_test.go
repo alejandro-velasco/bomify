@@ -25,12 +25,11 @@ func TestDeployCmdHasGenerate(t *testing.T) {
 	}
 }
 
-func TestDeployGenerateRequiresFileOutputAndAReference(t *testing.T) {
+func TestDeployGenerateRequiresOutputAndAReference(t *testing.T) {
 	for name, test := range map[string]struct {
 		args    []string
 		wantErr string
 	}{
-		"no file":      {args: []string{"deploy", "generate", "registry.example.com/app:1", "--output", "out"}, wantErr: `required flag(s) "file" not set`},
 		"no output":    {args: []string{"deploy", "generate", "registry.example.com/app:1", "--file", "deploy.yaml"}, wantErr: `required flag(s) "output" not set`},
 		"no reference": {args: []string{"deploy", "generate", "--file", "deploy.yaml", "--output", "out"}, wantErr: "accepts 1 arg(s), received 0"},
 	} {

@@ -93,10 +93,13 @@ the same package.
 `bomify deploy generate` is the caller
 ([`internal/deploy`](https://github.com/alejandro-velasco/bomify/tree/main/internal/deploy)).
 It reads a package from the registry it'll be deployed from, verified
-as pull verifies it (`pull.VerifiedComponents`), with no component
+as pull verifies it (`pull.FetchVerified`), with no component
 downloaded, and describes it to each plugin (`deploy.Describe`): every
 component pinned by digest in the package's repository, and its tag
-only once the registry confirms the tag points at it. It finds every
+only once the registry confirms the tag points at it. Its deployments are
+the package's own, fetched from its deployments manifest
+(`deploy.LoadPackaged`, which refuses a template path outside them), with
+`--file` laid over them by name (`deploy.Lay`). It finds every
 deployment's plugin before running any, runs each into its own
 directory of a staging directory, checks each wrote exactly the regular
 files it reports, and moves the lot into `--output` only once all have
