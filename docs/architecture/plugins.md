@@ -1,6 +1,6 @@
 # Plugins
 
-A plugin binary can implement any of four independent contracts:
+A plugin binary can implement any of five independent contracts:
 
 | Contract | Subcommands | Used by | `<kind>` names |
 | --- | --- | --- | --- |
@@ -8,6 +8,7 @@ A plugin binary can implement any of four independent contracts:
 | [SBOM generation](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/sbom/v1/CONTRACT.md) | `sbom generate` | `sbom generate` | a deployment medium |
 | [Security scanning](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/security/v1/CONTRACT.md) | `security scan/supported-components` | `security scan`, scan on pull | a scanner |
 | [Signing](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md) | `signature sign/attest/verify/verify-attestation/supported-types` | `--sign`, `--verify` | a signing scheme |
+| [Deployment](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/deployment/v1/CONTRACT.md) | `deployment generate` | `deploy generate` | a deployment medium |
 
 Every call bomify makes to a plugin goes through `plugin.Invoke`: run
 the binary, parse stdout as the contract's JSON result, and fold stderr
@@ -86,6 +87,21 @@ dependencies unioned, and the composition as the root, depending on
 each source's root. Everything is sorted and the spec version pinned,
 so an unchanged composition yields the same SBOM, and `bomify build`
 the same package.
+
+## Deployment
+
+`bomify deploy generate` is the caller
+([`internal/deploy`](https://github.com/alejandro-velasco/bomify/tree/main/internal/deploy)).
+It reads a package from the registry it'll be deployed from, verified
+as pull verifies it (`pull.VerifiedComponents`), with no component
+downloaded, and describes it to each plugin (`deploy.Describe`): every
+component pinned by digest in the package's repository, and its tag
+only once the registry confirms the tag points at it. It finds every
+deployment's plugin before running any, runs each into its own
+directory of a staging directory, checks each wrote exactly the regular
+files it reports, and moves the lot into `--output` only once all have
+succeeded (`pull.WriteInto`). Each plugin logs to
+`logs/deployment-<name>.log`, as a component plugin logs.
 
 ## Concurrent, idempotent pulls
 

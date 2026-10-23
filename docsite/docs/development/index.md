@@ -16,5 +16,6 @@ For people working on bomify or writing plugins.
 - The plugin contracts, each independent:
   [component](component-contract.md),
   [SBOM generation](sbom-contract.md),
-  [security scanning](security-contract.md), and
-  [signing](signing-contract.md).
+  [security scanning](security-contract.md),
+  [signing](signing-contract.md), and
+  [deployment](deployment-contract.md).

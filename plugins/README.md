@@ -17,11 +17,15 @@ contracts:
 - **Signing** (`signature sign|attest|verify|verify-attestation|supported-types`,
   [`contracts/signing/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/signing/v1/CONTRACT.md)):
   signs and verifies whole packages and their build provenance.
+- **Deployment** (`deployment generate`,
+  [`contracts/deployment/v1`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/deployment/v1/CONTRACT.md)):
+  turns a package in a registry into what a deployment tool deploys,
+  such as Helm values pinning its images by digest.
 
 | Plugin | Handles | Built on | Contracts |
 | --- | --- | --- | --- |
 | [`bomify-plugin-oci`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-oci) | Images and other OCI artifacts (`pkg:oci`, `pkg:docker`) | [go-containerregistry](https://github.com/google/go-containerregistry) | Component |
-| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | Helm charts (`pkg:helm`) | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation |
+| [`bomify-plugin-helm`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-helm) | Helm charts (`pkg:helm`) | [Helm SDK](https://pkg.go.dev/helm.sh/helm/v4/pkg/action) | Component, SBOM generation, deployment |
 | [`bomify-plugin-generic`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-generic) | Files downloaded from a URL (`pkg:generic`) | `net/http` | Component |
 | [`bomify-plugin-huggingface`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-huggingface) | Hugging Face Hub models (`pkg:huggingface`) | [hf-hub](https://github.com/huggingface/hf-hub), Hugging Face's Rust client for the Hub and [Xet](https://huggingface.co/docs/xet) | Component, SBOM generation |
 | [`bomify-plugin-grype`](https://github.com/alejandro-velasco/bomify/tree/main/plugins/bomify-plugin-grype) | Most purl types, images, and `generic` files | [grype](https://github.com/anchore/grype) | Security scanning |
@@ -53,8 +57,9 @@ plugins/contracts/
 ├── component/v1/                  CONTRACT.md, result, pack-result
 ├── sbom/v1/                       CONTRACT.md, generate-output
 ├── security/v1/                   CONTRACT.md, security-result, supported-components-result
-└── signing/v1/                    CONTRACT.md, sign-result, verify-result,
-                                   verify-attestation-result, supported-signature-types-result
+├── signing/v1/                    CONTRACT.md, sign-result, verify-result,
+│                                  verify-attestation-result, supported-signature-types-result
+└── deployment/v1/                 CONTRACT.md, package, deployment-result
 ```
 
 A new major version gets a new folder (`v2/`) next to the old one. The

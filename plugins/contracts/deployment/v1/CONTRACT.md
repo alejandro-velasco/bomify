@@ -262,7 +262,7 @@ Everything else goes to the `--log` file.
 
 A plugin ignores fields it doesn't know, so bomify can add some.
 
-Schema: `package.schema.json` (to come).
+Schema: [`package.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/deployment/v1/package.schema.json).
 
 ### Locations
 
@@ -293,7 +293,7 @@ tag that exists and points at the component's digest.
 | `files` | array of strings | yes, non-empty | Every file the plugin wrote, `/`-separated, relative to `--output`. |
 | `instructions` | string | no | What to do with them, one short paragraph or command, run from `--output`, which bomify prints. Informational. |
 
-Schema: `deployment-result.schema.json` (to come).
+Schema: [`deployment-result.schema.json`](https://github.com/alejandro-velasco/bomify/blob/main/plugins/contracts/deployment/v1/deployment-result.schema.json).
 
 ## deployments.json
 

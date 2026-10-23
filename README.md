@@ -58,6 +58,9 @@ written, and can still pull each part with its own tool.
   the platform runs needs bomify.
 - `bomify component list`/`pull` lists a package's components and pulls
   one, verified, into a directory, such as a model for a server to load.
+- `bomify deploy generate` turns a package in a registry into what
+  deployment tools deploy, such as Helm values pinning every image to the
+  package's copy by digest.
 
 ![helm pull, docker pull, and modctl pulling the chart, the image, and the model from the package's registry](docsite/docs/assets/demo/pull.gif)
 

@@ -44,7 +44,7 @@ never turn them into separate copies:
 - `usage/reference/` is copied from `docs/reference/` by `make
   docs-site-sync`.
 - `getting-started/installing-plugins.md`,
-  `development/{component,sbom,security,signing}-contract.md`, and
+  `development/{component,sbom,security,signing,deployment}-contract.md`, and
   `development/architecture/*.md` are wrappers that include
   `plugins/README.md`, each contract's current
   `plugins/contracts/<contract>/v<N>/CONTRACT.md`, and
