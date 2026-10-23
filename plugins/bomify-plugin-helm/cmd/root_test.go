@@ -14,7 +14,7 @@ func TestContract(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("contract: %v", err)
 	}
-	if want := `{"contracts":{"component":1,"sbom":1}}`; strings.TrimSpace(out.String()) != want {
+	if want := `{"contracts":{"component":1,"deployment":1,"sbom":1}}`; strings.TrimSpace(out.String()) != want {
 		t.Errorf("stdout = %s, want %s", out.String(), want)
 	}
 }

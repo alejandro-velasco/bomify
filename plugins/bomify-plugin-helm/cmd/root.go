@@ -9,19 +9,31 @@ import (
 
 	"github.com/alejandro-velasco/bomify/pkg/plugin"
 	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/chart"
+	"github.com/alejandro-velasco/bomify/plugins/bomify-plugin-helm/internal/deployment"
 )
 
-// NewRootCmd builds the bomify-plugin-helm root command, implementing two
+// NewRootCmd builds the bomify-plugin-helm root command, implementing three
 // entirely independent plugin contracts: the component contract (see
-// plugins/contracts/component/v1/CONTRACT.md) and SBOM generation (see
-// sbomCmd).
+// plugins/contracts/component/v1/CONTRACT.md), SBOM generation (see
+// sbomCmd), and deployment (see plugins/contracts/deployment/v1/CONTRACT.md).
 func NewRootCmd() *cobra.Command {
 	return plugin.NewRootCommand("helm", "bomify plugin for Helm chart components",
 		plugin.ComponentCommand(component{}, plugin.ComponentHelp{
 			Pull: "Download the chart from its HTTP repository or OCI registry and save it as a .tgz",
 			Pack: "Describe the chart a prior pull wrote into --input as Helm stores one in a registry",
 		}),
-		sbomCmd())
+		sbomCmd(),
+		plugin.DeploymentCommand(deploymentPlugin{}, plugin.DeploymentHelp{
+			Generate: "Render the chart's values from Go templates of the package's components, and say how to install it",
+		}))
+}
+
+// deploymentPlugin implements plugin.DeploymentPlugin over
+// internal/deployment.
+type deploymentPlugin struct{}
+
+func (deploymentPlugin) Generate(_ context.Context, req plugin.GenerateRequest) (*plugin.DeploymentResult, error) {
+	return deployment.Generate(req)
 }
 
 // component implements plugin.ComponentPlugin, and plugin.ComponentPacker,
