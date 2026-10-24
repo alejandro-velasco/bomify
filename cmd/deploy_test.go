@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,19 +79,18 @@ func TestDeployCmdHasList(t *testing.T) {
 	if err != nil || list.Use != "list <reference>" || list.RunE == nil {
 		t.Fatalf("bomify deploy list: %v, %+v", err, list)
 	}
-	for _, name := range []string{"file", "verify", "verify-option", "verify-provenance", "insecure-skip-verify"} {
+	for _, name := range []string{"verify", "verify-option", "verify-provenance", "insecure-skip-verify"} {
 		if list.Flags().Lookup(name) == nil {
 			t.Errorf("bomify deploy list: missing --%s", name)
 		}
+	}
+	if list.Flags().Lookup("file") != nil {
+		t.Error("bomify deploy list has --file: deploy generate previews a user's file")
 	}
 }
 
 func TestWriteDeployments(t *testing.T) {
 	packaged := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	disabled := false
 	chart := deploy.Option("podinfo")
 	release := deploy.Option("shop")
@@ -102,7 +100,7 @@ func TestWriteDeployments(t *testing.T) {
 			Type:      "helm",
 			Options:   map[string]*deploy.Option{"release": &release, "chart": &chart},
 			Config:    filepath.Join(packaged, "templates", "web.yaml.tmpl"),
-			Overlays:  []string{filepath.Join(wd, "overrides", "web.yaml.tmpl")},
+			Overlays:  []string{filepath.Join(packaged, "overrides", "web.yaml.tmpl")},
 			DependsOn: []string{"infra"},
 		},
 		{Name: "infra", Type: "terraform", Enabled: &disabled},

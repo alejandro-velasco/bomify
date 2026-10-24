@@ -49,22 +49,16 @@ const deployListLong = `List reads the package <reference> from its registry, ve
 "bomify pull" would, and prints each of its deployments, as "bomify
 build --deployments" packaged them, one row each: its name, its type,
 whose plugin generates it, its options, its config and overlays, and the
-deployments to apply before it. A disabled one is marked so.
-
---file lays a deployment file over the package's, as "bomify deploy
-generate" does, to show what it would generate. The package's templates
-are named by their paths in it, and --file's relative to the working
-directory. Nothing is written.`
+deployments to apply before it, its templates named by their paths in
+the package. A disabled one is marked so. These are the names a
+deployment file given to "bomify deploy generate --file" overrides.
+Nothing is written.`
 
 const deployListExample = `  # See how a package deploys
-  bomify deploy list registry.example.com/team/app:1.0
-
-  # See what deploy.yaml would change before generating
-  bomify deploy list registry.example.com/team/app:1.0 --file deploy.yaml`
+  bomify deploy list registry.example.com/team/app:1.0`
 
 type deployListOptions struct {
 	verify verifyFlags
-	file   string
 }
 
 func deployListCmd() *cobra.Command {
@@ -85,13 +79,12 @@ func deployListCmd() *cobra.Command {
 	}
 
 	opts.verify.register(cmd)
-	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, showing what \"deploy generate\" would generate")
 
 	return cmd
 }
 
 func runDeployList(cmd *cobra.Command, ref string, opts *deployListOptions) error {
-	read, err := readDeployments(cmd, ref, opts.verify, opts.file)
+	read, err := readDeployments(cmd, ref, opts.verify, "")
 	if err != nil {
 		return err
 	}
@@ -100,8 +93,7 @@ func runDeployList(cmd *cobra.Command, ref string, opts *deployListOptions) erro
 }
 
 // writeDeployments prints file's deployments, one row each, naming each
-// template in packaged, the package's deployments, by its path there, and
-// any other relative to the working directory.
+// template by its path in packaged, the package's deployments.
 func writeDeployments(w io.Writer, file deploy.File, packaged string) error {
 	header := []string{"NAME", "TYPE", "OPTIONS", "CONFIG", "OVERLAYS", "DEPENDS ON"}
 	rows := make([][]string, 0, len(file.Deployments))
@@ -139,20 +131,14 @@ func deployOptions(options map[string]*deploy.Option) []string {
 	return listed
 }
 
-// displayPath is path as a user would recognize it: relative to packaged,
-// for one of the package's templates, else to the working directory, if
-// it's under it, else as it is.
+// displayPath is path, one of the package's templates, by its path in
+// packaged, as the package names it.
 func displayPath(path, packaged string) string {
 	if path == "" {
 		return ""
 	}
 	if relative, err := filepath.Rel(packaged, path); err == nil && filepath.IsLocal(relative) {
 		return filepath.ToSlash(relative)
-	}
-	if wd, err := os.Getwd(); err == nil {
-		if relative, err := filepath.Rel(wd, path); err == nil && filepath.IsLocal(relative) {
-			return filepath.ToSlash(relative)
-		}
 	}
 	return path
 }
@@ -245,6 +231,9 @@ func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptio
 		return err
 	}
 	read, err := readDeployments(cmd, ref, opts.verify, opts.file)
+	if errors.Is(err, errNoDeployments) {
+		return fmt.Errorf("%w: give them with --file", err)
+	}
 	if err != nil {
 		return err
 	}
@@ -333,6 +322,10 @@ func readDeployments(cmd *cobra.Command, ref string, verify verifyFlags, userPat
 	return &read, nil
 }
 
+// errNoDeployments is what deployments returns for a package without
+// deployments, given none of the user's.
+var errNoDeployments = errors.New("the package has no deployments")
+
 // deployments is what to generate for pkg, a package in target: its own
 // deployments, fetched into dir, with user's laid over them, if user isn't
 // nil; or user's alone, for a package without deployments.
@@ -356,7 +349,7 @@ func deployments(ctx context.Context, target content.Fetcher, pkg pull.VerifiedP
 		file = laid
 	}
 	if len(file.Deployments) == 0 {
-		return deploy.File{}, errors.New("the package has no deployments: give them with --file")
+		return deploy.File{}, errNoDeployments
 	}
 	return file, nil
 }

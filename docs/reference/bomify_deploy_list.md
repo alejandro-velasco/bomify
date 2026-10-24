@@ -8,12 +8,10 @@ List reads the package <reference> from its registry, verified as
 "bomify pull" would, and prints each of its deployments, as "bomify
 build --deployments" packaged them, one row each: its name, its type,
 whose plugin generates it, its options, its config and overlays, and the
-deployments to apply before it. A disabled one is marked so.
-
---file lays a deployment file over the package's, as "bomify deploy
-generate" does, to show what it would generate. The package's templates
-are named by their paths in it, and --file's relative to the working
-directory. Nothing is written.
+deployments to apply before it, its templates named by their paths in
+the package. A disabled one is marked so. These are the names a
+deployment file given to "bomify deploy generate --file" overrides.
+Nothing is written.
 
 ```
 bomify deploy list <reference> [flags]
@@ -24,15 +22,11 @@ bomify deploy list <reference> [flags]
 ```
   # See how a package deploys
   bomify deploy list registry.example.com/team/app:1.0
-
-  # See what deploy.yaml would change before generating
-  bomify deploy list registry.example.com/team/app:1.0 --file deploy.yaml
 ```
 
 ### Options
 
 ```
-  -f, --file string                 a deployment file to lay over the package's deployments, showing what "deploy generate" would generate
   -h, --help                        help for list
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
       --verify string               require a signature this signing plugin (bomify-plugin-<kind>, e.g. sigstore) verifies, overriding any "bomify trust" rule
