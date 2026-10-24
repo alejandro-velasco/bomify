@@ -179,6 +179,7 @@ func layDeployment(base, over Deployment) (Deployment, error) {
 // enabled, and no deployment depends, however indirectly, on itself.
 func Check(file File) error {
 	var errs []error
+	// Every deployment's state first, since one may depend on a later one.
 	enabled := map[string]bool{}
 	for _, deployment := range file.Deployments {
 		enabled[deployment.Name] = deployment.Enabled == nil || *deployment.Enabled
