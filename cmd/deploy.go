@@ -109,10 +109,10 @@ func writeDeployments(w io.Writer, file deploy.File, packaged string) error {
 		row := []string{
 			name,
 			deployment.Type,
-			orDash(strings.Join(deployOptions(deployment.Options), ", ")),
-			orDash(displayPath(deployment.Config, packaged)),
-			orDash(strings.Join(overlays, ", ")),
-			orDash(strings.Join(deployment.DependsOn, ", ")),
+			dashIfEmpty(strings.Join(deployOptions(deployment.Options), ", ")),
+			dashIfEmpty(displayPath(deployment.Config, packaged)),
+			dashIfEmpty(strings.Join(overlays, ", ")),
+			dashIfEmpty(strings.Join(deployment.DependsOn, ", ")),
 		}
 		rows = append(rows, row)
 	}
@@ -141,14 +141,6 @@ func displayPath(path, packaged string) string {
 		return filepath.ToSlash(relative)
 	}
 	return path
-}
-
-// orDash is s, or "-" if it's empty, as tables show nothing.
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }
 
 const deployGenerateShort = "Generate what deployment tools deploy, from a package in an OCI registry"
