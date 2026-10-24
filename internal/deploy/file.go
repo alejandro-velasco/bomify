@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 
@@ -207,39 +208,60 @@ func Check(file File) error {
 }
 
 // checkCycles fails if a deployment of file depends on itself, however
-// indirectly, naming the cycle.
+// indirectly, naming the cycle. It's a depth-first search that marks each
+// deployment as it goes: one met again while still being visited is on
+// the current path, so the path from it back to itself is a cycle.
 func checkCycles(file File) error {
-	dependsOn := map[string][]string{}
-	for _, deployment := range file.Deployments {
-		dependsOn[deployment.Name] = deployment.DependsOn
-	}
-	const (
-		visiting = 1
-		done     = 2
-	)
-	state := map[string]int{}
-	var visit func(name string, path []string) error
-	visit = func(name string, path []string) error {
-		if state[name] == done {
-			return nil
-		}
-		path = append(path, name)
-		if state[name] == visiting {
-			return fmt.Errorf("deployments depend on each other in a cycle: %v", path)
-		}
-		state[name] = visiting
-		for _, dependency := range dependsOn[name] {
-			if err := visit(dependency, path); err != nil {
-				return err
-			}
-		}
-		state[name] = done
-		return nil
+	search := cycleSearch{
+		dependsOn: map[string][]string{},
+		state:     map[string]visitState{},
 	}
 	for _, deployment := range file.Deployments {
-		if err := visit(deployment.Name, nil); err != nil {
+		search.dependsOn[deployment.Name] = deployment.DependsOn
+	}
+	for _, deployment := range file.Deployments {
+		if err := search.visit(deployment.Name, nil); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// visitState is how far cycleSearch has got with a deployment.
+type visitState int
+
+const (
+	unvisited visitState = iota
+	// visiting: on the current path, its dependencies still being searched.
+	visiting
+	// done: it and everything it depends on are free of cycles.
+	done
+)
+
+// cycleSearch is checkCycles' search: each deployment's dependencies, and
+// how far it has got with each.
+type cycleSearch struct {
+	dependsOn map[string][]string
+	state     map[string]visitState
+}
+
+// visit searches name's dependencies, path being the deployments that led
+// to it, and fails on a cycle.
+func (s *cycleSearch) visit(name string, path []string) error {
+	if s.state[name] == done {
+		return nil
+	}
+	if s.state[name] == visiting {
+		start := slices.Index(path, name)
+		cycle := append(slices.Clone(path[start:]), name)
+		return fmt.Errorf("deployments depend on each other in a cycle: %s", strings.Join(cycle, " -> "))
+	}
+	s.state[name] = visiting
+	for _, dependency := range s.dependsOn[name] {
+		if err := s.visit(dependency, append(path, name)); err != nil {
+			return err
+		}
+	}
+	s.state[name] = done
 	return nil
 }

@@ -80,6 +80,22 @@ func TestLoadRejects(t *testing.T) {
 	}
 }
 
+// TestCheckNamesJustTheCycle covers a deployment depending on a cycle it
+// isn't in: the error names the cycle, not the path that led to it.
+func TestCheckNamesJustTheCycle(t *testing.T) {
+	file := File{Deployments: []Deployment{
+		{Name: "c", Type: "helm", DependsOn: []string{"a"}},
+		{Name: "a", Type: "helm", DependsOn: []string{"b"}},
+		{Name: "b", Type: "helm", DependsOn: []string{"a"}},
+	}}
+
+	err := Check(file)
+
+	if err == nil || !strings.HasSuffix(err.Error(), "in a cycle: a -> b -> a") {
+		t.Errorf("Check = %v, want it to name the cycle a -> b -> a", err)
+	}
+}
+
 // option is an Option's address, for literals.
 func option(value string) *Option {
 	o := Option(value)
