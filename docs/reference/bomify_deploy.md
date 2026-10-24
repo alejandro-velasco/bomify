@@ -26,4 +26,5 @@ deployment medium has a plugin, bomify-plugin-<type>.
 
 * [bomify](bomify.md)	 - bomify packages, verifies, and ships whole platforms as one OCI artifact
 * [bomify deploy generate](bomify_deploy_generate.md)	 - Generate what deployment tools deploy, from a package in an OCI registry
+* [bomify deploy list](bomify_deploy_list.md)	 - List the deployments of a package in an OCI registry
 

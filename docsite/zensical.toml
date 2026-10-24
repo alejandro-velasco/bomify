@@ -40,6 +40,7 @@ nav = [
       ] },
       { "bomify deploy" = [
           { "bomify deploy" = "usage/reference/bomify_deploy.md" },
+          { "bomify deploy list" = "usage/reference/bomify_deploy_list.md" },
           { "bomify deploy generate" = "usage/reference/bomify_deploy_generate.md" },
       ] },
       { "bomify login" = "usage/reference/bomify_login.md" },

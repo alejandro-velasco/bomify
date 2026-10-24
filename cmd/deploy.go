@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
@@ -19,6 +21,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/signature"
+	"github.com/alejandro-velasco/bomify/internal/table"
 )
 
 const deployShort = "Generate deployments of a package in an OCI registry"
@@ -34,9 +37,132 @@ func deployCmd() *cobra.Command {
 		Long:  deployLong,
 	}
 
+	cmd.AddCommand(deployListCmd())
 	cmd.AddCommand(deployGenerateCmd())
 
 	return cmd
+}
+
+const deployListShort = "List the deployments of a package in an OCI registry"
+
+const deployListLong = `List reads the package <reference> from its registry, verified as
+"bomify pull" would, and prints each of its deployments, as "bomify
+build --deployments" packaged them, one row each: its name, its type,
+whose plugin generates it, its options, its config and overlays, and the
+deployments to apply before it. A disabled one is marked so.
+
+--file lays a deployment file over the package's, as "bomify deploy
+generate" does, to show what it would generate. The package's templates
+are named by their paths in it, and --file's relative to the working
+directory. Nothing is written.`
+
+const deployListExample = `  # See how a package deploys
+  bomify deploy list registry.example.com/team/app:1.0
+
+  # See what deploy.yaml would change before generating
+  bomify deploy list registry.example.com/team/app:1.0 --file deploy.yaml`
+
+type deployListOptions struct {
+	verify verifyFlags
+	file   string
+}
+
+func deployListCmd() *cobra.Command {
+	opts := &deployListOptions{}
+
+	cmd := &cobra.Command{
+		Use:     "list <reference>",
+		Short:   deployListShort,
+		Long:    deployListLong,
+		Example: deployListExample,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := runDeployList(cmd, args[0], opts); err != nil {
+				return fmt.Errorf("deploy list: %w", err)
+			}
+			return nil
+		},
+	}
+
+	opts.verify.register(cmd)
+	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, showing what \"deploy generate\" would generate")
+
+	return cmd
+}
+
+func runDeployList(cmd *cobra.Command, ref string, opts *deployListOptions) error {
+	read, err := readDeployments(cmd, ref, opts.verify, opts.file)
+	if err != nil {
+		return err
+	}
+	defer read.close()
+	return writeDeployments(cmd.OutOrStdout(), read.file, read.dir)
+}
+
+// writeDeployments prints file's deployments, one row each, naming each
+// template in packaged, the package's deployments, by its path there, and
+// any other relative to the working directory.
+func writeDeployments(w io.Writer, file deploy.File, packaged string) error {
+	header := []string{"NAME", "TYPE", "OPTIONS", "CONFIG", "OVERLAYS", "DEPENDS ON"}
+	rows := make([][]string, 0, len(file.Deployments))
+	for _, deployment := range file.Deployments {
+		name := deployment.Name
+		if deployment.Enabled != nil && !*deployment.Enabled {
+			name += " (disabled)"
+		}
+		overlays := make([]string, 0, len(deployment.Overlays))
+		for _, overlay := range deployment.Overlays {
+			overlays = append(overlays, displayPath(overlay, packaged))
+		}
+		row := []string{
+			name,
+			deployment.Type,
+			orDash(strings.Join(deployOptions(deployment.Options), ", ")),
+			orDash(displayPath(deployment.Config, packaged)),
+			orDash(strings.Join(overlays, ", ")),
+			orDash(strings.Join(deployment.DependsOn, ", ")),
+		}
+		rows = append(rows, row)
+	}
+	return table.Write(w, header, rows)
+}
+
+// deployOptions is options as sorted "key=value"s.
+func deployOptions(options map[string]*deploy.Option) []string {
+	listed := make([]string, 0, len(options))
+	for key, value := range options {
+		if value != nil {
+			listed = append(listed, key+"="+string(*value))
+		}
+	}
+	sort.Strings(listed)
+	return listed
+}
+
+// displayPath is path as a user would recognize it: relative to packaged,
+// for one of the package's templates, else to the working directory, if
+// it's under it, else as it is.
+func displayPath(path, packaged string) string {
+	if path == "" {
+		return ""
+	}
+	if relative, err := filepath.Rel(packaged, path); err == nil && filepath.IsLocal(relative) {
+		return filepath.ToSlash(relative)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if relative, err := filepath.Rel(wd, path); err == nil && filepath.IsLocal(relative) {
+			return filepath.ToSlash(relative)
+		}
+	}
+	return path
+}
+
+// orDash is s, or "-" if it's empty, as tables show nothing.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 const deployGenerateShort = "Generate what deployment tools deploy, from a package in an OCI registry"
@@ -115,48 +241,16 @@ func deployGenerateCmd() *cobra.Command {
 func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptions) error {
 	logger := logging.FromContext(cmd.Context())
 
-	// Read before the registry is, so a bad file fails fast. It's checked
-	// whole once laid over the package's, which may complete it.
-	var userFile *deploy.File
-	if opts.file != "" {
-		loaded, err := deploy.Load(opts.file)
-		if err != nil {
-			return err
-		}
-		userFile = &loaded
-	}
 	if err := pull.CheckOutputDir(opts.output, opts.replace); err != nil {
 		return err
 	}
-
-	policy, err := opts.verify.policy(dataDir)
+	read, err := readDeployments(cmd, ref, opts.verify, opts.file)
 	if err != nil {
 		return err
 	}
-	verify := transfer.Options{
-		Verify:           signature.NewVerifier(layout.Plugins(dataDir), policy, logger),
-		VerifyProvenance: signature.NewProvenanceVerifier(layout.Plugins(dataDir), policy, logger),
-	}
-	repo, err := newRepository(ref)
-	if err != nil {
-		return err
-	}
-	pkg, err := pull.FetchVerified(cmd.Context(), repo, ref, verify)
-	if err != nil {
-		return err
-	}
-	description, err := deploy.Describe(cmd.Context(), ref, pkg.Digest, pkg.Components, resolveTag)
-	if err != nil {
-		return err
-	}
-
 	// The package's templates must stay until every deployment generates.
-	packaged, err := os.MkdirTemp("", "bomify-deployments-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(packaged)
-	file, err := deployments(cmd.Context(), repo, pkg, packaged, userFile)
+	defer read.close()
+	description, err := deploy.Describe(cmd.Context(), ref, read.pkg.Digest, read.pkg.Components, resolveTag)
 	if err != nil {
 		return err
 	}
@@ -168,12 +262,75 @@ func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptio
 		Replace: opts.replace,
 		Logger:  logger,
 	}
-	index, err := deploy.Generate(description, file, generateOptions)
+	index, err := deploy.Generate(description, read.file, generateOptions)
 	if err != nil {
 		return err
 	}
 	writeGenerated(cmd.OutOrStdout(), index)
 	return nil
+}
+
+// packageDeployments is a package in a registry, verified, and the
+// deployments to generate for it.
+type packageDeployments struct {
+	pkg  pull.VerifiedPackage
+	file deploy.File
+	// dir holds the package's deployment files, which file names, until
+	// close removes it.
+	dir string
+}
+
+func (p *packageDeployments) close() { os.RemoveAll(p.dir) }
+
+// readDeployments reads ref's package from its registry, verified as
+// verify and the data directory's trust rules ask, and its deployments,
+// with the deployment file at userPath, if any, laid over them. The file
+// is read first, so a bad one fails before the registry is read; it's
+// checked whole once laid over the package's, which may complete it. Call
+// close once done with them.
+func readDeployments(cmd *cobra.Command, ref string, verify verifyFlags, userPath string) (*packageDeployments, error) {
+	var userFile *deploy.File
+	if userPath != "" {
+		loaded, err := deploy.Load(userPath)
+		if err != nil {
+			return nil, err
+		}
+		userFile = &loaded
+	}
+
+	logger := logging.FromContext(cmd.Context())
+	policy, err := verify.policy(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	verifyOptions := transfer.Options{
+		Verify:           signature.NewVerifier(layout.Plugins(dataDir), policy, logger),
+		VerifyProvenance: signature.NewProvenanceVerifier(layout.Plugins(dataDir), policy, logger),
+	}
+	repo, err := newRepository(ref)
+	if err != nil {
+		return nil, err
+	}
+	pkg, err := pull.FetchVerified(cmd.Context(), repo, ref, verifyOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := os.MkdirTemp("", "bomify-deployments-*")
+	if err != nil {
+		return nil, err
+	}
+	file, err := deployments(cmd.Context(), repo, pkg, dir, userFile)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+	read := packageDeployments{
+		pkg:  pkg,
+		file: file,
+		dir:  dir,
+	}
+	return &read, nil
 }
 
 // deployments is what to generate for pkg, a package in target: its own

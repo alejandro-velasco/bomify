@@ -116,6 +116,8 @@ the package:
   They're part of the package's digest, so its signature covers them.
 - `pull` and `load` restore them, so pushing what was pulled or loaded,
   into a mirror say, carries them on.
+- `bomify deploy list <reference>` shows them, and with `--file`, what
+  a user's file would make of them.
 - `bomify deploy generate <reference>` then needs no file of the user's.
   It refuses a package whose deployment file names a path outside its
   deployments, which would be one of the user's own files.

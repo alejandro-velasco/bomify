@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -65,5 +67,56 @@ func TestWriteGenerated(t *testing.T) {
 		"local (compose): local/compose.yaml, local/.env\n"
 	if out.String() != want {
 		t.Errorf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+func TestDeployCmdHasList(t *testing.T) {
+	root, err := NewRootCmd()
+	if err != nil {
+		t.Fatalf("NewRootCmd() error = %v", err)
+	}
+
+	list, _, err := root.Find([]string{"deploy", "list"})
+	if err != nil || list.Use != "list <reference>" || list.RunE == nil {
+		t.Fatalf("bomify deploy list: %v, %+v", err, list)
+	}
+	for _, name := range []string{"file", "verify", "verify-option", "verify-provenance", "insecure-skip-verify"} {
+		if list.Flags().Lookup(name) == nil {
+			t.Errorf("bomify deploy list: missing --%s", name)
+		}
+	}
+}
+
+func TestWriteDeployments(t *testing.T) {
+	packaged := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	chart := deploy.Option("podinfo")
+	release := deploy.Option("shop")
+	file := deploy.File{Deployments: []deploy.Deployment{
+		{
+			Name:      "web",
+			Type:      "helm",
+			Options:   map[string]*deploy.Option{"release": &release, "chart": &chart},
+			Config:    filepath.Join(packaged, "templates", "web.yaml.tmpl"),
+			Overlays:  []string{filepath.Join(wd, "overrides", "web.yaml.tmpl")},
+			DependsOn: []string{"infra"},
+		},
+		{Name: "infra", Type: "terraform", Enabled: &disabled},
+	}}
+	var out bytes.Buffer
+
+	if err := writeDeployments(&out, file, packaged); err != nil {
+		t.Fatalf("writeDeployments: %v", err)
+	}
+
+	want := "NAME               TYPE        OPTIONS                       CONFIG                    OVERLAYS                  DEPENDS ON\n" +
+		"web                helm        chart=podinfo, release=shop   templates/web.yaml.tmpl   overrides/web.yaml.tmpl   infra\n" +
+		"infra (disabled)   terraform   -                             -                         -                         -\n"
+	if out.String() != want {
+		t.Errorf("table:\n%s\nwant:\n%s", out.String(), want)
 	}
 }
