@@ -131,3 +131,31 @@ func TestDeploymentsManifestTitlesEachFile(t *testing.T) {
 		t.Errorf("config = %+v, want the empty one", manifest.Config)
 	}
 }
+
+// TestPullComponentsLeavesDeploymentsOut covers pulling components rather
+// than the package: its deployments, how to deploy the whole package,
+// aren't restored, whichever components are.
+func TestPullComponentsLeavesDeploymentsOut(t *testing.T) {
+	baseDir := t.TempDir()
+	writeLayer(t, baseDir, dataComponent, map[string]string{"a.txt": "a"})
+	sbomHash := recordSBOM(t, baseDir, []cdx.Component{dataComponent})
+	writeDeployments(t, baseDir, sbomHash, deploymentFiles)
+	store := newStore(t)
+	ctx := context.Background()
+	tagPackage(t, baseDir, "pkg", sbomHash)
+	if _, err := Push(ctx, store, "pkg", baseDir, transfer.Options{}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	pulledDir := t.TempDir()
+	if _, err := pull.PullComponents(ctx, store, "pkg", pulledDir, transfer.Options{}, nil); err != nil {
+		t.Fatalf("PullComponents: %v", err)
+	}
+
+	if _, err := os.Stat(layout.ComponentLayer(pulledDir, dataComponent.PackageURL)); err != nil {
+		t.Errorf("component not restored: %v", err)
+	}
+	if _, err := os.Stat(layout.Deployments(pulledDir, sbomHash)); !os.IsNotExist(err) {
+		t.Errorf("deployments restored by PullComponents: %v", err)
+	}
+}
