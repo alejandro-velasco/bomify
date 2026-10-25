@@ -24,25 +24,21 @@ func CheckRecordable(path string) error {
 }
 
 // recordable checks the deployment file at path can be recorded, and
-// returns its directory and the files it names, relative to that: each
+// returns it and the files it names, relative to its directory: each
 // config and overlay, once.
-func recordable(path string) (dir string, files []string, err error) {
+func recordable(path string) (File, []string, error) {
 	file, err := Load(path)
 	if err != nil {
-		return "", nil, err
+		return File{}, nil, err
 	}
 	if err := Check(file); err != nil {
-		return "", nil, fmt.Errorf("deployment file %s: %w", path, err)
+		return File{}, nil, fmt.Errorf("deployment file %s: %w", path, err)
 	}
-	dir, err = filepath.Abs(filepath.Dir(path))
+	files, err := file.packagedFiles()
 	if err != nil {
-		return "", nil, err
+		return File{}, nil, fmt.Errorf("deployment file %s: %w", path, err)
 	}
-	files, err = packagedFiles(file, dir)
-	if err != nil {
-		return "", nil, fmt.Errorf("deployment file %s: %w", path, err)
-	}
-	return dir, files, nil
+	return file, files, nil
 }
 
 // Record records the deployment file at path, and every config and overlay
@@ -51,7 +47,7 @@ func recordable(path string) (dir string, files []string, err error) {
 // package. Every path the file names must be inside its directory, so it
 // still names the same file once packaged.
 func Record(dataDir, sbomHash, path string) error {
-	dir, files, err := recordable(path)
+	file, files, err := recordable(path)
 	if err != nil {
 		return err
 	}
@@ -65,7 +61,7 @@ func Record(dataDir, sbomHash, path string) error {
 			return err
 		}
 		for _, relative := range files {
-			content, err := os.ReadFile(filepath.Join(dir, relative))
+			content, err := os.ReadFile(filepath.Join(file.dir, relative))
 			if err != nil {
 				return err
 			}
@@ -78,19 +74,19 @@ func Record(dataDir, sbomHash, path string) error {
 	return pull.WriteInto(layout.Deployments(dataDir, sbomHash), true, write)
 }
 
-// packagedFiles returns the configs and overlays file names, relative to
-// dir, the deployment file's, each once, failing on one outside dir, or
-// that would take the deployment file's own place among its deployments.
-func packagedFiles(file File, dir string) ([]string, error) {
+// packagedFiles returns the configs and overlays f names, relative to its
+// directory, each once, failing on one outside it, or that would take the
+// deployment file's own place among its deployments.
+func (f File) packagedFiles() ([]string, error) {
 	var errs []error
 	seen := map[string]bool{}
 	var files []string
-	for _, deployment := range file.Deployments {
+	for _, deployment := range f.Deployments {
 		for _, path := range append([]string{deployment.Config}, deployment.Overlays...) {
 			if path == "" {
 				continue
 			}
-			relative, err := filepath.Rel(dir, path)
+			relative, err := filepath.Rel(f.dir, path)
 			if err != nil || !filepath.IsLocal(relative) {
 				errs = append(errs, fmt.Errorf("deployment %q: %s isn't inside the deployment file's directory, so it can't be packaged", deployment.Name, path))
 				continue
@@ -116,7 +112,7 @@ func LoadPackaged(dir string) (File, error) {
 	if err != nil {
 		return File{}, err
 	}
-	if _, err := packagedFiles(file, dir); err != nil {
+	if _, err := file.packagedFiles(); err != nil {
 		return File{}, fmt.Errorf("the package's deployments: %w", err)
 	}
 	return file, nil

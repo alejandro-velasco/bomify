@@ -22,6 +22,10 @@ import (
 // File is a deployment file: the named deployments to generate.
 type File struct {
 	Deployments []Deployment `json:"deployments"`
+
+	// dir is the deployment file's directory, absolute, which its paths
+	// resolve against; set by Load.
+	dir string
 }
 
 // Deployment is one deployment of a File.
@@ -88,6 +92,7 @@ func Load(path string) (File, error) {
 	if err != nil {
 		return File{}, fmt.Errorf("resolve %s: %w", path, err)
 	}
+	file.dir = dir
 	var errs []error
 	names := map[string]bool{}
 	for index := range file.Deployments {
@@ -122,9 +127,14 @@ func resolve(dir, path string) string {
 // Lay lays over on base, deployment by deployment, matched by name, and
 // returns the result: a deployment of over's with a name base has
 // changes base's, as the contract's "Overriding the package's" describes,
-// and one with a new name is added, after base's.
+// and one with a new name is added, after base's. The result's paths come
+// from both files, each already absolute, so it keeps base's directory
+// only as a placeholder: nothing should resolve against it.
 func Lay(base, over File) (File, error) {
-	laid := File{Deployments: slices.Clone(base.Deployments)}
+	laid := File{
+		Deployments: slices.Clone(base.Deployments),
+		dir:         base.dir,
+	}
 	var errs []error
 	for _, overlay := range over.Deployments {
 		index := slices.IndexFunc(laid.Deployments, func(d Deployment) bool { return d.Name == overlay.Name })
