@@ -89,12 +89,13 @@ func runDeployList(cmd *cobra.Command, ref string, opts *deployListOptions) erro
 		return err
 	}
 	defer read.close()
-	return writeDeployments(cmd.OutOrStdout(), read.file, read.dir)
+	return writeDeploymentTable(cmd.OutOrStdout(), read.file, read.dir)
 }
 
-// writeDeployments prints file's deployments, one row each, naming each
-// template by its path in packaged, the package's deployments.
-func writeDeployments(w io.Writer, file deploy.File, packaged string) error {
+// writeDeploymentTable prints file's deployments as a table, one row
+// each, naming each template by its path in packaged, the package's
+// deployments.
+func writeDeploymentTable(w io.Writer, file deploy.File, packaged string) error {
 	header := []string{"NAME", "TYPE", "OPTIONS", "CONFIG", "OVERLAYS", "DEPENDS ON"}
 	rows := make([][]string, 0, len(file.Deployments))
 	for _, deployment := range file.Deployments {

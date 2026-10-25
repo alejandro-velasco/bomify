@@ -89,7 +89,7 @@ func TestDeployCmdHasList(t *testing.T) {
 	}
 }
 
-func TestWriteDeployments(t *testing.T) {
+func TestWriteDeploymentTable(t *testing.T) {
 	packaged := t.TempDir()
 	disabled := false
 	chart := deploy.Option("podinfo")
@@ -107,8 +107,8 @@ func TestWriteDeployments(t *testing.T) {
 	}}
 	var out bytes.Buffer
 
-	if err := writeDeployments(&out, file, packaged); err != nil {
-		t.Fatalf("writeDeployments: %v", err)
+	if err := writeDeploymentTable(&out, file, packaged); err != nil {
+		t.Fatalf("writeDeploymentTable: %v", err)
 	}
 
 	want := "NAME               TYPE        OPTIONS                       CONFIG                    OVERLAYS                  DEPENDS ON\n" +
