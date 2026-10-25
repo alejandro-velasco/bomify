@@ -35,24 +35,46 @@ const (
 	OptionRelease = "release"
 )
 
+// knownOptions are every option a helm deployment takes.
+var knownOptions = []string{OptionChart, OptionRelease}
+
+// options are a helm deployment's options, parsed by parseOptions.
+type options struct {
+	chart   string
+	release string
+}
+
+// parseOptions parses req's options, refusing any a helm deployment
+// doesn't take, and defaults the release to the deployment's name.
+func parseOptions(req plugin.GenerateRequest) (options, error) {
+	for key := range req.Options {
+		if !slices.Contains(knownOptions, key) {
+			return options{}, fmt.Errorf("unknown option %q: a helm deployment takes %s", key, strings.Join(knownOptions, ", "))
+		}
+	}
+	parsed := options{
+		chart:   req.Options[OptionChart],
+		release: req.Options[OptionRelease],
+	}
+	if parsed.release == "" {
+		parsed.release = req.Name
+	}
+	return parsed, nil
+}
+
 // Generate writes req's values into req.Output, rendered from req.Config
 // and each of req.Overlays in turn, merged as "helm --values" merges
 // values files, and reports how to install the chart with them.
 func Generate(req plugin.GenerateRequest) (*plugin.DeploymentResult, error) {
-	for key := range req.Options {
-		if key != OptionChart && key != OptionRelease {
-			return nil, fmt.Errorf("unknown option %q: a helm deployment takes %q and %q", key, OptionChart, OptionRelease)
-		}
-	}
-	chart, err := selectChart(req.Package.Components, req.Options[OptionChart])
+	opts, err := parseOptions(req)
 	if err != nil {
 		return nil, err
 	}
-	release := req.Options[OptionRelease]
-	if release == "" {
-		release = req.Name
+	chart, err := selectChart(req.Package.Components, opts.chart)
+	if err != nil {
+		return nil, err
 	}
-	req.Logger.Info("generating", "release", release, "chart", chart.Purl)
+	req.Logger.Info("generating", "release", opts.release, "chart", chart.Purl)
 
 	templates := req.Overlays
 	if req.Config != "" {
@@ -75,7 +97,7 @@ func Generate(req plugin.GenerateRequest) (*plugin.DeploymentResult, error) {
 		return nil, fmt.Errorf("write values: %w", err)
 	}
 
-	instructions := fmt.Sprintf("helm upgrade --install %s %s --values %s", release, chartReference(chart), ValuesFile)
+	instructions := fmt.Sprintf("helm upgrade --install %s %s --values %s", opts.release, chartReference(chart), ValuesFile)
 	result := plugin.DeploymentResult{
 		Files:        []string{ValuesFile},
 		Instructions: instructions,
@@ -125,8 +147,8 @@ func chartReference(chart plugin.DeploymentComponent) string {
 // render renders the Go template at path with pkg, failing on a missing
 // key rather than rendering it empty, and parses the result as values.
 // A template is given the package as .Package, and a "component" function
-// looking one up as plugin.SelectComponent does; both as the description's
-// JSON has them, so their fields are as the contract names them.
+// (see templateComponents.component); both as the description's JSON has
+// them, so their fields are as the contract names them.
 func render(path string, pkg plugin.DeploymentPackage, logger *slog.Logger) (map[string]any, error) {
 	source, err := os.ReadFile(path)
 	if err != nil {
@@ -136,15 +158,10 @@ func render(path string, pkg plugin.DeploymentPackage, logger *slog.Logger) (map
 	if err != nil {
 		return nil, err
 	}
+	components := templateComponents(pkg.Components)
 	functions := sprig.TxtFuncMap()
 	functions["toYaml"] = toYaml
-	functions["component"] = func(selector string) (map[string]any, error) {
-		component, err := plugin.SelectComponent(pkg.Components, selector)
-		if err != nil {
-			return nil, err
-		}
-		return asMap(component)
-	}
+	functions["component"] = components.component
 	tmpl, err := template.New(filepath.Base(path)).Funcs(functions).Option("missingkey=error").Parse(string(source))
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", path, err)
@@ -161,6 +178,20 @@ func render(path string, pkg plugin.DeploymentPackage, logger *slog.Logger) (map
 		return nil, fmt.Errorf("template %s didn't render YAML values: %w", path, err)
 	}
 	return values, nil
+}
+
+// templateComponents are the components a template's "component" function
+// looks up.
+type templateComponents []plugin.DeploymentComponent
+
+// component is the component selector names, found as
+// plugin.SelectComponent finds it, as asMap gives it to a template.
+func (components templateComponents) component(selector string) (map[string]any, error) {
+	component, err := plugin.SelectComponent(components, selector)
+	if err != nil {
+		return nil, err
+	}
+	return asMap(component)
 }
 
 // asMap is v as JSON decodes it into a map: with the fields its JSON
