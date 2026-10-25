@@ -48,7 +48,7 @@ func Describe(ctx context.Context, ref, packageDigest string, components []pull.
 			Purl:         listed.Component.PackageURL,
 			ArtifactType: manifest.ArtifactType,
 			Digest:       manifest.Digest.String(),
-			Reference:    repository + "@" + manifest.Digest.String(),
+			Reference:    prefix.Pinned(repository, manifest.Digest.String()),
 			Tagged:       tagged,
 		}
 		description.Components = append(description.Components, component)

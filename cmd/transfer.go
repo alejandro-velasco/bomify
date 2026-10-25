@@ -60,7 +60,8 @@ func (f *transferFlags) transferOptions(cmd *cobra.Command) (opts transfer.Optio
 // stdout with --quiet: the one thing --quiet output is for.
 func (f *transferFlags) printPinned(cmd *cobra.Command, ref, digest string) {
 	if f.quiet {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s@%s\n", prefix.Repository(ref), digest)
+		repository := prefix.Repository(ref)
+		fmt.Fprintln(cmd.OutOrStdout(), prefix.Pinned(repository, digest))
 	}
 }
 

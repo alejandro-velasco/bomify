@@ -14,6 +14,7 @@ import (
 	"github.com/alejandro-velasco/bomify/internal/fsutil"
 	"github.com/alejandro-velasco/bomify/internal/oci/pull"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
+	"github.com/alejandro-velasco/bomify/internal/prefix"
 	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
@@ -87,7 +88,7 @@ func Generate(description pluginlib.DeploymentPackage, file File, opts GenerateO
 	}
 	defer os.Remove(descriptionFile)
 
-	index := Index{Package: description.Repository + "@" + description.Digest}
+	index := Index{Package: prefix.Pinned(description.Repository, description.Digest)}
 	write := func(stageDir string) error {
 		for _, deployment := range deployments {
 			generated, err := generateOne(deployment, paths[deployment.Type], descriptionFile, stageDir, opts)

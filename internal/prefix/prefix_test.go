@@ -49,3 +49,10 @@ func TestRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestPinned(t *testing.T) {
+	got := Pinned("registry.example.com:5000/app", "sha256:abcd")
+	if want := "registry.example.com:5000/app@sha256:abcd"; got != want {
+		t.Errorf("Pinned = %q, want %q", got, want)
+	}
+}

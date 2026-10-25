@@ -192,7 +192,7 @@ func (t componentTagger) tag(ctx context.Context, site *componentSitePlan) (Tagg
 
 	reference := repository + ":" + site.site.tag
 	if site.site.tag == "" {
-		reference = repository + "@" + named.Digest.String()
+		reference = prefix.Pinned(repository, named.Digest.String())
 	}
 	if t.opts.Sign != nil {
 		if err := t.opts.Sign(ctx, target, reference, named); err != nil {
