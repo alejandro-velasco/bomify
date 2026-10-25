@@ -82,7 +82,8 @@ func (f File) packagedFiles() ([]string, error) {
 	seen := map[string]bool{}
 	var files []string
 	for _, deployment := range f.Deployments {
-		for _, path := range append([]string{deployment.Config}, deployment.Overlays...) {
+		templates := append([]string{deployment.Config}, deployment.Overlays...)
+		for _, path := range templates {
 			if path == "" {
 				continue
 			}
