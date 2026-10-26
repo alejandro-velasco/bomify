@@ -84,9 +84,6 @@ func TestDeployCmdHasList(t *testing.T) {
 			t.Errorf("bomify deploy list: missing --%s", name)
 		}
 	}
-	if list.Flags().Lookup("file") != nil {
-		t.Error("bomify deploy list has --file: deploy generate previews a user's file")
-	}
 }
 
 func TestWriteDeploymentTable(t *testing.T) {

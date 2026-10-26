@@ -59,6 +59,7 @@ const deployListExample = `  # See how a package deploys
 
 type deployListOptions struct {
 	verify verifyFlags
+	file   string
 }
 
 func deployListCmd() *cobra.Command {
@@ -79,12 +80,13 @@ func deployListCmd() *cobra.Command {
 	}
 
 	opts.verify.register(cmd)
+	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, or to use instead of them if it has none")
 
 	return cmd
 }
 
 func runDeployList(cmd *cobra.Command, ref string, opts *deployListOptions) error {
-	read, err := readDeployments(cmd, ref, opts.verify, "")
+	read, err := readDeployments(cmd, ref, opts.verify, opts.file)
 	if err != nil {
 		return err
 	}
