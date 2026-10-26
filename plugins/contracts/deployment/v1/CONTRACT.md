@@ -117,7 +117,9 @@ the package:
 - `pull` and `load` restore them, so pushing what was pulled or loaded,
   into a mirror say, carries them on.
 - `bomify deploy list <reference>` shows them: the names, options, and
-  templates a user's file can override.
+  templates a user's file can override. With `--file`, it shows them
+  with that file laid over them, as `deploy generate` would generate
+  them.
 - `bomify deploy generate <reference>` then needs no file of the user's.
   It refuses a package whose deployment file names a path outside its
   deployments, which would be one of the user's own files.

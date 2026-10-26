@@ -53,10 +53,17 @@ whose plugin generates it, its options, its config and overlays, and the
 deployments to apply before it, its templates named by their paths in
 the package. A disabled one is marked so. These are the names a
 deployment file given to "bomify deploy generate --file" overrides.
+
+With --file, it prints them as "bomify deploy generate --file" would
+generate them: that file laid over the package's by name, or alone if
+the package has none, the file's own templates named by their paths.
 Nothing is written.`
 
 const deployListExample = `  # See how a package deploys
-  bomify deploy list registry.example.com/team/app:1.0`
+  bomify deploy list registry.example.com/team/app:1.0
+
+  # See how it deploys with deploy.yaml laid over it
+  bomify deploy list registry.example.com/team/app:1.0 --file deploy.yaml`
 
 type deployListOptions struct {
 	verify verifyFlags
@@ -135,8 +142,8 @@ func deployOptions(options map[string]*deploy.Option) []string {
 	return listed
 }
 
-// displayPath is path, one of the package's templates, by its path in
-// packaged, as the package names it.
+// displayPath is path, a template, by its path in packaged if it's one
+// of the package's, as the package names it, else as given.
 func displayPath(path, packaged string) string {
 	if path == "" {
 		return ""

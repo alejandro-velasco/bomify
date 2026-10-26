@@ -11,6 +11,10 @@ whose plugin generates it, its options, its config and overlays, and the
 deployments to apply before it, its templates named by their paths in
 the package. A disabled one is marked so. These are the names a
 deployment file given to "bomify deploy generate --file" overrides.
+
+With --file, it prints them as "bomify deploy generate --file" would
+generate them: that file laid over the package's by name, or alone if
+the package has none, the file's own templates named by their paths.
 Nothing is written.
 
 ```
@@ -22,11 +26,15 @@ bomify deploy list <reference> [flags]
 ```
   # See how a package deploys
   bomify deploy list registry.example.com/team/app:1.0
+
+  # See how it deploys with deploy.yaml laid over it
+  bomify deploy list registry.example.com/team/app:1.0 --file deploy.yaml
 ```
 
 ### Options
 
 ```
+  -f, --file string                 a deployment file to lay over the package's deployments, or to use instead of them if it has none
   -h, --help                        help for list
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
       --verify string               require a signature this signing plugin (bomify-plugin-<kind>, e.g. sigstore) verifies, overriding any "bomify trust" rule

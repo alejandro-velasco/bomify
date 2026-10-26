@@ -100,8 +100,7 @@ only once the registry confirms the tag points at it. Its deployments are
 the package's own, fetched from its deployments manifest
 (`deploy.LoadPackaged`, which refuses a template path outside them), with
 `--file` laid over them by name (`deploy.Lay`); `bomify deploy list`
-reads them the same way, without `--file`, and prints them. It finds
-every
+reads them the same way and prints them. It finds every
 deployment's plugin before running any, runs each into its own
 directory of a staging directory, checks each wrote exactly the regular
 files it reports, and moves the lot into `--output` only once all have
