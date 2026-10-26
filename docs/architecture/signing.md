@@ -26,16 +26,21 @@ the build's identity.
   which those registries refuse.
 - **Sign later** (`bomify sign <reference>`, or `--input <tarball>`):
   `internal/oci/sign` resolves the reference, checks it's a
-  bomify package's index, and signs it and each of its vulnerability report
-  and VEX referrers with the same signer push uses, fetching only
-  manifests. Each signature is one more referrer, so co-signers can
+  bomify package's index, and signs it with the same signer push uses,
+  fetching only manifests. Its vulnerability report and VEX referrers
+  are signed only if `--referrer` names them by digest, all checked
+  before anything is signed: anyone who can push can attach one, and a
+  signed VEX document exempts findings. The rest are logged as unsigned.
+  Each signature is one more referrer, so co-signers can
   sign at different times, in different environments. A tarball is
   extracted, every tag signed, and re-archived. Provenance isn't
   attested again: one trusted attestation is enough.
 - **Verify** (`pull`/`load`): before fetching anything,
   `signature.Policy` picks the signers the reference must satisfy:
   `--verify` (one, with only its own `--verify-option`s), else the most
-  specific `conf/trust.json` rule's, else none. `--insecure-skip-verify`
+  specific `conf/trust.json` rule's, else none. `load` refuses a tag
+  that no rule matches once any rule exists (`Policy.UntrustedNames`),
+  since a tarball names its own tags. `--insecure-skip-verify`
   overrides a rule, with a warning. Key options are resolved to
   `option=<stored copy path>` as rules are read
   (`signature.ReadResolved`), which also refuses a rule that doesn't
@@ -81,6 +86,12 @@ so a misspelling can't drop a requirement.
 
 One rule per `match`, written by `bomify trust create`; the most
 specific `match` applies.
+
+<a id="matching"></a>A `match` and a repository are compared
+case-insensitively, after canonicalizing a leading registry host: a
+trailing `.` and port `443` are dropped, and `index.docker.io` and
+`registry-1.docker.io` read as `docker.io`. So no other spelling of a
+registry escapes its rule.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

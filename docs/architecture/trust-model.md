@@ -34,7 +34,9 @@ when a `bomify trust` rule matches it (the most specific wins).
 **Doesn't:**
 
 - With no `--verify` and no matching rule, nothing is verified, and an
-  unsigned package pulls like any other. `--insecure-skip-verify`
+  unsigned package pulls like any other. A tarball names its own
+  packages, so once any rule exists, `load` refuses a package no rule
+  matches; it can still pick which of your rules applies. `--insecure-skip-verify`
   overrides a rule, with a warning, and drops the provenance requirement
   and publisher VEX with it.
 - A signature binds the manifest, not the tag or repository. Anyone who
@@ -63,7 +65,9 @@ from restoring reports, but not forge them.
 
 VEX only ever exempts findings, so a publisher's documents count only
 on a verified pull, and only each one that's signed by a trusted
-signer. Push access alone can't silence a finding.
+signer. Push access alone can't silence a finding: `bomify sign` signs
+a package's VEX only when `--referrer` names it by digest, so signing
+a package later doesn't vouch for VEX someone else attached.
 
 The consumer's own VEX, from the matching scan policy rule, is applied
 after the publisher's, so it wins where they disagree. Publisher VEX

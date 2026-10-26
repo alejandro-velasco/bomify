@@ -13,6 +13,10 @@ and --quiet work as for "bomify pull", applied to each package before
 its tag is recorded. Scanning may need network access; on an air-gapped machine,
 scan before saving instead.
 
+A package's tag comes from the tarball, so it isn't trusted to pick no
+trust rule: once any "bomify trust" rule exists, a package no rule
+matches fails, unless --verify or --insecure-skip-verify is given.
+
 ```
 bomify package load [flags]
 ```

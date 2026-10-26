@@ -16,6 +16,20 @@ func TestMatches(t *testing.T) {
 		{"anything", "", true},
 		{"", "", true},
 		{"", "docker.io", false},
+		// Every spelling of a registry matches a rule naming it, so none
+		// sidesteps one.
+		{"REGISTRY.Example.com/team/app", "registry.example.com/team", true},
+		{"registry.example.com./team/app", "registry.example.com/team", true},
+		{"registry.example.com:443/team/app", "registry.example.com/team", true},
+		{"registry.example.com/team/app", "registry.example.com.:443/team", true},
+		{"index.docker.io/org/repo", "docker.io/org", true},
+		{"registry-1.docker.io/org/repo", "docker.io/org", true},
+		{"registry.example.com:5000/team/app", "registry.example.com/team", false},
+		{"registry.example.com/team/app", "registry.example.com:5000/team", false},
+		{"localhost:443/app", "localhost/app", true},
+		// A first segment that isn't a host is left alone.
+		{"myapp", "myapp", true},
+		{"MyApp", "myapp", true},
 	}
 	for _, tt := range tests {
 		if got := Matches(tt.address, tt.match); got != tt.want {

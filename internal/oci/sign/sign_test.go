@@ -112,7 +112,7 @@ func TestSignSignsPackageAndItsReferrers(t *testing.T) {
 	manifest, referrers := pushPackage(t, store, "app:1.0")
 	signer := &recordingSigner{}
 
-	result, err := Sign(context.Background(), store, "app:1.0", signer.sign)
+	result, err := Sign(context.Background(), store, "app:1.0", signer.sign, digests(referrers))
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -126,6 +126,39 @@ func TestSignSignsPackageAndItsReferrers(t *testing.T) {
 	}
 	if len(signer.signed) != 3 {
 		t.Errorf("signed %d descriptors, want 3: the package, its report, and its VEX, not the unrelated referrer", len(signer.signed))
+	}
+}
+
+// TestSignLeavesUnnamedReferrersUnsigned covers a referrer anyone who can
+// push could have attached, such as a VEX document exempting a finding:
+// signing the package mustn't vouch for it unless it's named.
+func TestSignLeavesUnnamedReferrersUnsigned(t *testing.T) {
+	store := newStore(t)
+	manifest, referrers := pushPackage(t, store, "app:1.0")
+	report, vex := referrers[0], referrers[1]
+
+	signer := &recordingSigner{}
+	result, err := Sign(context.Background(), store, "app:1.0", signer.sign, nil)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if got := digests(signer.signed); !slices.Equal(got, []string{manifest.Digest.String()}) {
+		t.Errorf("signed %v, want only the package index %v", got, manifest.Digest)
+	}
+	if got, want := digests(result.Skipped), digests(referrers); !slices.Equal(got, want) {
+		t.Errorf("skipped %v, want the report and VEX %v", got, want)
+	}
+
+	signer = &recordingSigner{}
+	result, err = Sign(context.Background(), store, "app:1.0", signer.sign, []string{vex.Digest.String()})
+	if err != nil {
+		t.Fatalf("Sign --referrer <vex>: %v", err)
+	}
+	if got, want := digests(result.Referrers), digests([]ocispec.Descriptor{vex}); !slices.Equal(got, want) {
+		t.Errorf("signed referrers %v, want just the VEX %v", got, want)
+	}
+	if got, want := digests(result.Skipped), digests([]ocispec.Descriptor{report}); !slices.Equal(got, want) {
+		t.Errorf("skipped %v, want just the report %v", got, want)
 	}
 }
 
@@ -150,13 +183,18 @@ func TestSignRejects(t *testing.T) {
 		{"missing tag", "nope:1.0", nil, "resolve nope:1.0"},
 		{"not a bomify package", "other:1.0", nil, "isn't a bomify package"},
 		{"signer fails", "app:1.0", errors.New("no key"), "no key"},
+		{"unknown referrer", "app:1.0", nil, "has no vulnerability report or VEX referrer sha256:" + strings.Repeat("0", 64)},
 	} {
 		signer := &recordingSigner{err: tc.signErr}
-		_, err := Sign(ctx, store, tc.ref, signer.sign)
+		var referrers []string
+		if tc.name == "unknown referrer" {
+			referrers = []string{"sha256:" + strings.Repeat("0", 64)}
+		}
+		_, err := Sign(ctx, store, tc.ref, signer.sign, referrers)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: Sign = %v, want an error containing %q", tc.name, err, tc.want)
 		}
-		if tc.name == "not a bomify package" && len(signer.signed) != 0 {
+		if (tc.name == "not a bomify package" || tc.name == "unknown referrer") && len(signer.signed) != 0 {
 			t.Errorf("%s: signed %d descriptors, want none", tc.name, len(signer.signed))
 		}
 	}
@@ -169,16 +207,17 @@ func TestSignArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pushPackage(t, store, "app:1.0")
+	_, referrers := pushPackage(t, store, "app:1.0")
 	pushPackage(t, store, "app:2.0")
 	var archive bytes.Buffer
 	if err := transfer.WriteTar(stageDir, &archive); err != nil {
 		t.Fatal(err)
 	}
+	tarball := archive.Bytes()
 
 	signer := &recordingSigner{}
 	var signed bytes.Buffer
-	results, err := SignArchive(ctx, &archive, &signed, signer.sign)
+	results, err := SignArchive(ctx, bytes.NewReader(tarball), &signed, signer.sign, digests(referrers))
 	if err != nil {
 		t.Fatalf("SignArchive: %v", err)
 	}
@@ -195,7 +234,17 @@ func TestSignArchive(t *testing.T) {
 		t.Error("SignArchive wrote no tarball")
 	}
 
-	if _, err := SignArchive(ctx, strings.NewReader("not a tarball"), &bytes.Buffer{}, signer.sign); err == nil {
+	if _, err := SignArchive(ctx, strings.NewReader("not a tarball"), &bytes.Buffer{}, signer.sign, nil); err == nil {
 		t.Error("SignArchive of a non-tarball: nil, want error")
+	}
+
+	signer = &recordingSigner{}
+	var unwritten bytes.Buffer
+	unknown := "sha256:" + strings.Repeat("0", 64)
+	if _, err := SignArchive(ctx, bytes.NewReader(tarball), &unwritten, signer.sign, []string{unknown}); err == nil || !strings.Contains(err.Error(), unknown) {
+		t.Errorf("SignArchive --referrer <unknown>: %v, want an error naming it", err)
+	}
+	if len(signer.signed) != 0 || unwritten.Len() != 0 {
+		t.Errorf("SignArchive --referrer <unknown>: signed %d and wrote %d bytes, want nothing", len(signer.signed), unwritten.Len())
 	}
 }

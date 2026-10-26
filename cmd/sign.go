@@ -25,16 +25,23 @@ tarball. Only manifests are fetched, never layers, so co-signers can sign
 at different times, in different environments, each with only its own
 key, for a trust rule requiring several signers.
 
-It signs as --sign and --signer do for "bomify push": the package, and
-each of its vulnerability report and VEX referrers, which pulls verify
-separately. Signatures already there are kept. Build provenance isn't
-attested again: a rule requiring it accepts one trusted attestation.
+It signs as --sign and --signer do for "bomify push", but only the
+package itself unless --referrer names, by digest, a vulnerability report
+or VEX referrer to sign too (pulls verify those separately). Anyone who
+can push can attach a referrer, and signing a VEX document vouches for
+the findings it exempts, so check each before naming it; the referrers
+left unsigned are listed. Signatures already there are kept. Build
+provenance isn't attested again: a rule requiring it accepts one trusted
+attestation.
 
 With --input, the signed tarball is written to --output, or back over
 --input if --output isn't given.`
 
 const signExample = `  # Add the security team's signature to a package CI already signed
   bomify sign registry.example.com/myapp:1.0 --signer security
+
+  # Also sign a VEX document attached to it, once you've checked it
+  bomify sign registry.example.com/myapp:1.0 --signer security --referrer sha256:<digest>
 
   # Sign with a plugin directly
   bomify sign registry.example.com/myapp:1.0 --sign sigstore --sign-option key=security.key
@@ -46,9 +53,10 @@ const signExample = `  # Add the security team's signature to a package CI alrea
   bomify sign --input myapp.tar --output myapp-signed.tar --signer security`
 
 type signOptions struct {
-	sign   signFlags
-	input  string
-	output string
+	sign      signFlags
+	input     string
+	output    string
+	referrers []string
 }
 
 func signCmd() *cobra.Command {
@@ -71,6 +79,7 @@ func signCmd() *cobra.Command {
 	opts.sign.register(cmd)
 	cmd.Flags().StringVarP(&opts.input, "input", "i", "", "sign every package in this \"bomify save\" tarball instead of a registry reference")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "write the signed tarball here instead of back over --input")
+	cmd.Flags().StringArrayVar(&opts.referrers, "referrer", nil, "also sign the package's vulnerability report or VEX referrer with this digest (repeatable)")
 
 	return cmd
 }
@@ -103,7 +112,7 @@ func runSign(cmd *cobra.Command, args []string, opts *signOptions) error {
 	if err != nil {
 		return err
 	}
-	result, err := sign.Sign(cmd.Context(), repo, ref, signer)
+	result, err := sign.Sign(cmd.Context(), repo, ref, signer, opts.referrers)
 	if err != nil {
 		return err
 	}
@@ -143,7 +152,7 @@ func signArchive(cmd *cobra.Command, opts *signOptions, signer transfer.Signer, 
 	var results []sign.TaggedResult
 	err = fsutil.WriteAtomic(output, func(w io.Writer) error {
 		var signErr error
-		results, signErr = sign.SignArchive(cmd.Context(), in, w, signer)
+		results, signErr = sign.SignArchive(cmd.Context(), in, w, signer, opts.referrers)
 		// Closed before WriteAtomic renames over it, which Windows can't
 		// do to a file that's still open.
 		in.Close()
@@ -160,6 +169,11 @@ func signArchive(cmd *cobra.Command, opts *signOptions, signer transfer.Signer, 
 	return nil
 }
 
+// logSigned logs what Sign signed for ref, and warns of each referrer it
+// left unsigned, which pulls verifying this signer will ignore.
 func logSigned(logger *slog.Logger, ref string, result sign.Result) {
 	logger.Info("package signed", "reference", ref, "manifest", result.Manifest.Digest.String(), "referrers", len(result.Referrers))
+	for _, skipped := range result.Skipped {
+		logger.Warn("referrer not signed: check it, then pass --referrer to sign it too", "reference", ref, "artifactType", skipped.ArtifactType, "referrer", skipped.Digest.String())
+	}
 }

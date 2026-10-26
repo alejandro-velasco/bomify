@@ -126,7 +126,7 @@ ignored, so a misspelling can't drop a gate.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `match` | string | `/`-separated prefix of a package's repository, matched at segment boundaries. Omitted or empty matches every package. |
+| `match` | string | `/`-separated prefix of a package's repository, matched at segment boundaries, as [trust rules](signing.md#matching) are. Omitted or empty matches every package. |
 | `scanners` | array of strings | At least one scanning plugin, `bomify-plugin-<scanner>`; each scans every component it supports. |
 | `failOn` | string | The severity (`info`, `low`, `medium`, `high`, `critical`) at or above which a finding fails the package. Omitted never fails on severity. |
 | `failOnUnscanned` | boolean | Fail the package if any component went unscanned (see [Coverage](#coverage)). |

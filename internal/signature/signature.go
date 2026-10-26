@@ -192,10 +192,14 @@ func attachEnvelope(ctx context.Context, target oras.Target, subject ocispec.Des
 // failing the pull outright otherwise. A reference no policy applies to
 // is restored unverified, with a warning when --insecure-skip-verify
 // bypasses a trust rule that matched it, since that's a policy being
-// deliberately bypassed rather than simply absent. pluginDir is where the
-// verifying plugins are installed (see plugin.Dir).
+// deliberately bypassed rather than simply absent. A reference policy
+// refuses as Unmatched fails. pluginDir is where the verifying plugins
+// are installed (see plugin.Dir).
 func NewVerifier(pluginDir string, policy Policy, logger *slog.Logger) transfer.Verifier {
 	return func(ctx context.Context, target oras.ReadOnlyTarget, ref string, manifest ocispec.Descriptor) error {
+		if policy.Unmatched(ref) {
+			return fmt.Errorf("%s matches no \"bomify trust\" rule, and its name comes from the tarball, so it can't be trusted to choose none: add a rule matching it, pass --verify, or pass --insecure-skip-verify to restore it unverified", ref)
+		}
 		req, required := policy.For(ref)
 		if !required {
 			if rule, ok := Resolve(policy.Rules, ref); ok && policy.Skip {

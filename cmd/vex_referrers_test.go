@@ -119,6 +119,64 @@ func TestPublisherVEXNeedsItsOwnSignature(t *testing.T) {
 	}
 }
 
+// TestSignDoesntVouchForAttachedVEX covers VEX that anyone with push
+// access attached to an unsigned package, before its publisher signed it
+// with "bomify sign": signing the package mustn't sign the VEX too, or a
+// verified pull would honor it.
+func TestSignDoesntVouchForAttachedVEX(t *testing.T) {
+	ctx := context.Background()
+	baseDir := setUpHookPackage(t)
+	testutil.InstallFakePlugin(t, layout.Plugins(baseDir), "fakesign")
+
+	stage := t.TempDir()
+	store, err := oci.New(stage)
+	if err != nil {
+		t.Fatalf("new oci store: %v", err)
+	}
+	pushed, err := push.Push(ctx, store, hookTag, baseDir, transfer.Options{})
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	doc, err := security.ReadVEX(baseDir, writeOpenVEX(t))
+	if err != nil {
+		t.Fatalf("ReadVEX: %v", err)
+	}
+	vex, _, err := transfer.Attach(ctx, store, pushed.Manifest, doc.Attachment(), nil)
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	archive := filepath.Join(t.TempDir(), "app.tar")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	if err := errors.Join(transfer.WriteTar(stage, f), f.Close()); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	load := func() error {
+		_, err := runRootCmd(t, loadDir(t), "load", "--input", archive, "--scan", "grype", "--fail-on", "high",
+			"--verify", "fakesign", "--verify-option", "key=k")
+		return err
+	}
+	signArgs := []string{"sign", "--input", archive, "--sign", "fakesign", "--sign-option", "key=k"}
+
+	if _, err := runRootCmd(t, baseDir, signArgs...); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if err := load(); !isGateError(err) {
+		t.Errorf("load: error = %v, want the package to verify but the VEX it didn't sign to be ignored, failing the gate", err)
+	}
+
+	// Named by digest, once checked, the VEX is signed and honored.
+	if _, err := runRootCmd(t, baseDir, append(signArgs, "--referrer", vex.Digest.String())...); err != nil {
+		t.Fatalf("sign --referrer: %v", err)
+	}
+	if err := load(); err != nil {
+		t.Errorf("load after sign --referrer: %v, want the signed VEX to exempt CVE-HIGH", err)
+	}
+}
+
 func TestPublishVEXFlagAcceptsStoredNames(t *testing.T) {
 	baseDir := setUpHookPackage(t)
 	if _, err := runRootCmd(t, baseDir, "security", "vex", "add", "team", writeOpenVEX(t)); err != nil {

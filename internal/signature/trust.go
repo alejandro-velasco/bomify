@@ -259,6 +259,24 @@ type Policy struct {
 	// Provenance requires every reference's build provenance to verify —
 	// bomify pull/load's --verify-provenance.
 	Provenance bool
+	// UntrustedNames is set when references are named by whoever supplied
+	// the packages, as a "bomify save" tarball's tags are, rather than by
+	// the user: then, with Rules and neither Verifier nor Skip, a
+	// reference no rule matches is refused (see Unmatched) instead of
+	// restored unverified, so a package can't escape every rule by its
+	// name.
+	UntrustedNames bool
+}
+
+// Unmatched reports whether ref must be refused because p has trust
+// rules, none of them matches ref, and ref's name can't be trusted (see
+// Policy.UntrustedNames).
+func (p Policy) Unmatched(ref string) bool {
+	if !p.UntrustedNames || p.Skip || p.Verifier.Kind != "" || len(p.Rules) == 0 {
+		return false
+	}
+	_, ok := Resolve(p.Rules, ref)
+	return !ok
 }
 
 // For reports which signatures ref must carry, and whether it must carry

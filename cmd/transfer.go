@@ -70,6 +70,9 @@ type restoreFlags struct {
 	transferFlags
 	verify verifyFlags
 	scan   scanFlags
+	// untrustedNames is set by load, whose packages are named by the
+	// tarball (see signature.Policy.UntrustedNames).
+	untrustedNames bool
 }
 
 func (f *restoreFlags) register(cmd *cobra.Command, verb, quietUsage string) {
@@ -97,6 +100,7 @@ func (f *restoreFlags) start(cmd *cobra.Command) (*restore, error) {
 	if err != nil {
 		return nil, err
 	}
+	policy.UntrustedNames = f.untrustedNames
 	if err := f.scan.validate(); err != nil {
 		return nil, err
 	}

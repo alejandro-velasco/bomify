@@ -221,7 +221,11 @@ bomify push registry.example.com/prod/myapp:1.0 --signer release
 bomify sign registry.example.com/prod/myapp:1.0 --signer security
 ```
 
-It signs the package's vulnerability reports and VEX too. For a tarball,
+It signs only the package itself, and warns of each vulnerability report
+and VEX referrer it left unsigned, by digest. Anyone who can push can
+attach one, and your signature on a VEX document vouches for the
+findings it exempts, so check each, then sign it with `--referrer
+sha256:…` (repeatable). For a tarball,
 `bomify sign --input myapp.tar --signer security` signs every package in
 it, in place, or writes a copy with `--output`.
 
