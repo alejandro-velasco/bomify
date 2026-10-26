@@ -58,7 +58,7 @@ bomify deploy generate <reference> [flags]
 
 ```
   -f, --file string                 a deployment file to lay over the package's deployments, or to use instead of them if it has none
-  -F, --format format               how to print what was generated: text or json (default text)
+  -F, --format format               print the result as text or json (default text)
   -h, --help                        help for generate
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
   -o, --output string               directory to write into (must be missing or empty, unless --replace)

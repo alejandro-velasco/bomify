@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -207,9 +206,7 @@ type deployGenerateOptions struct {
 }
 
 func deployGenerateCmd() *cobra.Command {
-	opts := &deployGenerateOptions{
-		format: defaultFormatType,
-	}
+	opts := &deployGenerateOptions{}
 
 	cmd := &cobra.Command{
 		Use:     "generate <reference>",
@@ -228,7 +225,7 @@ func deployGenerateCmd() *cobra.Command {
 	opts.verify.register(cmd)
 	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, or to use instead of them if it has none")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "directory to write into (must be missing or empty, unless --replace)")
-	cmd.Flags().VarP(&opts.format, "format", "F", "how to print what was generated: text or json")
+	registerFormat(cmd, &opts.format)
 	cmd.Flags().BoolVar(&opts.replace, "replace", false, "replace what --output holds, once every deployment has generated")
 	cmd.MarkFlagRequired("output")
 
@@ -384,7 +381,7 @@ func resolveTag(ctx context.Context, reference string) (digest.Digest, error) {
 // writeGenerated prints index, what deploy generate generated, in format.
 func writeGenerated(w io.Writer, index deploy.Index, format formatType) error {
 	if format == formatTypeJSON {
-		return writeGeneratedJSON(w, index)
+		return writeJSON(w, index)
 	}
 	writeGeneratedText(w, index)
 	return nil
@@ -400,11 +397,4 @@ func writeGeneratedText(w io.Writer, index deploy.Index) {
 			fmt.Fprintf(w, "  in %s/: %s\n", generated.Name, generated.Instructions)
 		}
 	}
-}
-
-// writeGeneratedJSON prints index as JSON, as deploy.IndexFile has it.
-func writeGeneratedJSON(w io.Writer, index deploy.Index) error {
-	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(index)
 }

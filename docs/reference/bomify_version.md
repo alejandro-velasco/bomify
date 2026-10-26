@@ -13,14 +13,14 @@ bomify version [flags]
   bomify version
 
   # Print version info as JSON
-  bomify version --output json
+  bomify version --format json
 ```
 
 ### Options
 
 ```
+  -F, --format format   print the result as text or json (default text)
   -h, --help            help for version
-  -o, --output string   output format (text or json) (default "text")
 ```
 
 ### Options inherited from parent commands
