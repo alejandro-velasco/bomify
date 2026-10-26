@@ -2,12 +2,28 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/alejandro-velasco/bomify/internal/deploy"
 )
+
+// generatedIndex is what writeGenerated's tests print.
+var generatedIndex = deploy.Index{
+	Package: "registry.example.com/app@sha256:abc",
+	Deployments: []deploy.Generated{
+		{Name: "frontend", Type: "helm", Files: []string{"frontend/values.yaml"}, Instructions: "helm upgrade --install frontend oci://registry.example.com/app@sha256:abc --values values.yaml"},
+		{Name: "local", Type: "compose", Files: []string{"local/compose.yaml", "local/.env"}, DependsOn: []string{"frontend"}},
+	},
+}
+
+// generatedText is generatedIndex as text.
+const generatedText = "frontend (helm): frontend/values.yaml\n" +
+	"  in frontend/: helm upgrade --install frontend oci://registry.example.com/app@sha256:abc --values values.yaml\n" +
+	"local (compose): local/compose.yaml, local/.env\n"
 
 func TestDeployCmdHasGenerate(t *testing.T) {
 	root, err := NewRootCmd()
@@ -19,7 +35,7 @@ func TestDeployCmdHasGenerate(t *testing.T) {
 	if err != nil || generate.Use != "generate <reference>" || generate.RunE == nil {
 		t.Fatalf("bomify deploy generate: %v, %+v", err, generate)
 	}
-	for _, name := range []string{"file", "output", "replace", "verify", "verify-option", "verify-provenance", "insecure-skip-verify"} {
+	for _, name := range []string{"file", "output", "format", "replace", "verify", "verify-option", "verify-provenance", "insecure-skip-verify"} {
 		if generate.Flags().Lookup(name) == nil {
 			t.Errorf("bomify deploy generate: missing --%s", name)
 		}
@@ -52,20 +68,38 @@ func TestDeployGenerateRequiresOutputAndAReference(t *testing.T) {
 	}
 }
 
-func TestWriteGenerated(t *testing.T) {
-	index := deploy.Index{Deployments: []deploy.Generated{
-		{Name: "frontend", Type: "helm", Files: []string{"frontend/values.yaml"}, Instructions: "helm upgrade --install frontend oci://registry.example.com/app@sha256:abc --values values.yaml"},
-		{Name: "local", Type: "compose", Files: []string{"local/compose.yaml", "local/.env"}},
-	}}
+func TestWriteGeneratedText(t *testing.T) {
 	var out bytes.Buffer
 
-	writeGenerated(&out, index)
+	if err := writeGenerated(&out, generatedIndex, formatTypeText); err != nil {
+		t.Fatalf("writeGenerated: %v", err)
+	}
 
-	want := "frontend (helm): frontend/values.yaml\n" +
-		"  in frontend/: helm upgrade --install frontend oci://registry.example.com/app@sha256:abc --values values.yaml\n" +
-		"local (compose): local/compose.yaml, local/.env\n"
-	if out.String() != want {
-		t.Errorf("output:\n%s\nwant:\n%s", out.String(), want)
+	if out.String() != generatedText {
+		t.Errorf("output:\n%s\nwant:\n%s", out.String(), generatedText)
+	}
+}
+
+// TestWriteGeneratedJSON covers --format json: the index, all of it, as
+// one JSON document that decodes back to the same index.
+func TestWriteGeneratedJSON(t *testing.T) {
+	var out bytes.Buffer
+
+	if err := writeGenerated(&out, generatedIndex, formatTypeJSON); err != nil {
+		t.Fatalf("writeGenerated: %v", err)
+	}
+
+	var got deploy.Index
+	decoder := json.NewDecoder(&out)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&got); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if !reflect.DeepEqual(got, generatedIndex) {
+		t.Errorf("decoded output = %+v, want %+v", got, generatedIndex)
+	}
+	if decoder.More() {
+		t.Errorf("output has more than one JSON document")
 	}
 }
 

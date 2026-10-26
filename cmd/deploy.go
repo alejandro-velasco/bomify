@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -174,6 +175,10 @@ deploy from a mirror, name the package there.
 it holds is replaced, once every deployment has generated. A failed
 deployment leaves --output as it was.
 
+--format json prints what was generated as deployments.json has it, for
+scripts; text, the default, prints each deployment's files and what to do
+with them.
+
 --verify, its options, and a matching "bomify trust" rule work as for
 "bomify pull"; see there.`
 
@@ -189,12 +194,15 @@ const deployGenerateExample = `  # Generate a package's deployments
 type deployGenerateOptions struct {
 	verify  verifyFlags
 	file    string
+	format  formatType
 	output  string
 	replace bool
 }
 
 func deployGenerateCmd() *cobra.Command {
-	opts := &deployGenerateOptions{}
+	opts := &deployGenerateOptions{
+		format: defaultFormatType,
+	}
 
 	cmd := &cobra.Command{
 		Use:     "generate <reference>",
@@ -213,6 +221,7 @@ func deployGenerateCmd() *cobra.Command {
 	opts.verify.register(cmd)
 	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "a deployment file to lay over the package's deployments, or to use instead of them if it has none")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "directory to write into (must be missing or empty, unless --replace)")
+	cmd.Flags().VarP(&opts.format, "format", "F", "how to print what was generated: text or json")
 	cmd.Flags().BoolVar(&opts.replace, "replace", false, "replace what --output holds, once every deployment has generated")
 	cmd.MarkFlagRequired("output")
 
@@ -250,8 +259,7 @@ func runDeployGenerate(cmd *cobra.Command, ref string, opts *deployGenerateOptio
 	if err != nil {
 		return err
 	}
-	writeGenerated(cmd.OutOrStdout(), index)
-	return nil
+	return writeGenerated(cmd.OutOrStdout(), index, opts.format)
 }
 
 // packageDeployments is a package in a registry, verified, and the
@@ -366,14 +374,30 @@ func resolveTag(ctx context.Context, reference string) (digest.Digest, error) {
 	return desc.Digest, nil
 }
 
-// writeGenerated prints each deployment index records: its name and type,
-// the files its plugin wrote, and what to do with them, from its
+// writeGenerated prints index, what deploy generate generated, in format.
+func writeGenerated(w io.Writer, index deploy.Index, format formatType) error {
+	if format == formatTypeJSON {
+		return writeGeneratedJSON(w, index)
+	}
+	writeGeneratedText(w, index)
+	return nil
+}
+
+// writeGeneratedText prints each deployment index records: its name and
+// type, the files its plugin wrote, and what to do with them, from its
 // directory.
-func writeGenerated(w io.Writer, index deploy.Index) {
+func writeGeneratedText(w io.Writer, index deploy.Index) {
 	for _, generated := range index.Deployments {
 		fmt.Fprintf(w, "%s (%s): %s\n", generated.Name, generated.Type, strings.Join(generated.Files, ", "))
 		if generated.Instructions != "" {
 			fmt.Fprintf(w, "  in %s/: %s\n", generated.Name, generated.Instructions)
 		}
 	}
+}
+
+// writeGeneratedJSON prints index as JSON, as deploy.IndexFile has it.
+func writeGeneratedJSON(w io.Writer, index deploy.Index) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(index)
 }

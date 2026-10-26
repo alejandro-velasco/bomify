@@ -30,6 +30,10 @@ deploy from a mirror, name the package there.
 it holds is replaced, once every deployment has generated. A failed
 deployment leaves --output as it was.
 
+--format json prints what was generated as deployments.json has it, for
+scripts; text, the default, prints each deployment's files and what to do
+with them.
+
 --verify, its options, and a matching "bomify trust" rule work as for
 "bomify pull"; see there.
 
@@ -54,6 +58,7 @@ bomify deploy generate <reference> [flags]
 
 ```
   -f, --file string                 a deployment file to lay over the package's deployments, or to use instead of them if it has none
+  -F, --format format               how to print what was generated: text or json (default text)
   -h, --help                        help for generate
       --insecure-skip-verify        restore the package without verifying its signature or provenance, even if a "bomify trust" rule requires it
   -o, --output string               directory to write into (must be missing or empty, unless --replace)
