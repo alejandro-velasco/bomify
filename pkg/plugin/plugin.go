@@ -1,15 +1,18 @@
 // Package plugin is the Go library for implementing a bomify-plugin-<kind>
 // binary: the Result/Hash/PackResult types the component plugin contract's
 // JSON output mirrors, SecurityResult for the security scanning contract's,
-// SignResult/VerifyResult for the signing contract's, ContractResult for the
-// contract versions every plugin reports, and Print to emit any of them
-// correctly. On top of those, ComponentCommand, SecurityCommand, and
-// SignatureCommand build each contract's whole subcommand tree — its flags,
-// validation, logging, and output — around a plugin's own implementation, and
-// Run executes a plugin's root command with the contract's exit-code and
-// stderr rules. See plugins/contracts/component/v1/CONTRACT.md,
-// plugins/contracts/security/v1/CONTRACT.md, and
-// plugins/contracts/signing/v1/CONTRACT.md for the contracts this package
+// SignResult/VerifyResult for the signing contract's,
+// DeploymentPackage/DeploymentResult for the deployment contract's,
+// ContractResult for the contract versions every plugin reports, and Print
+// to emit any of them correctly. On top of those, ComponentCommand,
+// SecurityCommand, SignatureCommand, and DeploymentCommand build each
+// contract's whole subcommand tree — its flags, validation, logging, and
+// output — around a plugin's own implementation, and Run executes a plugin's
+// root command with the contract's exit-code and stderr rules. See
+// plugins/contracts/component/v1/CONTRACT.md,
+// plugins/contracts/security/v1/CONTRACT.md,
+// plugins/contracts/signing/v1/CONTRACT.md, and
+// plugins/contracts/deployment/v1/CONTRACT.md for the contracts this package
 // implements one side of; unlike those documents, this package is importable
 // from outside this module, so a third-party plugin (in its own separate Go
 // module) can depend on it directly.

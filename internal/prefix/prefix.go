@@ -1,7 +1,8 @@
 // Package prefix implements the "/"-separated, segment-boundary prefix
 // matching that bomify's rule files share: conf/trust.json's and
 // conf/scan.json's Match against a package reference (see
-// internal/signature and internal/security).
+// internal/signature and internal/security), and the repository and
+// digest-pinned references they're matched on.
 package prefix
 
 import "strings"
@@ -68,4 +69,9 @@ func Repository(ref string) string {
 		ref = ref[:i]
 	}
 	return ref
+}
+
+// Pinned is the reference to digest in repository: "<repository>@<digest>".
+func Pinned(repository, digest string) string {
+	return repository + "@" + digest
 }

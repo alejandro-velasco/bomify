@@ -16,7 +16,8 @@
           "component",
           "sbom",
           "security",
-          "signing"
+          "signing",
+          "deployment"
         ]
       },
       "additionalProperties": {

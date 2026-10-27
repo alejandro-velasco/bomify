@@ -93,40 +93,64 @@ type Result struct {
 // A non-nil opts.Scan is called with the package's SBOM once its
 // components are written, before its reports are restored (see
 // transfer.Scanner).
+//
+// The package's deployments, if it has any, are restored last, once
+// everything else has, so a push of what was pulled, or loaded, carries
+// them on.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options) (Result, error) {
-	return PullComponents(ctx, target, ref, dataDir, opts, nil)
+	result, pkg, err := pullComponents(ctx, target, ref, dataDir, opts, nil)
+	if err != nil {
+		return Result{}, err
+	}
+	if pkg.deployments.Digest == "" {
+		return result, nil
+	}
+	write := func(dir string) error {
+		return transfer.FetchDeployments(ctx, target, pkg.deployments, dir)
+	}
+	if err := WriteInto(layout.Deployments(dataDir, pkg.sbom.hash), true, write); err != nil {
+		return Result{}, fmt.Errorf("restore deployments: %w", err)
+	}
+	return result, nil
 }
 
 // PullComponents is Pull, restoring only the components, and vulnerability
 // reports, whose purl keep accepts — e.g. just the one platform's binary
 // "bomify plugin install" needs out of a package carrying every
-// platform's. A nil keep restores everything. The SBOM is always restored
-// in full, whichever components are skipped.
+// platform's. A nil keep restores every component. The SBOM is always
+// restored in full, whichever components are skipped, and the package's
+// deployments never are: they're how to deploy the whole package.
 func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options, keep func(purl string) bool) (Result, error) {
+	result, _, err := pullComponents(ctx, target, ref, dataDir, opts, keep)
+	return result, err
+}
+
+// pullComponents is PullComponents, returning the package it restored.
+func pullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDir string, opts transfer.Options, keep func(purl string) bool) (Result, *fetchedPackage, error) {
 	opts = opts.WithDefaults()
 
 	pkg, err := fetchPackage(ctx, target, ref, opts)
 	if err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 	if err := pkg.sbom.write(dataDir); err != nil {
-		return Result{}, fmt.Errorf("write sbom: %w", err)
+		return Result{}, nil, fmt.Errorf("write sbom: %w", err)
 	}
 	kept := filterByPurl(pkg.components, keep)
 	restore := newPackageRestore(target, kept, pkg.files, dataDir, pkg.sbom.bom, opts.Concurrency, opts.Progress)
 	components, err := restore.restoreComponents(ctx)
 	if err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 	if opts.Scan != nil {
 		if err := opts.Scan(ctx, target, ref, pkg.desc, pkg.sbom.bom); err != nil {
-			return Result{}, fmt.Errorf("scan %s: %w", ref, err)
+			return Result{}, nil, fmt.Errorf("scan %s: %w", ref, err)
 		}
 	}
 
 	reports, reportsSkipped := restoreReports(ctx, target, ref, pkg.desc, dataDir, opts.Concurrency, opts.Progress, opts.Verify, keep)
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 
 	result := Result{
@@ -136,7 +160,7 @@ func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDi
 		VulnerabilityReports: reports,
 		ReportsSkipped:       reportsSkipped,
 	}
-	return result, nil
+	return result, pkg, nil
 }
 
 // fetchedPackage is the package PullComponents is restoring: its index's
@@ -144,8 +168,10 @@ func PullComponents(ctx context.Context, target oras.ReadOnlyTarget, ref, dataDi
 type fetchedPackage struct {
 	desc       ocispec.Descriptor
 	components []ocispec.Descriptor
-	files      transfer.Files
-	sbom       packageSBOM
+	// deployments is its deployments manifest, or the zero descriptor.
+	deployments ocispec.Descriptor
+	files       transfer.Files
+	sbom        packageSBOM
 }
 
 // fetchPackage resolves ref and verifies it as opts asks, its
@@ -182,10 +208,11 @@ func fetchPackage(ctx context.Context, target oras.ReadOnlyTarget, ref string, o
 	}
 
 	fetched := fetchedPackage{
-		desc:       desc,
-		components: pkg.Components,
-		files:      files,
-		sbom:       config,
+		desc:        desc,
+		components:  pkg.Components,
+		deployments: pkg.Deployments,
+		files:       files,
+		sbom:        config,
 	}
 	return &fetched, nil
 }

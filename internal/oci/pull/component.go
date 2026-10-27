@@ -8,11 +8,13 @@ import (
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
 	"github.com/alejandro-velasco/bomify/internal/oci/transfer"
 	"github.com/alejandro-velasco/bomify/internal/prefix"
 	"github.com/alejandro-velasco/bomify/internal/sliceutil"
+	pluginlib "github.com/alejandro-velasco/bomify/pkg/plugin"
 )
 
 // PackageComponent is one component of a package in a registry.
@@ -25,6 +27,9 @@ type PackageComponent struct {
 	// transfer.AnnotationComponentReference), resolved against the
 	// package's repository, or "" if push tagged none.
 	Reference string
+	// Manifest is the component manifest's entry in the package's index,
+	// or the zero descriptor if the index has none for it.
+	Manifest ocispec.Descriptor
 }
 
 // Components resolves ref against target and lists the components its SBOM
@@ -40,14 +45,46 @@ func Components(ctx context.Context, target oras.ReadOnlyTarget, ref string) ([]
 	return pkg.listComponents(ref), nil
 }
 
+// VerifiedPackage is a package in a registry, verified (see FetchVerified).
+type VerifiedPackage struct {
+	// Digest is the digest of the index its reference resolved to, the one
+	// verified.
+	Digest string
+	// Components are its components, as Components lists them.
+	Components []PackageComponent
+	// Deployments is its deployments manifest (see
+	// transfer.DeploymentsArtifactType), or the zero descriptor if it has
+	// none.
+	Deployments ocispec.Descriptor
+}
+
+// FetchVerified resolves ref against target, verifies it as opts asks,
+// as PullComponent verifies a package, before anything else is fetched,
+// and lists what's in it. Like Components, it writes nothing.
+func FetchVerified(ctx context.Context, target oras.ReadOnlyTarget, ref string, opts transfer.Options) (VerifiedPackage, error) {
+	pkg, err := fetchPackage(ctx, target, ref, opts.WithDefaults())
+	if err != nil {
+		return VerifiedPackage{}, err
+	}
+	verified := VerifiedPackage{
+		Digest:      pkg.desc.Digest.String(),
+		Components:  pkg.listComponents(ref),
+		Deployments: pkg.deployments,
+	}
+	return verified, nil
+}
+
 // listComponents pairs each component of p's SBOM with its files in p's
 // files map, and its reference, resolved against ref's repository.
 func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 	repository := prefix.Repository(ref)
 	references := map[string]string{}
+	manifests := map[string]ocispec.Descriptor{}
 	for _, desc := range p.components {
+		purl := desc.Annotations[transfer.AnnotationPurl]
+		manifests[purl] = desc
 		if reference := desc.Annotations[transfer.AnnotationComponentReference]; reference != "" {
-			references[desc.Annotations[transfer.AnnotationPurl]] = path.Join(repository, reference)
+			references[purl] = path.Join(repository, reference)
 		}
 	}
 
@@ -59,6 +96,7 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 			Component: component,
 			Files:     files,
 			Reference: references[component.PackageURL],
+			Manifest:  manifests[component.PackageURL],
 		}
 		listed = append(listed, entry)
 	}
@@ -71,11 +109,11 @@ func (p *fetchedPackage) listComponents(ref string) []PackageComponent {
 // purls of just the ones it names.
 var (
 	ErrNoComponent        = errors.New("no such component in the package")
-	ErrAmbiguousComponent = errors.New("names several components in the package; name one by its purl")
+	ErrAmbiguousComponent = errors.New("names several components in the package; name one by type and name, or by purl")
 )
 
-// selectComponent returns the one of components that selector names: its
-// purl, else its name, alone or as <name>@<version>; else
+// selectComponent returns the one of components that selector names (see
+// pluginlib.MatchesSelector), a whole purl naming one alone; else
 // ErrAmbiguousComponent or ErrNoComponent.
 func selectComponent(components []PackageComponent, selector string) (PackageComponent, error) {
 	var named []PackageComponent
@@ -84,7 +122,7 @@ func selectComponent(components []PackageComponent, selector string) (PackageCom
 		if component.PackageURL == selector {
 			return candidate, nil
 		}
-		if component.Name == selector || component.Name+"@"+component.Version == selector {
+		if pluginlib.MatchesSelector(component.PackageURL, component.Name, component.Version, selector) {
 			named = append(named, candidate)
 		}
 	}
@@ -116,7 +154,7 @@ type ComponentResult struct {
 // ComponentOptions are where PullComponent writes.
 type ComponentOptions struct {
 	// Dir is the directory the component's files go into. It must be
-	// missing or empty, unless Replace is set (see writeInto).
+	// missing or empty, unless Replace is set (see WriteInto).
 	Dir     string
 	Replace bool
 }
@@ -132,7 +170,7 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 
 	// Checked before anything is fetched too, so an unusable directory
 	// fails fast.
-	if err := checkOutputDir(into.Dir, into.Replace); err != nil {
+	if err := CheckOutputDir(into.Dir, into.Replace); err != nil {
 		return ComponentResult{}, err
 	}
 	pkg, err := fetchPackage(ctx, target, ref, opts)
@@ -154,7 +192,7 @@ func PullComponent(ctx context.Context, target oras.ReadOnlyTarget, ref, selecto
 		files:          files,
 	}
 	write := func(dir string) error { return restore.apply(ctx, dir) }
-	if err := writeInto(into.Dir, into.Replace, write); err != nil {
+	if err := WriteInto(into.Dir, into.Replace, write); err != nil {
 		return ComponentResult{}, fmt.Errorf("restore %s: %w", files.Purl, err)
 	}
 

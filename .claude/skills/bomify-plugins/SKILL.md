@@ -1,11 +1,11 @@
 ---
 name: bomify-plugins
-description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/pack), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), or the signing contract (signature sign/attest/verify/verify-attestation/supported-types). Points to the authoritative spec rather than restating it.
+description: Use when writing, reviewing, or modifying a bomify-plugin-<kind> binary — its subcommands, flags, JSON result shapes, hashing, or logging, for the component plugin contract (component pull/pack), the SBOM generation contract (sbom generate), the security scanning contract (security scan/security supported-components), the signing contract (signature sign/attest/verify/verify-attestation/supported-types), or the deployment contract (deployment generate). Points to the authoritative spec rather than restating it.
 ---
 
 # bomify plugins
 
-A `bomify-plugin-<kind>` binary can implement any of four independent
+A `bomify-plugin-<kind>` binary can implement any of five independent
 contracts. Work out which one your task concerns, then read that
 contract **in full**; it's authoritative. Don't restate it in code
 comments or rely on memory of it, since the contracts keep growing.
@@ -16,6 +16,7 @@ comments or rely on memory of it, since the contracts keep growing.
 | SBOM generation | `sbom generate` | [`contracts/sbom/v1`](../../../plugins/contracts/sbom/v1/CONTRACT.md) |
 | Security scanning | `security scan/supported-components` | [`contracts/security/v1`](../../../plugins/contracts/security/v1/CONTRACT.md) |
 | Signing | `signature sign/attest/verify/verify-attestation/supported-types` | [`contracts/signing/v1`](../../../plugins/contracts/signing/v1/CONTRACT.md) |
+| Deployment | `deployment generate` | [`contracts/deployment/v1`](../../../plugins/contracts/deployment/v1/CONTRACT.md) |
 
 Also relevant:
 

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alejandro-velasco/bomify/internal/build"
+	"github.com/alejandro-velasco/bomify/internal/deploy"
 	"github.com/alejandro-velasco/bomify/internal/logging"
 	"github.com/alejandro-velasco/bomify/internal/plugin"
 	"github.com/alejandro-velasco/bomify/internal/plugin/install"
@@ -29,6 +30,11 @@ install" installs.
 
 --check asks each plugin to confirm its component is reachable and
 authorized, without downloading anything or recording a build.
+
+--deployments records how to deploy the package with the build: a
+deployment file, and the templates it names, all inside its directory,
+which "bomify push" and "save" package with it and "bomify deploy
+generate" reads. It replaces any recorded for the same SBOM before.
 
 --provenance records SLSA provenance of the build: the SBOM, every
 component and plugin binary by digest, and bomify's version. "bomify
@@ -50,7 +56,10 @@ const buildExample = `  # Build the package described by sbom.json
   bomify build sbom.json --check
 
   # Record SLSA provenance, attached when the package is pushed
-  bomify build sbom.json --tag myapp:1.0 --provenance`
+  bomify build sbom.json --tag myapp:1.0 --provenance
+
+  # Package how to deploy it, for "bomify deploy generate"
+  bomify build sbom.json --tag myapp:1.0 --deployments deploy.yaml`
 
 type buildOptions struct {
 	file        string
@@ -58,6 +67,7 @@ type buildOptions struct {
 	tags        []string
 	check       bool
 	provenance  bool
+	deployments string
 }
 
 func buildCmd() *cobra.Command {
@@ -83,7 +93,9 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().StringArrayVarP(&buildOpts.tags, "tag", "t", nil, "tag this build as name[:version] (repeatable); defaults version to \"latest\"")
 	buildCmd.Flags().BoolVar(&buildOpts.check, "check", false, "verify every component is pullable and authorized, without downloading any of them or recording a build")
 	buildCmd.Flags().BoolVar(&buildOpts.provenance, "provenance", false, "record SLSA provenance of this build, attached when the package is pushed or saved")
+	buildCmd.Flags().StringVar(&buildOpts.deployments, "deployments", "", "record this deployment file, and the templates it names, to package how to deploy the build")
 	buildCmd.MarkFlagsMutuallyExclusive("check", "provenance")
+	buildCmd.MarkFlagsMutuallyExclusive("check", "deployments")
 
 	return buildCmd
 }
@@ -91,6 +103,12 @@ func buildCmd() *cobra.Command {
 // runBuild builds opts.file, showing each plugin's pull on out (see
 // pluginTracker).
 func runBuild(opts *buildOptions, logger *slog.Logger, out io.Writer) error {
+	// Checked before anything is pulled, so a bad file fails fast.
+	if opts.deployments != "" {
+		if err := deploy.CheckRecordable(opts.deployments); err != nil {
+			return err
+		}
+	}
 	var (
 		rec       *provenance.Recorder
 		installed map[string]*install.Record
@@ -166,6 +184,12 @@ func runBuild(opts *buildOptions, logger *slog.Logger, out io.Writer) error {
 	sbomHash, err := finalizeBuild(opts, logger)
 	if err != nil {
 		return err
+	}
+	if opts.deployments != "" {
+		if err := deploy.Record(dataDir, sbomHash, opts.deployments); err != nil {
+			return fmt.Errorf("record deployments: %w", err)
+		}
+		logger.Info("deployments recorded", "file", opts.deployments, "hash", sbomHash)
 	}
 	if rec != nil {
 		if err := rec.Write(dataDir, sbomHash, opts.tags); err != nil {

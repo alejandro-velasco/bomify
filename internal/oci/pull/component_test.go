@@ -261,6 +261,10 @@ func TestPullComponentSelectors(t *testing.T) {
 		wantErr  error
 	}{
 		{name: "by purl", selector: "pkg:huggingface/org/beta@3", want: "beta three"},
+		{name: "by type and name", selector: "generic/beta", want: "beta weights"},
+		{name: "by type, namespace, and name", selector: "huggingface/org/beta", want: "beta three"},
+		{name: "by type, name, and version", selector: "generic/beta@2", want: "beta weights"},
+		{name: "a type and name without its namespace", selector: "huggingface/beta", wantErr: ErrNoComponent},
 		{name: "by name and version", selector: "beta@2", want: "beta weights"},
 		{name: "by a name only one has", selector: "alpha", want: ""},
 		{name: "a name two share", selector: "beta", wantErr: ErrAmbiguousComponent},
@@ -472,8 +476,8 @@ func TestWriteIntoMovesWhatWasWritten(t *testing.T) {
 		return os.WriteFile(filepath.Join(stageDir, "sub", "a.txt"), []byte("a"), 0o644)
 	}
 
-	if err := writeInto(dir, false, write); err != nil {
-		t.Fatalf("writeInto() error = %v", err)
+	if err := WriteInto(dir, false, write); err != nil {
+		t.Fatalf("WriteInto() error = %v", err)
 	}
 
 	assertTree(t, dir, map[string]string{"sub/a.txt": "a"})
@@ -489,16 +493,16 @@ func TestWriteIntoFailureRemovesItsWork(t *testing.T) {
 	}
 
 	missing := filepath.Join(t.TempDir(), "missing")
-	if err := writeInto(missing, false, write); !errors.Is(err, writeErr) {
-		t.Fatalf("writeInto() error = %v, want %v", err, writeErr)
+	if err := WriteInto(missing, false, write); !errors.Is(err, writeErr) {
+		t.Fatalf("WriteInto() error = %v, want %v", err, writeErr)
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("a failed write left the directory it created: %v", err)
 	}
 
 	empty := t.TempDir()
-	if err := writeInto(empty, false, write); !errors.Is(err, writeErr) {
-		t.Fatalf("writeInto() error = %v, want %v", err, writeErr)
+	if err := WriteInto(empty, false, write); !errors.Is(err, writeErr) {
+		t.Fatalf("WriteInto() error = %v, want %v", err, writeErr)
 	}
 	entries, err := os.ReadDir(empty)
 	if err != nil || len(entries) != 0 {

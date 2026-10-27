@@ -106,6 +106,19 @@ func ComponentPID(dataDir, purl string) string { return PID(dataDir, PurlHash(pu
 // ComponentLog is Log for the component with purl.
 func ComponentLog(dataDir, purl string) string { return Log(dataDir, PurlHash(purl)) }
 
+// Deployments returns "<dataDir>/deployments/<sbomHash>", the deployments
+// recorded for the build of that SBOM: its deployment file and the
+// templates that names, which push and save package with it.
+func Deployments(dataDir, sbomHash string) string {
+	return filepath.Join(dataDir, "deployments", sbomHash)
+}
+
+// DeploymentLog returns "<dataDir>/logs/deployment-<name>.log", the
+// transient plugin log for the deployment called name.
+func DeploymentLog(dataDir, name string) string {
+	return filepath.Join(dataDir, "logs", "deployment-"+name+".log")
+}
+
 // ComponentProgress is Progress for the component with purl.
 func ComponentProgress(dataDir, purl string) string { return Progress(dataDir, PurlHash(purl)) }
 

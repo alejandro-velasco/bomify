@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/alejandro-velasco/bomify/main/plugins/contracts/deployment/v1/package.schema.json",
+  "title": "bomify deployment package description",
+  "description": "The package description bomify passes a deployment plugin's \"deployment generate\" as --package, per plugins/contracts/deployment/v1/CONTRACT.md: the package, verified, and where each of its components is in the registry it's deployed from. A plugin ignores fields it doesn't know, so bomify can add some.",
+  "type": "object",
+  "required": ["reference", "repository", "digest", "components"],
+  "properties": {
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The package, as given to \"bomify deploy generate\"."
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The package's repository, where every component is."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The package index's digest: what was verified."
+    },
+    "components": {
+      "type": "array",
+      "description": "Every component, in the SBOM's order.",
+      "items": {
+        "type": "object",
+        "required": ["name", "purl", "digest", "reference"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "version": { "type": "string" },
+          "purl": { "type": "string", "minLength": 1 },
+          "artifactType": {
+            "type": "string",
+            "description": "Its manifest's artifact type, if it has one. Absent for an image."
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Its manifest's digest."
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "description": "\"<repository>@<digest>\": the component, pinned, in the package's repository, where it always is."
+          },
+          "tagged": {
+            "type": "object",
+            "description": "Where it's tagged, only if it is: bomify checked the tag exists and points at it.",
+            "required": ["registry", "repository", "tag", "reference"],
+            "properties": {
+              "registry": { "type": "string", "minLength": 1 },
+              "repository": { "type": "string", "minLength": 1 },
+              "tag": { "type": "string", "minLength": 1 },
+              "reference": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

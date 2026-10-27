@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/alejandro-velasco/bomify/internal/buildinfo"
 
@@ -15,42 +15,41 @@ const versionExample = `  # Print human-readable version info
   bomify version
 
   # Print version info as JSON
-  bomify version --output json`
+  bomify version --format json`
 
-type VersionOptions struct {
-	Output string
+type versionOptions struct {
+	format formatType
 }
 
 func versionCmd() *cobra.Command {
-	versionOpts := &VersionOptions{}
+	opts := &versionOptions{}
 
 	cmd := &cobra.Command{
 		Use:     "version",
 		Short:   versionShort,
 		Example: versionExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			buildInfo := buildinfo.GetBuildInfo()
-
-			switch versionOpts.Output {
-			case "text":
-				fmt.Fprintf(cmd.OutOrStdout(), "version: %s\n", buildInfo.Version)
-				fmt.Fprintf(cmd.OutOrStdout(), "commit:  %s\n", buildInfo.Commit)
-				fmt.Fprintf(cmd.OutOrStdout(), "built:   %s\n", buildInfo.Date)
-				fmt.Fprintf(cmd.OutOrStdout(), "go:      %s\n", buildInfo.GoVersion)
-			case "json":
-				buildInfoJSON, err := json.Marshal(buildInfo)
-				if err != nil {
-					return fmt.Errorf("marshal build info: %w", err)
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(buildInfoJSON))
-			default:
-				return fmt.Errorf("invalid output format: %q", versionOpts.Output)
-			}
-			return nil
+			return writeVersion(cmd.OutOrStdout(), opts.format)
 		},
 	}
 
-	cmd.Flags().StringVarP(&versionOpts.Output, "output", "o", "text", "output format (text or json)")
+	registerFormat(cmd, &opts.format)
+	// --output was --format's name before every command shared it.
+	cmd.Flags().VarP(&opts.format, "output", "o", formatUsage)
+	cmd.Flags().MarkDeprecated("output", "use --format")
 
 	return cmd
+}
+
+// writeVersion prints bomify's build information in format.
+func writeVersion(w io.Writer, format formatType) error {
+	buildInfo := buildinfo.GetBuildInfo()
+	if format == formatTypeJSON {
+		return writeJSON(w, buildInfo)
+	}
+	fmt.Fprintf(w, "version: %s\n", buildInfo.Version)
+	fmt.Fprintf(w, "commit:  %s\n", buildInfo.Commit)
+	fmt.Fprintf(w, "built:   %s\n", buildInfo.Date)
+	fmt.Fprintf(w, "go:      %s\n", buildInfo.GoVersion)
+	return nil
 }

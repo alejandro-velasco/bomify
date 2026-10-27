@@ -75,12 +75,15 @@ type Package struct {
 	// Components are the index's component manifests, each annotated with
 	// its purl (see AnnotationPurl), in the index's order.
 	Components []ocispec.Descriptor
+	// Deployments is the index's deployments manifest (see
+	// DeploymentsArtifactType), or the zero descriptor if it has none.
+	Deployments ocispec.Descriptor
 }
 
 // FetchPackage fetches the bomify package whose index desc names from
 // target, and its SBOM manifest, failing unless desc is a bomify package's
-// index with exactly one SBOM manifest. Index entries that are neither the
-// SBOM manifest nor annotated with a purl are ignored.
+// index with exactly one SBOM manifest, and at most one deployments
+// manifest. Other index entries not annotated with a purl are ignored.
 func FetchPackage(ctx context.Context, target content.Fetcher, desc ocispec.Descriptor) (*Package, error) {
 	if desc.MediaType != ocispec.MediaTypeImageIndex {
 		return nil, fmt.Errorf("%s isn't a bomify package: it's a %s, not an index", desc.Digest, desc.MediaType)
@@ -100,6 +103,13 @@ func FetchPackage(ctx context.Context, target content.Fetcher, desc ocispec.Desc
 				return nil, fmt.Errorf("package %s has more than one SBOM manifest", desc.Digest)
 			}
 			pkg.SBOM = entry
+			continue
+		}
+		if entry.ArtifactType == DeploymentsArtifactType {
+			if pkg.Deployments.Digest != "" {
+				return nil, fmt.Errorf("package %s has more than one deployments manifest", desc.Digest)
+			}
+			pkg.Deployments = entry
 			continue
 		}
 		if entry.Annotations[AnnotationPurl] != "" {

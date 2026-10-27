@@ -2,7 +2,8 @@
 // tests, implementing every plugin contract bomify drives (see
 // plugins/contracts/) without depending on a real tool: the component contract
 // (component.go), the security scanning contract (security.go), the
-// signing contract (signature.go), SBOM generation (below), and the
+// signing contract (signature.go), the deployment contract
+// (deployment.go), SBOM generation (below), and the
 // "contract" subcommand reporting their versions (contract.go). Install
 // it with testutil.InstallFakePlugin. Each contract's behavior is driven
 // by magic purls and environment variables, documented where they're
@@ -20,7 +21,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin <component|security|signature|contract|sbom> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin <component|security|signature|deployment|contract|sbom> ...")
 		os.Exit(1)
 	}
 
@@ -35,8 +36,10 @@ func main() {
 		contractMain()
 	case "sbom":
 		sbomMain()
+	case "deployment":
+		deploymentMain()
 	default:
-		fmt.Fprintln(os.Stderr, "usage: fakeplugin <component|security|signature|contract|sbom> ...")
+		fmt.Fprintln(os.Stderr, "usage: fakeplugin <component|security|signature|deployment|contract|sbom> ...")
 		os.Exit(1)
 	}
 }

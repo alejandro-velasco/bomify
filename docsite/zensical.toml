@@ -38,6 +38,11 @@ nav = [
           { "bomify component list" = "usage/reference/bomify_component_list.md" },
           { "bomify component pull" = "usage/reference/bomify_component_pull.md" },
       ] },
+      { "bomify deploy" = [
+          { "bomify deploy" = "usage/reference/bomify_deploy.md" },
+          { "bomify deploy list" = "usage/reference/bomify_deploy_list.md" },
+          { "bomify deploy generate" = "usage/reference/bomify_deploy_generate.md" },
+      ] },
       { "bomify login" = "usage/reference/bomify_login.md" },
       { "bomify logout" = "usage/reference/bomify_logout.md" },
       { "bomify plugin" = [
@@ -129,6 +134,7 @@ nav = [
       { "SBOM generation contract v1" = "development/sbom-contract.md" },
       { "Security scanning contract v1" = "development/security-contract.md" },
       { "Signing contract v1" = "development/signing-contract.md" },
+      { "Deployment contract v1" = "development/deployment-contract.md" },
   ] },
 ]
 

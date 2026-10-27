@@ -9,6 +9,7 @@ flowchart LR
         Index{{"package index"}}
         SBOM("SBOM manifest<br/>config: the SBOM<br/>layers: files map, extra files")
         Components("each component's own manifest:<br/>an image, a chart, ModelPack, or bomify's format")
+        Deployments("deployments manifest<br/>layers: the deployment file, its templates")
         Referrers("referrers: reports, signatures,<br/>VEX, provenance")
     end
 
@@ -19,13 +20,14 @@ flowchart LR
     Tag --> Index
     Index -- "first" --> SBOM
     Index -- "then each, with its<br/>purl and reference" --> Components
+    Index -- "last, if it has any" --> Deployments
     SBOM -. "files map: which blob<br/>holds each file" .-> Components
     Referrers -- "subject" --> Index
     AliasTag -- "the same manifest,<br/>its blobs mounted" --> Components
 
     class Tag,AliasTag ref
     class Index index
-    class SBOM,Components manifest
+    class SBOM,Components,Deployments manifest
     class Referrers referrer
     style Repo fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
     style Alias fill:#FFFFFF,stroke:#CBD5E1,stroke-width:1px,color:#334155
